@@ -440,9 +440,58 @@ What this means in practice:
 - `attributes.rego`: each memory gets plaintext policy attributes `namespace` and `sub` for policy-aware filtering.
 - `filter.rego`: non-admin search/list calls are constrained to the caller's own `["user", <caller_user_id>]` subtree; admin callers keep the requested prefix and no forced attribute filter.
 
-Important: with the default bundle, `admin` role affects search/list filtering, but does not bypass `authz.rego` for direct read/write/delete. If you want admin bypass there, add it in `authz.rego`.
+Important: with the default bundle, `admin` role affects public search/list filtering, but does not bypass `authz.rego` for direct public read/write/delete. Administrative memory exploration uses separate `/admin/v1/...` endpoints described below.
 
 See the [Admin APIs](/docs/concepts/admin-apis/) for policy management endpoints.
+
+## Admin Memory Exploration
+
+Admin and auditor users can inspect episodic memories through a dedicated admin surface. These endpoints are separate from `/v1/memories`; they do not rely on user-facing OPA policy injection unless an admin explicitly searches as a target user.
+
+| Method | Endpoint                      | Role             | Purpose                                                                               |
+| ------ | ----------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
+| `GET`  | `/admin/v1/memories`          | admin or auditor | List latest memory rows across users with filters and cursor pagination               |
+| `GET`  | `/admin/v1/memories/{id}`     | admin or auditor | Read a retained memory row by UUID without incrementing usage counters                |
+| `POST` | `/admin/v1/memories/search`   | admin or auditor | Search across users by namespace prefix, safe attributes, and optional semantic query |
+| `GET`  | `/admin/v1/memory-namespaces` | admin or auditor | Browse memory namespace trees across users                                            |
+
+Admin list and namespace query parameters use camelCase query names, for example:
+
+```bash
+curl "http://localhost:8080/admin/v1/memories?namespacePrefix=user&namespacePrefix=alice&includeUsage=true" \
+  -H "Authorization: Bearer <admin-or-auditor-token>" \
+  -H "X-Justification: support investigation"
+```
+
+Admin search reuses the public memory search JSON shape and adds `as_user_id`:
+
+```bash
+curl -X POST http://localhost:8080/admin/v1/memories/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-or-auditor-token>" \
+  -H "X-Justification: support investigation" \
+  -d '{
+    "namespace_prefix": ["user"],
+    "as_user_id": "alice",
+    "filter": {"memoryKind": {"$in": ["preference", "procedure"]}},
+    "limit": 25
+  }'
+```
+
+When `as_user_id` is omitted, admin search is admin-wide and caller filters narrow that result set. When `as_user_id` is set, the server applies the same memory search policy that the target user would receive from public `POST /v1/memories/search`.
+
+The old operational memory admin routes are split away from `/admin/v1/memories/...`:
+
+| Method        | Endpoint                         | Role  |
+| ------------- | -------------------------------- | ----- |
+| `GET` / `PUT` | `/admin/v1/memory-policies`      | admin |
+| `GET`         | `/admin/v1/memory-index/status`  | admin |
+| `POST`        | `/admin/v1/memory-index/trigger` | admin |
+| `GET`         | `/admin/v1/memory-usage`         | admin |
+| `GET`         | `/admin/v1/memory-usage/top`     | admin |
+| `DELETE`      | `/admin/v1/memories/{id}`        | admin |
+
+If admin justification enforcement is enabled, admin memory routes accept `X-Justification` or `?justification=...`; gRPC admin memory requests carry a `justification` field.
 
 ## Encryption
 

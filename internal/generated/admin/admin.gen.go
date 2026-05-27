@@ -36,6 +36,13 @@ const (
 	Writer  AccessLevel = "writer"
 )
 
+// Defines values for AdminSearchMemoriesRequestArchived.
+const (
+	AdminSearchMemoriesRequestArchivedExclude AdminSearchMemoriesRequestArchived = "exclude"
+	AdminSearchMemoriesRequestArchivedInclude AdminSearchMemoriesRequestArchived = "include"
+	AdminSearchMemoriesRequestArchivedOnly    AdminSearchMemoriesRequestArchived = "only"
+)
+
 // Defines values for Channel.
 const (
 	Context Channel = "context"
@@ -45,6 +52,20 @@ const (
 // Defines values for EvictRequestResourceTypes.
 const (
 	Conversations EvictRequestResourceTypes = "conversations"
+)
+
+// Defines values for AdminListMemoriesParamsArchived.
+const (
+	AdminListMemoriesParamsArchivedExclude AdminListMemoriesParamsArchived = "exclude"
+	AdminListMemoriesParamsArchivedInclude AdminListMemoriesParamsArchived = "include"
+	AdminListMemoriesParamsArchivedOnly    AdminListMemoriesParamsArchived = "only"
+)
+
+// Defines values for AdminListMemoryNamespacesParamsArchived.
+const (
+	AdminListMemoryNamespacesParamsArchivedExclude AdminListMemoryNamespacesParamsArchived = "exclude"
+	AdminListMemoryNamespacesParamsArchivedInclude AdminListMemoryNamespacesParamsArchived = "include"
+	AdminListMemoryNamespacesParamsArchivedOnly    AdminListMemoryNamespacesParamsArchived = "only"
 )
 
 // Defines values for AdminListTopMemoryUsageParamsSort.
@@ -77,9 +98,9 @@ const (
 
 // Defines values for AdminListConversationsParamsArchived.
 const (
-	Exclude AdminListConversationsParamsArchived = "exclude"
-	Include AdminListConversationsParamsArchived = "include"
-	Only    AdminListConversationsParamsArchived = "only"
+	AdminListConversationsParamsArchivedExclude AdminListConversationsParamsArchived = "exclude"
+	AdminListConversationsParamsArchivedInclude AdminListConversationsParamsArchived = "include"
+	AdminListConversationsParamsArchivedOnly    AdminListConversationsParamsArchived = "only"
 )
 
 // Defines values for AdminGetEntriesParamsForks.
@@ -233,6 +254,39 @@ type AdminDownloadUrlResponse struct {
 	Url *string `json:"url,omitempty"`
 }
 
+// AdminListMemoriesResponse defines model for AdminListMemoriesResponse.
+type AdminListMemoriesResponse struct {
+	AfterCursor *string            `json:"afterCursor"`
+	Items       *[]AdminMemoryItem `json:"items,omitempty"`
+}
+
+// AdminListMemoryNamespacesResponse defines model for AdminListMemoryNamespacesResponse.
+type AdminListMemoryNamespacesResponse struct {
+	AfterCursor *string                 `json:"afterCursor"`
+	Namespaces  *[]AdminMemoryNamespace `json:"namespaces,omitempty"`
+}
+
+// AdminMemoryItem defines model for AdminMemoryItem.
+type AdminMemoryItem struct {
+	Archived   *bool                   `json:"archived,omitempty"`
+	ArchivedAt *time.Time              `json:"archivedAt"`
+	Attributes *map[string]interface{} `json:"attributes,omitempty"`
+	CreatedAt  *time.Time              `json:"createdAt,omitempty"`
+	ExpiresAt  *time.Time              `json:"expiresAt"`
+	Id         *openapi_types.UUID     `json:"id,omitempty"`
+	Key        *string                 `json:"key,omitempty"`
+	Namespace  *[]string               `json:"namespace,omitempty"`
+	Revision   *int64                  `json:"revision,omitempty"`
+	Score      *float64                `json:"score,omitempty"`
+	Usage      *MemoryUsageResponse    `json:"usage"`
+	Value      *map[string]interface{} `json:"value"`
+}
+
+// AdminMemoryNamespace defines model for AdminMemoryNamespace.
+type AdminMemoryNamespace struct {
+	Segments *[]string `json:"segments,omitempty"`
+}
+
 // AdminOutboxStats defines model for AdminOutboxStats.
 type AdminOutboxStats struct {
 	// OldestAt Oldest retained outbox event timestamp.
@@ -259,6 +313,27 @@ type AdminSearchEntriesRequest struct {
 
 	// UserId Filter search to conversations owned by this user.
 	UserId *string `json:"userId"`
+}
+
+// AdminSearchMemoriesRequest defines model for AdminSearchMemoriesRequest.
+type AdminSearchMemoriesRequest struct {
+	Archived        *AdminSearchMemoriesRequestArchived `json:"archived,omitempty"`
+	AsUserId        *string                             `json:"as_user_id,omitempty"`
+	Filter          *map[string]interface{}             `json:"filter,omitempty"`
+	IncludeUsage    *bool                               `json:"include_usage,omitempty"`
+	Justification   *string                             `json:"justification,omitempty"`
+	KeyPrefix       *string                             `json:"key_prefix,omitempty"`
+	Limit           *int                                `json:"limit,omitempty"`
+	NamespacePrefix *[]string                           `json:"namespace_prefix,omitempty"`
+	Query           *string                             `json:"query,omitempty"`
+}
+
+// AdminSearchMemoriesRequestArchived defines model for AdminSearchMemoriesRequest.Archived.
+type AdminSearchMemoriesRequestArchived string
+
+// AdminSearchMemoriesResponse defines model for AdminSearchMemoriesResponse.
+type AdminSearchMemoriesResponse struct {
+	Items *[]AdminMemoryItem `json:"items,omitempty"`
 }
 
 // AdminStatsSummaryResponse defines model for AdminStatsSummaryResponse.
@@ -494,6 +569,47 @@ type Error = ErrorResponse
 
 // NotFound defines model for NotFound.
 type NotFound = ErrorResponse
+
+// AdminListMemoriesParams defines parameters for AdminListMemories.
+type AdminListMemoriesParams struct {
+	// NamespacePrefix Namespace prefix segments. Repeat once per segment.
+	NamespacePrefix *[]string                        `form:"namespacePrefix,omitempty" json:"namespacePrefix,omitempty"`
+	KeyPrefix       *string                          `form:"keyPrefix,omitempty" json:"keyPrefix,omitempty"`
+	Archived        *AdminListMemoriesParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
+	CreatedAfter    *time.Time                       `form:"createdAfter,omitempty" json:"createdAfter,omitempty"`
+	CreatedBefore   *time.Time                       `form:"createdBefore,omitempty" json:"createdBefore,omitempty"`
+	ExpiresBefore   *time.Time                       `form:"expiresBefore,omitempty" json:"expiresBefore,omitempty"`
+	IncludeUsage    *bool                            `form:"includeUsage,omitempty" json:"includeUsage,omitempty"`
+	Limit           *int                             `form:"limit,omitempty" json:"limit,omitempty"`
+	AfterCursor     *string                          `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	Justification   *string                          `form:"justification,omitempty" json:"justification,omitempty"`
+}
+
+// AdminListMemoriesParamsArchived defines parameters for AdminListMemories.
+type AdminListMemoriesParamsArchived string
+
+// AdminGetMemoryParams defines parameters for AdminGetMemory.
+type AdminGetMemoryParams struct {
+	IncludeUsage  *bool   `form:"includeUsage,omitempty" json:"includeUsage,omitempty"`
+	Justification *string `form:"justification,omitempty" json:"justification,omitempty"`
+}
+
+// AdminListMemoryNamespacesParams defines parameters for AdminListMemoryNamespaces.
+type AdminListMemoryNamespacesParams struct {
+	// NamespacePrefix Namespace prefix segments. Repeat once per segment.
+	NamespacePrefix *[]string `form:"namespacePrefix,omitempty" json:"namespacePrefix,omitempty"`
+
+	// Suffix Namespace suffix segments. Repeat once per segment.
+	Suffix        *[]string                                `form:"suffix,omitempty" json:"suffix,omitempty"`
+	MaxDepth      *int                                     `form:"maxDepth,omitempty" json:"maxDepth,omitempty"`
+	Archived      *AdminListMemoryNamespacesParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
+	Limit         *int                                     `form:"limit,omitempty" json:"limit,omitempty"`
+	AfterCursor   *string                                  `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	Justification *string                                  `form:"justification,omitempty" json:"justification,omitempty"`
+}
+
+// AdminListMemoryNamespacesParamsArchived defines parameters for AdminListMemoryNamespaces.
+type AdminListMemoryNamespacesParamsArchived string
 
 // AdminGetMemoryUsageParams defines parameters for AdminGetMemoryUsage.
 type AdminGetMemoryUsageParams struct {
@@ -786,6 +902,9 @@ type GetStoreThroughputParams struct {
 	Step *StatsStep `form:"step,omitempty" json:"step,omitempty"`
 }
 
+// AdminSearchMemoriesJSONRequestBody defines body for AdminSearchMemories for application/json ContentType.
+type AdminSearchMemoriesJSONRequestBody = AdminSearchMemoriesRequest
+
 // AdminPutMemoryPoliciesJSONRequestBody defines body for AdminPutMemoryPolicies for application/json ContentType.
 type AdminPutMemoryPoliciesJSONRequestBody = MemoryPolicyBundle
 
@@ -806,27 +925,39 @@ type AdminEvictJSONRequestBody = EvictRequest
 
 // ServerInterface represents all server handlers.
 type ServerInterface interface {
-	// Get episodic memory indexing queue status
-	// (GET /admin/v1/memories/index/status)
-	AdminGetMemoryIndexStatus(c *gin.Context)
-	// Trigger one episodic memory indexing cycle
-	// (POST /admin/v1/memories/index/trigger)
-	AdminTriggerMemoryIndex(c *gin.Context)
-	// Download active episodic memory policy bundle
-	// (GET /admin/v1/memories/policies)
-	AdminGetMemoryPolicies(c *gin.Context)
-	// Upload episodic memory policy bundle
-	// (PUT /admin/v1/memories/policies)
-	AdminPutMemoryPolicies(c *gin.Context)
-	// Get episodic memory usage for a single key
-	// (GET /admin/v1/memories/usage)
-	AdminGetMemoryUsage(c *gin.Context, params AdminGetMemoryUsageParams)
-	// List top episodic memory usage rows under a namespace prefix
-	// (GET /admin/v1/memories/usage/top)
-	AdminListTopMemoryUsage(c *gin.Context, params AdminListTopMemoryUsageParams)
+	// List episodic memories across users
+	// (GET /admin/v1/memories)
+	AdminListMemories(c *gin.Context, params AdminListMemoriesParams)
+	// Search episodic memories across users
+	// (POST /admin/v1/memories/search)
+	AdminSearchMemories(c *gin.Context)
 	// Force-delete an episodic memory by ID
 	// (DELETE /admin/v1/memories/{id})
 	AdminDeleteMemory(c *gin.Context, id openapi_types.UUID)
+	// Get an episodic memory by ID
+	// (GET /admin/v1/memories/{id})
+	AdminGetMemory(c *gin.Context, id openapi_types.UUID, params AdminGetMemoryParams)
+	// Get episodic memory indexing queue status
+	// (GET /admin/v1/memory-index/status)
+	AdminGetMemoryIndexStatus(c *gin.Context)
+	// Trigger one episodic memory indexing cycle
+	// (POST /admin/v1/memory-index/trigger)
+	AdminTriggerMemoryIndex(c *gin.Context)
+	// List episodic memory namespaces across users
+	// (GET /admin/v1/memory-namespaces)
+	AdminListMemoryNamespaces(c *gin.Context, params AdminListMemoryNamespacesParams)
+	// Download active episodic memory policy bundle
+	// (GET /admin/v1/memory-policies)
+	AdminGetMemoryPolicies(c *gin.Context)
+	// Upload episodic memory policy bundle
+	// (PUT /admin/v1/memory-policies)
+	AdminPutMemoryPolicies(c *gin.Context)
+	// Get episodic memory usage for a single key
+	// (GET /admin/v1/memory-usage)
+	AdminGetMemoryUsage(c *gin.Context, params AdminGetMemoryUsageParams)
+	// List top episodic memory usage rows under a namespace prefix
+	// (GET /admin/v1/memory-usage/top)
+	AdminListTopMemoryUsage(c *gin.Context, params AdminListTopMemoryUsageParams)
 	// List all attachments across users (admin/auditor)
 	// (GET /v1/admin/attachments)
 	AdminListAttachments(c *gin.Context, params AdminListAttachmentsParams)
@@ -916,6 +1047,192 @@ type ServerInterfaceWrapper struct {
 
 type MiddlewareFunc func(c *gin.Context)
 
+// AdminListMemories operation middleware
+func (siw *ServerInterfaceWrapper) AdminListMemories(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListMemoriesParams
+
+	// ------------- Optional query parameter "namespacePrefix" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "namespacePrefix", c.Request.URL.Query(), &params.NamespacePrefix)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter namespacePrefix: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "keyPrefix" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "keyPrefix", c.Request.URL.Query(), &params.KeyPrefix)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter keyPrefix: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "archived" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "archived", c.Request.URL.Query(), &params.Archived)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "createdAfter" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "createdAfter", c.Request.URL.Query(), &params.CreatedAfter)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter createdAfter: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "createdBefore" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "createdBefore", c.Request.URL.Query(), &params.CreatedBefore)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter createdBefore: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "expiresBefore" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "expiresBefore", c.Request.URL.Query(), &params.ExpiresBefore)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter expiresBefore: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "includeUsage" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "includeUsage", c.Request.URL.Query(), &params.IncludeUsage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeUsage: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "afterCursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "afterCursor", c.Request.URL.Query(), &params.AfterCursor)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter afterCursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "justification" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "justification", c.Request.URL.Query(), &params.Justification)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter justification: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminListMemories(c, params)
+}
+
+// AdminSearchMemories operation middleware
+func (siw *ServerInterfaceWrapper) AdminSearchMemories(c *gin.Context) {
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminSearchMemories(c)
+}
+
+// AdminDeleteMemory operation middleware
+func (siw *ServerInterfaceWrapper) AdminDeleteMemory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminDeleteMemory(c, id)
+}
+
+// AdminGetMemory operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetMemory(c *gin.Context) {
+
+	var err error
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetMemoryParams
+
+	// ------------- Optional query parameter "includeUsage" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "includeUsage", c.Request.URL.Query(), &params.IncludeUsage)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter includeUsage: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "justification" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "justification", c.Request.URL.Query(), &params.Justification)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter justification: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminGetMemory(c, id, params)
+}
+
 // AdminGetMemoryIndexStatus operation middleware
 func (siw *ServerInterfaceWrapper) AdminGetMemoryIndexStatus(c *gin.Context) {
 
@@ -944,6 +1261,82 @@ func (siw *ServerInterfaceWrapper) AdminTriggerMemoryIndex(c *gin.Context) {
 	}
 
 	siw.Handler.AdminTriggerMemoryIndex(c)
+}
+
+// AdminListMemoryNamespaces operation middleware
+func (siw *ServerInterfaceWrapper) AdminListMemoryNamespaces(c *gin.Context) {
+
+	var err error
+
+	c.Set(BearerAuthScopes, []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminListMemoryNamespacesParams
+
+	// ------------- Optional query parameter "namespacePrefix" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "namespacePrefix", c.Request.URL.Query(), &params.NamespacePrefix)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter namespacePrefix: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "suffix" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "suffix", c.Request.URL.Query(), &params.Suffix)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter suffix: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "maxDepth" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "maxDepth", c.Request.URL.Query(), &params.MaxDepth)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter maxDepth: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "archived" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "archived", c.Request.URL.Query(), &params.Archived)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter archived: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "limit" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "limit", c.Request.URL.Query(), &params.Limit)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter limit: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "afterCursor" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "afterCursor", c.Request.URL.Query(), &params.AfterCursor)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter afterCursor: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	// ------------- Optional query parameter "justification" -------------
+
+	err = runtime.BindQueryParameter("form", true, false, "justification", c.Request.URL.Query(), &params.Justification)
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter justification: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminListMemoryNamespaces(c, params)
 }
 
 // AdminGetMemoryPolicies operation middleware
@@ -1068,32 +1461,6 @@ func (siw *ServerInterfaceWrapper) AdminListTopMemoryUsage(c *gin.Context) {
 	}
 
 	siw.Handler.AdminListTopMemoryUsage(c, params)
-}
-
-// AdminDeleteMemory operation middleware
-func (siw *ServerInterfaceWrapper) AdminDeleteMemory(c *gin.Context) {
-
-	var err error
-
-	// ------------- Path parameter "id" -------------
-	var id openapi_types.UUID
-
-	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{Explode: false, Required: true})
-	if err != nil {
-		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
-		return
-	}
-
-	c.Set(BearerAuthScopes, []string{})
-
-	for _, middleware := range siw.HandlerMiddlewares {
-		middleware(c)
-		if c.IsAborted() {
-			return
-		}
-	}
-
-	siw.Handler.AdminDeleteMemory(c, id)
 }
 
 // AdminListAttachments operation middleware
@@ -2239,13 +2606,17 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 		ErrorHandler:       errorHandler,
 	}
 
-	router.GET(options.BaseURL+"/admin/v1/memories/index/status", wrapper.AdminGetMemoryIndexStatus)
-	router.POST(options.BaseURL+"/admin/v1/memories/index/trigger", wrapper.AdminTriggerMemoryIndex)
-	router.GET(options.BaseURL+"/admin/v1/memories/policies", wrapper.AdminGetMemoryPolicies)
-	router.PUT(options.BaseURL+"/admin/v1/memories/policies", wrapper.AdminPutMemoryPolicies)
-	router.GET(options.BaseURL+"/admin/v1/memories/usage", wrapper.AdminGetMemoryUsage)
-	router.GET(options.BaseURL+"/admin/v1/memories/usage/top", wrapper.AdminListTopMemoryUsage)
+	router.GET(options.BaseURL+"/admin/v1/memories", wrapper.AdminListMemories)
+	router.POST(options.BaseURL+"/admin/v1/memories/search", wrapper.AdminSearchMemories)
 	router.DELETE(options.BaseURL+"/admin/v1/memories/:id", wrapper.AdminDeleteMemory)
+	router.GET(options.BaseURL+"/admin/v1/memories/:id", wrapper.AdminGetMemory)
+	router.GET(options.BaseURL+"/admin/v1/memory-index/status", wrapper.AdminGetMemoryIndexStatus)
+	router.POST(options.BaseURL+"/admin/v1/memory-index/trigger", wrapper.AdminTriggerMemoryIndex)
+	router.GET(options.BaseURL+"/admin/v1/memory-namespaces", wrapper.AdminListMemoryNamespaces)
+	router.GET(options.BaseURL+"/admin/v1/memory-policies", wrapper.AdminGetMemoryPolicies)
+	router.PUT(options.BaseURL+"/admin/v1/memory-policies", wrapper.AdminPutMemoryPolicies)
+	router.GET(options.BaseURL+"/admin/v1/memory-usage", wrapper.AdminGetMemoryUsage)
+	router.GET(options.BaseURL+"/admin/v1/memory-usage/top", wrapper.AdminListTopMemoryUsage)
 	router.GET(options.BaseURL+"/v1/admin/attachments", wrapper.AdminListAttachments)
 	router.DELETE(options.BaseURL+"/v1/admin/attachments/:id", wrapper.AdminDeleteAttachment)
 	router.GET(options.BaseURL+"/v1/admin/attachments/:id", wrapper.AdminGetAttachment)
@@ -2277,6 +2648,131 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 type ErrorJSONResponse ErrorResponse
 
 type NotFoundJSONResponse ErrorResponse
+
+type AdminListMemoriesRequestObject struct {
+	Params AdminListMemoriesParams
+}
+
+type AdminListMemoriesResponseObject interface {
+	VisitAdminListMemoriesResponse(w http.ResponseWriter) error
+}
+
+type AdminListMemories200JSONResponse AdminListMemoriesResponse
+
+func (response AdminListMemories200JSONResponse) VisitAdminListMemoriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminListMemoriesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminListMemoriesdefaultJSONResponse) VisitAdminListMemoriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminSearchMemoriesRequestObject struct {
+	Body *AdminSearchMemoriesJSONRequestBody
+}
+
+type AdminSearchMemoriesResponseObject interface {
+	VisitAdminSearchMemoriesResponse(w http.ResponseWriter) error
+}
+
+type AdminSearchMemories200JSONResponse AdminSearchMemoriesResponse
+
+func (response AdminSearchMemories200JSONResponse) VisitAdminSearchMemoriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminSearchMemoriesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminSearchMemoriesdefaultJSONResponse) VisitAdminSearchMemoriesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminDeleteMemoryRequestObject struct {
+	Id openapi_types.UUID `json:"id"`
+}
+
+type AdminDeleteMemoryResponseObject interface {
+	VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error
+}
+
+type AdminDeleteMemory204Response struct {
+}
+
+func (response AdminDeleteMemory204Response) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
+	w.WriteHeader(204)
+	return nil
+}
+
+type AdminDeleteMemorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminDeleteMemorydefaultJSONResponse) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminGetMemoryRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params AdminGetMemoryParams
+}
+
+type AdminGetMemoryResponseObject interface {
+	VisitAdminGetMemoryResponse(w http.ResponseWriter) error
+}
+
+type AdminGetMemory200JSONResponse AdminMemoryItem
+
+func (response AdminGetMemory200JSONResponse) VisitAdminGetMemoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminGetMemory404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AdminGetMemory404JSONResponse) VisitAdminGetMemoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminGetMemorydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminGetMemorydefaultJSONResponse) VisitAdminGetMemoryResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
 
 type AdminGetMemoryIndexStatusRequestObject struct {
 }
@@ -2328,6 +2824,35 @@ type AdminTriggerMemoryIndexdefaultJSONResponse struct {
 }
 
 func (response AdminTriggerMemoryIndexdefaultJSONResponse) VisitAdminTriggerMemoryIndexResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+
+	return json.NewEncoder(w).Encode(response.Body)
+}
+
+type AdminListMemoryNamespacesRequestObject struct {
+	Params AdminListMemoryNamespacesParams
+}
+
+type AdminListMemoryNamespacesResponseObject interface {
+	VisitAdminListMemoryNamespacesResponse(w http.ResponseWriter) error
+}
+
+type AdminListMemoryNamespaces200JSONResponse AdminListMemoryNamespacesResponse
+
+func (response AdminListMemoryNamespaces200JSONResponse) VisitAdminListMemoryNamespacesResponse(w http.ResponseWriter) error {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+
+	return json.NewEncoder(w).Encode(response)
+}
+
+type AdminListMemoryNamespacesdefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminListMemoryNamespacesdefaultJSONResponse) VisitAdminListMemoryNamespacesResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
@@ -2451,34 +2976,6 @@ type AdminListTopMemoryUsagedefaultJSONResponse struct {
 }
 
 func (response AdminListTopMemoryUsagedefaultJSONResponse) VisitAdminListTopMemoryUsageResponse(w http.ResponseWriter) error {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(response.StatusCode)
-
-	return json.NewEncoder(w).Encode(response.Body)
-}
-
-type AdminDeleteMemoryRequestObject struct {
-	Id openapi_types.UUID `json:"id"`
-}
-
-type AdminDeleteMemoryResponseObject interface {
-	VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error
-}
-
-type AdminDeleteMemory204Response struct {
-}
-
-func (response AdminDeleteMemory204Response) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
-	w.WriteHeader(204)
-	return nil
-}
-
-type AdminDeleteMemorydefaultJSONResponse struct {
-	Body       ErrorResponse
-	StatusCode int
-}
-
-func (response AdminDeleteMemorydefaultJSONResponse) VisitAdminDeleteMemoryResponse(w http.ResponseWriter) error {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(response.StatusCode)
 
@@ -3603,27 +4100,39 @@ func (response GetHealthdefaultJSONResponse) VisitGetHealthResponse(w http.Respo
 
 // StrictServerInterface represents all server handlers.
 type StrictServerInterface interface {
-	// Get episodic memory indexing queue status
-	// (GET /admin/v1/memories/index/status)
-	AdminGetMemoryIndexStatus(ctx context.Context, request AdminGetMemoryIndexStatusRequestObject) (AdminGetMemoryIndexStatusResponseObject, error)
-	// Trigger one episodic memory indexing cycle
-	// (POST /admin/v1/memories/index/trigger)
-	AdminTriggerMemoryIndex(ctx context.Context, request AdminTriggerMemoryIndexRequestObject) (AdminTriggerMemoryIndexResponseObject, error)
-	// Download active episodic memory policy bundle
-	// (GET /admin/v1/memories/policies)
-	AdminGetMemoryPolicies(ctx context.Context, request AdminGetMemoryPoliciesRequestObject) (AdminGetMemoryPoliciesResponseObject, error)
-	// Upload episodic memory policy bundle
-	// (PUT /admin/v1/memories/policies)
-	AdminPutMemoryPolicies(ctx context.Context, request AdminPutMemoryPoliciesRequestObject) (AdminPutMemoryPoliciesResponseObject, error)
-	// Get episodic memory usage for a single key
-	// (GET /admin/v1/memories/usage)
-	AdminGetMemoryUsage(ctx context.Context, request AdminGetMemoryUsageRequestObject) (AdminGetMemoryUsageResponseObject, error)
-	// List top episodic memory usage rows under a namespace prefix
-	// (GET /admin/v1/memories/usage/top)
-	AdminListTopMemoryUsage(ctx context.Context, request AdminListTopMemoryUsageRequestObject) (AdminListTopMemoryUsageResponseObject, error)
+	// List episodic memories across users
+	// (GET /admin/v1/memories)
+	AdminListMemories(ctx context.Context, request AdminListMemoriesRequestObject) (AdminListMemoriesResponseObject, error)
+	// Search episodic memories across users
+	// (POST /admin/v1/memories/search)
+	AdminSearchMemories(ctx context.Context, request AdminSearchMemoriesRequestObject) (AdminSearchMemoriesResponseObject, error)
 	// Force-delete an episodic memory by ID
 	// (DELETE /admin/v1/memories/{id})
 	AdminDeleteMemory(ctx context.Context, request AdminDeleteMemoryRequestObject) (AdminDeleteMemoryResponseObject, error)
+	// Get an episodic memory by ID
+	// (GET /admin/v1/memories/{id})
+	AdminGetMemory(ctx context.Context, request AdminGetMemoryRequestObject) (AdminGetMemoryResponseObject, error)
+	// Get episodic memory indexing queue status
+	// (GET /admin/v1/memory-index/status)
+	AdminGetMemoryIndexStatus(ctx context.Context, request AdminGetMemoryIndexStatusRequestObject) (AdminGetMemoryIndexStatusResponseObject, error)
+	// Trigger one episodic memory indexing cycle
+	// (POST /admin/v1/memory-index/trigger)
+	AdminTriggerMemoryIndex(ctx context.Context, request AdminTriggerMemoryIndexRequestObject) (AdminTriggerMemoryIndexResponseObject, error)
+	// List episodic memory namespaces across users
+	// (GET /admin/v1/memory-namespaces)
+	AdminListMemoryNamespaces(ctx context.Context, request AdminListMemoryNamespacesRequestObject) (AdminListMemoryNamespacesResponseObject, error)
+	// Download active episodic memory policy bundle
+	// (GET /admin/v1/memory-policies)
+	AdminGetMemoryPolicies(ctx context.Context, request AdminGetMemoryPoliciesRequestObject) (AdminGetMemoryPoliciesResponseObject, error)
+	// Upload episodic memory policy bundle
+	// (PUT /admin/v1/memory-policies)
+	AdminPutMemoryPolicies(ctx context.Context, request AdminPutMemoryPoliciesRequestObject) (AdminPutMemoryPoliciesResponseObject, error)
+	// Get episodic memory usage for a single key
+	// (GET /admin/v1/memory-usage)
+	AdminGetMemoryUsage(ctx context.Context, request AdminGetMemoryUsageRequestObject) (AdminGetMemoryUsageResponseObject, error)
+	// List top episodic memory usage rows under a namespace prefix
+	// (GET /admin/v1/memory-usage/top)
+	AdminListTopMemoryUsage(ctx context.Context, request AdminListTopMemoryUsageRequestObject) (AdminListTopMemoryUsageResponseObject, error)
 	// List all attachments across users (admin/auditor)
 	// (GET /v1/admin/attachments)
 	AdminListAttachments(ctx context.Context, request AdminListAttachmentsRequestObject) (AdminListAttachmentsResponseObject, error)
@@ -3716,6 +4225,121 @@ type strictHandler struct {
 	middlewares []StrictMiddlewareFunc
 }
 
+// AdminListMemories operation middleware
+func (sh *strictHandler) AdminListMemories(ctx *gin.Context, params AdminListMemoriesParams) {
+	var request AdminListMemoriesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListMemories(ctx, request.(AdminListMemoriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListMemories")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminListMemoriesResponseObject); ok {
+		if err := validResponse.VisitAdminListMemoriesResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminSearchMemories operation middleware
+func (sh *strictHandler) AdminSearchMemories(ctx *gin.Context) {
+	var request AdminSearchMemoriesRequestObject
+
+	var body AdminSearchMemoriesJSONRequestBody
+	if err := ctx.ShouldBindJSON(&body); err != nil {
+		ctx.Status(http.StatusBadRequest)
+		ctx.Error(err)
+		return
+	}
+	request.Body = &body
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminSearchMemories(ctx, request.(AdminSearchMemoriesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminSearchMemories")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminSearchMemoriesResponseObject); ok {
+		if err := validResponse.VisitAdminSearchMemoriesResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminDeleteMemory operation middleware
+func (sh *strictHandler) AdminDeleteMemory(ctx *gin.Context, id openapi_types.UUID) {
+	var request AdminDeleteMemoryRequestObject
+
+	request.Id = id
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminDeleteMemory(ctx, request.(AdminDeleteMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminDeleteMemory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminDeleteMemoryResponseObject); ok {
+		if err := validResponse.VisitAdminDeleteMemoryResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminGetMemory operation middleware
+func (sh *strictHandler) AdminGetMemory(ctx *gin.Context, id openapi_types.UUID, params AdminGetMemoryParams) {
+	var request AdminGetMemoryRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetMemory(ctx, request.(AdminGetMemoryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetMemory")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminGetMemoryResponseObject); ok {
+		if err := validResponse.VisitAdminGetMemoryResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminGetMemoryIndexStatus operation middleware
 func (sh *strictHandler) AdminGetMemoryIndexStatus(ctx *gin.Context) {
 	var request AdminGetMemoryIndexStatusRequestObject
@@ -3759,6 +4383,33 @@ func (sh *strictHandler) AdminTriggerMemoryIndex(ctx *gin.Context) {
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(AdminTriggerMemoryIndexResponseObject); ok {
 		if err := validResponse.VisitAdminTriggerMemoryIndexResponse(ctx.Writer); err != nil {
+			ctx.Error(err)
+		}
+	} else if response != nil {
+		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
+// AdminListMemoryNamespaces operation middleware
+func (sh *strictHandler) AdminListMemoryNamespaces(ctx *gin.Context, params AdminListMemoryNamespacesParams) {
+	var request AdminListMemoryNamespacesRequestObject
+
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminListMemoryNamespaces(ctx, request.(AdminListMemoryNamespacesRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminListMemoryNamespaces")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		ctx.Error(err)
+		ctx.Status(http.StatusInternalServerError)
+	} else if validResponse, ok := response.(AdminListMemoryNamespacesResponseObject); ok {
+		if err := validResponse.VisitAdminListMemoryNamespacesResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -3871,33 +4522,6 @@ func (sh *strictHandler) AdminListTopMemoryUsage(ctx *gin.Context, params AdminL
 		ctx.Status(http.StatusInternalServerError)
 	} else if validResponse, ok := response.(AdminListTopMemoryUsageResponseObject); ok {
 		if err := validResponse.VisitAdminListTopMemoryUsageResponse(ctx.Writer); err != nil {
-			ctx.Error(err)
-		}
-	} else if response != nil {
-		ctx.Error(fmt.Errorf("unexpected response type: %T", response))
-	}
-}
-
-// AdminDeleteMemory operation middleware
-func (sh *strictHandler) AdminDeleteMemory(ctx *gin.Context, id openapi_types.UUID) {
-	var request AdminDeleteMemoryRequestObject
-
-	request.Id = id
-
-	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
-		return sh.ssi.AdminDeleteMemory(ctx, request.(AdminDeleteMemoryRequestObject))
-	}
-	for _, middleware := range sh.middlewares {
-		handler = middleware(handler, "AdminDeleteMemory")
-	}
-
-	response, err := handler(ctx, request)
-
-	if err != nil {
-		ctx.Error(err)
-		ctx.Status(http.StatusInternalServerError)
-	} else if validResponse, ok := response.(AdminDeleteMemoryResponseObject); ok {
-		if err := validResponse.VisitAdminDeleteMemoryResponse(ctx.Writer); err != nil {
 			ctx.Error(err)
 		}
 	} else if response != nil {
@@ -4654,144 +5278,152 @@ func (sh *strictHandler) GetHealth(ctx *gin.Context) {
 // Base64 encoded, gzipped, json marshaled Swagger object
 var swaggerSpec = []string{
 
-	"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",
-	"AAAA///Etw8zGcQAAA==",
+	"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",
 }
 
 // GetSwagger returns the content of the embedded swagger specification file

@@ -181,7 +181,7 @@ memories = await store.asearch(
 )
 ```
 
-Semantic search requires the background vector indexer to have processed the memories first. The indexer polls every 30 seconds by default; the admin endpoint `POST /admin/v1/memories/index/trigger` forces an immediate cycle.
+Semantic search requires the background vector indexer to have processed the memories first. The indexer polls every 30 seconds by default; the admin endpoint `POST /admin/v1/memory-index/trigger` forces an immediate cycle.
 
 ## Next Steps
 

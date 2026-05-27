@@ -38,7 +38,182 @@ paths:
         default:
           $ref: '#/components/responses/Error'
 
-  /admin/v1/memories/policies:
+  /admin/v1/memories:
+    get:
+      tags: [Admin]
+      summary: List episodic memories across users
+      description: Lists latest memory rows across users for admin/auditor exploration. Does not increment usage counters.
+      operationId: adminListMemories
+      parameters:
+        - name: namespacePrefix
+          in: query
+          required: false
+          description: Namespace prefix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: keyPrefix
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [exclude, include, only]
+            default: exclude
+        - name: createdAfter
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: createdBefore
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: expiresBefore
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date-time
+        - name: includeUsage
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 200
+            default: 50
+        - name: afterCursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of memory items.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminListMemoriesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memories/search:
+    post:
+      tags: [Admin]
+      summary: Search episodic memories across users
+      description: Searches latest memory rows across users for admin/auditor exploration. Does not increment usage counters.
+      operationId: adminSearchMemories
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AdminSearchMemoriesRequest'
+      responses:
+        '200':
+          description: Search results.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminSearchMemoriesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memory-namespaces:
+    get:
+      tags: [Admin]
+      summary: List episodic memory namespaces across users
+      operationId: adminListMemoryNamespaces
+      parameters:
+        - name: namespacePrefix
+          in: query
+          required: false
+          description: Namespace prefix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: suffix
+          in: query
+          required: false
+          description: Namespace suffix segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: maxDepth
+          in: query
+          required: false
+          schema:
+            type: integer
+        - name: archived
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [exclude, include, only]
+            default: exclude
+        - name: limit
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 200
+        - name: afterCursor
+          in: query
+          required: false
+          schema:
+            type: string
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Page of namespaces.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminListMemoryNamespacesResponse'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
+  /admin/v1/memory-policies:
     get:
       tags: [Admin]
       summary: Download active episodic memory policy bundle
@@ -75,6 +250,42 @@ paths:
         - BearerAuth: []
 
   /admin/v1/memories/{id}:
+    get:
+      tags: [Admin]
+      summary: Get an episodic memory by ID
+      operationId: adminGetMemory
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Memory identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: includeUsage
+          in: query
+          required: false
+          schema:
+            type: boolean
+            default: false
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Memory item.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AdminMemoryItem'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
     delete:
       tags: [Admin]
       summary: Force-delete an episodic memory by ID
@@ -95,7 +306,7 @@ paths:
       security:
         - BearerAuth: []
 
-  /admin/v1/memories/index/status:
+  /admin/v1/memory-index/status:
     get:
       tags: [Admin]
       summary: Get episodic memory indexing queue status
@@ -112,7 +323,7 @@ paths:
       security:
         - BearerAuth: []
 
-  /admin/v1/memories/index/trigger:
+  /admin/v1/memory-index/trigger:
     post:
       tags: [Admin]
       summary: Trigger one episodic memory indexing cycle
@@ -129,7 +340,7 @@ paths:
       security:
         - BearerAuth: []
 
-  /admin/v1/memories/usage:
+  /admin/v1/memory-usage:
     get:
       tags: [Admin]
       summary: Get episodic memory usage for a single key
@@ -164,7 +375,7 @@ paths:
       security:
         - BearerAuth: []
 
-  /admin/v1/memories/usage/top:
+  /admin/v1/memory-usage/top:
     get:
       tags: [Admin]
       summary: List top episodic memory usage rows under a namespace prefix
@@ -1519,6 +1730,117 @@ components:
           type: string
         value:
           description: Processor-defined JSON payload to persist for this client checkpoint. Stored encrypted at rest.
+
+    AdminMemoryItem:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        value:
+          type: object
+          additionalProperties: true
+          nullable: true
+        attributes:
+          type: object
+          additionalProperties: true
+        score:
+          type: number
+          format: double
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        archivedAt:
+          type: string
+          format: date-time
+          nullable: true
+        archived:
+          type: boolean
+        revision:
+          type: integer
+          format: int64
+        usage:
+          allOf:
+            - $ref: '#/components/schemas/MemoryUsageResponse'
+          nullable: true
+
+    AdminListMemoriesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminMemoryItem'
+        afterCursor:
+          type: string
+          nullable: true
+
+    AdminSearchMemoriesRequest:
+      type: object
+      properties:
+        namespace_prefix:
+          type: array
+          items:
+            type: string
+        key_prefix:
+          type: string
+        query:
+          type: string
+        filter:
+          type: object
+          additionalProperties: true
+        archived:
+          type: string
+          enum: [exclude, include, only]
+          default: exclude
+        include_usage:
+          type: boolean
+          default: false
+        limit:
+          type: integer
+          minimum: 1
+          maximum: 100
+        justification:
+          type: string
+        as_user_id:
+          type: string
+
+    AdminSearchMemoriesResponse:
+      type: object
+      properties:
+        items:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminMemoryItem'
+
+    AdminMemoryNamespace:
+      type: object
+      properties:
+        segments:
+          type: array
+          items:
+            type: string
+
+    AdminListMemoryNamespacesResponse:
+      type: object
+      properties:
+        namespaces:
+          type: array
+          items:
+            $ref: '#/components/schemas/AdminMemoryNamespace'
+        afterCursor:
+          type: string
+          nullable: true
 
     MemoryPolicyBundle:
       type: object

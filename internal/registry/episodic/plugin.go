@@ -105,6 +105,47 @@ type ListTopMemoryUsageRequest struct {
 	Limit  int
 }
 
+type AdminMemoryQuery struct {
+	NamespacePrefix []string
+	KeyPrefix       string
+	Archived        ArchiveFilter
+	CreatedAfter    *time.Time
+	CreatedBefore   *time.Time
+	ExpiresBefore   *time.Time
+	IncludeUsage    bool
+	Limit           int
+	AfterCursor     string
+}
+
+type AdminMemorySearchQuery struct {
+	NamespacePrefix []string
+	KeyPrefix       string
+	Query           string
+	Filter          AttributeFilter
+	Archived        ArchiveFilter
+	IncludeUsage    bool
+	Limit           int
+}
+
+type AdminMemoryPage struct {
+	Items       []MemoryItem
+	AfterCursor string
+}
+
+type AdminNamespaceQuery struct {
+	NamespacePrefix []string
+	Suffix          []string
+	MaxDepth        int
+	Archived        ArchiveFilter
+	Limit           int
+	AfterCursor     string
+}
+
+type AdminNamespacePage struct {
+	Namespaces  [][]string
+	AfterCursor string
+}
+
 // MemoryWriteResult is returned by PutMemory (value omitted for security).
 type MemoryWriteResult struct {
 	ID         uuid.UUID              `json:"id"`
@@ -532,8 +573,17 @@ type EpisodicStore interface {
 
 	// --- Admin ---
 
+	// AdminListMemories retrieves latest memory rows across users without policy injection.
+	AdminListMemories(ctx context.Context, query AdminMemoryQuery) (AdminMemoryPage, error)
+
 	// AdminGetMemoryByID retrieves any memory (active or archived) by UUID.
 	AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*MemoryItem, error)
+
+	// AdminSearchMemories retrieves latest matching memory rows across users without policy injection.
+	AdminSearchMemories(ctx context.Context, query AdminMemorySearchQuery) ([]MemoryItem, error)
+
+	// AdminListNamespaces retrieves memory namespaces across users without policy injection.
+	AdminListNamespaces(ctx context.Context, query AdminNamespaceQuery) (AdminNamespacePage, error)
 
 	// AdminForceDeleteMemory hard-deletes a memory by UUID regardless of state.
 	AdminForceDeleteMemory(ctx context.Context, memoryID uuid.UUID) error

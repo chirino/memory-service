@@ -546,21 +546,10 @@ message MemoryUsage {
   google.protobuf.Timestamp last_fetched_at = 2;
 }
 
-message GetMemoryUsageRequest {
-  repeated string namespace = 1;
-  string key = 2;
-}
-
 enum MemoryUsageSort {
   MEMORY_USAGE_SORT_UNSPECIFIED = 0;
   FETCH_COUNT = 1;
   LAST_FETCHED_AT = 2;
-}
-
-message ListTopMemoryUsageRequest {
-  repeated string prefix = 1;
-  MemoryUsageSort sort = 2;
-  int32 limit = 3;
 }
 
 message TopMemoryUsageItem {
@@ -571,6 +560,98 @@ message TopMemoryUsageItem {
 
 message ListTopMemoryUsageResponse {
   repeated TopMemoryUsageItem items = 1;
+}
+
+message AdminListMemoriesRequest {
+  repeated string namespace_prefix = 1;
+  optional string key_prefix = 2;
+  ArchiveFilter archived = 3;
+  optional google.protobuf.Timestamp created_after = 4;
+  optional google.protobuf.Timestamp created_before = 5;
+  optional google.protobuf.Timestamp expires_before = 6;
+  bool include_usage = 7;
+  int32 limit = 8;
+  optional string after_cursor = 9;
+  optional string justification = 10;
+}
+
+message AdminGetMemoryRequest {
+  bytes id = 1;
+  bool include_usage = 2;
+  optional string justification = 3;
+}
+
+message AdminDeleteMemoryRequest {
+  bytes id = 1;
+  optional string justification = 2;
+}
+
+message AdminGetMemoryUsageRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  optional string justification = 3;
+}
+
+message AdminListTopMemoryUsageRequest {
+  repeated string prefix = 1;
+  MemoryUsageSort sort = 2;
+  int32 limit = 3;
+  optional string justification = 4;
+}
+
+message AdminGetMemoryIndexStatusRequest {
+  optional string justification = 1;
+}
+
+message AdminSearchMemoriesRequest {
+  repeated string namespace_prefix = 1;
+  optional string key_prefix = 2;
+  string query = 3;
+  optional google.protobuf.Struct filter = 4;
+  ArchiveFilter archived = 5;
+  bool include_usage = 6;
+  int32 limit = 7;
+  optional string justification = 8;
+  optional string as_user_id = 9;
+}
+
+message AdminListMemoryNamespacesRequest {
+  repeated string namespace_prefix = 1;
+  repeated string suffix = 2;
+  int32 max_depth = 3;
+  ArchiveFilter archived = 4;
+  int32 limit = 5;
+  optional string after_cursor = 6;
+  optional string justification = 7;
+}
+
+message AdminMemoryItem {
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  google.protobuf.Struct value = 4;
+  optional google.protobuf.Struct attributes = 5;
+  optional double score = 6;
+  google.protobuf.Timestamp created_at = 7;
+  optional google.protobuf.Timestamp expires_at = 8;
+  optional google.protobuf.Timestamp archived_at = 9;
+  bool archived = 10;
+  optional MemoryUsage usage = 11;
+  int64 revision = 12;
+}
+
+message AdminListMemoriesResponse {
+  repeated AdminMemoryItem items = 1;
+  optional string after_cursor = 2;
+}
+
+message AdminSearchMemoriesResponse {
+  repeated AdminMemoryItem items = 1;
+}
+
+message AdminListMemoryNamespacesResponse {
+  repeated MemoryNamespace namespaces = 1;
+  optional string after_cursor = 2;
 }
 
 message HealthResponse {
@@ -677,12 +758,17 @@ service MemoriesService {
   rpc UpdateMemory(UpdateMemoryRequest) returns (google.protobuf.Empty);
   rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse);
   rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
-  // Admin-only: returns count of memories with pending index synchronization.
-  rpc GetMemoryIndexStatus(google.protobuf.Empty) returns (MemoryIndexStatusResponse);
-  // Admin-only: returns usage stats for one memory key.
-  rpc GetMemoryUsage(GetMemoryUsageRequest) returns (MemoryUsage);
-  // Admin-only: returns ranked memory usage rows.
-  rpc ListTopMemoryUsage(ListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
+}
+
+service AdminMemoriesService {
+  rpc ListMemories(AdminListMemoriesRequest) returns (AdminListMemoriesResponse);
+  rpc GetMemory(AdminGetMemoryRequest) returns (AdminMemoryItem);
+  rpc SearchMemories(AdminSearchMemoriesRequest) returns (AdminSearchMemoriesResponse);
+  rpc ListNamespaces(AdminListMemoryNamespacesRequest) returns (AdminListMemoryNamespacesResponse);
+  rpc DeleteMemory(AdminDeleteMemoryRequest) returns (google.protobuf.Empty);
+  rpc GetMemoryUsage(AdminGetMemoryUsageRequest) returns (MemoryUsage);
+  rpc ListTopMemoryUsage(AdminListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
+  rpc GetMemoryIndexStatus(AdminGetMemoryIndexStatusRequest) returns (MemoryIndexStatusResponse);
 }
 
 service ResponseRecorderService {

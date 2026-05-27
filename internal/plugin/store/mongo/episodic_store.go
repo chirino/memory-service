@@ -237,6 +237,15 @@ type memoryUsageDoc struct {
 	LastFetchedAt time.Time `bson:"last_fetched_at"`
 }
 
+type adminMemoryCursor struct {
+	CreatedAt time.Time `json:"createdAt"`
+	ID        string    `json:"id"`
+}
+
+type adminOffsetCursor struct {
+	Offset int `json:"offset"`
+}
+
 func (s *mongoEpisodicStore) encrypt(plaintext []byte) ([]byte, error) {
 	if s.enc == nil || plaintext == nil {
 		return plaintext, nil
@@ -782,7 +791,10 @@ func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespaceP
 	if limit <= 0 || len(embedding) == 0 {
 		return nil, nil
 	}
-	f := nsPrefixFilter(namespacePrefix)
+	f := bson.M{}
+	if namespacePrefix != "" {
+		f = nsPrefixFilter(namespacePrefix)
+	}
 	applyMongoFilter(f, filter)
 	switch archived {
 	case registryepisodic.ArchiveFilterOnly:
@@ -1322,6 +1334,224 @@ func (s *mongoEpisodicStore) AdminForceDeleteMemory(ctx context.Context, memoryI
 // AdminCountPendingIndexing returns the number of memories with indexed_at absent.
 func (s *mongoEpisodicStore) AdminCountPendingIndexing(ctx context.Context) (int64, error) {
 	return s.col.CountDocuments(ctx, bson.M{"indexed_at": bson.M{"$exists": false}})
+}
+
+// AdminListMemories retrieves latest memory rows across users without policy injection.
+func (s *mongoEpisodicStore) AdminListMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 50
+	}
+	if limit > 200 {
+		limit = 200
+	}
+	pipeline, err := adminLatestMemoryPipeline(query.NamespacePrefix)
+	if err != nil {
+		return registryepisodic.AdminMemoryPage{}, err
+	}
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: mongoMemoryArchiveMatch(query.Archived)}})
+	match := bson.M{}
+	if query.KeyPrefix != "" {
+		match["key"] = bson.M{"$regex": "^" + regexp.QuoteMeta(query.KeyPrefix)}
+	}
+	if query.CreatedAfter != nil || query.CreatedBefore != nil {
+		created := bson.M{}
+		if query.CreatedAfter != nil {
+			created["$gte"] = *query.CreatedAfter
+		}
+		if query.CreatedBefore != nil {
+			created["$lte"] = *query.CreatedBefore
+		}
+		match["created_at"] = created
+	}
+	if query.ExpiresBefore != nil {
+		match["expires_at"] = bson.M{"$exists": true, "$lte": *query.ExpiresBefore}
+	}
+	if query.AfterCursor != "" {
+		if cur, ok := decodeAdminMemoryCursor(query.AfterCursor); ok {
+			match["$or"] = bson.A{
+				bson.M{"created_at": bson.M{"$lt": cur.CreatedAt}},
+				bson.M{"created_at": cur.CreatedAt, "_id": bson.M{"$lt": cur.ID}},
+			}
+		}
+	}
+	if len(match) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
+	}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		bson.D{{Key: "$limit", Value: int64(limit + 1)}},
+	)
+	cursor, err := s.col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return registryepisodic.AdminMemoryPage{}, fmt.Errorf("admin list memories: %w", err)
+	}
+	defer cursor.Close(ctx)
+	var docs []memoryDoc
+	if err := cursor.All(ctx, &docs); err != nil {
+		return registryepisodic.AdminMemoryPage{}, fmt.Errorf("admin list memories: %w", err)
+	}
+	return s.adminDocsToPage(docs, limit)
+}
+
+// AdminSearchMemories retrieves latest matching memory rows across users without policy injection.
+func (s *mongoEpisodicStore) AdminSearchMemories(ctx context.Context, query registryepisodic.AdminMemorySearchQuery) ([]registryepisodic.MemoryItem, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 10
+	}
+	if limit > 100 {
+		limit = 100
+	}
+	pipeline, err := adminLatestMemoryPipeline(query.NamespacePrefix)
+	if err != nil {
+		return nil, err
+	}
+	pipeline = append(pipeline, bson.D{{Key: "$match", Value: mongoMemoryArchiveMatch(query.Archived)}})
+	match := bson.M{}
+	if query.KeyPrefix != "" {
+		match["key"] = bson.M{"$regex": "^" + regexp.QuoteMeta(query.KeyPrefix)}
+	}
+	if !query.Filter.Empty() {
+		applyMongoFilter(match, query.Filter)
+	}
+	if len(match) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: match}})
+	}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		bson.D{{Key: "$limit", Value: int64(limit)}},
+	)
+	cursor, err := s.col.Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("admin search memories: %w", err)
+	}
+	defer cursor.Close(ctx)
+	items := []registryepisodic.MemoryItem{}
+	for cursor.Next(ctx) {
+		var doc memoryDoc
+		if err := cursor.Decode(&doc); err != nil {
+			log.Warn("Failed to decode memory doc", "err", err)
+			continue
+		}
+		ns, _ := episodic.DecodeNamespace(doc.Namespace)
+		item, err := s.docToItem(doc, ns)
+		if err != nil {
+			log.Warn("Failed to decrypt memory", "id", doc.ID, "err", err)
+			continue
+		}
+		items = append(items, *item)
+	}
+	return items, cursor.Err()
+}
+
+// AdminListNamespaces retrieves memory namespaces across users without policy injection.
+func (s *mongoEpisodicStore) AdminListNamespaces(ctx context.Context, query registryepisodic.AdminNamespaceQuery) (registryepisodic.AdminNamespacePage, error) {
+	limit := query.Limit
+	if limit <= 0 {
+		limit = 200
+	}
+	if limit > 1000 {
+		limit = 1000
+	}
+	offset := decodeAdminOffsetCursor(query.AfterCursor)
+	namespaces, err := s.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
+		Prefix:   query.NamespacePrefix,
+		Suffix:   query.Suffix,
+		MaxDepth: query.MaxDepth,
+		Archived: query.Archived,
+	})
+	if err != nil {
+		return registryepisodic.AdminNamespacePage{}, err
+	}
+	if offset > len(namespaces) {
+		offset = len(namespaces)
+	}
+	end := offset + limit
+	if end > len(namespaces) {
+		end = len(namespaces)
+	}
+	page := registryepisodic.AdminNamespacePage{Namespaces: namespaces[offset:end]}
+	if end < len(namespaces) {
+		page.AfterCursor = encodeAdminOffsetCursor(end)
+	}
+	return page, nil
+}
+
+func adminLatestMemoryPipeline(namespacePrefix []string) (mongo.Pipeline, error) {
+	pipeline := mongo.Pipeline{}
+	if len(namespacePrefix) > 0 {
+		nsEncoded, err := encodeNS(namespacePrefix)
+		if err != nil {
+			return nil, err
+		}
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: nsPrefixFilter(nsEncoded)}})
+	}
+	pipeline = append(pipeline,
+		bson.D{{Key: "$sort", Value: bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: bson.D{{Key: "namespace", Value: "$namespace"}, {Key: "key", Value: "$key"}}},
+			{Key: "doc", Value: bson.D{{Key: "$first", Value: "$$ROOT"}}},
+		}}},
+		bson.D{{Key: "$replaceRoot", Value: bson.D{{Key: "newRoot", Value: "$doc"}}}},
+	)
+	return pipeline, nil
+}
+
+func (s *mongoEpisodicStore) adminDocsToPage(docs []memoryDoc, limit int) (registryepisodic.AdminMemoryPage, error) {
+	page := registryepisodic.AdminMemoryPage{}
+	if len(docs) > limit {
+		next := docs[limit-1]
+		page.AfterCursor = encodeAdminMemoryCursor(adminMemoryCursor{CreatedAt: next.CreatedAt, ID: next.ID})
+		docs = docs[:limit]
+	}
+	for _, doc := range docs {
+		ns, _ := episodic.DecodeNamespace(doc.Namespace)
+		item, err := s.docToItem(doc, ns)
+		if err != nil {
+			log.Warn("Failed to decrypt memory", "id", doc.ID, "err", err)
+			continue
+		}
+		page.Items = append(page.Items, *item)
+	}
+	return page, nil
+}
+
+func encodeAdminMemoryCursor(cur adminMemoryCursor) string {
+	raw, _ := json.Marshal(cur)
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func decodeAdminMemoryCursor(cursor string) (adminMemoryCursor, bool) {
+	raw, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return adminMemoryCursor{}, false
+	}
+	var cur adminMemoryCursor
+	if err := json.Unmarshal(raw, &cur); err != nil {
+		return adminMemoryCursor{}, false
+	}
+	return cur, !cur.CreatedAt.IsZero() && cur.ID != ""
+}
+
+func encodeAdminOffsetCursor(offset int) string {
+	raw, _ := json.Marshal(adminOffsetCursor{Offset: offset})
+	return base64.StdEncoding.EncodeToString(raw)
+}
+
+func decodeAdminOffsetCursor(cursor string) int {
+	if cursor == "" {
+		return 0
+	}
+	raw, err := base64.StdEncoding.DecodeString(cursor)
+	if err != nil {
+		return 0
+	}
+	var cur adminOffsetCursor
+	if err := json.Unmarshal(raw, &cur); err != nil || cur.Offset < 0 {
+		return 0
+	}
+	return cur.Offset
 }
 
 // docToItem converts a memoryDoc to a MemoryItem by decrypting value.

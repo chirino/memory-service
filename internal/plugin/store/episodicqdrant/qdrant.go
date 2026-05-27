@@ -135,8 +135,10 @@ func (c *Client) SearchMemoryVectors(ctx context.Context, namespacePrefix string
 
 	must := []*pb.Condition{
 		matchKeywordCondition("kind", "memory"),
+	}
+	if namespacePrefix != "" {
 		// Qdrant matches keyword against array elements, so this enforces prefix by exact ancestor match.
-		matchKeywordCondition("namespace_ancestors", namespacePrefix),
+		must = append(must, matchKeywordCondition("namespace_ancestors", namespacePrefix))
 	}
 	switch archived {
 	case registryepisodic.ArchiveFilterExclude:

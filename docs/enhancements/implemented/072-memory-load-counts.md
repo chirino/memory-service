@@ -169,8 +169,8 @@ When `include_usage=false` or omitted, behavior stays unchanged.
 
 Add admin-only endpoints for direct usage retrieval and ranking:
 
-- `GET /admin/v1/memories/usage?ns=...&key=...`
-- `GET /admin/v1/memories/usage/top?prefix=...&sort=fetch_count|last_fetched_at&limit=...`
+- `GET /admin/v1/memory-usage?ns=...&key=...`
+- `GET /admin/v1/memory-usage/top?prefix=...&sort=fetch_count|last_fetched_at&limit=...`
 
 `top` is for analytics/reporting and does not change agent read-path behavior.
 
@@ -185,8 +185,8 @@ Add matching fields/methods in `memory/v1/memory_service.proto`:
 3. `SearchMemoriesRequest.include_usage` (bool)
 4. `MemoryItem.usage` (optional `MemoryUsage`)
 5. Admin RPCs:
-   - `GetMemoryUsage(GetMemoryUsageRequest) returns (MemoryUsage)`
-   - `ListTopMemoryUsage(ListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse)`
+   - `AdminMemoriesService.GetMemoryUsage(AdminGetMemoryUsageRequest) returns (MemoryUsage)`
+   - `AdminMemoriesService.ListTopMemoryUsage(AdminListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse)`
 
 #### 5.4 Ranking Follow-up
 
@@ -238,9 +238,9 @@ Scenario: gRPC SearchMemories returns usage when include_usage=true
 
 Scenario: Admin usage endpoints return direct usage and top usage rankings
   Given usage stats exist for multiple keys
-  When I GET "/admin/v1/memories/usage?ns=user&ns=alice&ns=notes&key=k1"
+  When I GET "/admin/v1/memory-usage?ns=user&ns=alice&ns=notes&key=k1"
   Then the response should include fetchCount and lastFetchedAt
-  When I GET "/admin/v1/memories/usage/top?prefix=user&prefix=alice&sort=fetch_count&limit=2"
+  When I GET "/admin/v1/memory-usage/top?prefix=user&prefix=alice&sort=fetch_count&limit=2"
   Then the response should contain at most 2 ranked items
 ```
 
@@ -280,7 +280,7 @@ Unit tests:
 | `internal/plugin/store/postgres/db/schema.sql` | Add `memory_usage_stats` table and indexes |
 | `internal/plugin/store/postgres/episodic_store.go` | Implement Postgres increment logic |
 | `internal/plugin/store/mongo/episodic_store.go` | Create indexes and implement Mongo increment logic |
-| `internal/plugin/route/memories/memories.go` | Increment counters on REST `getMemory` responses only and add admin usage endpoints under `/admin/v1/memories/usage*` |
+| `internal/plugin/route/memories/memories.go` | Increment counters on REST `getMemory` responses only and add admin usage endpoints under `/admin/v1/memory-usage*` |
 | `internal/grpc/server.go` | Increment counters on gRPC `GetMemory` responses only |
 | `internal/generated/api/*.go` | Regenerate REST models/handlers from updated OpenAPI |
 | `internal/generated/admin/*.go` | Regenerate admin REST models/handlers from updated OpenAPI |

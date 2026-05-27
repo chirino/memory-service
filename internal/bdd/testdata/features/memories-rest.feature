@@ -317,7 +317,7 @@ Feature: Episodic Memory REST API
     Then the response status should be 200
     And the response body field "items.0.usage.fetchCount" should be "1"
     When I am authenticated as admin user "alice"
-    And I call GET "/admin/v1/memories/usage?ns=user&ns=alice&ns=usage&key=k2"
+    And I call GET "/admin/v1/memory-usage?ns=user&ns=alice&ns=usage&key=k2"
     Then the response status should be 200
     And the response body field "fetchCount" should be "1"
 
@@ -345,7 +345,7 @@ Feature: Episodic Memory REST API
     And I call GET "/v1/memories?ns=user&ns=alice&ns=usage-top&key=k-low"
     And the response status should be 200
     When I am authenticated as admin user "alice"
-    And I call GET "/admin/v1/memories/usage/top?prefix=user&prefix=alice&prefix=usage-top&sort=fetch_count&limit=1"
+    And I call GET "/admin/v1/memory-usage/top?prefix=user&prefix=alice&prefix=usage-top&sort=fetch_count&limit=1"
     Then the response status should be 200
     And the response body field "items.0.key" should be "k-top"
 
@@ -389,13 +389,13 @@ Feature: Episodic Memory REST API
 
   Scenario: Admin index status endpoint returns pending count
     When I am authenticated as admin user "alice"
-    And I call GET "/admin/v1/memories/index/status"
+    And I call GET "/admin/v1/memory-index/status"
     Then the response status should be 200
     And the response body field "pending" should not be null
 
   Scenario: Admin can trigger one memory index cycle
     When I am authenticated as admin user "alice"
-    And I call POST "/admin/v1/memories/index/trigger" with body:
+    And I call POST "/admin/v1/memory-index/trigger" with body:
     """
     {}
     """
@@ -495,12 +495,12 @@ Feature: Episodic Memory REST API
 
   Scenario: Admin can download and upload episodic policy bundle
     When I am authenticated as admin user "alice"
-    And I call GET "/admin/v1/memories/policies"
+    And I call GET "/admin/v1/memory-policies"
     Then the response status should be 200
     And the response body field "authz" should not be null
     And the response body field "attributes" should not be null
     And the response body field "filter" should not be null
-    When I call PUT "/admin/v1/memories/policies" with body:
+    When I call PUT "/admin/v1/memory-policies" with body:
     """
     {
       "authz": "package memories.authz\nimport future.keywords.if\ndefault decision = {\"allow\": false, \"reason\": \"access denied\"}\ndecision = {\"allow\": true} if { input.namespace[0] == \"user\"; input.namespace[1] == input.context.user_id }",
@@ -509,3 +509,73 @@ Feature: Episodic Memory REST API
     }
     """
     Then the response status should be 204
+
+  Scenario: Auditor can list and get memories across users
+    Given I am authenticated as user "alice"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "admin-explore"],
+      "key": "alice-theme",
+      "value": { "color": "dark" }
+    }
+    """
+    And the response status should be 200
+    And set "adminMemoryId" to the json response field "id"
+    And I am authenticated as user "bob"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "bob", "admin-explore"],
+      "key": "bob-timezone",
+      "value": { "zone": "UTC" }
+    }
+    """
+    And the response status should be 200
+    When I am authenticated as auditor user "charlie"
+    And I call GET "/admin/v1/memories?namespacePrefix=user&namespacePrefix=alice&namespacePrefix=admin-explore&limit=10"
+    Then the response status should be 200
+    And the response body should contain "alice-theme"
+    When I call GET "/admin/v1/memories/${adminMemoryId}"
+    Then the response status should be 200
+    And the response body field "value.color" should be "dark"
+    When I call GET "/admin/v1/memories?namespacePrefix=user&namespacePrefix=bob&namespacePrefix=admin-explore&limit=10"
+    Then the response status should be 200
+    And the response body should contain "bob-timezone"
+
+  Scenario: Auditor can search as a target user but cannot delete memories
+    Given I am authenticated as user "alice"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "admin-as-user"],
+      "key": "alice-note",
+      "value": { "kind": "note", "owner": "alice" }
+    }
+    """
+    And the response status should be 200
+    And set "auditorDeleteMemoryId" to the json response field "id"
+    And I am authenticated as user "bob"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "bob", "admin-as-user"],
+      "key": "bob-note",
+      "value": { "kind": "note", "owner": "bob" }
+    }
+    """
+    And the response status should be 200
+    When I am authenticated as auditor user "charlie"
+    And I call POST "/admin/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user"],
+      "as_user_id": "bob",
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body should contain "bob-note"
+    And the response body should not contain "alice-note"
+    When I call DELETE "/admin/v1/memories/${auditorDeleteMemoryId}"
+    Then the response status should be 403

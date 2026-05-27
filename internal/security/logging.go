@@ -40,7 +40,8 @@ func AccessLogMiddleware(skipPaths ...string) gin.HandlerFunc {
 // via query param (?justification=...) or X-Justification header.
 func AdminAuditMiddleware(requireJustification bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
-		if strings.HasPrefix(c.Request.URL.Path, "/v1/admin") {
+		isAdminPath := strings.HasPrefix(c.Request.URL.Path, "/v1/admin") || strings.HasPrefix(c.Request.URL.Path, "/admin/v1")
+		if isAdminPath {
 			justification := c.Query("justification")
 			if justification == "" {
 				justification = c.GetHeader("X-Justification")
@@ -53,7 +54,7 @@ func AdminAuditMiddleware(requireJustification bool) gin.HandlerFunc {
 
 		c.Next()
 
-		if strings.HasPrefix(c.Request.URL.Path, "/v1/admin") {
+		if isAdminPath {
 			justification := c.Query("justification")
 			if justification == "" {
 				justification = c.GetHeader("X-Justification")
