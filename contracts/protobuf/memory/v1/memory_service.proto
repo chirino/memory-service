@@ -282,6 +282,67 @@ message AdminListEntriesRequest {
   optional bytes up_to_entry_id = 6;
 }
 
+message AdminGetConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+}
+
+message AdminListConversationsRequest {
+  PageRequest page = 1;
+  // Optional: filter by owner user ID
+  optional string owner_user_id = 2;
+  // Optional: filter by client ID
+  optional string client_id = 3;
+  // Optional: filter by agent ID
+  optional string agent_id = 4;
+  // Optional: archive filter (exclude, include, only)
+  optional ArchiveFilter archived = 5;
+  // Optional: conversation list mode (all, roots, latest_fork)
+  optional ConversationListMode mode = 6;
+  // Optional: conversation ancestry filter (roots, children, all)
+  optional ConversationAncestryFilter ancestry = 7;
+}
+
+message AdminListConversationsResponse {
+  repeated ConversationSummary conversations = 1;
+  PageInfo page_info = 2;
+}
+
+message AdminUpdateConversationRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  // Set archive state (true = archive, false = restore)
+  optional bool archived = 2;
+}
+
+message AdminListMembershipsRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message AdminListForksRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message AdminListForksResponse {
+  repeated ConversationForkSummary forks = 1;
+  PageInfo page_info = 2;
+}
+
+message AdminListChildConversationsRequest {
+  // Conversation identifier (UUID as 16-byte big-endian binary)
+  bytes conversation_id = 1;
+  PageRequest page = 2;
+}
+
+message AdminListChildConversationsResponse {
+  repeated ChildConversationSummary children = 1;
+  PageInfo page_info = 2;
+}
+
 message Entry {
   // Unique identifier (UUID as 16-byte big-endian binary)
   bytes id = 1;
@@ -742,6 +803,32 @@ service EntriesService {
 
 service AdminEntriesService {
   rpc ListEntries(AdminListEntriesRequest) returns (ListEntriesResponse);
+}
+
+service AdminConversationsService {
+  // Get any conversation by ID (bypasses membership check).
+  // Requires admin or auditor role.
+  rpc GetConversation(AdminGetConversationRequest) returns (Conversation);
+
+  // List conversations with admin filters (cross-user access).
+  // Requires admin or auditor role.
+  rpc ListConversations(AdminListConversationsRequest) returns (AdminListConversationsResponse);
+
+  // Update conversation archive state.
+  // Requires admin role (not auditor - write operation).
+  rpc UpdateConversation(AdminUpdateConversationRequest) returns (Conversation);
+
+  // List conversation memberships (any conversation).
+  // Requires admin or auditor role.
+  rpc ListMemberships(AdminListMembershipsRequest) returns (ListMembershipsResponse);
+
+  // List conversation forks (any conversation).
+  // Requires admin or auditor role.
+  rpc ListForks(AdminListForksRequest) returns (AdminListForksResponse);
+
+  // List child conversations (any conversation).
+  // Requires admin or auditor role.
+  rpc ListChildConversations(AdminListChildConversationsRequest) returns (AdminListChildConversationsResponse);
 }
 
 service SearchService {

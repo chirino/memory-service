@@ -1111,6 +1111,305 @@ class AdminEntriesService(object):
             _registered_method=True)
 
 
+class AdminConversationsServiceStub(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def __init__(self, channel):
+        """Constructor.
+
+        Args:
+            channel: A grpc.Channel.
+        """
+        self.GetConversation = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/GetConversation',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+                _registered_method=True)
+        self.ListConversations = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/ListConversations',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListConversationsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListConversationsResponse.FromString,
+                _registered_method=True)
+        self.UpdateConversation = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/UpdateConversation',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+                _registered_method=True)
+        self.ListMemberships = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/ListMemberships',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListMembershipsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMembershipsResponse.FromString,
+                _registered_method=True)
+        self.ListForks = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/ListForks',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListForksRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListForksResponse.FromString,
+                _registered_method=True)
+        self.ListChildConversations = channel.unary_unary(
+                '/memory.v1.AdminConversationsService/ListChildConversations',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsResponse.FromString,
+                _registered_method=True)
+
+
+class AdminConversationsServiceServicer(object):
+    """Missing associated documentation comment in .proto file."""
+
+    def GetConversation(self, request, context):
+        """Get any conversation by ID (bypasses membership check).
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListConversations(self, request, context):
+        """List conversations with admin filters (cross-user access).
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateConversation(self, request, context):
+        """Update conversation archive state.
+        Requires admin role (not auditor - write operation).
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListMemberships(self, request, context):
+        """List conversation memberships (any conversation).
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListForks(self, request, context):
+        """List conversation forks (any conversation).
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ListChildConversations(self, request, context):
+        """List child conversations (any conversation).
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+
+def add_AdminConversationsServiceServicer_to_server(servicer, server):
+    rpc_method_handlers = {
+            'GetConversation': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetConversation,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.Conversation.SerializeToString,
+            ),
+            'ListConversations': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListConversations,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListConversationsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListConversationsResponse.SerializeToString,
+            ),
+            'UpdateConversation': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateConversation,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.Conversation.SerializeToString,
+            ),
+            'ListMemberships': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMemberships,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListMembershipsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListMembershipsResponse.SerializeToString,
+            ),
+            'ListForks': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListForks,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListForksRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListForksResponse.SerializeToString,
+            ),
+            'ListChildConversations': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListChildConversations,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsResponse.SerializeToString,
+            ),
+    }
+    generic_handler = grpc.method_handlers_generic_handler(
+            'memory.v1.AdminConversationsService', rpc_method_handlers)
+    server.add_generic_rpc_handlers((generic_handler,))
+    server.add_registered_method_handlers('memory.v1.AdminConversationsService', rpc_method_handlers)
+
+
+ # This class is part of an EXPERIMENTAL API.
+class AdminConversationsService(object):
+    """Missing associated documentation comment in .proto file."""
+
+    @staticmethod
+    def GetConversation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/GetConversation',
+            memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListConversations(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/ListConversations',
+            memory_dot_v1_dot_memory__service__pb2.AdminListConversationsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminListConversationsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateConversation(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/UpdateConversation',
+            memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMemberships(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/ListMemberships',
+            memory_dot_v1_dot_memory__service__pb2.AdminListMembershipsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListMembershipsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListForks(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/ListForks',
+            memory_dot_v1_dot_memory__service__pb2.AdminListForksRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminListForksResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListChildConversations(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminConversationsService/ListChildConversations',
+            memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminListChildConversationsResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+
 class SearchServiceStub(object):
     """Missing associated documentation comment in .proto file."""
 
