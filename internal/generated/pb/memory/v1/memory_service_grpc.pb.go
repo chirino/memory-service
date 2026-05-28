@@ -1220,6 +1220,323 @@ var AdminEntriesService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
+	AdminConversationsService_GetConversation_FullMethodName        = "/memory.v1.AdminConversationsService/GetConversation"
+	AdminConversationsService_ListConversations_FullMethodName      = "/memory.v1.AdminConversationsService/ListConversations"
+	AdminConversationsService_UpdateConversation_FullMethodName     = "/memory.v1.AdminConversationsService/UpdateConversation"
+	AdminConversationsService_ListMemberships_FullMethodName        = "/memory.v1.AdminConversationsService/ListMemberships"
+	AdminConversationsService_ListForks_FullMethodName              = "/memory.v1.AdminConversationsService/ListForks"
+	AdminConversationsService_ListChildConversations_FullMethodName = "/memory.v1.AdminConversationsService/ListChildConversations"
+)
+
+// AdminConversationsServiceClient is the client API for AdminConversationsService service.
+//
+// For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
+type AdminConversationsServiceClient interface {
+	// Get any conversation by ID (bypasses membership check).
+	// Requires admin or auditor role.
+	GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error)
+	// List conversations with admin filters (cross-user access).
+	// Requires admin or auditor role.
+	ListConversations(ctx context.Context, in *AdminListConversationsRequest, opts ...grpc.CallOption) (*AdminListConversationsResponse, error)
+	// Update conversation archive state.
+	// Requires admin role (not auditor - write operation).
+	UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error)
+	// List conversation memberships (any conversation).
+	// Requires admin or auditor role.
+	ListMemberships(ctx context.Context, in *AdminListMembershipsRequest, opts ...grpc.CallOption) (*ListMembershipsResponse, error)
+	// List conversation forks (any conversation).
+	// Requires admin or auditor role.
+	ListForks(ctx context.Context, in *AdminListForksRequest, opts ...grpc.CallOption) (*AdminListForksResponse, error)
+	// List child conversations (any conversation).
+	// Requires admin or auditor role.
+	ListChildConversations(ctx context.Context, in *AdminListChildConversationsRequest, opts ...grpc.CallOption) (*AdminListChildConversationsResponse, error)
+}
+
+type adminConversationsServiceClient struct {
+	cc grpc.ClientConnInterface
+}
+
+func NewAdminConversationsServiceClient(cc grpc.ClientConnInterface) AdminConversationsServiceClient {
+	return &adminConversationsServiceClient{cc}
+}
+
+func (c *adminConversationsServiceClient) GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminConversation)
+	err := c.cc.Invoke(ctx, AdminConversationsService_GetConversation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminConversationsServiceClient) ListConversations(ctx context.Context, in *AdminListConversationsRequest, opts ...grpc.CallOption) (*AdminListConversationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminListConversationsResponse)
+	err := c.cc.Invoke(ctx, AdminConversationsService_ListConversations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminConversationsServiceClient) UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminConversation)
+	err := c.cc.Invoke(ctx, AdminConversationsService_UpdateConversation_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminConversationsServiceClient) ListMemberships(ctx context.Context, in *AdminListMembershipsRequest, opts ...grpc.CallOption) (*ListMembershipsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMembershipsResponse)
+	err := c.cc.Invoke(ctx, AdminConversationsService_ListMemberships_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminConversationsServiceClient) ListForks(ctx context.Context, in *AdminListForksRequest, opts ...grpc.CallOption) (*AdminListForksResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminListForksResponse)
+	err := c.cc.Invoke(ctx, AdminConversationsService_ListForks_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminConversationsServiceClient) ListChildConversations(ctx context.Context, in *AdminListChildConversationsRequest, opts ...grpc.CallOption) (*AdminListChildConversationsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminListChildConversationsResponse)
+	err := c.cc.Invoke(ctx, AdminConversationsService_ListChildConversations_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+// AdminConversationsServiceServer is the server API for AdminConversationsService service.
+// All implementations must embed UnimplementedAdminConversationsServiceServer
+// for forward compatibility.
+type AdminConversationsServiceServer interface {
+	// Get any conversation by ID (bypasses membership check).
+	// Requires admin or auditor role.
+	GetConversation(context.Context, *AdminGetConversationRequest) (*AdminConversation, error)
+	// List conversations with admin filters (cross-user access).
+	// Requires admin or auditor role.
+	ListConversations(context.Context, *AdminListConversationsRequest) (*AdminListConversationsResponse, error)
+	// Update conversation archive state.
+	// Requires admin role (not auditor - write operation).
+	UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*AdminConversation, error)
+	// List conversation memberships (any conversation).
+	// Requires admin or auditor role.
+	ListMemberships(context.Context, *AdminListMembershipsRequest) (*ListMembershipsResponse, error)
+	// List conversation forks (any conversation).
+	// Requires admin or auditor role.
+	ListForks(context.Context, *AdminListForksRequest) (*AdminListForksResponse, error)
+	// List child conversations (any conversation).
+	// Requires admin or auditor role.
+	ListChildConversations(context.Context, *AdminListChildConversationsRequest) (*AdminListChildConversationsResponse, error)
+	mustEmbedUnimplementedAdminConversationsServiceServer()
+}
+
+// UnimplementedAdminConversationsServiceServer must be embedded to have
+// forward compatible implementations.
+//
+// NOTE: this should be embedded by value instead of pointer to avoid a nil
+// pointer dereference when methods are called.
+type UnimplementedAdminConversationsServiceServer struct{}
+
+func (UnimplementedAdminConversationsServiceServer) GetConversation(context.Context, *AdminGetConversationRequest) (*AdminConversation, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetConversation not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) ListConversations(context.Context, *AdminListConversationsRequest) (*AdminListConversationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListConversations not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*AdminConversation, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateConversation not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) ListMemberships(context.Context, *AdminListMembershipsRequest) (*ListMembershipsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMemberships not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) ListForks(context.Context, *AdminListForksRequest) (*AdminListForksResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListForks not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) ListChildConversations(context.Context, *AdminListChildConversationsRequest) (*AdminListChildConversationsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListChildConversations not implemented")
+}
+func (UnimplementedAdminConversationsServiceServer) mustEmbedUnimplementedAdminConversationsServiceServer() {
+}
+func (UnimplementedAdminConversationsServiceServer) testEmbeddedByValue() {}
+
+// UnsafeAdminConversationsServiceServer may be embedded to opt out of forward compatibility for this service.
+// Use of this interface is not recommended, as added methods to AdminConversationsServiceServer will
+// result in compilation errors.
+type UnsafeAdminConversationsServiceServer interface {
+	mustEmbedUnimplementedAdminConversationsServiceServer()
+}
+
+func RegisterAdminConversationsServiceServer(s grpc.ServiceRegistrar, srv AdminConversationsServiceServer) {
+	// If the following call panics, it indicates UnimplementedAdminConversationsServiceServer was
+	// embedded by pointer and is nil.  This will cause panics if an
+	// unimplemented method is ever invoked, so we test this at initialization
+	// time to prevent it from happening at runtime later due to I/O.
+	if t, ok := srv.(interface{ testEmbeddedByValue() }); ok {
+		t.testEmbeddedByValue()
+	}
+	s.RegisterService(&AdminConversationsService_ServiceDesc, srv)
+}
+
+func _AdminConversationsService_GetConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminGetConversationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).GetConversation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_GetConversation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).GetConversation(ctx, req.(*AdminGetConversationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminConversationsService_ListConversations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListConversationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).ListConversations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_ListConversations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).ListConversations(ctx, req.(*AdminListConversationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminConversationsService_UpdateConversation_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminUpdateConversationRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).UpdateConversation(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_UpdateConversation_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).UpdateConversation(ctx, req.(*AdminUpdateConversationRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminConversationsService_ListMemberships_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListMembershipsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).ListMemberships(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_ListMemberships_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).ListMemberships(ctx, req.(*AdminListMembershipsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminConversationsService_ListForks_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListForksRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).ListForks(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_ListForks_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).ListForks(ctx, req.(*AdminListForksRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminConversationsService_ListChildConversations_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminListChildConversationsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminConversationsServiceServer).ListChildConversations(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminConversationsService_ListChildConversations_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminConversationsServiceServer).ListChildConversations(ctx, req.(*AdminListChildConversationsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+// AdminConversationsService_ServiceDesc is the grpc.ServiceDesc for AdminConversationsService service.
+// It's only intended for direct use with grpc.RegisterService,
+// and not to be introspected or modified (even as a copy)
+var AdminConversationsService_ServiceDesc = grpc.ServiceDesc{
+	ServiceName: "memory.v1.AdminConversationsService",
+	HandlerType: (*AdminConversationsServiceServer)(nil),
+	Methods: []grpc.MethodDesc{
+		{
+			MethodName: "GetConversation",
+			Handler:    _AdminConversationsService_GetConversation_Handler,
+		},
+		{
+			MethodName: "ListConversations",
+			Handler:    _AdminConversationsService_ListConversations_Handler,
+		},
+		{
+			MethodName: "UpdateConversation",
+			Handler:    _AdminConversationsService_UpdateConversation_Handler,
+		},
+		{
+			MethodName: "ListMemberships",
+			Handler:    _AdminConversationsService_ListMemberships_Handler,
+		},
+		{
+			MethodName: "ListForks",
+			Handler:    _AdminConversationsService_ListForks_Handler,
+		},
+		{
+			MethodName: "ListChildConversations",
+			Handler:    _AdminConversationsService_ListChildConversations_Handler,
+		},
+	},
+	Streams:  []grpc.StreamDesc{},
+	Metadata: "memory/v1/memory_service.proto",
+}
+
+const (
 	SearchService_SearchConversations_FullMethodName  = "/memory.v1.SearchService/SearchConversations"
 	SearchService_IndexConversations_FullMethodName   = "/memory.v1.SearchService/IndexConversations"
 	SearchService_ListUnindexedEntries_FullMethodName = "/memory.v1.SearchService/ListUnindexedEntries"

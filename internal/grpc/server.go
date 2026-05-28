@@ -636,6 +636,87 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 	return c
 }
 
+func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminConversationSummary {
+	item := &pb.AdminConversationSummary{
+		Id:          uuidToBytes(cs.ID),
+		Title:       cs.Title,
+		OwnerUserId: cs.OwnerUserID,
+		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel: mapAccessLevel(cs.AccessLevel),
+		Archived:    cs.ArchivedAt != nil,
+		ClientId:    cs.ClientID,
+	}
+	if cs.AgentID != nil {
+		item.AgentId = cs.AgentID
+	}
+	if cs.StartedByConversationID != nil {
+		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+	}
+	if cs.StartedByEntryID != nil {
+		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+	}
+	return item
+}
+
+func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminChildConversationSummary {
+	item := &pb.AdminChildConversationSummary{
+		Id:          uuidToBytes(cs.ID),
+		Title:       cs.Title,
+		OwnerUserId: cs.OwnerUserID,
+		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel: mapAccessLevel(cs.AccessLevel),
+		Archived:    cs.ArchivedAt != nil,
+		ClientId:    cs.ClientID,
+	}
+	if cs.AgentID != nil {
+		item.AgentId = cs.AgentID
+	}
+	if cs.StartedByConversationID != nil {
+		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+	}
+	if cs.StartedByEntryID != nil {
+		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+	}
+	return item
+}
+
+func adminConversationToProto(conv *registrystore.ConversationDetail) *pb.AdminConversation {
+	c := &pb.AdminConversation{
+		Id:                    uuidToBytes(conv.ID),
+		Title:                 conv.Title,
+		OwnerUserId:           conv.OwnerUserID,
+		CreatedAt:             conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             conv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel:           mapAccessLevel(conv.AccessLevel),
+		Archived:              conv.ArchivedAt != nil,
+		ClientId:              conv.ClientID,
+		HasResponseInProgress: conv.HasResponseInProgress,
+	}
+	if conv.AgentID != nil {
+		c.AgentId = conv.AgentID
+	}
+	if conv.Metadata != nil {
+		if metadata, err := structpb.NewStruct(conv.Metadata); err == nil {
+			c.Metadata = metadata
+		}
+	}
+	if conv.ForkedAtEntryID != nil {
+		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
+	}
+	if conv.ForkedAtConversationID != nil {
+		c.ForkedAtConversationId = uuidToBytes(*conv.ForkedAtConversationID)
+	}
+	if conv.StartedByConversationID != nil {
+		c.StartedByConversationId = uuidToBytes(*conv.StartedByConversationID)
+	}
+	if conv.StartedByEntryID != nil {
+		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
+	}
+	return c
+}
+
 // --- Entries Service ---
 
 type EntriesServer struct {
@@ -794,6 +875,340 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	}
 	if result.AfterCursor != nil {
 		resp.PageInfo.NextPageToken = *result.AfterCursor
+	}
+	return resp, nil
+}
+
+// --- Admin Conversations Service ---
+
+type AdminConversationsServer struct {
+	pb.UnimplementedAdminConversationsServiceServer
+	Store  registrystore.MemoryStore
+	Config *config.Config
+}
+
+func (s *AdminConversationsServer) requireReadAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] && !id.Roles[security.RoleAuditor] {
+		return status.Error(codes.PermissionDenied, "admin or auditor role required")
+	}
+	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
+		return status.Error(codes.InvalidArgument, "admin justification required")
+	}
+	return nil
+}
+
+func (s *AdminConversationsServer) requireAdminAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] {
+		return status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
+		return status.Error(codes.InvalidArgument, "admin justification required")
+	}
+	return nil
+}
+
+func (s *AdminConversationsServer) GetConversation(ctx context.Context, req *pb.AdminGetConversationRequest) (*pb.AdminConversation, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		return s.Store.AdminGetConversation(txCtx, convID)
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	return adminConversationToProto(conv), nil
+}
+
+func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *pb.AdminListConversationsRequest) (*pb.AdminListConversationsResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	mode := model.ListModeLatestFork
+	switch req.GetMode() {
+	case pb.ConversationListMode_ALL:
+		mode = model.ListModeAll
+	case pb.ConversationListMode_ROOTS:
+		mode = model.ListModeRoots
+	}
+
+	ancestry := model.ConversationAncestryRoots
+	switch req.GetAncestry() {
+	case pb.ConversationAncestryFilter_CONVERSATION_ANCESTRY_FILTER_CHILDREN:
+		ancestry = model.ConversationAncestryChildren
+	case pb.ConversationAncestryFilter_CONVERSATION_ANCESTRY_FILTER_ALL:
+		ancestry = model.ConversationAncestryAll
+	}
+
+	archived := registrystore.ArchiveFilterExclude
+	switch req.GetArchived() {
+	case pb.ArchiveFilter_ARCHIVE_FILTER_INCLUDE:
+		archived = registrystore.ArchiveFilterInclude
+	case pb.ArchiveFilter_ARCHIVE_FILTER_ONLY:
+		archived = registrystore.ArchiveFilterOnly
+	}
+
+	var afterCursor *string
+	limit := 20
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			afterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			limit = int(req.GetPage().GetPageSize())
+		}
+	}
+
+	var userID *string
+	if req.GetOwnerUserId() != "" {
+		u := req.GetOwnerUserId()
+		userID = &u
+	}
+
+	var archivedAfter *time.Time
+	if req.GetArchivedAfter() != nil {
+		t := req.GetArchivedAfter().AsTime()
+		archivedAfter = &t
+	}
+	var archivedBefore *time.Time
+	if req.GetArchivedBefore() != nil {
+		t := req.GetArchivedBefore().AsTime()
+		archivedBefore = &t
+	}
+
+	query := registrystore.AdminConversationQuery{
+		Mode:           mode,
+		Ancestry:       ancestry,
+		UserID:         userID,
+		Archived:       archived,
+		ArchivedAfter:  archivedAfter,
+		ArchivedBefore: archivedBefore,
+		AfterCursor:    afterCursor,
+		Limit:          limit,
+	}
+
+	summaries, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
+		type result struct {
+			summaries []registrystore.ConversationSummary
+			cursor    *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			summaries, cursor, err := s.Store.AdminListConversations(txCtx, query)
+			return result{summaries: summaries, cursor: cursor}, err
+		})
+		return out.summaries, out.cursor, err
+	}()
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	resp := &pb.AdminListConversationsResponse{
+		PageInfo: &pb.PageInfo{},
+	}
+	for _, cs := range summaries {
+		resp.Conversations = append(resp.Conversations, adminConversationSummaryToProto(&cs))
+	}
+	if cursor != nil {
+		resp.PageInfo.NextPageToken = *cursor
+	}
+	return resp, nil
+}
+
+func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *pb.AdminUpdateConversationRequest) (*pb.AdminConversation, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		if req.Archived != nil {
+			if err := s.Store.AdminSetConversationArchived(txCtx, convID, *req.Archived); err != nil {
+				return nil, err
+			}
+		}
+		return s.Store.AdminGetConversation(txCtx, convID)
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	return adminConversationToProto(conv), nil
+}
+
+func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.AdminListMembershipsRequest) (*pb.ListMembershipsResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	var afterCursor *string
+	limit := 20
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			afterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			limit = int(req.GetPage().GetPageSize())
+		}
+	}
+
+	memberships, cursor, err := func() ([]model.ConversationMembership, *string, error) {
+		type result struct {
+			memberships []model.ConversationMembership
+			cursor      *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			memberships, cursor, err := s.Store.AdminListMemberships(txCtx, convID, afterCursor, limit)
+			return result{memberships: memberships, cursor: cursor}, err
+		})
+		return out.memberships, out.cursor, err
+	}()
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	resp := &pb.ListMembershipsResponse{PageInfo: &pb.PageInfo{}}
+	for _, m := range memberships {
+		resp.Memberships = append(resp.Memberships, &pb.ConversationMembership{
+			ConversationId: uuidToBytes(convID),
+			UserId:         m.UserID,
+			AccessLevel:    mapAccessLevel(m.AccessLevel),
+			CreatedAt:      m.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		})
+	}
+	if cursor != nil {
+		resp.PageInfo.NextPageToken = *cursor
+	}
+	return resp, nil
+}
+
+func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminListForksRequest) (*pb.AdminListForksResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	var afterCursor *string
+	limit := 20
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			afterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			limit = int(req.GetPage().GetPageSize())
+		}
+	}
+
+	forks, cursor, err := func() ([]registrystore.ConversationForkSummary, *string, error) {
+		type result struct {
+			forks  []registrystore.ConversationForkSummary
+			cursor *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			forks, cursor, err := s.Store.AdminListForks(txCtx, convID, afterCursor, limit)
+			return result{forks: forks, cursor: cursor}, err
+		})
+		return out.forks, out.cursor, err
+	}()
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	resp := &pb.AdminListForksResponse{PageInfo: &pb.PageInfo{}}
+	for _, f := range forks {
+		fork := &pb.ConversationForkSummary{
+			ConversationId: uuidToBytes(f.ID),
+			Title:          f.Title,
+			CreatedAt:      f.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		}
+		if f.ForkedAtEntryID != nil {
+			fork.ForkedAtEntryId = uuidToBytes(*f.ForkedAtEntryID)
+		}
+		if f.ForkedAtConversationID != nil {
+			fork.ForkedAtConversationId = uuidToBytes(*f.ForkedAtConversationID)
+		}
+		resp.Forks = append(resp.Forks, fork)
+	}
+	if cursor != nil {
+		resp.PageInfo.NextPageToken = *cursor
+	}
+	return resp, nil
+}
+
+func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, req *pb.AdminListChildConversationsRequest) (*pb.AdminListChildConversationsResponse, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+
+	convID, err := bytesToUUID(req.GetConversationId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+	}
+
+	var afterCursor *string
+	limit := 20
+	if req.GetPage() != nil {
+		if req.GetPage().GetPageToken() != "" {
+			t := req.GetPage().GetPageToken()
+			afterCursor = &t
+		}
+		if req.GetPage().GetPageSize() > 0 {
+			limit = int(req.GetPage().GetPageSize())
+		}
+	}
+
+	children, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
+		type result struct {
+			items  []registrystore.ConversationSummary
+			cursor *string
+		}
+		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
+			items, cursor, err := s.Store.AdminListChildConversations(txCtx, convID, afterCursor, limit)
+			return result{items: items, cursor: cursor}, err
+		})
+		return out.items, out.cursor, err
+	}()
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	resp := &pb.AdminListChildConversationsResponse{PageInfo: &pb.PageInfo{}}
+	for _, cs := range children {
+		resp.Children = append(resp.Children, adminChildConversationSummaryToProto(&cs))
+	}
+	if cursor != nil {
+		resp.PageInfo.NextPageToken = *cursor
 	}
 	return resp, nil
 }

@@ -388,6 +388,41 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				})
 		}
 
+	case "AdminConversationsService":
+		client := pb.NewAdminConversationsServiceClient(conn)
+		switch method {
+		case "GetConversation":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminGetConversationRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetConversation(ctx, req.(*pb.AdminGetConversationRequest))
+				})
+		case "ListConversations":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListConversationsRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListConversations(ctx, req.(*pb.AdminListConversationsRequest))
+				})
+		case "UpdateConversation":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminUpdateConversationRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.UpdateConversation(ctx, req.(*pb.AdminUpdateConversationRequest))
+				})
+		case "ListMemberships":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListMembershipsRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListMemberships(ctx, req.(*pb.AdminListMembershipsRequest))
+				})
+		case "ListForks":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListForksRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListForks(ctx, req.(*pb.AdminListForksRequest))
+				})
+		case "ListChildConversations":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListChildConversationsRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListChildConversations(ctx, req.(*pb.AdminListChildConversationsRequest))
+				})
+		}
+
 	case "ConversationMembershipsService":
 		client := pb.NewConversationMembershipsServiceClient(conn)
 		switch method {
