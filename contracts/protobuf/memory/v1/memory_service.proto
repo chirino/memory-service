@@ -285,6 +285,8 @@ message AdminListEntriesRequest {
 message AdminGetConversationRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 2;
 }
 
 message AdminListConversationsRequest {
@@ -298,10 +300,16 @@ message AdminListConversationsRequest {
   optional ConversationListMode mode = 6;
   // Optional: conversation ancestry filter (roots, children, all)
   optional ConversationAncestryFilter ancestry = 7;
+  // Optional: include conversations archived at or after this time
+  optional google.protobuf.Timestamp archived_after = 8;
+  // Optional: include conversations archived before this time
+  optional google.protobuf.Timestamp archived_before = 9;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 10;
 }
 
 message AdminListConversationsResponse {
-  repeated ConversationSummary conversations = 1;
+  repeated AdminConversationSummary conversations = 1;
   PageInfo page_info = 2;
 }
 
@@ -310,18 +318,24 @@ message AdminUpdateConversationRequest {
   bytes conversation_id = 1;
   // Set archive state (true = archive, false = restore)
   optional bool archived = 2;
+  // Optional: admin justification, logged for admin access.
+  optional string justification = 3;
 }
 
 message AdminListMembershipsRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
   PageRequest page = 2;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 3;
 }
 
 message AdminListForksRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
   PageRequest page = 2;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 3;
 }
 
 message AdminListForksResponse {
@@ -333,11 +347,62 @@ message AdminListChildConversationsRequest {
   // Conversation identifier (UUID as 16-byte big-endian binary)
   bytes conversation_id = 1;
   PageRequest page = 2;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 3;
 }
 
 message AdminListChildConversationsResponse {
-  repeated ChildConversationSummary children = 1;
+  repeated AdminChildConversationSummary children = 1;
   PageInfo page_info = 2;
+}
+
+message AdminConversationSummary {
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_conversation_id = 8;
+  bytes started_by_entry_id = 9;
+  bool archived = 10;
+  string client_id = 11;
+  optional string agent_id = 12;
+}
+
+message AdminChildConversationSummary {
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_entry_id = 8;
+  bool archived = 9;
+  bytes started_by_conversation_id = 10;
+  string client_id = 11;
+  optional string agent_id = 12;
+}
+
+message AdminConversation {
+  bytes id = 1;
+  string title = 2;
+  string owner_user_id = 3;
+  string created_at = 4;
+  string updated_at = 5;
+  string last_message_preview = 6;
+  AccessLevel access_level = 7;
+  bytes started_by_conversation_id = 8;
+  bytes started_by_entry_id = 9;
+  bool archived = 10;
+  string client_id = 11;
+  optional string agent_id = 12;
+  google.protobuf.Struct metadata = 13;
+  bytes forked_at_entry_id = 14;
+  bytes forked_at_conversation_id = 15;
+  bool has_response_in_progress = 16;
 }
 
 message Entry {
@@ -805,7 +870,7 @@ service AdminEntriesService {
 service AdminConversationsService {
   // Get any conversation by ID (bypasses membership check).
   // Requires admin or auditor role.
-  rpc GetConversation(AdminGetConversationRequest) returns (Conversation);
+  rpc GetConversation(AdminGetConversationRequest) returns (AdminConversation);
 
   // List conversations with admin filters (cross-user access).
   // Requires admin or auditor role.
@@ -813,7 +878,7 @@ service AdminConversationsService {
 
   // Update conversation archive state.
   // Requires admin role (not auditor - write operation).
-  rpc UpdateConversation(AdminUpdateConversationRequest) returns (Conversation);
+  rpc UpdateConversation(AdminUpdateConversationRequest) returns (AdminConversation);
 
   // List conversation memberships (any conversation).
   // Requires admin or auditor role.

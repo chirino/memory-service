@@ -1234,13 +1234,13 @@ const (
 type AdminConversationsServiceClient interface {
 	// Get any conversation by ID (bypasses membership check).
 	// Requires admin or auditor role.
-	GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
+	GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error)
 	// List conversations with admin filters (cross-user access).
 	// Requires admin or auditor role.
 	ListConversations(ctx context.Context, in *AdminListConversationsRequest, opts ...grpc.CallOption) (*AdminListConversationsResponse, error)
 	// Update conversation archive state.
 	// Requires admin role (not auditor - write operation).
-	UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
+	UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error)
 	// List conversation memberships (any conversation).
 	// Requires admin or auditor role.
 	ListMemberships(ctx context.Context, in *AdminListMembershipsRequest, opts ...grpc.CallOption) (*ListMembershipsResponse, error)
@@ -1260,9 +1260,9 @@ func NewAdminConversationsServiceClient(cc grpc.ClientConnInterface) AdminConver
 	return &adminConversationsServiceClient{cc}
 }
 
-func (c *adminConversationsServiceClient) GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*Conversation, error) {
+func (c *adminConversationsServiceClient) GetConversation(ctx context.Context, in *AdminGetConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Conversation)
+	out := new(AdminConversation)
 	err := c.cc.Invoke(ctx, AdminConversationsService_GetConversation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -1280,9 +1280,9 @@ func (c *adminConversationsServiceClient) ListConversations(ctx context.Context,
 	return out, nil
 }
 
-func (c *adminConversationsServiceClient) UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*Conversation, error) {
+func (c *adminConversationsServiceClient) UpdateConversation(ctx context.Context, in *AdminUpdateConversationRequest, opts ...grpc.CallOption) (*AdminConversation, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
-	out := new(Conversation)
+	out := new(AdminConversation)
 	err := c.cc.Invoke(ctx, AdminConversationsService_UpdateConversation_FullMethodName, in, out, cOpts...)
 	if err != nil {
 		return nil, err
@@ -1326,13 +1326,13 @@ func (c *adminConversationsServiceClient) ListChildConversations(ctx context.Con
 type AdminConversationsServiceServer interface {
 	// Get any conversation by ID (bypasses membership check).
 	// Requires admin or auditor role.
-	GetConversation(context.Context, *AdminGetConversationRequest) (*Conversation, error)
+	GetConversation(context.Context, *AdminGetConversationRequest) (*AdminConversation, error)
 	// List conversations with admin filters (cross-user access).
 	// Requires admin or auditor role.
 	ListConversations(context.Context, *AdminListConversationsRequest) (*AdminListConversationsResponse, error)
 	// Update conversation archive state.
 	// Requires admin role (not auditor - write operation).
-	UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*Conversation, error)
+	UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*AdminConversation, error)
 	// List conversation memberships (any conversation).
 	// Requires admin or auditor role.
 	ListMemberships(context.Context, *AdminListMembershipsRequest) (*ListMembershipsResponse, error)
@@ -1352,13 +1352,13 @@ type AdminConversationsServiceServer interface {
 // pointer dereference when methods are called.
 type UnimplementedAdminConversationsServiceServer struct{}
 
-func (UnimplementedAdminConversationsServiceServer) GetConversation(context.Context, *AdminGetConversationRequest) (*Conversation, error) {
+func (UnimplementedAdminConversationsServiceServer) GetConversation(context.Context, *AdminGetConversationRequest) (*AdminConversation, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetConversation not implemented")
 }
 func (UnimplementedAdminConversationsServiceServer) ListConversations(context.Context, *AdminListConversationsRequest) (*AdminListConversationsResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListConversations not implemented")
 }
-func (UnimplementedAdminConversationsServiceServer) UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*Conversation, error) {
+func (UnimplementedAdminConversationsServiceServer) UpdateConversation(context.Context, *AdminUpdateConversationRequest) (*AdminConversation, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateConversation not implemented")
 }
 func (UnimplementedAdminConversationsServiceServer) ListMemberships(context.Context, *AdminListMembershipsRequest) (*ListMembershipsResponse, error) {

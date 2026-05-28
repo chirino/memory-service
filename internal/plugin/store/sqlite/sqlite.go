@@ -1818,12 +1818,14 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 // --- Admin ---
 
 func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	const selectColumns = "c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
+	const selectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
 
 	type row struct {
 		ID                      uuid.UUID              `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
+		ClientID                string                 `gorm:"column:client_id"`
+		AgentID                 *string                `gorm:"column:agent_id"`
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
@@ -1872,7 +1874,7 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
 		tx = s.dbFor(ctx).
 			Table("(?) AS ranked", ranked).
-			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
+			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 	default:
 		tx = base.Select(selectColumns)
@@ -1899,6 +1901,8 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 			ID:                      r.ID,
 			Title:                   s.decryptString(r.Title),
 			OwnerUserID:             r.OwnerUserID,
+			ClientID:                r.ClientID,
+			AgentID:                 r.AgentID,
 			Metadata:                r.Metadata,
 			ConversationGroupID:     r.ConversationGroupID,
 			ForkedAtEntryID:         r.ForkedAtEntryID,
@@ -2112,7 +2116,7 @@ func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversat
 	return s.listChildConversationsForBase(ctx,
 		s.dbFor(ctx).
 			Table("conversations c").
-			Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level").
+			Select("c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level").
 			Where("c.started_by_conversation_id = ?", conversationID),
 		afterCursor, limit,
 	)
@@ -2544,6 +2548,8 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 		ID                      uuid.UUID              `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
+		ClientID                string                 `gorm:"column:client_id"`
+		AgentID                 *string                `gorm:"column:agent_id"`
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
@@ -2573,6 +2579,8 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 			ID:                      r.ID,
 			Title:                   s.decryptString(r.Title),
 			OwnerUserID:             r.OwnerUserID,
+			ClientID:                r.ClientID,
+			AgentID:                 r.AgentID,
 			Metadata:                r.Metadata,
 			ConversationGroupID:     r.ConversationGroupID,
 			ForkedAtEntryID:         r.ForkedAtEntryID,

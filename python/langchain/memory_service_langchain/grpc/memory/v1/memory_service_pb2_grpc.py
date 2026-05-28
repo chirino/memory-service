@@ -1123,7 +1123,7 @@ class AdminConversationsServiceStub(object):
         self.GetConversation = channel.unary_unary(
                 '/memory.v1.AdminConversationsService/GetConversation',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.SerializeToString,
-                response_deserializer=memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminConversation.FromString,
                 _registered_method=True)
         self.ListConversations = channel.unary_unary(
                 '/memory.v1.AdminConversationsService/ListConversations',
@@ -1133,7 +1133,7 @@ class AdminConversationsServiceStub(object):
         self.UpdateConversation = channel.unary_unary(
                 '/memory.v1.AdminConversationsService/UpdateConversation',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.SerializeToString,
-                response_deserializer=memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminConversation.FromString,
                 _registered_method=True)
         self.ListMemberships = channel.unary_unary(
                 '/memory.v1.AdminConversationsService/ListMemberships',
@@ -1209,7 +1209,7 @@ def add_AdminConversationsServiceServicer_to_server(servicer, server):
             'GetConversation': grpc.unary_unary_rpc_method_handler(
                     servicer.GetConversation,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.FromString,
-                    response_serializer=memory_dot_v1_dot_memory__service__pb2.Conversation.SerializeToString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminConversation.SerializeToString,
             ),
             'ListConversations': grpc.unary_unary_rpc_method_handler(
                     servicer.ListConversations,
@@ -1219,7 +1219,7 @@ def add_AdminConversationsServiceServicer_to_server(servicer, server):
             'UpdateConversation': grpc.unary_unary_rpc_method_handler(
                     servicer.UpdateConversation,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.FromString,
-                    response_serializer=memory_dot_v1_dot_memory__service__pb2.Conversation.SerializeToString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminConversation.SerializeToString,
             ),
             'ListMemberships': grpc.unary_unary_rpc_method_handler(
                     servicer.ListMemberships,
@@ -1263,7 +1263,7 @@ class AdminConversationsService(object):
             target,
             '/memory.v1.AdminConversationsService/GetConversation',
             memory_dot_v1_dot_memory__service__pb2.AdminGetConversationRequest.SerializeToString,
-            memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+            memory_dot_v1_dot_memory__service__pb2.AdminConversation.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1317,7 +1317,7 @@ class AdminConversationsService(object):
             target,
             '/memory.v1.AdminConversationsService/UpdateConversation',
             memory_dot_v1_dot_memory__service__pb2.AdminUpdateConversationRequest.SerializeToString,
-            memory_dot_v1_dot_memory__service__pb2.Conversation.FromString,
+            memory_dot_v1_dot_memory__service__pb2.AdminConversation.FromString,
             options,
             channel_credentials,
             insecure,

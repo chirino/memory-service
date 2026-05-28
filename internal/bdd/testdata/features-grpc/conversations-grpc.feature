@@ -136,6 +136,32 @@ Feature: Conversations gRPC API
     """
     Then the gRPC response should have status "NOT_FOUND"
 
+  Scenario: Admin get conversation exposes admin fields via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And set "expectedClientId" to the current client ID
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Admin gRPC Payload"
+    metadata {
+      fields {
+        key: "project"
+        value {
+          string_value: "grpc-admin"
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "adminConversationId" to the gRPC response field "id"
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/GetConversation" with body:
+    """
+    conversation_id: "${adminConversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "clientId" should be "${expectedClientId}"
+    And the gRPC response field "metadata.project" should be "grpc-admin"
+
   Scenario: Get conversation without access via gRPC
     Given there is a conversation owned by "bob"
     When I send gRPC request "ConversationsService/GetConversation" with body:

@@ -636,6 +636,87 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 	return c
 }
 
+func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminConversationSummary {
+	item := &pb.AdminConversationSummary{
+		Id:          uuidToBytes(cs.ID),
+		Title:       cs.Title,
+		OwnerUserId: cs.OwnerUserID,
+		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel: mapAccessLevel(cs.AccessLevel),
+		Archived:    cs.ArchivedAt != nil,
+		ClientId:    cs.ClientID,
+	}
+	if cs.AgentID != nil {
+		item.AgentId = cs.AgentID
+	}
+	if cs.StartedByConversationID != nil {
+		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+	}
+	if cs.StartedByEntryID != nil {
+		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+	}
+	return item
+}
+
+func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminChildConversationSummary {
+	item := &pb.AdminChildConversationSummary{
+		Id:          uuidToBytes(cs.ID),
+		Title:       cs.Title,
+		OwnerUserId: cs.OwnerUserID,
+		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel: mapAccessLevel(cs.AccessLevel),
+		Archived:    cs.ArchivedAt != nil,
+		ClientId:    cs.ClientID,
+	}
+	if cs.AgentID != nil {
+		item.AgentId = cs.AgentID
+	}
+	if cs.StartedByConversationID != nil {
+		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+	}
+	if cs.StartedByEntryID != nil {
+		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+	}
+	return item
+}
+
+func adminConversationToProto(conv *registrystore.ConversationDetail) *pb.AdminConversation {
+	c := &pb.AdminConversation{
+		Id:                    uuidToBytes(conv.ID),
+		Title:                 conv.Title,
+		OwnerUserId:           conv.OwnerUserID,
+		CreatedAt:             conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             conv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel:           mapAccessLevel(conv.AccessLevel),
+		Archived:              conv.ArchivedAt != nil,
+		ClientId:              conv.ClientID,
+		HasResponseInProgress: conv.HasResponseInProgress,
+	}
+	if conv.AgentID != nil {
+		c.AgentId = conv.AgentID
+	}
+	if conv.Metadata != nil {
+		if metadata, err := structpb.NewStruct(conv.Metadata); err == nil {
+			c.Metadata = metadata
+		}
+	}
+	if conv.ForkedAtEntryID != nil {
+		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
+	}
+	if conv.ForkedAtConversationID != nil {
+		c.ForkedAtConversationId = uuidToBytes(*conv.ForkedAtConversationID)
+	}
+	if conv.StartedByConversationID != nil {
+		c.StartedByConversationId = uuidToBytes(*conv.StartedByConversationID)
+	}
+	if conv.StartedByEntryID != nil {
+		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
+	}
+	return c
+}
+
 // --- Entries Service ---
 
 type EntriesServer struct {
@@ -802,12 +883,41 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 
 type AdminConversationsServer struct {
 	pb.UnimplementedAdminConversationsServiceServer
-	Store registrystore.MemoryStore
+	Store  registrystore.MemoryStore
+	Config *config.Config
 }
 
-func (s *AdminConversationsServer) GetConversation(ctx context.Context, req *pb.AdminGetConversationRequest) (*pb.Conversation, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+func (s *AdminConversationsServer) requireReadAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] && !id.Roles[security.RoleAuditor] {
+		return status.Error(codes.PermissionDenied, "admin or auditor role required")
+	}
+	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
+		return status.Error(codes.InvalidArgument, "admin justification required")
+	}
+	return nil
+}
+
+func (s *AdminConversationsServer) requireAdminAccess(ctx context.Context, justification string) error {
+	id, err := requireGRPCIdentity(ctx)
+	if err != nil {
+		return err
+	}
+	if !id.Roles[security.RoleAdmin] {
+		return status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
+		return status.Error(codes.InvalidArgument, "admin justification required")
+	}
+	return nil
+}
+
+func (s *AdminConversationsServer) GetConversation(ctx context.Context, req *pb.AdminGetConversationRequest) (*pb.AdminConversation, error) {
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -822,12 +932,12 @@ func (s *AdminConversationsServer) GetConversation(ctx context.Context, req *pb.
 		return nil, mapError(err)
 	}
 
-	return conversationToProto(conv), nil
+	return adminConversationToProto(conv), nil
 }
 
 func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *pb.AdminListConversationsRequest) (*pb.AdminListConversationsResponse, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	mode := model.ListModeLatestFork
@@ -872,13 +982,26 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 		userID = &u
 	}
 
+	var archivedAfter *time.Time
+	if req.GetArchivedAfter() != nil {
+		t := req.GetArchivedAfter().AsTime()
+		archivedAfter = &t
+	}
+	var archivedBefore *time.Time
+	if req.GetArchivedBefore() != nil {
+		t := req.GetArchivedBefore().AsTime()
+		archivedBefore = &t
+	}
+
 	query := registrystore.AdminConversationQuery{
-		Mode:        mode,
-		Ancestry:    ancestry,
-		UserID:      userID,
-		Archived:    archived,
-		AfterCursor: afterCursor,
-		Limit:       limit,
+		Mode:           mode,
+		Ancestry:       ancestry,
+		UserID:         userID,
+		Archived:       archived,
+		ArchivedAfter:  archivedAfter,
+		ArchivedBefore: archivedBefore,
+		AfterCursor:    afterCursor,
+		Limit:          limit,
 	}
 
 	summaries, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
@@ -900,22 +1023,7 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 		PageInfo: &pb.PageInfo{},
 	}
 	for _, cs := range summaries {
-		conv := &pb.ConversationSummary{
-			Id:          uuidToBytes(cs.ID),
-			Title:       cs.Title,
-			OwnerUserId: cs.OwnerUserID,
-			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-			AccessLevel: mapAccessLevel(cs.AccessLevel),
-			Archived:    cs.ArchivedAt != nil,
-		}
-		if cs.StartedByConversationID != nil {
-			conv.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
-		}
-		if cs.StartedByEntryID != nil {
-			conv.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
-		}
-		resp.Conversations = append(resp.Conversations, conv)
+		resp.Conversations = append(resp.Conversations, adminConversationSummaryToProto(&cs))
 	}
 	if cursor != nil {
 		resp.PageInfo.NextPageToken = *cursor
@@ -923,9 +1031,9 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 	return resp, nil
 }
 
-func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *pb.AdminUpdateConversationRequest) (*pb.Conversation, error) {
-	if !hasGRPCRole(ctx, security.RoleAdmin) {
-		return nil, status.Error(codes.PermissionDenied, "admin role required")
+func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *pb.AdminUpdateConversationRequest) (*pb.AdminConversation, error) {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -945,12 +1053,12 @@ func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *
 		return nil, mapError(err)
 	}
 
-	return conversationToProto(conv), nil
+	return adminConversationToProto(conv), nil
 }
 
 func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.AdminListMembershipsRequest) (*pb.ListMembershipsResponse, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1001,8 +1109,8 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 }
 
 func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminListForksRequest) (*pb.AdminListForksResponse, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1059,8 +1167,8 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 }
 
 func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, req *pb.AdminListChildConversationsRequest) (*pb.AdminListChildConversationsResponse, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1097,19 +1205,7 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 
 	resp := &pb.AdminListChildConversationsResponse{PageInfo: &pb.PageInfo{}}
 	for _, cs := range children {
-		item := &pb.ChildConversationSummary{
-			Id:          uuidToBytes(cs.ID),
-			Title:       cs.Title,
-			OwnerUserId: cs.OwnerUserID,
-			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
-			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-			AccessLevel: mapAccessLevel(cs.AccessLevel),
-			Archived:    cs.ArchivedAt != nil,
-		}
-		if cs.StartedByEntryID != nil {
-			item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
-		}
-		resp.Children = append(resp.Children, item)
+		resp.Children = append(resp.Children, adminChildConversationSummaryToProto(&cs))
 	}
 	if cursor != nil {
 		resp.PageInfo.NextPageToken = *cursor
