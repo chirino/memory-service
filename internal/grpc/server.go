@@ -924,8 +924,8 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 }
 
 func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *pb.AdminUpdateConversationRequest) (*pb.Conversation, error) {
-	if !hasGRPCAdminEventAccess(ctx) {
-		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	if !hasGRPCRole(ctx, security.RoleAdmin) {
+		return nil, status.Error(codes.PermissionDenied, "admin role required")
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())

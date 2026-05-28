@@ -102,3 +102,12 @@ Feature: Update Conversation gRPC API
     archived: true
     """
     Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: Auditor cannot archive through admin conversations gRPC
+    Given I am authenticated as auditor user "charlie"
+    When I send gRPC request "AdminConversationsService/UpdateConversation" with body:
+    """
+    conversation_id: "${conversationId | uuid_to_hex_string}"
+    archived: true
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
