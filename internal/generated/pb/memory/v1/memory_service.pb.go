@@ -2199,10 +2199,6 @@ type AdminListConversationsRequest struct {
 	Page  *PageRequest           `protobuf:"bytes,1,opt,name=page,proto3" json:"page,omitempty"`
 	// Optional: filter by owner user ID
 	OwnerUserId *string `protobuf:"bytes,2,opt,name=owner_user_id,json=ownerUserId,proto3,oneof" json:"owner_user_id,omitempty"`
-	// Optional: filter by client ID
-	ClientId *string `protobuf:"bytes,3,opt,name=client_id,json=clientId,proto3,oneof" json:"client_id,omitempty"`
-	// Optional: filter by agent ID
-	AgentId *string `protobuf:"bytes,4,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
 	// Optional: archive filter (exclude, include, only)
 	Archived *ArchiveFilter `protobuf:"varint,5,opt,name=archived,proto3,enum=memory.v1.ArchiveFilter,oneof" json:"archived,omitempty"`
 	// Optional: conversation list mode (all, roots, latest_fork)
@@ -2253,20 +2249,6 @@ func (x *AdminListConversationsRequest) GetPage() *PageRequest {
 func (x *AdminListConversationsRequest) GetOwnerUserId() string {
 	if x != nil && x.OwnerUserId != nil {
 		return *x.OwnerUserId
-	}
-	return ""
-}
-
-func (x *AdminListConversationsRequest) GetClientId() string {
-	if x != nil && x.ClientId != nil {
-		return *x.ClientId
-	}
-	return ""
-}
-
-func (x *AdminListConversationsRequest) GetAgentId() string {
-	if x != nil && x.AgentId != nil {
-		return *x.AgentId
 	}
 	return ""
 }
@@ -7721,22 +7703,17 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01B\x11\n" +
 	"\x0f_up_to_entry_id\"F\n" +
 	"\x1bAdminGetConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\"\xc3\x03\n" +
+	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\"\xf2\x02\n" +
 	"\x1dAdminListConversationsRequest\x12*\n" +
 	"\x04page\x18\x01 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12'\n" +
-	"\rowner_user_id\x18\x02 \x01(\tH\x00R\vownerUserId\x88\x01\x01\x12 \n" +
-	"\tclient_id\x18\x03 \x01(\tH\x01R\bclientId\x88\x01\x01\x12\x1e\n" +
-	"\bagent_id\x18\x04 \x01(\tH\x02R\aagentId\x88\x01\x01\x129\n" +
-	"\barchived\x18\x05 \x01(\x0e2\x18.memory.v1.ArchiveFilterH\x03R\barchived\x88\x01\x01\x128\n" +
-	"\x04mode\x18\x06 \x01(\x0e2\x1f.memory.v1.ConversationListModeH\x04R\x04mode\x88\x01\x01\x12F\n" +
-	"\bancestry\x18\a \x01(\x0e2%.memory.v1.ConversationAncestryFilterH\x05R\bancestry\x88\x01\x01B\x10\n" +
-	"\x0e_owner_user_idB\f\n" +
-	"\n" +
-	"_client_idB\v\n" +
-	"\t_agent_idB\v\n" +
+	"\rowner_user_id\x18\x02 \x01(\tH\x00R\vownerUserId\x88\x01\x01\x129\n" +
+	"\barchived\x18\x05 \x01(\x0e2\x18.memory.v1.ArchiveFilterH\x01R\barchived\x88\x01\x01\x128\n" +
+	"\x04mode\x18\x06 \x01(\x0e2\x1f.memory.v1.ConversationListModeH\x02R\x04mode\x88\x01\x01\x12F\n" +
+	"\bancestry\x18\a \x01(\x0e2%.memory.v1.ConversationAncestryFilterH\x03R\bancestry\x88\x01\x01B\x10\n" +
+	"\x0e_owner_user_idB\v\n" +
 	"\t_archivedB\a\n" +
 	"\x05_modeB\v\n" +
-	"\t_ancestry\"\x98\x01\n" +
+	"\t_ancestryJ\x04\b\x03\x10\x04J\x04\b\x04\x10\x05\"\x98\x01\n" +
 	"\x1eAdminListConversationsResponse\x12D\n" +
 	"\rconversations\x18\x01 \x03(\v2\x1e.memory.v1.ConversationSummaryR\rconversations\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"w\n" +

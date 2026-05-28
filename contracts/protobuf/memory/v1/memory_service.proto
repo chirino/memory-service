@@ -288,13 +288,10 @@ message AdminGetConversationRequest {
 }
 
 message AdminListConversationsRequest {
+  reserved 3, 4; // unsupported client_id and agent_id filters removed
   PageRequest page = 1;
   // Optional: filter by owner user ID
   optional string owner_user_id = 2;
-  // Optional: filter by client ID
-  optional string client_id = 3;
-  // Optional: filter by agent ID
-  optional string agent_id = 4;
   // Optional: archive filter (exclude, include, only)
   optional ArchiveFilter archived = 5;
   // Optional: conversation list mode (all, roots, latest_fork)
