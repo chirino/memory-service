@@ -20,3 +20,24 @@ The backend serves a `/config.json` endpoint that the React frontend fetches at 
 `KEYCLOAK_FRONTEND_URL` is separate from the backend's OIDC auth-server-url because in containerized deployments the backend reaches Keycloak over an internal network (e.g. `http://keycloak:8080`) while the browser needs the externally reachable URL.
 
 The frontend automatically disables PKCE when served over plain HTTP (where `Crypto.subtle` is unavailable).
+
+### Cognition Memory RAG
+
+`chat-quarkus` can enrich LLM requests with Memory Service cognition memories. The feature is disabled by default and enabled in the `alt` profile used with an external Memory Service and cognition processor:
+
+```bash
+task dev:memory-service
+./java/mvnw -f java/pom.xml -pl :chat-quarkus quarkus:dev -Dquarkus.profile=alt
+```
+
+When enabled, the first turn of a conversation fetches `profile_context/latest` from `["user", <userId>, "cognition.v1", "profile_context"]`. Every turn also searches the user's cognition namespace and injects only close semantic matches; `profile_context` and `profile_input` memories are excluded from ad hoc injection.
+
+The repo-root `compose.yaml` mounts `deploy/episodic-policies/cognition` into Memory Service and sets `MEMORY_SERVICE_EPISODIC_POLICY_DIR` so cognition-safe attributes such as `memoryKind` and confidence buckets can be extracted for search.
+
+The frontend can display and edit profile context inputs through narrow chat-app endpoints:
+
+- `GET /v1/profile-context`
+- `GET /v1/profile-context/inputs`
+- `PUT /v1/profile-context/inputs`
+
+The generic `/v1/memories` API remains backend-only in this example. User-authored profile inputs are stored as one memory at `["user", <userId>, "cognition.v1", "profile_input"]` key `latest`, with the ordered strings in `value.inputs`.

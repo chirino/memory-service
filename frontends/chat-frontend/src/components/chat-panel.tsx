@@ -47,6 +47,7 @@ type ChatPanelProps = {
   knownConversationIds?: Set<string>;
   onArchiveConversation?: (conversationId: string) => void;
   onUnarchiveConversation?: (conversationId: string) => void;
+  onManageMemory?: () => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
 };
@@ -400,6 +401,7 @@ type ChatPanelContentProps = {
   canceling: boolean;
   onArchiveConversation?: (conversationId: string) => void;
   onUnarchiveConversation?: (conversationId: string) => void;
+  onManageMemory?: () => void;
   currentUserId?: string | null;
   currentUser?: AuthUser | null;
 };
@@ -431,6 +433,7 @@ function ChatPanelContent({
   entriesWithForks,
   onArchiveConversation,
   onUnarchiveConversation,
+  onManageMemory,
   currentUserId,
   currentUser,
 }: ChatPanelContentProps & {
@@ -965,7 +968,7 @@ function ChatPanelContent({
             </div>
 
             {/* User avatar */}
-            {currentUser && <UserAvatar user={currentUser} />}
+            {currentUser && <UserAvatar user={currentUser} onManageMemory={onManageMemory} />}
           </div>
 
           {/* Stream mode toggle - hidden for now
@@ -1170,6 +1173,7 @@ export function ChatPanel({
   resumableConversationIds,
   onArchiveConversation,
   onUnarchiveConversation,
+  onManageMemory,
   currentUserId,
   currentUser,
 }: ChatPanelProps) {
@@ -1502,6 +1506,7 @@ export function ChatPanel({
         entriesWithForks={entriesWithForks}
         onArchiveConversation={onArchiveConversation}
         onUnarchiveConversation={onUnarchiveConversation}
+        onManageMemory={onManageMemory}
         currentUserId={currentUserId}
         currentUser={currentUser}
       />
