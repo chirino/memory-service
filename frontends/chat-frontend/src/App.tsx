@@ -5,11 +5,13 @@ import type { ChildConversationSummary, Conversation, ConversationSummary } from
 import { ApiError, ConversationsService, OpenAPI } from "@/client";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
+import { ProfileContextPanel } from "@/components/profile-context-panel";
 import { SearchModal } from "@/components/search-modal";
 import { PendingTransfersPanel } from "@/components/sharing";
 import { useResumeCheck } from "@/hooks/useResumeCheck";
 import { useEventStream, useStreamingConversations } from "@/hooks/useEventStream";
 import { useAuth } from "@/lib/auth";
+import { getProfileContext, isProfileContextUnsupported, type ProfileContextResponse } from "@/lib/profile-context";
 
 type ListUserConversationsResponse = {
   data?: ConversationSummary[];
@@ -101,6 +103,7 @@ function ChatSidebarLoading() {
 function App() {
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
   const [isSearchOpen, setIsSearchOpen] = useState(false);
+  const [mainView, setMainView] = useState<"chat" | "profile-context">("chat");
   const [archiveFilter, setArchiveFilter] = useState<"exclude" | "include" | "only">("exclude");
   const [selectedConversationId, setSelectedConversationId] = useState<string | null>(null);
   const pendingUrlLookupRef = useRef<string | null>(null);
@@ -149,6 +152,25 @@ function App() {
       })) as Conversation;
     },
   });
+
+  const profileContextAvailabilityQuery = useQuery<ProfileContextResponse>({
+    queryKey: ["profile-context"],
+    queryFn: getProfileContext,
+    retry: false,
+    staleTime: 60_000,
+  });
+
+  const profileContextUnsupported =
+    profileContextAvailabilityQuery.isError && isProfileContextUnsupported(profileContextAvailabilityQuery.error);
+  const hasProfileContextFeature =
+    profileContextAvailabilityQuery.isSuccess ||
+    (profileContextAvailabilityQuery.isFetched && !profileContextUnsupported);
+
+  useEffect(() => {
+    if (mainView === "profile-context" && profileContextAvailabilityQuery.isFetched && !hasProfileContextFeature) {
+      setMainView("chat");
+    }
+  }, [hasProfileContextFeature, mainView, profileContextAvailabilityQuery.isFetched]);
 
   const selectedConversationChildrenQuery = useQuery<ChildConversationSummary[], ApiError, ChildConversationSummary[]>({
     queryKey: ["conversation-sidebar-children", selectedConversationId],
@@ -376,6 +398,7 @@ function App() {
 
   const handleNewChat = () => {
     setStatusMessage(null);
+    setMainView("chat");
     const newId = generateConversationId();
     setSelectedConversationId(newId);
     updateConversationInUrl(newId);
@@ -383,6 +406,7 @@ function App() {
 
   const handleSelectConversation = (conversation: ConversationSummary) => {
     setStatusMessage(null);
+    setMainView("chat");
     const id = conversation.id ?? null;
     setSelectedConversationId(id);
     updateConversationInUrl(id);
@@ -395,6 +419,7 @@ function App() {
   const handleSelectConversationId = useCallback(
     (conversationId: string) => {
       setStatusMessage(null);
+      setMainView("chat");
       setSelectedConversationId(conversationId);
       updateConversationInUrl(conversationId);
       markResolvedConversation(conversationId);
@@ -426,6 +451,7 @@ function App() {
         updateConversationInUrl(fromUrl, true);
       }
       setSelectedConversationId(fromUrl);
+      setMainView("chat");
     };
     if (typeof window !== "undefined") {
       window.addEventListener("popstate", handlePopState);
@@ -468,16 +494,21 @@ function App() {
       {sidebarContent}
       <div className="flex flex-1 flex-col">
         <PendingTransfersPanel onNavigateToConversation={handleSelectConversationId} />
-        <ChatPanel
-          conversationId={selectedConversationId}
-          onSelectConversationId={handleSelectConversationId}
-          knownConversationIds={resolvedConversationIds}
-          resumableConversationIds={resumableConversationIds}
-          onArchiveConversation={handleArchiveConversationById}
-          onUnarchiveConversation={handleUnarchiveConversationById}
-          currentUserId={currentUserId}
-          currentUser={currentUser}
-        />
+        {mainView === "profile-context" && hasProfileContextFeature ? (
+          <ProfileContextPanel onBackToChat={() => setMainView("chat")} />
+        ) : (
+          <ChatPanel
+            conversationId={selectedConversationId}
+            onSelectConversationId={handleSelectConversationId}
+            knownConversationIds={resolvedConversationIds}
+            resumableConversationIds={resumableConversationIds}
+            onArchiveConversation={handleArchiveConversationById}
+            onUnarchiveConversation={handleUnarchiveConversationById}
+            onManageMemory={hasProfileContextFeature ? () => setMainView("profile-context") : undefined}
+            currentUserId={currentUserId}
+            currentUser={currentUser}
+          />
+        )}
       </div>
       <SearchModal
         isOpen={isSearchOpen}

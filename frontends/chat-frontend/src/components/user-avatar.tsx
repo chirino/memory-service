@@ -1,9 +1,10 @@
 import { useState, useRef, useEffect } from "react";
-import { LogOut } from "lucide-react";
+import { Brain, LogOut } from "lucide-react";
 import { useAuth, type AuthUser } from "@/lib/auth";
 
 type UserAvatarProps = {
   user: AuthUser;
+  onManageMemory?: () => void;
 };
 
 function getInitials(name?: string, email?: string, userId?: string): string {
@@ -31,7 +32,7 @@ function getDisplayName(user: AuthUser): string {
   return user.name || user.email || user.userId;
 }
 
-export function UserAvatar({ user }: UserAvatarProps) {
+export function UserAvatar({ user, onManageMemory }: UserAvatarProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const menuRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
@@ -82,6 +83,11 @@ export function UserAvatar({ user }: UserAvatarProps) {
     auth.logout();
   };
 
+  const handleManageMemory = () => {
+    setMenuOpen(false);
+    onManageMemory?.();
+  };
+
   return (
     <div className="relative">
       <button
@@ -116,6 +122,16 @@ export function UserAvatar({ user }: UserAvatarProps) {
 
           {/* Menu items */}
           <div className="py-1">
+            {onManageMemory && (
+              <button
+                type="button"
+                onClick={handleManageMemory}
+                className="flex w-full items-center gap-3 px-4 py-3 text-left text-sm text-ink transition-colors hover:bg-mist"
+              >
+                <Brain className="h-4 w-4 text-stone" />
+                Manage memory
+              </button>
+            )}
             <button
               type="button"
               onClick={handleLogout}
