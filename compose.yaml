@@ -153,6 +153,8 @@ services:
     build:
       context: .
       dockerfile: Dockerfile
+    volumes:
+      - ./deploy/episodic-policies/cognition:/etc/memory-service/episodic-policy:ro
 
     ### <dev-mode> Uncomment below and Comment above to enable dev mode ###
     # image: ghcr.io/chirino/memory-service-dev:latest
@@ -187,11 +189,12 @@ services:
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
-      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
-      MEMORY_SERVICE_API_KEYS_ADMIN: admin-api-key-1
       MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
+      MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
+      MEMORY_SERVICE_EPISODIC_POLICY_DIR: /etc/memory-service/episodic-policy
 
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"

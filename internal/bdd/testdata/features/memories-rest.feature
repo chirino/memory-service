@@ -387,6 +387,27 @@ Feature: Episodic Memory REST API
     Then the response status should be 403
     And the response body field "reason" should be "access denied"
 
+  Scenario: User search cannot return another user's memories
+    Given I am authenticated as user "bob"
+    And I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "bob", "prefs"],
+      "key": "private-note",
+      "value": { "text": "Bob private note" }
+    }
+    """
+    And I am authenticated as user "erin"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "bob", "prefs"],
+      "limit": 10
+    }
+    """
+    Then the response status should be 200
+    And the response body "items" should have at most 0 items
+
   Scenario: Admin index status endpoint returns pending count
     When I am authenticated as admin user "alice"
     And I call GET "/admin/v1/memory-index/status"
