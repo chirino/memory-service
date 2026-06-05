@@ -17,7 +17,8 @@ import java.util.List;
             ImageGenerationTool.class,
             WebSearchTool.class,
         },
-        toolProviderSupplier = SubAgentToolProviderSupplier.class)
+        toolProviderSupplier = SubAgentToolProviderSupplier.class,
+        retrievalAugmentor = CognitionMemoryRetrievalAugmentor.class)
 public interface Agent {
 
     @SystemMessage(
@@ -25,6 +26,7 @@ public interface Agent {
             You are the main assistant for this conversation.
             Use delegated agent conversations for parallelizable or separable work.
             Prefer reusing an existing agent conversation with the right context over starting a new one.
+            Use durable user memories when relevant, but do not reveal memory internals unless the user asks.
             """)
     Multi<ChatEvent> chat(
             @MemoryId String memoryId,
