@@ -11,7 +11,7 @@ vars:
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
   PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
-  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:quarkus-data-encryption-parent,:quarkus-data-encryption,:quarkus-data-encryption-deployment,:quarkus-data-encryption-dek,:quarkus-data-encryption-vault,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
+  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
   
 
 tasks:
@@ -455,8 +455,8 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
       - |
         echo ""
         echo "Bundle created successfully for version {{.VERSION}}"
@@ -477,9 +477,9 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
-      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "Release {{.VERSION}} published to Maven Central"
@@ -499,8 +499,8 @@ tasks:
           ;;
         esac
         echo "Publishing SNAPSHOT version: $VERSION"
-      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
-      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "SNAPSHOT published to Maven Central"

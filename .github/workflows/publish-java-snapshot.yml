@@ -36,6 +36,6 @@ jobs:
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          go run github.com/go-task/task/v3/cmd/task release:java:snapshot
+          go run github.com/go-task/task/v3/cmd/task release:java:snapshot -- -q -B
 
 # Made with Bob

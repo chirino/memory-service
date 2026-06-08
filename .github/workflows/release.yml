@@ -52,4 +52,4 @@ jobs:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
           VERSION="${GITHUB_REF_NAME#v}"
-          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION"
+          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION" -- q -B
