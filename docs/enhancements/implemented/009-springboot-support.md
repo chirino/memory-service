@@ -19,7 +19,7 @@ status: implemented
     - `memory-service-rest-quarkus` (rename of current `memory-service-client`).
     - `memory-service-proto-quarkus` (current proto codegen behavior).
     - `memory-service-extension` (Quarkus extension).
-    - `quarkus-data-encryption/*` moved under this parent.
+    - ~~`quarkus-data-encryption/*` moved under this parent~~ (modules removed).
     - `examples/chat-quarkus` (current `agent`).
   - `spring/` parent containing Spring-facing modules:
     - `memory-service-rest-spring` (generated client + support).
@@ -67,7 +67,7 @@ status: implemented
 ## Execution phases
 1) **Module skeletons and naming** *(mostly done)*
    - ✅ Create `memory-service-contracts` (OpenAPI + proto only, no generated code).
-   - ✅ Reorganize modules under `quarkus/` and `spring/` parents, rename `memory-service-client` -> `memory-service-rest-quarkus`, move `quarkus-data-encryption` under `quarkus/`, and relocate examples under `examples/`.
+   - ✅ Reorganize modules under `quarkus/` and `spring/` parents, rename `memory-service-client` -> `memory-service-rest-quarkus`, ~~move `quarkus-data-encryption` under `quarkus/`~~ (modules later removed), and relocate examples under `examples/`.
    - ✅ Rebuild and run validation tests (initial compile run) to confirm the refactor is stable before adding any new Spring modules.
 2) **Spring REST client**
    - Add generator config and support code; verify compile and publishable POM.

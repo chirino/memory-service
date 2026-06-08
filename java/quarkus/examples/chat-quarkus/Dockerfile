@@ -27,11 +27,6 @@ COPY ./java/quarkus/memory-service-extension/runtime/pom.xml ./java/quarkus/memo
 COPY ./java/quarkus/memory-service-proto-quarkus/pom.xml ./java/quarkus/memory-service-proto-quarkus/pom.xml
 COPY ./java/quarkus/memory-service-rest-quarkus/pom.xml ./java/quarkus/memory-service-rest-quarkus/pom.xml
 COPY ./java/quarkus/pom.xml ./java/quarkus/pom.xml
-COPY ./java/quarkus/quarkus-data-encryption/deployment/pom.xml ./java/quarkus/quarkus-data-encryption/deployment/pom.xml
-COPY ./java/quarkus/quarkus-data-encryption/pom.xml ./java/quarkus/quarkus-data-encryption/pom.xml
-COPY ./java/quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml ./java/quarkus/quarkus-data-encryption/quarkus-data-encryption-dek/pom.xml
-COPY ./java/quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml ./java/quarkus/quarkus-data-encryption/quarkus-data-encryption-vault/pom.xml
-COPY ./java/quarkus/quarkus-data-encryption/runtime/pom.xml ./java/quarkus/quarkus-data-encryption/runtime/pom.xml
 COPY ./java/spring/examples/chat-spring/pom.xml ./java/spring/examples/chat-spring/pom.xml
 COPY ./java/spring/examples/pom.xml ./java/spring/examples/pom.xml
 COPY ./java/spring/memory-service-proto-spring/pom.xml ./java/spring/memory-service-proto-spring/pom.xml

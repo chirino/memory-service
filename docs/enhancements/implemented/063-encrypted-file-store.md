@@ -4,11 +4,13 @@ status: implemented
 
 # Enhancement 063: Encrypted File Store
 
-> **Status**: Implemented.
+> **Status**: Implemented in Java/Quarkus (modules removed). Go implementation uses equivalent encryption in `internal/dataencryption/` and `internal/plugin/attach/encrypt/`.
 
 ## Summary
 
-Add transparent streaming encryption to the file store layer so that attachment data is encrypted at rest regardless of the underlying storage backend (S3, PostgreSQL, MongoDB). A new `EncryptionHeader` class replaces `EncryptionEnvelope` in `quarkus-data-encryption`, unifying the encryption format for both small byte-array data (MemoryStores) and large streaming data (FileStore). `DataEncryptionService` gains stream-oriented methods that `EncryptingFileStore` — a new decorator — uses via a virtual-thread pipe to preserve end-to-end streaming without buffering entire files.
+Add transparent streaming encryption to the file store layer so that attachment data is encrypted at rest regardless of the underlying storage backend (S3, PostgreSQL, MongoDB). A new `EncryptionHeader` class replaces `EncryptionEnvelope` in the Java encryption modules, unifying the encryption format for both small byte-array data (MemoryStores) and large streaming data (FileStore). `DataEncryptionService` gains stream-oriented methods that `EncryptingFileStore` — a new decorator — uses via a virtual-thread pipe to preserve end-to-end streaming without buffering entire files.
+
+**Note**: The Java `quarkus-data-encryption` modules have been removed. The Go implementation maintains wire-format compatibility using `internal/dataencryption/` for the MSEH format and `internal/plugin/attach/encrypt/` for attachment encryption.
 
 ## Motivation
 
@@ -29,7 +31,7 @@ Attachment data stored via `FileStore` is currently written in plaintext. This i
 
 ### Existing Encryption Infrastructure
 
-The project already has a full encryption stack in `quarkus/quarkus-data-encryption/`:
+The Java implementation had a full encryption stack in `quarkus/quarkus-data-encryption/` (now removed):
 
 - **`DataEncryptionService`** — `encrypt(byte[])` / `decrypt(byte[])` with pluggable provider routing.
 - **`DataEncryptionProvider`** — interface with implementations:

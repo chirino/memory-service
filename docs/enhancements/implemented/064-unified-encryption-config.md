@@ -4,7 +4,7 @@ status: implemented
 
 # Enhancement 064: Unified Encryption Configuration
 
-> **Status**: Implemented.
+> **Status**: Implemented in Java/Quarkus (modules removed). Go implementation uses `memory-service.encryption.*` config namespace.
 
 ## Summary
 
@@ -14,7 +14,7 @@ Move `data.encryption.*` config properties under `memory-service.*`, default fil
 
 ### Scattered config prefix
 
-The `quarkus-data-encryption` extension currently uses the `data.encryption.*` prefix, while every other memory-service config key uses `memory-service.*`. Operators must consult two separate namespaces to configure encryption:
+The Java `quarkus-data-encryption` extension (now removed) used the `data.encryption.*` prefix, while every other memory-service config key uses `memory-service.*`. This enhancement unified the config under `memory-service.encryption.*`:
 
 ```properties
 data.encryption.providers=dek

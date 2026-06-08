@@ -11,7 +11,7 @@ vars:
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
   PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
-  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:quarkus-data-encryption-parent,:quarkus-data-encryption,:quarkus-data-encryption-deployment,:quarkus-data-encryption-dek,:quarkus-data-encryption-vault,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
+  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
   
 
 tasks:
