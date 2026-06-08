@@ -18,7 +18,6 @@ on:
       - 'docs/**'
       - '*.md'
       - '.skills/**'
-      - '.github/**'
       - '.devconainer/**'
 
 concurrency:
