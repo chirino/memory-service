@@ -13,6 +13,11 @@
   <packaging>jar</packaging>
   <name>Memory Service - Demo Chat App - Spring</name>
 
+  <properties>
+    <!-- Skip Maven Central publishing for demo app -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>io.github.chirino.memory-service</groupId>
@@ -68,6 +73,15 @@
 
   <build>
     <plugins>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.10.0</version>
+        <configuration>
+          <skip>true</skip>
+          <skipPublishing>true</skipPublishing>
+        </configuration>
+      </plugin>
       <plugin>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-maven-plugin</artifactId>

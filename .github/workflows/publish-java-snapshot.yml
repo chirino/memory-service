@@ -1,29 +1,14 @@
-name: Release packages
+name: Publish Java SNAPSHOT
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
 
 jobs:
-  publish-python:
+  publish-snapshot:
     runs-on: ubuntu-latest
     environment: release
-    permissions:
-      id-token: write
-    steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v4
-      - name: Build wheel
-        run: uv build
-        working-directory: python/langchain
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: python/dist/
-
-  publish-java:
-    runs-on: ubuntu-latest
-    environment: release
+    # Only allow SNAPSHOT publishing from main branch
+    if: github.ref == 'refs/heads/main'
     steps:
       - uses: actions/checkout@v4
 
@@ -45,11 +30,12 @@ jobs:
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - name: Deploy to Maven Central
+      - name: Deploy SNAPSHOT to Maven Central
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION"
+          go run github.com/go-task/task/v3/cmd/task release:java:snapshot
+
+# Made with Bob

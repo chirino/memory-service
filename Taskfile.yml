@@ -11,6 +11,7 @@ vars:
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
   PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
+  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:quarkus-data-encryption-parent,:quarkus-data-encryption,:quarkus-data-encryption-deployment,:quarkus-data-encryption-dek,:quarkus-data-encryption-vault,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
   
 
 tasks:
@@ -439,3 +440,67 @@ tasks:
         echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/   (admin/admin)"
         echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
         echo "  MinIO Console:  http://minio.127.0.0.1.nip.io              (minioadmin/minioadmin)"
+
+  release:java:bundle:
+    desc: Build a signed Maven Central bundle for validation (without publishing)
+    cmds:
+      - |
+        if [ -z "{{.VERSION}}" ]; then
+          echo "Error: VERSION is required. Usage: task release:java:bundle VERSION=x.y.z"
+          exit 1
+        fi
+        case "{{.VERSION}}" in
+          *-SNAPSHOT)
+          echo "Error: Release version cannot contain -SNAPSHOT"
+          exit 1
+          ;;
+        esac
+      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
+      - |
+        echo ""
+        echo "Bundle created successfully for version {{.VERSION}}"
+        echo "Inspect artifacts in java/*/target/ directories"
+        echo "Look for: .pom, .jar, -sources.jar, -javadoc.jar, .asc, and checksum files"
+
+  release:java:
+    desc: Publish a release version to Maven Central
+    cmds:
+      - |
+        if [ -z "{{.VERSION}}" ]; then
+          echo "Error: VERSION is required. Usage: task release:java VERSION=x.y.z"
+          exit 1
+        fi
+        case "{{.VERSION}}" in
+          *-SNAPSHOT)
+          echo "Error: Release version cannot contain -SNAPSHOT"
+          exit 1
+          ;;
+        esac
+      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - |
+        echo ""
+        echo "Release {{.VERSION}} published to Maven Central"
+        echo "Check Central Portal for validation status"
+
+  release:java:snapshot:
+    desc: Publish current SNAPSHOT version to Maven Central
+    cmds:
+      - |
+        VERSION=$(./java/mvnw -f java/pom.xml help:evaluate -Dexpression=project.version -q -DforceStdout)
+        case "$VERSION" in
+          *-SNAPSHOT)
+            ;;
+          *)
+          echo "Error: Current version ($VERSION) is not a SNAPSHOT version"
+          exit 1
+          ;;
+        esac
+        echo "Publishing SNAPSHOT version: $VERSION"
+      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - |
+        echo ""
+        echo "SNAPSHOT published to Maven Central"

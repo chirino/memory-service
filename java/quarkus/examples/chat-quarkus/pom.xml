@@ -13,6 +13,11 @@
   <packaging>jar</packaging>
   <name>Memory Service - Demo Chat App - Quarkus</name>
 
+  <properties>
+    <!-- Skip Maven Central publishing for demo app -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
   <dependencies>
 
     <!-- Memory Service Extension (provides Dev Services) -->
@@ -119,6 +124,20 @@
       <scope>test</scope>
     </dependency>
   </dependencies>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.10.0</version>
+        <configuration>
+          <skip>true</skip>
+          <skipPublishing>true</skipPublishing>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
 
   <profiles>
     <!--
