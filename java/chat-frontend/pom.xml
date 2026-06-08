@@ -14,6 +14,8 @@
   <name>Memory Service - Demo Chat App - Frontend</name>
 
   <properties>
+    <!-- Skip Maven Central publishing for demo frontend -->
+    <maven.deploy.skip>true</maven.deploy.skip>
     <frontend.dir>${maven.multiModuleProjectDirectory}/../frontends/chat-frontend</frontend.dir>
     <maven-jar-plugin.version>3.5.0</maven-jar-plugin.version>
     <node.docker.image>node:22.19.0-alpine</node.docker.image>
@@ -68,6 +70,15 @@
             </configuration>
           </execution>
         </executions>
+      </plugin>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.10.0</version>
+        <configuration>
+          <skip>true</skip>
+          <skipPublishing>true</skipPublishing>
+        </configuration>
       </plugin>
     </plugins>
   </build>

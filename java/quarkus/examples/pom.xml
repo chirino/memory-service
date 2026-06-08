@@ -17,4 +17,23 @@
     <module>chat-quarkus</module>
   </modules>
 
+  <properties>
+    <!-- Skip Maven Central publishing for examples parent -->
+    <maven.deploy.skip>true</maven.deploy.skip>
+  </properties>
+
+  <build>
+    <plugins>
+      <plugin>
+        <groupId>org.sonatype.central</groupId>
+        <artifactId>central-publishing-maven-plugin</artifactId>
+        <version>0.10.0</version>
+        <configuration>
+          <skip>true</skip>
+          <skipPublishing>true</skipPublishing>
+        </configuration>
+      </plugin>
+    </plugins>
+  </build>
+
 </project>

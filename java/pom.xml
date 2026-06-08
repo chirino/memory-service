@@ -6,6 +6,25 @@
   <version>999-SNAPSHOT</version>
   <packaging>pom</packaging>
   <name>Memory Service - Parent</name>
+  <description>Memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking</description>
+  <url>https://github.com/chirino/memory-service</url>
+
+  <licenses>
+    <license>
+      <name>Apache License, Version 2.0</name>
+      <url>https://www.apache.org/licenses/LICENSE-2.0.txt</url>
+      <distribution>repo</distribution>
+    </license>
+  </licenses>
+
+  <developers>
+    <developer>
+      <id>chirino</id>
+      <name>Hiram Chirino</name>
+      <email>hiram@hiramchirino.com</email>
+      <url>https://github.com/chirino</url>
+    </developer>
+  </developers>
 
   <modules>
     <module>chat-frontend</module>
@@ -13,6 +32,13 @@
     <module>quarkus</module>
     <module>spring</module>
   </modules>
+
+  <scm>
+    <connection>scm:git:git://github.com/chirino/memory-service.git</connection>
+    <developerConnection>scm:git:ssh://git@github.com/chirino/memory-service.git</developerConnection>
+    <tag>HEAD</tag>
+    <url>https://github.com/chirino/memory-service</url>
+  </scm>
 
   <properties>
     <compiler-plugin.version>3.14.1</compiler-plugin.version>
@@ -203,6 +229,86 @@
         <skipITs>false</skipITs>
         <quarkus.native.enabled>true</quarkus.native.enabled>
       </properties>
+    </profile>
+
+    <profile>
+      <id>central-release</id>
+      <build>
+        <plugins>
+
+          <!-- Sign artifacts with GPG -->
+          <plugin>
+            <artifactId>maven-gpg-plugin</artifactId>
+            <version>3.2.7</version>
+            <executions>
+              <execution>
+                <id>sign-artifacts</id>
+                <goals>
+                  <goal>sign</goal>
+                </goals>
+                <phase>verify</phase>
+                <configuration>
+                  <gpgArguments>
+                    <arg>--pinentry-mode</arg>
+                    <arg>loopback</arg>
+                  </gpgArguments>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- Attach javadocs -->
+          <plugin>
+            <artifactId>maven-javadoc-plugin</artifactId>
+            <version>3.11.2</version>
+            <configuration>
+              <doclint>none</doclint>
+              <quiet>true</quiet>
+            </configuration>
+            <executions>
+              <execution>
+                <id>attach-javadocs</id>
+                <goals>
+                  <goal>jar</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+          <!-- Attach sources -->
+          <plugin>
+            <artifactId>maven-source-plugin</artifactId>
+            <version>3.3.1</version>
+            <executions>
+              <execution>
+                <id>attach-sources</id>
+                <goals>
+                  <goal>jar-no-fork</goal>
+                </goals>
+              </execution>
+            </executions>
+          </plugin>
+
+          <!-- Publish to Central Portal -->
+          <plugin>
+            <groupId>org.sonatype.central</groupId>
+            <artifactId>central-publishing-maven-plugin</artifactId>
+            <version>0.10.0</version>
+            <extensions>true</extensions>
+            <configuration>
+              <publishingServerId>central</publishingServerId>
+              <autoPublish>true</autoPublish>
+              <waitUntil>published</waitUntil>
+              <excludeArtifacts>
+                <excludeArtifact>chat-frontend</excludeArtifact>
+                <excludeArtifact>memory-service-quarkus-examples-parent</excludeArtifact>
+                <excludeArtifact>chat-quarkus</excludeArtifact>
+                <excludeArtifact>memory-service-spring-examples-parent</excludeArtifact>
+                <excludeArtifact>chat-spring</excludeArtifact>
+              </excludeArtifacts>
+            </configuration>
+          </plugin>
+        </plugins>
+      </build>
     </profile>
   </profiles>
 </project>
