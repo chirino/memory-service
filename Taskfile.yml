@@ -455,8 +455,8 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
       - |
         echo ""
         echo "Bundle created successfully for version {{.VERSION}}"
@@ -477,9 +477,9 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
-      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "Release {{.VERSION}} published to Maven Central"
@@ -499,8 +499,8 @@ tasks:
           ;;
         esac
         echo "Publishing SNAPSHOT version: $VERSION"
-      - ./java/mvnw -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
-      - ./java/mvnw -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "SNAPSHOT published to Maven Central"
