@@ -17,7 +17,6 @@
     <module>memory-service-rest-quarkus</module>
     <module>memory-service-proto-quarkus</module>
     <module>memory-service-extension</module>
-    <module>quarkus-data-encryption</module>
     <module>examples</module>
   </modules>
 </project>
