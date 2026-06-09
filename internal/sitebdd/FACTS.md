@@ -17,11 +17,11 @@ GODOG_TAGS='@python-langchain and @checkpoint_python_examples_langchain_doc_chec
   task test:site -- -count=1
 
 # Run only quarkus scenarios
-go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1 -godog.tags=@quarkus
+GODOG_TAGS=@quarkus go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Run only one checkpoint
-go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1 \
-  -godog.tags=@checkpoint_quarkus_examples_chat_quarkus_01_basic_agent
+GODOG_TAGS=@checkpoint_quarkus_examples_chat_quarkus_01_basic_agent \
+  go test -tags='site_tests sqlite_fts5' ./internal/sitebdd/ -v -count=1
 
 # Record fixtures only for checkpoints that have none
 SITE_TEST_RECORD=missing OPENAI_API_KEY=sk-... \

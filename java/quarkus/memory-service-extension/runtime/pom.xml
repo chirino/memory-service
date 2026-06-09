@@ -41,10 +41,6 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-arc</artifactId>
     </dependency>
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-datasource</artifactId>
-    </dependency>
     <!-- gRPC client for calling the memory-service -->
     <dependency>
       <groupId>io.quarkus</groupId>
@@ -54,11 +50,6 @@
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-oidc</artifactId>
     </dependency>
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-redis-client</artifactId>
-    </dependency>
-
     <!-- REST client + security for calling the memory-service -->
     <dependency>
       <groupId>io.quarkus</groupId>

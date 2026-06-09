@@ -10,8 +10,7 @@ import org.jboss.logging.Logger;
 
 /**
  * Producer for {@link ResponseRecordingManager} that selects the appropriate implementation.
- * Prefers an enabled non-default recording manager (e.g., RedisResponseRecordingManager) over the
- * default NoopResponseRecordingManager.
+ * Prefers an enabled non-default recording manager over the default NoopResponseRecordingManager.
  */
 @ApplicationScoped
 public class ResponseRecordingManagerProducer {
