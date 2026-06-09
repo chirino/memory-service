@@ -59,19 +59,9 @@
       <artifactId>quarkus-grpc</artifactId>
     </dependency>
 
-    <!-- PostgreSQL (to trigger dev services for the memory-service container) -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-jdbc-postgresql</artifactId>
-    </dependency>
     <dependency>
       <groupId>io.quarkus</groupId>
       <artifactId>quarkus-oidc</artifactId>
-    </dependency>
-    <!-- Redis (to trigger dev services for the memory-service container) -->
-    <dependency>
-      <groupId>io.quarkus</groupId>
-      <artifactId>quarkus-redis-client</artifactId>
     </dependency>
     <!-- Core Quarkus for agent app -->
     <dependency>

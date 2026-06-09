@@ -7,7 +7,7 @@ description: Automatic memory-service container startup for development and test
 import { Code } from "astro:components";
 import { PROJECT_VERSION } from "../../../config";
 
-The Memory Service extension provides **Dev Services** that automatically start a memory-service container in development mode. This eliminates the need to manually configure and run the memory-service separately, making local development much easier.
+The Memory Service Quarkus extension provides **Dev Services** that automatically start a memory-service container in development mode. This lets a Quarkus agent app run locally without a separate Memory Service setup.
 
 ## Why Use Dev Services?
 
@@ -15,11 +15,12 @@ Dev Services automatically:
 
 - **Starts a memory-service container** using the `ghcr.io/chirino/memory-service:latest` image
 - **Configures your application** with the correct connection URL and API key
-- **Reuses existing dev service containers** (PostgreSQL, Keycloak, Redis, Infinispan) started by your application
-- **Handles container lifecycle** - starts on application startup, stops when the application stops
+- **Uses self-contained local storage** inside the container for development
+- **Connects to Keycloak Dev Services** when your app configures OIDC
+- **Handles container lifecycle** when the application starts and stops
 - **Generates secure API keys** automatically if not configured
 
-This means you can focus on developing your agent application without worrying about setting up and managing the memory-service infrastructure.
+The default memory-service container does not require PostgreSQL, MongoDB, Redis, Infinispan, Qdrant, or pgvector dev services. It runs with SQLite, local cache, SQLite vector search, local embeddings, and filesystem attachments.
 
 ## How It Works
 
@@ -28,20 +29,31 @@ When you run your Quarkus application in dev mode (`mvn quarkus:dev`), the exten
 1. Checks if Docker is available
 2. Checks if `memory-service.client.url` is already configured
 3. If not configured, starts a memory-service container
-4. Automatically configures your application with:
+4. Configures your application with:
    - `memory-service.client.url` - The base URL of the dev memory-service
-   - `memory-service.client.api-key` - The API key (generated or from your config)
+   - `memory-service.client.api-key` - The API key, generated or from your config
+   - `quarkus.grpc.clients.responserecorder.*` - The gRPC client host, port, and plaintext settings
 
-The memory-service container automatically connects to:
+The memory-service container is configured by default with:
 
-- **PostgreSQL** dev service (if available) - for the main datastore
-- **Keycloak** dev service (if available) - for OIDC authentication
-- **Redis** dev service (if available and `memory-service.cache.type=redis`) - for caching
-- **Infinispan** dev service (if available and `memory-service.cache.type=infinispan`) - for caching
+<Code
+  lang="properties"
+  code={`MEMORY_SERVICE_DB_KIND=sqlite
+MEMORY_SERVICE_DB_URL=file:/tmp/memory-service-dev/memory-service.db
+MEMORY_SERVICE_DB_MIGRATE_AT_START=true
+MEMORY_SERVICE_CACHE_KIND=local
+MEMORY_SERVICE_VECTOR_KIND=sqlite
+MEMORY_SERVICE_EMBEDDING_KIND=local
+MEMORY_SERVICE_ATTACHMENTS_KIND=fs
+MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-dev/attachments
+MEMORY_SERVICE_TEMP_DIR=/tmp/memory-service-dev/tmp`}
+/>
+
+If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container.
 
 ## Configuration Properties
 
-The following configuration properties control Dev Services behavior:
+The following configuration properties control Dev Services behavior.
 
 ### `memory-service.client.url`
 
@@ -50,7 +62,7 @@ The following configuration properties control Dev Services behavior:
 **Description:** The base URL of the memory-service instance. If this is set, Dev Services will **not** start automatically. Use this to point to an existing memory-service instance.
 
 ```properties
-# Disable Dev Services and use existing instance
+# Disable Dev Services and use an existing instance
 memory-service.client.url=http://localhost:8082
 ```
 
@@ -58,25 +70,36 @@ memory-service.client.url=http://localhost:8082
 
 **Type:** `String`  
 **Default:** Auto-generated random key if not set  
-**Description:** The API key used to authenticate agent requests to the memory-service. If not configured, Dev Services generates a secure random Base64-encoded key and exposes it to both the container and your application.
+**Description:** The API key used to authenticate agent requests to the memory-service. If not configured, Dev Services generates a random Base64-encoded key and exposes it to both the container and your application.
 
 ```properties
 # Use a specific API key
 memory-service.client.api-key=my-custom-api-key
 ```
 
-### `memory-service.cache.type`
+### `memory-service.devservices.port`
 
-**Type:** `String`  
-**Default:** `"none"`  
-**Description:** Configures the cache backend. Valid values are `"redis"` or `"infinispan"`. When set, the memory-service container will be configured to use the corresponding dev service (Redis or Infinispan) for caching. The response recording manager automatically uses the configured cache backend.
+**Type:** `int`
+**Default:** Random Docker host port
+**Description:** Optional fixed host port for the memory-service container. This is useful when you want to call the dev memory-service directly with curl or from browser code.
 
 ```properties
-# Use Redis for caching (response recording manager will automatically use it)
-memory-service.cache.type=redis
+# Make the dev memory-service available at http://localhost:8082
+memory-service.devservices.port=8082
+```
 
-# Use Infinispan for caching (response recording manager will automatically use it)
-memory-service.cache.type=infinispan
+When this property is not set, the Quarkus app still receives the correct dynamic port through generated config.
+
+### `memory-service.devservices.env.*`
+
+**Type:** `String`
+**Default:** Not set
+**Description:** Extra environment variables passed through to the memory-service container. Use this for roles, CORS, feature flags, or to override the default local storage settings.
+
+```properties
+memory-service.devservices.env.MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=admin
+memory-service.devservices.env.MEMORY_SERVICE_CORS_ENABLED=true
+memory-service.devservices.env.MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000
 ```
 
 ### `quarkus.devservices.enabled`
@@ -92,35 +115,18 @@ quarkus.devservices.enabled=false
 
 ## Required Dependencies
 
-For Dev Services to work properly, your application needs to include dev service dependencies for the data stores and caches that the memory-service container will use.
-
-### Required: Database Dev Service
-
-The memory-service container requires either PostgreSQL or MongoDB. Add one of these dependencies:
-
-**PostgreSQL (Recommended):**
+For a basic agent app, add the Memory Service extension:
 
 <Code
   lang="xml"
   code={`<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-jdbc-postgresql</artifactId>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-extension</artifactId>
+  <version>${PROJECT_VERSION}</version>
 </dependency>`}
 />
 
-**MongoDB:**
-
-<Code
-  lang="xml"
-  code={`<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-mongodb-client</artifactId>
-</dependency>`}
-/>
-
-### Required: OIDC Dev Service
-
-The memory-service container requires Keycloak for authentication. Add this dependency:
+If your app authenticates users with OIDC, add Quarkus OIDC so Keycloak Dev Services can start and the memory-service container can validate the same tokens:
 
 <Code
   lang="xml"
@@ -130,70 +136,29 @@ The memory-service container requires Keycloak for authentication. Add this depe
 </dependency>`}
 />
 
-### Optional: Cache Dev Services
+You do not need `quarkus-jdbc-postgresql`, `quarkus-mongodb-client`, `quarkus-redis-client`, or `quarkus-infinispan-client` just to back the memory-service Dev Service.
 
-If you're using response recording and resumption with Redis or Infinispan, add the corresponding dev service dependency:
-
-**Redis (for `memory-service.cache.type=redis`):**
-
-<Code
-  lang="xml"
-  code={`<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-redis-client</artifactId>
-</dependency>`}
-/>
-
-**Infinispan (for `memory-service.cache.type=infinispan`):**
-
-<Code
-  lang="xml"
-  code={`<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-infinispan-client</artifactId>
-</dependency>`}
-/>
-
-## Full `pom.xml` Example
-
-Here's a complete `pom.xml` example showing all the dependencies needed for Dev Services with PostgreSQL and Redis:
+## Example
 
 <Code lang="xml" code={`<dependencies>
-  <!-- Memory Service Extension (provides Dev Services) -->
   <dependency>
     <groupId>io.github.chirino.memory-service</groupId>
     <artifactId>memory-service-extension</artifactId>
     <version>${PROJECT_VERSION}</version>
   </dependency>
 
-  <!-- PostgreSQL Dev Service (required) -->
-
-<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-jdbc-postgresql</artifactId>
-</dependency>
-
-  <!-- OIDC Dev Service (required) -->
-
-<dependency>
-  <groupId>io.quarkus</groupId>
-  <artifactId>quarkus-oidc</artifactId>
-</dependency>
-
-  <!-- Redis Dev Service (optional, for response recording and resumption) -->
-
   <dependency>
     <groupId>io.quarkus</groupId>
-    <artifactId>quarkus-redis-client</artifactId>
+    <artifactId>quarkus-oidc</artifactId>
   </dependency>
 </dependencies>`} />
 
 And the corresponding `application.properties`:
 
-<Code lang="properties" code={`# Enable Redis-based cache (response recording manager will automatically use it)
-memory-service.cache.type=redis
-
-# OIDC configuration
+<Code lang="properties" code={`memory-service.client.api-key=agent-api-key-1
+memory-service.devservices.port=8082
+memory-service.devservices.env.MEMORY_SERVICE_API_KEYS_AGENT=agent-api-key-1
+memory-service.devservices.env.MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=admin
 
 quarkus.oidc.client-id=memory-service-client
 quarkus.oidc.credentials.secret=change-me`} />

@@ -8,6 +8,7 @@
 import { forwardRef, useState, useRef, useEffect, useCallback } from "react";
 import {
   Conversation,
+  type ChatEvent,
   type ChatAttachment,
   type RenderableConversationMessage,
   useConversationContext,
@@ -35,6 +36,10 @@ import {
 } from "lucide-react";
 import { useAttachments, type PendingAttachment } from "@/hooks/useAttachments";
 import { getAccessToken } from "@/lib/auth";
+
+function hasRenderableRichEvents(events?: ChatEvent[]): boolean {
+  return events?.some((event) => event.eventType !== "ContentFetched" && event.eventType !== "ChatCompleted") ?? false;
+}
 
 type ConversationsUIViewportProps = React.ComponentProps<typeof Conversation.Viewport>;
 
@@ -409,8 +414,8 @@ function ConversationsUIMessageRow({
                       </>
                     );
                   })()}
-                {message.events && message.events.length > 0 ? (
-                  <RichEventRenderer events={message.events} isStreaming={isStreaming} />
+                {hasRenderableRichEvents(message.events) ? (
+                  <RichEventRenderer events={message.events ?? []} isStreaming={isStreaming} />
                 ) : message.content ? (
                   <Streamdown isAnimating={isStreaming}>{message.content}</Streamdown>
                 ) : null}

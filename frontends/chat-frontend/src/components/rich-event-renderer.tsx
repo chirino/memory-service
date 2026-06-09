@@ -51,7 +51,6 @@ type EventGroup =
   | { type: "thinking"; content: string }
   | { type: "tool-pending"; id?: string; toolName: string; input?: unknown }
   | { type: "tool-result"; id?: string; toolName: string; input?: unknown; output?: unknown }
-  | { type: "content-fetched"; source?: string; content?: string }
   | { type: "other"; event: ChatEvent };
 
 function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
@@ -128,9 +127,6 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
         });
         break;
       case "ContentFetched":
-        flushText();
-        flushThinking();
-        groups.push({ type: "content-fetched", source: event.source, content: event.content });
         break;
       case "IntermediateResponse":
         // Intermediate responses are typically text-like
@@ -165,8 +161,6 @@ function EventBlock({ group, isStreaming }: { group: EventGroup; isStreaming: bo
       return <ToolCallPending name={group.toolName} input={group.input} />;
     case "tool-result":
       return <ToolCallResult name={group.toolName} input={group.input} output={group.output} />;
-    case "content-fetched":
-      return <ContentFetchedBlock source={group.source} content={group.content} />;
     default:
       return null;
   }
@@ -300,43 +294,4 @@ type ToolCallResultProps = {
  */
 function ToolCallResult({ name, input, output }: ToolCallResultProps) {
   return <ToolCallCard name={name} input={input} output={output} status="completed" />;
-}
-
-type ContentFetchedBlockProps = {
-  source?: string;
-  content?: string;
-};
-
-/**
- * Displays RAG content retrieval information.
- */
-function ContentFetchedBlock({ source, content }: ContentFetchedBlockProps) {
-  const [isExpanded, setIsExpanded] = useState(false);
-
-  return (
-    <div className="my-2 rounded-lg border border-stone/20 bg-mist/30">
-      <button
-        type="button"
-        onClick={() => content && setIsExpanded(!isExpanded)}
-        disabled={!content}
-        className={`flex w-full items-center gap-2 px-3 py-2 text-left text-sm ${
-          content ? "cursor-pointer hover:bg-mist/50" : "cursor-default"
-        }`}
-      >
-        <span className="text-xs text-stone">📄 Retrieved content</span>
-        {source && <span className="truncate text-xs font-medium text-ink">{source}</span>}
-        {content &&
-          (isExpanded ? (
-            <ChevronDown className="ml-auto h-4 w-4 text-stone" />
-          ) : (
-            <ChevronRight className="ml-auto h-4 w-4 text-stone" />
-          ))}
-      </button>
-      {isExpanded && content && (
-        <div className="border-t border-stone/10 px-3 py-2">
-          <pre className="whitespace-pre-wrap text-xs text-stone/80">{content}</pre>
-        </div>
-      )}
-    </div>
-  );
 }
