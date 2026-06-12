@@ -99,7 +99,7 @@ jobs:
 
       - name: Install uv
         if: contains('test-site', matrix.job)
-        uses: astral-sh/setup-uv@v5
+        uses: astral-sh/setup-uv@v7
         with:
           enable-cache: true
 
