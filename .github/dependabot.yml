@@ -1,0 +1,154 @@
+version: 2
+
+updates:
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:00"
+      timezone: "America/New_York"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 2
+
+  - package-ecosystem: "gomod"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:15"
+      timezone: "America/New_York"
+    groups:
+      go-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "maven"
+    directories:
+      - "/java"
+      - "/internal"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:30"
+      timezone: "America/New_York"
+    groups:
+      maven-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "npm"
+    directories:
+      - "/site"
+      - "/frontends/chat-frontend"
+      - "/typescript/vercelai"
+      - "/typescript/examples/vecelai/chat-vecelai-ts"
+      - "/typescript/examples/vecelai/doc-checkpoints/01-basic-chat"
+      - "/typescript/examples/vecelai/doc-checkpoints/02-with-memory"
+      - "/typescript/examples/vecelai/doc-checkpoints/03-with-history"
+      - "/typescript/examples/vecelai/doc-checkpoints/03b-with-events"
+      - "/typescript/examples/vecelai/doc-checkpoints/04-conversation-forking"
+      - "/typescript/examples/vecelai/doc-checkpoints/05-response-resumption"
+      - "/typescript/examples/vecelai/doc-checkpoints/05a-streaming"
+      - "/typescript/examples/vecelai/doc-checkpoints/05b-response-resumption"
+      - "/typescript/examples/vecelai/doc-checkpoints/06-sharing"
+      - "/typescript/examples/vecelai/doc-checkpoints/07-with-search"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "06:45"
+      timezone: "America/New_York"
+    groups:
+      npm-dependencies:
+        patterns: ["*"]
+        group-by: "dependency-name"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "uv"
+    directories:
+      - "/python"
+      - "/python/examples/langchain/chat-langchain"
+      - "/python/examples/langchain/doc-checkpoints/01-basic-agent"
+      - "/python/examples/langchain/doc-checkpoints/02-with-memory"
+      - "/python/examples/langchain/doc-checkpoints/03-with-history"
+      - "/python/examples/langchain/doc-checkpoints/03b-with-events"
+      - "/python/examples/langchain/doc-checkpoints/04-conversation-forking"
+      - "/python/examples/langchain/doc-checkpoints/05-response-resumption"
+      - "/python/examples/langchain/doc-checkpoints/06-sharing"
+      - "/python/examples/langchain/doc-checkpoints/07-with-search"
+      - "/python/examples/langgraph/chat-langgraph"
+      - "/python/examples/langgraph/doc-checkpoints/01-basic-langgraph"
+      - "/python/examples/langgraph/doc-checkpoints/02-with-checkpointing"
+      - "/python/examples/langgraph/doc-checkpoints/03-with-history"
+      - "/python/examples/langgraph/doc-checkpoints/03b-with-events"
+      - "/python/examples/langgraph/doc-checkpoints/04-conversation-forking"
+      - "/python/examples/langgraph/doc-checkpoints/05-response-resumption"
+      - "/python/examples/langgraph/doc-checkpoints/06-sharing"
+      - "/python/examples/langgraph/doc-checkpoints/07-with-search"
+      - "/python/examples/langgraph/doc-checkpoints/30-memories"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:00"
+      timezone: "America/New_York"
+    groups:
+      python-dependencies:
+        patterns: ["*"]
+        group-by: "dependency-name"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+    open-pull-requests-limit: 3
+
+  - package-ecosystem: "docker"
+    directories:
+      - "/"
+      - "/.devcontainer"
+      - "/java/quarkus/examples/chat-quarkus"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:15"
+      timezone: "America/New_York"
+    groups:
+      docker-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "docker-compose"
+    directories:
+      - "/"
+      - "/java/spring/examples/chat-spring"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:30"
+      timezone: "America/New_York"
+    groups:
+      compose-dependencies:
+        patterns: ["*"]
+    commit-message:
+      prefix: "chore"
+      include: "scope"
+
+  - package-ecosystem: "devcontainers"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+      time: "07:45"
+      timezone: "America/New_York"
+    commit-message:
+      prefix: "chore"
+      include: "scope"
