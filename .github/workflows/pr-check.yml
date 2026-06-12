@@ -119,7 +119,7 @@ jobs:
       - name: Add JUnit summary to job
         if: always() && contains('test-java', matrix.job)
         continue-on-error: true
-        uses: mikepenz/action-junit-report@v5
+        uses: mikepenz/action-junit-report@v6
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
           check_name: JUnit report (${{ matrix.job }})
