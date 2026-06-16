@@ -115,40 +115,51 @@ class ChatController {
 
         Attachments attachments = attachmentResolver.resolve(toRefs(request.getAttachments()));
 
-        ChatClient.ChatClientRequestSpec requestSpec =
-                chatClient
-                        .prompt()
-                        .advisors(
-                                advisor -> {
-                                    advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
-                                    if (!attachments.isEmpty()) {
-                                        advisor.param(
-                                                ConversationHistoryStreamAdvisor.ATTACHMENTS_KEY,
-                                                attachments);
-                                    }
-                                    if (StringUtils.hasText(request.getForkedAtConversationId())) {
-                                        advisor.param(
-                                                ConversationHistoryStreamAdvisor
-                                                        .FORKED_AT_CONVERSATION_ID_KEY,
-                                                request.getForkedAtConversationId());
-                                    }
-                                    if (StringUtils.hasText(request.getForkedAtEntryId())) {
-                                        advisor.param(
-                                                ConversationHistoryStreamAdvisor
-                                                        .FORKED_AT_ENTRY_ID_KEY,
-                                                request.getForkedAtEntryId());
-                                    }
-                                })
-                        .user(
-                                spec -> {
-                                    spec.text(request.getMessage());
-                                    if (!attachments.media().isEmpty()) {
-                                        spec.media(attachments.media().toArray(new Media[0]));
-                                    }
-                                });
+        Flux<String> responseFlux;
+        try {
+            ChatClient.ChatClientRequestSpec requestSpec =
+                    chatClient
+                            .prompt()
+                            .advisors(
+                                    advisor -> {
+                                        advisor.param(ChatMemory.CONVERSATION_ID, conversationId);
+                                        if (!attachments.isEmpty()) {
+                                            advisor.param(
+                                                    ConversationHistoryStreamAdvisor
+                                                            .ATTACHMENTS_KEY,
+                                                    attachments);
+                                        }
+                                        if (StringUtils.hasText(
+                                                request.getForkedAtConversationId())) {
+                                            advisor.param(
+                                                    ConversationHistoryStreamAdvisor
+                                                            .FORKED_AT_CONVERSATION_ID_KEY,
+                                                    request.getForkedAtConversationId());
+                                        }
+                                        if (StringUtils.hasText(request.getForkedAtEntryId())) {
+                                            advisor.param(
+                                                    ConversationHistoryStreamAdvisor
+                                                            .FORKED_AT_ENTRY_ID_KEY,
+                                                    request.getForkedAtEntryId());
+                                        }
+                                    })
+                            .user(
+                                    spec -> {
+                                        spec.text(request.getMessage());
+                                        if (!attachments.media().isEmpty()) {
+                                            spec.media(attachments.media().toArray(new Media[0]));
+                                        }
+                                    });
 
-        Flux<String> responseFlux =
-                requestSpec.stream().chatClientResponse().map(this::extractContent);
+            responseFlux =
+                    requestSpec.stream()
+                            .chatClientResponse()
+                            .map(this::extractContent)
+                            .doFinally(signal -> attachments.close());
+        } catch (RuntimeException e) {
+            attachments.close();
+            throw e;
+        }
 
         SseEmitter emitter = new SseEmitter(0L);
         Disposable subscription =

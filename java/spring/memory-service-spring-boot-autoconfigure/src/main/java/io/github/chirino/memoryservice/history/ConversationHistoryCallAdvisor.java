@@ -131,9 +131,11 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
 
     @SuppressWarnings("unchecked")
     private List<Map<String, Object>> extractAttachments(ChatClientRequest request) {
-        // Prefer explicit attachment metadata from the request context
-        Object explicit =
-                request.context().get(ConversationHistoryStreamAdvisor.ATTACHMENT_METADATA_KEY);
+        // Prefer explicit attachments from the request context.
+        Object explicit = request.context().get(ConversationHistoryStreamAdvisor.ATTACHMENTS_KEY);
+        if (explicit instanceof Attachments attachmentsObj) {
+            return attachmentsObj.toHistoryMaps();
+        }
         if (explicit instanceof List<?> list && !list.isEmpty()) {
             return (List<Map<String, Object>>) list;
         }

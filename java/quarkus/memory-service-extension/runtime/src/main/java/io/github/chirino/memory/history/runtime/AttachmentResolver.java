@@ -23,10 +23,7 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
@@ -58,43 +55,28 @@ public class AttachmentResolver {
             return Attachments.empty();
         }
 
-        List<Map<String, Object>> metadata = new ArrayList<>();
-        List<Content> contents = new ArrayList<>();
+        List<AttachmentDescriptor> descriptors = new ArrayList<>();
 
         for (AttachmentRef ref : refs) {
             if (ref.id() == null || ref.id().isBlank()) {
                 continue;
             }
 
-            // Build metadata for history recording
-            Map<String, Object> meta = new LinkedHashMap<>();
-            meta.put("attachmentId", ref.id());
-            if (ref.contentType() != null && !ref.contentType().isBlank()) {
-                meta.put("contentType", ref.contentType());
-            }
-            if (ref.name() != null && !ref.name().isBlank()) {
-                meta.put("name", ref.name());
-            }
-            if (ref.href() != null && !ref.href().isBlank()) {
-                meta.put("href", ref.href());
-            }
-            metadata.add(meta);
+            AttachmentDescriptor item = AttachmentDescriptor.fromRef(ref);
 
-            // Download and convert to LangChain4j Content
+            // Download to a local source for lazy LangChain4j Content conversion.
             try {
-                Content content = downloadAndConvert(ref);
-                if (content != null) {
-                    contents.add(content);
-                }
+                item = download(item);
             } catch (Exception e) {
                 LOG.warnf(e, "Failed to resolve attachment %s, skipping", ref.id());
             }
+            descriptors.add(item);
         }
 
-        return new Attachments(metadata, contents);
+        return Attachments.fromDescriptors(descriptors);
     }
 
-    private Content downloadAndConvert(AttachmentRef ref) throws IOException {
+    private AttachmentDescriptor download(AttachmentDescriptor item) throws IOException {
         String bearer = bearerToken(securityIdentity);
         if (memoryServiceApiBuilder.usesUnixSocket()) {
             UnixSocketHttpClient client =
@@ -104,27 +86,29 @@ public class AttachmentResolver {
                             memoryServiceApiBuilder.getApiKey(),
                             bearer);
             UnixSocketHttpClient.HttpResponseData response =
-                    client.exchange("GET", "/v1/attachments/" + ref.id(), null, (Object) null);
+                    client.exchange(
+                            "GET", "/v1/attachments/" + item.attachmentId(), null, (Object) null);
             if (response.statusCode() == 302) {
-                return toContentFromUrl(ref.contentType(), response.header("location"));
+                return urlSource(item, response.header("location"));
             }
             if (response.statusCode() == 200) {
                 String contentType = response.header("content-type");
                 if (contentType == null) {
-                    contentType = ref.contentType();
+                    contentType = item.contentType();
                 }
                 if (contentType == null) {
                     contentType = "application/octet-stream";
                 }
-                return streamToTempFileAndConvert(
-                        new ByteArrayInputStream(response.body()), contentType);
+                return streamToTempFile(
+                        item, new ByteArrayInputStream(response.body()), contentType);
             }
             LOG.warnf(
                     "Unexpected status %d downloading attachment %s",
-                    response.statusCode(), ref.id());
-            return null;
+                    response.statusCode(), item.attachmentId());
+            return item;
         }
-        String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + ref.id();
+        String url =
+                memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + item.attachmentId();
         Client client = ClientBuilder.newClient();
         try {
             var req = client.target(url).request();
@@ -135,46 +119,60 @@ public class AttachmentResolver {
             if (response.getStatus() == 302) {
                 // S3 redirect — use the signed URL directly
                 String signedUrl = response.getHeaderString("Location");
-                return toContentFromUrl(ref.contentType(), signedUrl);
+                return urlSource(item, signedUrl);
             }
             if (response.getStatus() == 200) {
                 String contentType = response.getHeaderString("Content-Type");
                 if (contentType == null) {
-                    contentType = ref.contentType();
+                    contentType = item.contentType();
                 }
                 if (contentType == null) {
                     contentType = "application/octet-stream";
                 }
-                return streamToTempFileAndConvert(
-                        response.readEntity(InputStream.class), contentType);
+                return streamToTempFile(item, response.readEntity(InputStream.class), contentType);
             }
             LOG.warnf(
                     "Unexpected status %d downloading attachment %s",
-                    response.getStatus(), ref.id());
+                    response.getStatus(), item.attachmentId());
         } finally {
             client.close();
         }
-        return null;
+        return item;
     }
 
     /**
-     * Streams response body to a temp file, then base64-encodes from the file. This avoids
-     * buffering the entire attachment in memory.
+     * Streams response body to a temp file. LangChain4j Content conversion is deferred until the
+     * returned Attachments object's contents() method is called.
      */
-    private Content streamToTempFileAndConvert(InputStream body, String contentType)
-            throws IOException {
+    private AttachmentDescriptor streamToTempFile(
+            AttachmentDescriptor item, InputStream body, String contentType) throws IOException {
+        if (!isSupportedContentType(contentType)) {
+            LOG.debugf("Unsupported content type for LLM: %s", contentType);
+            return item;
+        }
         Path dir = resolveTempDir();
         Path tempFile = Files.createTempFile(dir, "attachment-", ".tmp");
         try {
             try (OutputStream out = Files.newOutputStream(tempFile)) {
                 body.transferTo(out);
             }
-            byte[] bytes = Files.readAllBytes(tempFile);
-            String base64 = Base64.getEncoder().encodeToString(bytes);
-            return toContentFromBase64(contentType, base64);
-        } finally {
+            return item.withFilePath(contentType, tempFile);
+        } catch (IOException | RuntimeException e) {
             Files.deleteIfExists(tempFile);
+            throw e;
         }
+    }
+
+    private AttachmentDescriptor urlSource(AttachmentDescriptor item, String url) {
+        if (url == null || url.isBlank()) {
+            return item;
+        }
+        String contentType = item.contentType();
+        if (contentType != null && !isSupportedContentType(contentType)) {
+            LOG.debugf("Unsupported content type for LLM via URL: %s", contentType);
+            return item;
+        }
+        return item.withContentUrl(url);
     }
 
     private Path resolveTempDir() {
@@ -225,18 +223,18 @@ public class AttachmentResolver {
         return null;
     }
 
-    static Content toContentFromBase64(String contentType, String base64) {
+    static Content toContentFromPath(String contentType, Path filePath) {
         if (contentType.startsWith("image/")) {
-            return ImageContent.from(base64, contentType);
+            return ImageContent.from(filePath, contentType);
         }
         if (contentType.startsWith("audio/")) {
-            return AudioContent.from(base64, contentType);
+            return AudioContent.from(filePath, contentType);
         }
         if (contentType.startsWith("video/")) {
-            return VideoContent.from(base64, contentType);
+            return VideoContent.from(filePath, contentType);
         }
         if (contentType.equals("application/pdf")) {
-            return PdfFileContent.from(base64, contentType);
+            return PdfFileContent.from(filePath, contentType);
         }
         LOG.debugf("Unsupported content type for LLM: %s", contentType);
         return null;

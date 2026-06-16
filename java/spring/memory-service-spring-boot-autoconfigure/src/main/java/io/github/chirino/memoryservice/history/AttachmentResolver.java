@@ -9,13 +9,11 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.ArrayList;
-import java.util.Base64;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.content.Media;
+import org.springframework.core.io.Resource;
 import org.springframework.core.io.buffer.DataBuffer;
 import org.springframework.core.io.buffer.DataBufferUtils;
 import org.springframework.http.HttpHeaders;
@@ -55,62 +53,43 @@ public class AttachmentResolver {
 
     /**
      * Resolves a list of attachment references into an {@link Attachments} object containing both
-     * metadata and Media objects.
+     * descriptors and lazy Media sources.
      */
     public Attachments resolve(List<AttachmentRef> refs) {
         if (refs == null || refs.isEmpty()) {
             return Attachments.empty();
         }
 
-        List<Map<String, Object>> metadata = new ArrayList<>();
-        List<Media> media = new ArrayList<>();
+        List<AttachmentDescriptor> descriptors = new ArrayList<>();
 
         for (AttachmentRef ref : refs) {
             if (!StringUtils.hasText(ref.id()) && !StringUtils.hasText(ref.href())) {
                 continue;
             }
 
-            // Build metadata for history recording
-            if (StringUtils.hasText(ref.id())) {
-                Map<String, Object> meta = new LinkedHashMap<>();
-                meta.put("attachmentId", ref.id());
-                if (StringUtils.hasText(ref.contentType())) {
-                    meta.put("contentType", ref.contentType());
-                }
-                if (StringUtils.hasText(ref.name())) {
-                    meta.put("name", ref.name());
-                }
-                metadata.add(meta);
-            }
+            AttachmentDescriptor descriptor = AttachmentDescriptor.fromRef(ref);
 
-            // Download and convert to Media for LLM delivery
+            // Download to a local source for lazy Spring AI Media conversion.
             try {
-                Media m = downloadAndConvert(ref);
-                if (m != null) {
-                    media.add(m);
-                }
+                descriptor = download(descriptor);
             } catch (Exception e) {
                 LOG.warn("Failed to resolve attachment {}, skipping", ref.id(), e);
             }
+            descriptors.add(descriptor);
         }
 
-        return new Attachments(metadata, media);
+        return Attachments.fromDescriptors(descriptors);
     }
 
-    @Nullable
-    private Media downloadAndConvert(AttachmentRef ref) {
+    private AttachmentDescriptor download(AttachmentDescriptor descriptor) {
         // If an explicit href is provided (full URL), use it directly
-        if (StringUtils.hasText(ref.href())) {
-            MimeType mimeType =
-                    StringUtils.hasText(ref.contentType())
-                            ? MimeTypeUtils.parseMimeType(ref.contentType())
-                            : MimeTypeUtils.APPLICATION_OCTET_STREAM;
-            return new Media(mimeType, URI.create(ref.href()));
+        if (StringUtils.hasText(descriptor.href())) {
+            return descriptor.withContentUrl(descriptor.href());
         }
 
         // Download from memory service
         String baseUrl = MemoryServiceClients.resolveBaseUrl(properties);
-        String url = baseUrl + "/v1/attachments/" + ref.id();
+        String url = baseUrl + "/v1/attachments/" + descriptor.attachmentId();
         String bearer = SecurityHelper.bearerToken(authorizedClientService);
 
         var requestSpec = webClient.get().uri(url);
@@ -133,51 +112,61 @@ public class AttachmentResolver {
                                                 .findFirst()
                                                 .orElse(null);
                                 return response.releaseBody()
-                                        .thenReturn(toMediaFromUrl(ref.contentType(), signedUrl));
+                                        .thenReturn(urlSource(descriptor, signedUrl));
                             }
 
                             if (status == HttpStatus.OK) {
                                 String contentType =
                                         response.headers().header(HttpHeaders.CONTENT_TYPE).stream()
                                                 .findFirst()
-                                                .orElse(ref.contentType());
-                                return streamToTempFileAndConvert(
-                                        response.bodyToFlux(DataBuffer.class), contentType);
+                                                .orElse(descriptor.contentType());
+                                return streamToTempFile(
+                                        descriptor,
+                                        response.bodyToFlux(DataBuffer.class),
+                                        contentType);
                             }
 
                             LOG.warn(
                                     "Unexpected status {} downloading attachment {}",
                                     response.statusCode().value(),
-                                    ref.id());
-                            return response.releaseBody().then(Mono.empty());
+                                    descriptor.attachmentId());
+                            return response.releaseBody().thenReturn(descriptor);
                         })
                 .block();
     }
 
     /**
-     * Streams response data buffers to a temp file, then base64-encodes from the file. This avoids
-     * buffering the entire attachment in WebClient memory.
+     * Streams response data buffers to a temp file. Spring AI Media conversion is deferred until
+     * the returned Attachments object's media() method is called.
      */
-    private Mono<Media> streamToTempFileAndConvert(
-            Flux<DataBuffer> body, @Nullable String contentType) {
+    private Mono<AttachmentDescriptor> streamToTempFile(
+            AttachmentDescriptor descriptor, Flux<DataBuffer> body, @Nullable String contentType) {
+        String resolvedContentType =
+                StringUtils.hasText(contentType) ? contentType : "application/octet-stream";
         try {
             Path tempFile = Files.createTempFile(tempDir, "attachment-", ".tmp");
             return DataBufferUtils.write(body, tempFile)
                     .then(
                             Mono.fromCallable(
-                                    () -> {
-                                        try {
-                                            byte[] bytes = Files.readAllBytes(tempFile);
-                                            String base64 =
-                                                    Base64.getEncoder().encodeToString(bytes);
-                                            return toMediaFromBase64(contentType, base64);
-                                        } finally {
-                                            Files.deleteIfExists(tempFile);
-                                        }
-                                    }));
+                                    () -> descriptor.withFilePath(resolvedContentType, tempFile)))
+                    .onErrorResume(
+                            error ->
+                                    Mono.fromCallable(
+                                                    () -> {
+                                                        Files.deleteIfExists(tempFile);
+                                                        return descriptor;
+                                                    })
+                                            .then(Mono.error(error)));
         } catch (IOException e) {
             return Mono.error(e);
         }
+    }
+
+    private AttachmentDescriptor urlSource(AttachmentDescriptor descriptor, @Nullable String url) {
+        if (!StringUtils.hasText(url)) {
+            return descriptor;
+        }
+        return descriptor.withContentUrl(url);
     }
 
     private static Path resolveTempDir(@Nullable String configured) {
@@ -201,12 +190,11 @@ public class AttachmentResolver {
     }
 
     @Nullable
-    static Media toMediaFromBase64(@Nullable String contentType, String base64) {
+    static Media toMediaFromResource(@Nullable String contentType, Resource resource) {
         if (contentType == null) {
             contentType = "application/octet-stream";
         }
         MimeType mimeType = MimeTypeUtils.parseMimeType(contentType);
-        String dataUri = "data:" + contentType + ";base64," + base64;
-        return new Media(mimeType, URI.create(dataUri));
+        return new Media(mimeType, resource);
     }
 }

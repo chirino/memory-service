@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import io.github.chirino.memory.client.model.Conversation;
+import io.github.chirino.memory.history.runtime.AttachmentDescriptor;
 import io.github.chirino.memory.history.runtime.ConversationStore;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
@@ -500,7 +501,7 @@ class SubAgentTaskManagerTest {
         public void appendUserMessage(
                 String conversationId,
                 String content,
-                List<Map<String, Object>> attachments,
+                List<AttachmentDescriptor> attachments,
                 String agentId,
                 String forkedAtConversationId,
                 String forkedAtEntryId,

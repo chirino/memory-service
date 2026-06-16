@@ -118,6 +118,12 @@
   <build>
     <plugins>
       <plugin>
+        <artifactId>maven-compiler-plugin</artifactId>
+        <configuration>
+          <fork>true</fork>
+        </configuration>
+      </plugin>
+      <plugin>
         <groupId>org.sonatype.central</groupId>
         <artifactId>central-publishing-maven-plugin</artifactId>
         <version>0.10.0</version>

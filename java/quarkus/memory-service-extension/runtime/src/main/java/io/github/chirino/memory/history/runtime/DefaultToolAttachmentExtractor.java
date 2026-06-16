@@ -4,9 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.jboss.logging.Logger;
 
 /**
@@ -20,12 +18,12 @@ public class DefaultToolAttachmentExtractor implements ToolAttachmentExtractor {
     private static final ObjectMapper MAPPER = new ObjectMapper();
 
     @Override
-    public List<Map<String, Object>> extract(String toolName, String result) {
+    public List<AttachmentDescriptor> extract(String toolName, String result) {
         if (result == null || result.isBlank()) {
             return List.of();
         }
 
-        List<Map<String, Object>> attachments = new ArrayList<>();
+        List<AttachmentDescriptor> attachments = new ArrayList<>();
         try {
             JsonNode root = MAPPER.readTree(result);
             LOG.debugf(
@@ -41,7 +39,7 @@ public class DefaultToolAttachmentExtractor implements ToolAttachmentExtractor {
         return attachments;
     }
 
-    private void extractFromNode(JsonNode node, List<Map<String, Object>> attachments) {
+    private void extractFromNode(JsonNode node, List<AttachmentDescriptor> attachments) {
         if (node == null) {
             return;
         }
@@ -71,19 +69,13 @@ public class DefaultToolAttachmentExtractor implements ToolAttachmentExtractor {
             JsonNode attachmentId = node.get("attachmentId");
             if (attachmentId != null && attachmentId.isTextual()) {
                 String id = attachmentId.asText();
-                Map<String, Object> att = new LinkedHashMap<>();
-                att.put("attachmentId", id);
-                if (node.has("contentType")) {
-                    att.put("contentType", node.get("contentType").asText());
-                }
-                if (node.has("name")) {
-                    att.put("name", node.get("name").asText());
-                }
+                String contentType =
+                        node.has("contentType") ? node.get("contentType").asText() : null;
+                String name = node.has("name") ? node.get("name").asText() : null;
                 // Use explicit href if provided, otherwise derive from attachmentId
-                att.put(
-                        "href",
-                        node.has("href") ? node.get("href").asText() : "/v1/attachments/" + id);
-                attachments.add(att);
+                String href =
+                        node.has("href") ? node.get("href").asText() : "/v1/attachments/" + id;
+                attachments.add(new AttachmentDescriptor(id, contentType, name, href));
             }
         }
     }
