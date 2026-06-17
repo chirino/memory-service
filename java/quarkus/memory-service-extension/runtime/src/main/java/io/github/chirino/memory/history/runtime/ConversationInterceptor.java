@@ -21,9 +21,7 @@ import java.lang.annotation.Annotation;
 import java.lang.reflect.ParameterizedType;
 import java.lang.reflect.Type;
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.jboss.logging.Logger;
 
 @RecordConversation
@@ -105,7 +103,7 @@ public class ConversationInterceptor {
         String conversationId = null;
         String userMessage = null;
         Attachments attachmentsObj = null;
-        List<Map<String, Object>> imageUrlAttachments = new ArrayList<>();
+        List<AttachmentDescriptor> imageUrlAttachments = new ArrayList<>();
         String agentId = null;
         String forkedAtConversationId = null;
         String forkedAtEntryId = null;
@@ -141,10 +139,9 @@ public class ConversationInterceptor {
                     startedByEntryId = (String) args[i];
                 }
                 if (a instanceof ImageUrl && args[i] != null) {
-                    Map<String, Object> att = new LinkedHashMap<>();
-                    att.put("href", String.valueOf(args[i]));
-                    att.put("contentType", "image/*");
-                    imageUrlAttachments.add(att);
+                    imageUrlAttachments.add(
+                            new AttachmentDescriptor(
+                                    null, "image/*", null, String.valueOf(args[i])));
                 }
             }
         }
@@ -154,9 +151,9 @@ public class ConversationInterceptor {
                     "Missing @ConversationId or @UserMessage on intercepted method");
         }
 
-        // Prefer Attachments object metadata over @ImageUrl-derived attachments
-        List<Map<String, Object>> attachments =
-                attachmentsObj != null ? attachmentsObj.metadata() : imageUrlAttachments;
+        // Prefer Attachments object descriptors over @ImageUrl-derived attachments
+        List<AttachmentDescriptor> attachments =
+                attachmentsObj != null ? attachmentsObj.descriptors() : imageUrlAttachments;
 
         return new ConversationInvocation(
                 conversationId,

@@ -1,45 +1,91 @@
 package io.github.chirino.memory.history.runtime;
 
 import dev.langchain4j.data.message.Content;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.List;
-import java.util.Map;
+import org.jboss.logging.Logger;
 
 /**
- * Holds both the attachment metadata (for history recording) and the resolved LangChain4j Content
+ * Holds both attachment descriptors (for history recording) and resolved LangChain4j Content
  * objects (for LLM delivery). Created by {@link AttachmentResolver}.
  *
  * <p>When passed as a parameter to a {@link
  * io.github.chirino.memory.history.annotations.RecordConversation @RecordConversation} method, the
- * {@link ConversationInterceptor} automatically extracts {@link #metadata()} for conversation
+ * {@link ConversationInterceptor} automatically extracts {@link #descriptors()} for conversation
  * history storage.
+ *
+ * <p>This class owns temporary files created during attachment resolution. Call {@link #close()}
+ * after the model request completes.
  */
-public class Attachments {
+public class Attachments implements AutoCloseable {
 
+    private static final Logger LOG = Logger.getLogger(Attachments.class);
     private static final Attachments EMPTY = new Attachments(List.of(), List.of());
 
-    private final List<Map<String, Object>> metadata;
-    private final List<Content> contents;
+    private final List<AttachmentDescriptor> descriptors;
+    private volatile List<Content> contents;
 
-    public Attachments(List<Map<String, Object>> metadata, List<Content> contents) {
-        this.metadata = metadata;
+    public Attachments(List<AttachmentDescriptor> descriptors, List<Content> contents) {
+        this.descriptors = descriptors;
         this.contents = contents;
     }
 
-    /** Attachment metadata for history recording (attachmentId, contentType, name). */
-    public List<Map<String, Object>> metadata() {
-        return metadata;
+    static Attachments fromDescriptors(List<AttachmentDescriptor> descriptors) {
+        return new Attachments(descriptors, null);
     }
 
-    /** Resolved LangChain4j Content objects for LLM delivery. */
+    /** Attachment descriptors for history recording (attachmentId, contentType, name, href). */
+    public List<AttachmentDescriptor> descriptors() {
+        return descriptors;
+    }
+
+    /** Resolved LangChain4j Content objects for LLM delivery. Built lazily on first access. */
     public List<Content> contents() {
-        return contents;
+        List<Content> resolved = contents;
+        if (resolved == null) {
+            synchronized (this) {
+                resolved = contents;
+                if (resolved == null) {
+                    resolved =
+                            descriptors.stream()
+                                    .map(AttachmentDescriptor::content)
+                                    .filter(content -> content != null)
+                                    .toList();
+                    contents = resolved;
+                }
+            }
+        }
+        return resolved;
     }
 
     public boolean isEmpty() {
-        return contents.isEmpty() && metadata.isEmpty();
+        List<Content> resolved = contents;
+        return descriptors.isEmpty() && (resolved == null || resolved.isEmpty());
     }
 
     public static Attachments empty() {
         return EMPTY;
+    }
+
+    @Override
+    public void close() {
+        for (AttachmentDescriptor item : descriptors) {
+            close(item);
+        }
+    }
+
+    private static void close(AttachmentDescriptor item) {
+        Path filePath = item.filePath();
+        if (filePath == null) {
+            return;
+        }
+        try {
+            Files.deleteIfExists(filePath);
+            LOG.debugf("Deleted temporary attachment file: %s", filePath);
+        } catch (IOException e) {
+            LOG.warnf(e, "Failed to delete temporary attachment file: %s", filePath);
+        }
     }
 }

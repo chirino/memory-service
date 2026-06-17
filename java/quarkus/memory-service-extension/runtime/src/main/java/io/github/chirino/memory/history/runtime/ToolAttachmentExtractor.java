@@ -1,7 +1,6 @@
 package io.github.chirino.memory.history.runtime;
 
 import java.util.List;
-import java.util.Map;
 
 /**
  * Extracts attachment references from tool execution results. Implementations parse the tool output
@@ -14,7 +13,7 @@ public interface ToolAttachmentExtractor {
      *
      * @param toolName the name of the tool that was executed
      * @param result the tool execution output (typically JSON)
-     * @return list of attachment metadata maps (each containing at least "attachmentId")
+     * @return list of attachment metadata (each containing at least attachmentId)
      */
-    List<Map<String, Object>> extract(String toolName, String result);
+    List<AttachmentDescriptor> extract(String toolName, String result);
 }

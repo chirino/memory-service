@@ -55,15 +55,23 @@ public class ChatResource {
 
         Attachments attachments = attachmentResolver.resolve(toRefs(request.getAttachments()));
 
-        Multi<ChatEvent> events =
-                agent.chat(
-                        conversationId,
-                        request.getMessage(),
-                        attachments,
-                        request.getForkedAtConversationId(),
-                        request.getForkedAtEntryId());
+        Multi<ChatEvent> events;
+        try {
+            events =
+                    agent.chat(
+                            conversationId,
+                            request.getMessage(),
+                            attachments,
+                            request.getForkedAtConversationId(),
+                            request.getForkedAtEntryId());
+        } catch (RuntimeException e) {
+            attachments.close();
+            throw e;
+        }
 
         return events.map(this::encode)
+                .onTermination()
+                .invoke(attachments::close)
                 .onFailure()
                 .invoke(
                         failure ->

@@ -341,14 +341,9 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
     /**
      * Key for storing an {@link Attachments} object in the advisor context. When present, the
-     * advisor extracts {@link Attachments#metadata()} for history recording.
+     * advisor extracts {@link Attachments#descriptors()} for history recording.
      */
     public static final String ATTACHMENTS_KEY = "conversation.attachments";
-
-    /**
-     * @deprecated Use {@link #ATTACHMENTS_KEY} with an {@link Attachments} object instead.
-     */
-    @Deprecated public static final String ATTACHMENT_METADATA_KEY = ATTACHMENTS_KEY;
 
     /** Key for storing fork metadata in the advisor context. */
     public static final String FORKED_AT_CONVERSATION_ID_KEY = "forkedAtConversationId";
@@ -361,10 +356,10 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
         // Prefer Attachments object (new API)
         if (contextValue instanceof Attachments attachmentsObj) {
-            return attachmentsObj.metadata();
+            return attachmentsObj.toHistoryMaps();
         }
 
-        // Support legacy List<Map<String, Object>> metadata
+        // Support explicit history maps for callers that construct them directly.
         if (contextValue instanceof List<?> list && !list.isEmpty()) {
             return (List<Map<String, Object>>) contextValue;
         }

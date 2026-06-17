@@ -97,7 +97,7 @@ public final class ConversationEventStreamAdapter {
                         : recordingManager.recorder(conversationId, bearerToken);
 
         EventCoalescer coalescer = new EventCoalescer(objectMapper);
-        List<Map<String, Object>> collectedAttachments = new CopyOnWriteArrayList<>();
+        List<AttachmentDescriptor> collectedAttachments = new CopyOnWriteArrayList<>();
 
         Multi<ResponseCancelSignal> cancelStream =
                 recorder.cancelStream().emitOn(Infrastructure.getDefaultExecutor());
@@ -137,7 +137,7 @@ public final class ConversationEventStreamAdapter {
             String bearerToken,
             String agentId,
             ToolAttachmentExtractor toolAttachmentExtractor,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         AtomicBoolean canceled = new AtomicBoolean(false);
         AtomicBoolean completed = new AtomicBoolean(false);
@@ -258,7 +258,7 @@ public final class ConversationEventStreamAdapter {
             MultiEmitter<? super ChatEvent> emitter,
             ChatEvent event,
             ToolAttachmentExtractor toolAttachmentExtractor,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         if (event == null) {
             return;
@@ -279,7 +279,7 @@ public final class ConversationEventStreamAdapter {
                                 "ToolExecutedEvent: tool=%s, outputLength=%d",
                                 toolName, output != null ? output.length() : -1);
                         if (toolName != null && output != null) {
-                            List<Map<String, Object>> extracted =
+                            List<AttachmentDescriptor> extracted =
                                     toolAttachmentExtractor.extract(toolName, output);
                             LOG.debugf(
                                     "ToolAttachmentExtractor returned %d attachments for tool=%s",
@@ -460,7 +460,7 @@ public final class ConversationEventStreamAdapter {
             MultiEmitter<? super ChatEvent> emitter,
             String bearerToken,
             String agentId,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         try {
             storeCoalescedEvents(
@@ -484,7 +484,7 @@ public final class ConversationEventStreamAdapter {
             Throwable failure,
             String bearerToken,
             String agentId,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         // Store partial events on failure
         List<JsonNode> events = coalescer.finish();
@@ -515,7 +515,7 @@ public final class ConversationEventStreamAdapter {
             ResponseRecordingManager.RecordingSession recorder,
             String bearerToken,
             String agentId,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         try {
             storeCoalescedEvents(
@@ -533,7 +533,7 @@ public final class ConversationEventStreamAdapter {
             EventCoalescer coalescer,
             String bearerToken,
             String agentId,
-            List<Map<String, Object>> collectedAttachments) {
+            List<AttachmentDescriptor> collectedAttachments) {
 
         List<JsonNode> events = coalescer.finish();
         String finalText = coalescer.getFinalText();

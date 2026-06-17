@@ -82,14 +82,14 @@ public class ConversationStore {
     }
 
     public void appendUserMessage(
-            String conversationId, String content, List<Map<String, Object>> attachments) {
+            String conversationId, String content, List<AttachmentDescriptor> attachments) {
         appendUserMessage(conversationId, content, attachments, null, null, null, null, null);
     }
 
     public void appendUserMessage(
             String conversationId,
             String content,
-            List<Map<String, Object>> attachments,
+            List<AttachmentDescriptor> attachments,
             String agentId,
             String forkedAtConversationId,
             String forkedAtEntryId,
@@ -255,7 +255,7 @@ public class ConversationStore {
             String conversationId,
             String finalText,
             List<JsonNode> events,
-            List<Map<String, Object>> attachments,
+            List<AttachmentDescriptor> attachments,
             String bearerToken) {
         appendAgentMessageWithEvents(
                 conversationId, finalText, events, attachments, null, bearerToken);
@@ -265,7 +265,7 @@ public class ConversationStore {
             String conversationId,
             String finalText,
             List<JsonNode> events,
-            List<Map<String, Object>> attachments,
+            List<AttachmentDescriptor> attachments,
             String agentId,
             String bearerToken) {
         CreateEntryRequest request = new CreateEntryRequest();
