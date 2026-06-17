@@ -6,6 +6,7 @@ import dev.langchain4j.model.output.Response;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import java.net.URI;
+import java.util.Base64;
 import java.util.Map;
 import org.jboss.logging.Logger;
 
@@ -32,15 +33,18 @@ public class ImageGenerationTool {
             Response<dev.langchain4j.data.image.Image> response = imageModel.generate(prompt);
             dev.langchain4j.data.image.Image image = response.content();
 
-            URI imageUrl = image.url();
-            if (imageUrl == null) {
-                return "{\"error\": \"Image generation returned no URL\"}";
-            }
-
-            // Create attachment from the generated image URL
             String name = generateFilename(prompt);
-            Map<String, Object> attachment =
-                    attachmentClient.createFromUrl(imageUrl.toString(), "image/png", name);
+            Map<String, Object> attachment;
+            URI imageUrl = image.url();
+            if (imageUrl != null) {
+                attachment = attachmentClient.createFromUrl(imageUrl.toString(), "image/png", name);
+            } else if (image.base64Data() != null && !image.base64Data().isBlank()) {
+                attachment =
+                        attachmentClient.upload(
+                                decodeImageData(image.base64Data()), "image/png", name);
+            } else {
+                return "{\"error\": \"Image generation returned no URL or image data\"}";
+            }
 
             if (attachment == null) {
                 return "{\"error\": \"Failed to create attachment from generated image\"}";
@@ -68,6 +72,14 @@ public class ImageGenerationTool {
             clean = "generated-image";
         }
         return clean + ".png";
+    }
+
+    private static byte[] decodeImageData(String value) {
+        int comma = value.indexOf(',');
+        if (value.startsWith("data:") && comma >= 0) {
+            value = value.substring(comma + 1);
+        }
+        return Base64.getDecoder().decode(value);
     }
 
     private static String escapeJson(String value) {
