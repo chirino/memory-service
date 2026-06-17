@@ -70,7 +70,7 @@ func StartSinglePortHTTPAndGRPC(
 
 	var tlsServer *http.Server
 	if cfg.EnableTLS {
-		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile)
+		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.TLSSelfSigned)
 		if err != nil {
 			_ = baseLis.Close()
 			_ = prepared.Cleanup()
@@ -161,15 +161,24 @@ func grpcOrHTTPHandler(grpcServer *grpc.Server, httpHandler http.Handler) http.H
 	})
 }
 
-func loadServerCertificate(certFile, keyFile string) (tls.Certificate, error) {
-	if strings.TrimSpace(certFile) != "" && strings.TrimSpace(keyFile) != "" {
+func loadServerCertificate(certFile, keyFile string, selfSigned bool) (tls.Certificate, error) {
+	certFile = strings.TrimSpace(certFile)
+	keyFile = strings.TrimSpace(keyFile)
+	switch {
+	case certFile == "" && keyFile == "":
+		if selfSigned {
+			return generateSelfSignedCertificate()
+		}
+		return tls.Certificate{}, fmt.Errorf("tls requires both certificate and key files; automatic self-signed certificates are disabled")
+	case certFile == "" || keyFile == "":
+		return tls.Certificate{}, fmt.Errorf("tls requires both certificate and key files")
+	default:
 		cert, err := tls.LoadX509KeyPair(certFile, keyFile)
 		if err != nil {
 			return tls.Certificate{}, fmt.Errorf("failed to load tls certificate: %w", err)
 		}
 		return cert, nil
 	}
-	return generateSelfSignedCertificate()
 }
 
 func generateSelfSignedCertificate() (tls.Certificate, error) {

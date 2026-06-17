@@ -18,6 +18,7 @@ type ListenerConfig struct {
 	EnableTLS         bool
 	TLSCertFile       string
 	TLSKeyFile        string
+	TLSSelfSigned     bool
 	ReadHeaderTimeout time.Duration
 }
 

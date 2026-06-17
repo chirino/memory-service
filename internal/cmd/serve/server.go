@@ -418,6 +418,7 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 	mgmtCfg := cfg.ManagementListener
 	mgmtCfg.TLSCertFile = cfg.Listener.TLSCertFile
 	mgmtCfg.TLSKeyFile = cfg.Listener.TLSKeyFile
+	mgmtCfg.TLSSelfSigned = cfg.Listener.TLSSelfSigned
 	_, closeManagement, err := startManagementServer(mgmtCfg, mgmtRouter)
 	if err != nil {
 		return nil, fmt.Errorf("failed to start management server: %w", err)

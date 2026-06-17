@@ -186,6 +186,13 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Destination: &cfg.Listener.TLSKeyFile,
 			Usage:       "TLS private key file for listener TLS mode",
 		},
+		&cli.BoolFlag{
+			Name:        "tls-self-signed",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TLS_SELF_SIGNED"),
+			Destination: &cfg.Listener.TLSSelfSigned,
+			Usage:       "Generate an ephemeral self-signed certificate when TLS is enabled and cert/key files are not provided",
+		},
 		&cli.StringFlag{
 			Name:        "advertised-address",
 			Category:    "Server:",

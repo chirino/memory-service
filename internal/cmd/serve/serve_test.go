@@ -68,3 +68,19 @@ func readBodyLengthHandler(c *gin.Context) {
 	}
 	c.String(http.StatusOK, "%d", n)
 }
+
+func TestLoadServerCertificate_RequiresExplicitFiles(t *testing.T) {
+	_, err := loadServerCertificate("", "", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "automatic self-signed certificates are disabled")
+
+	_, err = loadServerCertificate("cert.pem", "", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "requires both certificate and key files")
+}
+
+func TestLoadServerCertificate_SelfSigned(t *testing.T) {
+	cert, err := loadServerCertificate("", "", true)
+	require.NoError(t, err)
+	require.NotEmpty(t, cert.Certificate)
+}

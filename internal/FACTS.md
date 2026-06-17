@@ -32,6 +32,8 @@
 **Entries invalid-id parity**: Legacy `GET /v1/conversations/:conversationId/entries` returns `404 {"code":"not_found","error":"conversation not found"}` when `conversationId` is not a UUID. Wrapper binding emits 400 by default, so wrapper error handling must map this specific case back to legacy 404.
 **Unix-socket listener validation**: Listener selection conflicts must use explicit flag/env detection (`cmd.IsSet(...)`), not non-zero resolved port values, otherwise the default port `8080` falsely conflicts with `--unix-socket`. When a Unix-socket parent directory is missing, the serve layer creates it as `0700`; if it already exists and is group/world accessible, startup must fail fast instead of chmod-ing it.
 
+**TLS self-signed certificate opt-in**: Omitting `MEMORY_SERVICE_TLS_CERT_FILE` and `MEMORY_SERVICE_TLS_KEY_FILE` only generates an ephemeral self-signed certificate when `MEMORY_SERVICE_TLS_SELF_SIGNED=true` / `--tls-self-signed` is set. Dev launch surfaces that enable TLS without cert files must set this explicitly.
+
 **gRPC recorder disconnect cleanup**: In `ResponseRecorderServer.Record`, if the stream fails with gRPC/ctx `CANCELED` or `DEADLINE_EXCEEDED` after a recorder has been created, call `recorder.Complete()` before returning so the locator/cache registry entry for that conversation is removed.
 
 **gRPC cancel semantics**: `ResponseRecorderServer.Record` subscribes to `resumer.CancelStream(conversationID)` once the first chunk sets `conversation_id`; when cancel is requested it completes the recorder (removing locator/cache registry) and returns unary `RecordResponse{status=RECORD_STATUS_CANCELLED}`.
