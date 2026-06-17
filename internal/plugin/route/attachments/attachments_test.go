@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io"
 	"mime/multipart"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -242,4 +243,23 @@ func TestAttachmentTokenDownloadAndDelete(t *testing.T) {
 	getResp := httptest.NewRecorder()
 	router.ServeHTTP(getResp, getReq)
 	require.Equal(t, http.StatusNotFound, getResp.Code)
+}
+
+func TestSourceURLTransport_BlocksPrivateLiteralIPs(t *testing.T) {
+	transport := attachments.NewSourceURLTransportForTest(false)
+
+	req := httptest.NewRequest(http.MethodGet, "http://127.0.0.1/resource", nil)
+	_, err := transport.RoundTrip(req)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private networks are not allowed")
+}
+
+func TestValidateSourceURL_BlocksPrivateResolvedIPs(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer listener.Close()
+
+	err = attachments.ValidateSourceURLForTest("http://"+listener.Addr().String()+"/resource", false)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "private networks are not allowed")
 }
