@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
 import java.util.UUID;
@@ -249,10 +250,8 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
 
     @Nullable
     private Message createMessage(String role, String text) {
-        MessageType messageType;
-        try {
-            messageType = MessageType.fromValue(role.toLowerCase());
-        } catch (IllegalArgumentException e) {
+        MessageType messageType = messageType(role);
+        if (messageType == null) {
             LOG.warn("Unknown message role: {}", role);
             return null;
         }
@@ -267,5 +266,16 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
                 yield null;
             }
         };
+    }
+
+    @Nullable
+    private MessageType messageType(String role) {
+        String normalized = role.toLowerCase(Locale.ROOT);
+        for (MessageType candidate : MessageType.values()) {
+            if (candidate.getValue().equals(normalized)) {
+                return candidate;
+            }
+        }
+        return null;
     }
 }

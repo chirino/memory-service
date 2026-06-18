@@ -44,6 +44,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
 
     private static final Logger LOG =
             LoggerFactory.getLogger(ConversationHistoryStreamAdvisor.class);
+    static final String DEFAULT_CONVERSATION_ID = "default";
 
     private final ConversationStore conversationStore;
     private final ResponseRecordingManager recordingManager;
@@ -394,7 +395,7 @@ public class ConversationHistoryStreamAdvisor implements CallAdvisor, StreamAdvi
         if (potential instanceof String value && StringUtils.hasText(value)) {
             return value;
         }
-        return ChatMemory.DEFAULT_CONVERSATION_ID;
+        return DEFAULT_CONVERSATION_ID;
     }
 
     private @Nullable String resolveUserMessage(ChatClientRequest request) {

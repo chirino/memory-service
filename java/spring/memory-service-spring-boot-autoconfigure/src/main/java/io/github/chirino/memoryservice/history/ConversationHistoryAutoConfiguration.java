@@ -57,6 +57,12 @@ public class ConversationHistoryAutoConfiguration {
     }
 
     @Bean
+    @ConditionalOnMissingBean
+    public ObjectMapper objectMapper() {
+        return new ObjectMapper();
+    }
+
+    @Bean
     @ConditionalOnBean({MemoryServiceGrpcClients.MemoryServiceStubs.class, ManagedChannel.class})
     public ResponseRecordingManager grpcResponseRecordingManager(
             MemoryServiceClientProperties clientProperties,
