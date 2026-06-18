@@ -160,7 +160,7 @@ requires-dist = [
     { name = "langchain", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-openai", specifier = ">=1.0.0,<2.0.0" },
     { name = "memory-service-langchain", editable = "langchain" },
-    { name = "python-multipart", specifier = ">=0.0.31,<1.0.0" },
+    { name = "python-multipart", specifier = ">=0.0.20,<1.0.0" },
     { name = "uvicorn", specifier = ">=0.34.0,<1.0.0" },
 ]
 
@@ -183,9 +183,9 @@ requires-dist = [
     { name = "fastapi", specifier = ">=0.115.0,<1.0.0" },
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "langchain-openai", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langgraph", specifier = ">=1.2.5,<2.0.0" },
+    { name = "langgraph", specifier = ">=1.0.0,<2.0.0" },
     { name = "memory-service-langchain", editable = "langchain" },
-    { name = "python-multipart", specifier = ">=0.0.31,<1.0.0" },
+    { name = "python-multipart", specifier = ">=0.0.20,<1.0.0" },
     { name = "uvicorn", specifier = ">=0.34.0,<1.0.0" },
 ]
 
@@ -533,18 +533,6 @@ wheels = [
 ]
 
 [[package]]
-name = "langchain-protocol"
-version = "0.0.17"
-source = { registry = "https://pypi.org/simple" }
-dependencies = [
-    { name = "typing-extensions" },
-]
-sdist = { url = "https://files.pythonhosted.org/packages/44/b3/4e2429876c7a35585618caa2b9f9089f7162a6b50562b614ad82ac11c17e/langchain_protocol-0.0.17.tar.gz", hash = "sha256:e7cbe58c205df4b4fd87dc6d5bb23f10e13b236d0e2e1b0b9d05bc2b648f3eea", size = 6026, upload-time = "2026-06-12T18:39:51.923Z" }
-wheels = [
-    { url = "https://files.pythonhosted.org/packages/13/0a/a1bfe72c6ec856e99773bbd96c8086421e554b3693d0142b9ea009c6ac92/langchain_protocol-0.0.17-py3-none-any.whl", hash = "sha256:982a08fe152586ed10d4ff3d538c2e0b5766e5f307cdea325e10be3f2c17cae6", size = 7096, upload-time = "2026-06-12T18:39:50.973Z" },
-]
-
-[[package]]
 name = "langgraph"
 version = "1.2.5"
 source = { registry = "https://pypi.org/simple" }
@@ -644,7 +632,7 @@ requires-dist = [
     { name = "httpx", specifier = ">=0.28.0,<1.0.0" },
     { name = "langchain", specifier = ">=1.0.0,<2.0.0" },
     { name = "langchain-core", specifier = ">=1.0.0,<2.0.0" },
-    { name = "langgraph", specifier = ">=1.2.5,<2.0.0" },
+    { name = "langgraph", specifier = ">=1.0.0,<2.0.0" },
     { name = "protobuf", specifier = ">=6.31.1,<7.0.0" },
 ]
 
