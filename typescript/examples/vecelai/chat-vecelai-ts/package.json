@@ -9,7 +9,7 @@
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
   "dependencies": {
-    "@grpc/grpc-js": "^1.14.0",
+    "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.0",
     "@ai-sdk/openai": "^2.0.0",
     "@chirino/memory-service-vercelai": "file:../../../vercelai",
