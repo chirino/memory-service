@@ -21,7 +21,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     ports:
       - "56379:6379"
@@ -47,7 +47,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin

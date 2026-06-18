@@ -72,7 +72,7 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:v1.16.3
+    image: qdrant/qdrant:v1.18.2
     ports:
       - "6333:6333"   # HTTP/REST
       - "6334:6334"   # gRPC
@@ -87,7 +87,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
@@ -101,7 +101,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.1
+    image: quay.io/infinispan/server:16.2.1
     ports:
       - "11222:11222"
     environment:
@@ -114,7 +114,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
     environment:
       KEYCLOAK_ADMIN: admin
@@ -356,7 +356,7 @@ services:
         condition: service_healthy
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse/clickhouse-server:26.5.1.882
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
