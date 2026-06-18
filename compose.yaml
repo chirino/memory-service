@@ -117,8 +117,8 @@ services:
     image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
       KC_DB_URL_DATABASE: keycloak
@@ -127,8 +127,7 @@ services:
       KC_HTTP_RELATIVE_PATH: /
       KC_HEALTH_ENABLED: "true"
       # External hostname for browser redirects (configurable via env var)
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
+      KC_HOSTNAME: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
       # Allow internal (Docker network) backchannel communication
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
@@ -139,7 +138,7 @@ services:
     ports:
       - "8081:8080"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
       interval: 10s
       timeout: 5s
       retries: 15

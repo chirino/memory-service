@@ -29,8 +29,8 @@ configMapGenerator:
 secretGenerator:
   - name: keycloak-secret
     literals:
-      - KEYCLOAK_ADMIN=admin
-      - KEYCLOAK_ADMIN_PASSWORD=admin
+      - KC_BOOTSTRAP_ADMIN_USERNAME=admin
+      - KC_BOOTSTRAP_ADMIN_PASSWORD=admin
       - KEYCLOAK_CLIENT_SECRET=change-me
   - name: keycloak-db-secret
     literals:
