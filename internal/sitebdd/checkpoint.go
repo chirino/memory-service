@@ -234,6 +234,7 @@ func (s *SiteScenario) startCheckpoint() error {
 	isNode := !isPython && fileExists(filepath.Join(s.CheckpointPath, "package.json"))
 	quarkusJar := filepath.Join(s.CheckpointPath, "target", "quarkus-app", "quarkus-run.jar")
 	isQuarkus := !isPython && !isNode && fileExists(quarkusJar)
+	isSpring := !isPython && !isNode && !isQuarkus
 
 	var cmd *exec.Cmd
 	memoryServiceURL := s.MemServiceURL
@@ -263,7 +264,7 @@ func (s *SiteScenario) startCheckpoint() error {
 			fmt.Sprintf("-Dquarkus.http.port=%d", s.CheckpointPort),
 			"-jar", quarkusJar)
 
-	default:
+	case isSpring:
 		// Spring Boot — find any JAR in target/
 		jar, err := findJar(filepath.Join(s.CheckpointPath, "target"))
 		if err != nil {
@@ -287,11 +288,16 @@ func (s *SiteScenario) startCheckpoint() error {
 		cmd = exec.Command("java", springArgs...)
 	}
 
+	openAIBaseURL := s.Mock.URL()
+	if isSpring {
+		openAIBaseURL += "/v1"
+	}
+
 	cmd.Dir = s.CheckpointPath
 	cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true}
 	// Base env: OpenAI mock routing + memory service URL in all supported forms.
 	cmd.Env = append(os.Environ(),
-		"OPENAI_BASE_URL="+s.Mock.URL(),
+		"OPENAI_BASE_URL="+openAIBaseURL,
 		"OPENAI_API_KEY="+s.apiKey(),
 		"OPENAI_MODEL=mock-gpt-markdown",
 		"PORT="+fmt.Sprintf("%d", s.CheckpointPort),

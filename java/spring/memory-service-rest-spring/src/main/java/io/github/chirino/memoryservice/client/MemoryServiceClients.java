@@ -173,8 +173,9 @@ public final class MemoryServiceClients {
             if (StringUtils.hasText(baseUrl) && !url.startsWith(baseUrl)) {
                 return next.exchange(request);
             }
-            boolean hasAuthorization = request.headers().containsKey(HttpHeaders.AUTHORIZATION);
-            boolean hasApiKey = request.headers().containsKey("X-API-Key");
+            boolean hasAuthorization =
+                    request.headers().getFirst(HttpHeaders.AUTHORIZATION) != null;
+            boolean hasApiKey = request.headers().getFirst("X-API-Key") != null;
             LOGGER.info(
                     "memory-service client request: {} {}, sent Authorization header: {}, sent"
                             + " X-API-Key header: {}",

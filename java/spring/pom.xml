@@ -23,12 +23,12 @@
   </modules>
 
   <properties>
-    <spring.boot.version>3.5.10</spring.boot.version>
-    <spring.ai.version>1.1.2</spring.ai.version>
+    <spring.boot.version>4.1.0</spring.boot.version>
+    <spring.ai.version>2.0.0</spring.ai.version>
     <openapi.generator.version>7.23.0</openapi.generator.version>
     <protobuf.maven.plugin.version>0.6.1</protobuf.maven.plugin.version>
     <grpc.version>1.67.1</grpc.version>
-    <protobuf.version>4.35.0</protobuf.version>
+    <protobuf.version>4.34.2</protobuf.version>
   </properties>
 
   <dependencyManagement>

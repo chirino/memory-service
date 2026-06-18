@@ -7,19 +7,17 @@ import io.github.chirino.memoryservice.grpc.MemoryServiceGrpcClients;
 import io.grpc.ManagedChannel;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
-import org.springframework.boot.autoconfigure.web.reactive.function.client.WebClientAutoConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.http.HttpHeaders;
 import org.springframework.test.util.ReflectionTestUtils;
+import org.springframework.web.reactive.function.client.WebClient;
 
 class MemoryServiceAutoConfigurationTest {
 
     private final ApplicationContextRunner contextRunner =
             new ApplicationContextRunner()
-                    .withConfiguration(
-                            AutoConfigurations.of(
-                                    WebClientAutoConfiguration.class,
-                                    MemoryServiceAutoConfiguration.class));
+                    .withConfiguration(AutoConfigurations.of(MemoryServiceAutoConfiguration.class))
+                    .withBean(WebClient.Builder.class, WebClient::builder);
 
     @Test
     void createsApiClientWithApiKey() {

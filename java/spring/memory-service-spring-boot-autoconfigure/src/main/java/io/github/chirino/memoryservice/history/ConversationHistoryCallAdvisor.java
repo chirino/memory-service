@@ -170,7 +170,7 @@ public class ConversationHistoryCallAdvisor implements CallAdvisor {
         if (potential instanceof String value && StringUtils.hasText(value)) {
             return value;
         }
-        return ChatMemory.DEFAULT_CONVERSATION_ID;
+        return ConversationHistoryStreamAdvisor.DEFAULT_CONVERSATION_ID;
     }
 
     private @Nullable String resolveUserMessage(ChatClientRequest request) {
