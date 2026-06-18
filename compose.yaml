@@ -72,7 +72,7 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:v1.16.3
+    image: qdrant/qdrant:v1.18.2
     ports:
       - "6333:6333"   # HTTP/REST
       - "6334:6334"   # gRPC
@@ -87,7 +87,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:7-alpine
+    image: redis:8-alpine
     ports:
       - "6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
@@ -101,7 +101,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.1
+    image: quay.io/infinispan/server:16.2.1
     ports:
       - "11222:11222"
     environment:
@@ -114,11 +114,11 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
       KC_DB_URL_DATABASE: keycloak
@@ -127,8 +127,7 @@ services:
       KC_HTTP_RELATIVE_PATH: /
       KC_HEALTH_ENABLED: "true"
       # External hostname for browser redirects (configurable via env var)
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
+      KC_HOSTNAME: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
       # Allow internal (Docker network) backchannel communication
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
@@ -139,7 +138,7 @@ services:
     ports:
       - "8081:8080"
     healthcheck:
-      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/8080 && echo -e 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
+      test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
       interval: 10s
       timeout: 5s
       retries: 15
@@ -357,7 +356,7 @@ services:
         condition: service_healthy
 
   clickhouse:
-    image: clickhouse/clickhouse-server:24.8
+    image: clickhouse/clickhouse-server:26.5.1.882
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse

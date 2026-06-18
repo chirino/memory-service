@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: keycloak
-          image: quay.io/keycloak/keycloak:24.0.5
+          image: quay.io/keycloak/keycloak:26.6.3
           args:
             - start-dev
             - --import-realm
@@ -26,17 +26,20 @@ spec:
             - name: http
               containerPort: 8080
               protocol: TCP
+            - name: management
+              containerPort: 9000
+              protocol: TCP
           env:
-            - name: KEYCLOAK_ADMIN
+            - name: KC_BOOTSTRAP_ADMIN_USERNAME
               valueFrom:
                 secretKeyRef:
                   name: keycloak-secret
-                  key: KEYCLOAK_ADMIN
-            - name: KEYCLOAK_ADMIN_PASSWORD
+                  key: KC_BOOTSTRAP_ADMIN_USERNAME
+            - name: KC_BOOTSTRAP_ADMIN_PASSWORD
               valueFrom:
                 secretKeyRef:
                   name: keycloak-secret
-                  key: KEYCLOAK_ADMIN_PASSWORD
+                  key: KC_BOOTSTRAP_ADMIN_PASSWORD
             - name: KC_DB
               value: "postgres"
             - name: KC_DB_URL_HOST
@@ -57,6 +60,11 @@ spec:
               value: "/"
             - name: KC_HEALTH_ENABLED
               value: "true"
+            - name: KC_HOSTNAME
+              valueFrom:
+                configMapKeyRef:
+                  name: memory-service-config
+                  key: KEYCLOAK_FRONTEND_URL
             - name: KC_HOSTNAME_BACKCHANNEL_DYNAMIC
               value: "true"
           volumeMounts:
@@ -66,7 +74,7 @@ spec:
           readinessProbe:
             httpGet:
               path: /health/ready
-              port: http
+              port: management
             initialDelaySeconds: 30
             periodSeconds: 10
             timeoutSeconds: 5
@@ -74,7 +82,7 @@ spec:
           livenessProbe:
             httpGet:
               path: /health/live
-              port: http
+              port: management
             initialDelaySeconds: 60
             periodSeconds: 15
             timeoutSeconds: 5
