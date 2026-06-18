@@ -8,6 +8,8 @@ updates:
       day: "monday"
       time: "06:00"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -20,6 +22,8 @@ updates:
       day: "monday"
       time: "06:15"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       go-dependencies:
         patterns: ["*"]
@@ -36,6 +40,8 @@ updates:
       day: "monday"
       time: "06:30"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       maven-dependencies:
         patterns: ["*"]
@@ -64,6 +70,8 @@ updates:
       day: "monday"
       time: "06:45"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       npm-dependencies:
         patterns: ["*"]
@@ -100,6 +108,8 @@ updates:
       day: "monday"
       time: "07:00"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       python-dependencies:
         patterns: ["*"]
@@ -119,6 +129,8 @@ updates:
       day: "monday"
       time: "07:15"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       docker-dependencies:
         patterns: ["*"]
@@ -135,6 +147,8 @@ updates:
       day: "monday"
       time: "07:30"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     groups:
       compose-dependencies:
         patterns: ["*"]
@@ -149,6 +163,8 @@ updates:
       day: "monday"
       time: "07:45"
       timezone: "America/New_York"
+    cooldown:
+      default-days: 7
     commit-message:
       prefix: "chore"
       include: "scope"
