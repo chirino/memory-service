@@ -21,7 +21,7 @@
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
   "dependencies": {
-    "undici": "^7.16.0"
+    "undici": "^7.28.0"
   },
   "peerDependencies": {
     "@grpc/grpc-js": "^1.14.0",
