@@ -14,6 +14,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"syscall"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -502,7 +503,8 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 		return
 	}
 	client := &http.Client{
-		Timeout: 3 * time.Minute,
+		Timeout:   3 * time.Minute,
+		Transport: newSourceURLTransport(cfg.AllowPrivateSourceURLs),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("too many redirects")
@@ -628,6 +630,102 @@ func validateSourceURL(raw string, allowPrivate bool) error {
 		}
 	}
 	return nil
+}
+
+func newSourceURLTransport(allowPrivate bool) http.RoundTripper {
+	base := http.DefaultTransport.(*http.Transport).Clone()
+	if allowPrivate {
+		return base
+	}
+	dialer := &net.Dialer{
+		Timeout:   30 * time.Second,
+		KeepAlive: 30 * time.Second,
+	}
+	base.DialContext = func(ctx context.Context, network, address string) (net.Conn, error) {
+		host, _, err := net.SplitHostPort(address)
+		if err != nil {
+			host = address
+		}
+		if err := validateResolvedHost(host); err != nil {
+			return nil, err
+		}
+		conn, err := dialer.DialContext(ctx, network, address)
+		if err != nil {
+			return nil, err
+		}
+		if err := validateRemoteAddr(conn.RemoteAddr()); err != nil {
+			_ = conn.Close()
+			return nil, err
+		}
+		return conn, nil
+	}
+	return base
+}
+
+func validateResolvedHost(host string) error {
+	if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
+		return validateSourceIP(ip)
+	}
+	return nil
+}
+
+func validateRemoteAddr(addr net.Addr) error {
+	switch v := addr.(type) {
+	case *net.TCPAddr:
+		return validateSourceIP(v.IP)
+	case *net.UDPAddr:
+		return validateSourceIP(v.IP)
+	case *net.IPAddr:
+		return validateSourceIP(v.IP)
+	default:
+		host, _, err := net.SplitHostPort(addr.String())
+		if err != nil {
+			host = addr.String()
+		}
+		if ip := net.ParseIP(strings.TrimSpace(host)); ip != nil {
+			return validateSourceIP(ip)
+		}
+		return nil
+	}
+}
+
+func validateSourceIP(ip net.IP) error {
+	if ip == nil {
+		return fmt.Errorf("cannot resolve sourceUrl host")
+	}
+	if ip.IsLoopback() || ip.IsPrivate() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() || ip.IsUnspecified() {
+		return fmt.Errorf("URLs targeting localhost or private networks are not allowed")
+	}
+	if len(ip) == net.IPv6len {
+		if ip.IsMulticast() || ip.IsInterfaceLocalMulticast() {
+			return fmt.Errorf("URLs targeting localhost or private networks are not allowed")
+		}
+		if ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
+			return fmt.Errorf("URLs targeting localhost or private networks are not allowed")
+		}
+		if ip[0]&0xfe == 0xfc {
+			return fmt.Errorf("URLs targeting localhost or private networks are not allowed")
+		}
+	}
+	return nil
+}
+
+func isPrivateNetworkError(err error) bool {
+	if err == nil {
+		return false
+	}
+	if strings.Contains(err.Error(), "URLs targeting localhost or private networks are not allowed") {
+		return true
+	}
+	return errors.Is(err, syscall.EPERM)
+}
+
+func NewSourceURLTransportForTest(allowPrivate bool) http.RoundTripper {
+	return newSourceURLTransport(allowPrivate)
+}
+
+func ValidateSourceURLForTest(raw string, allowPrivate bool) error {
+	return validateSourceURL(raw, allowPrivate)
 }
 
 func handleError(c *gin.Context, err error) {

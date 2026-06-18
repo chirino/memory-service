@@ -210,6 +210,7 @@ public class MemoryServiceDevServicesProcessor {
                                                 .withEnv(
                                                         "MEMORY_SERVICE_API_KEYS_AGENT",
                                                         effectiveApiKey)
+                                                .withEnv("MEMORY_SERVICE_TLS_SELF_SIGNED", "true")
                                                 .withEnv("MEMORY_SERVICE_DB_KIND", "sqlite")
                                                 .withEnv(
                                                         "MEMORY_SERVICE_DB_URL",

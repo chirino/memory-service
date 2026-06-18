@@ -88,6 +88,7 @@ services:
     environment:
       # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
       MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memory_service
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service

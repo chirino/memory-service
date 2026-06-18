@@ -60,7 +60,7 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 
 	var tlsServer *http.Server
 	if cfg.EnableTLS {
-		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile)
+		cert, err := loadServerCertificate(cfg.TLSCertFile, cfg.TLSKeyFile, cfg.TLSSelfSigned)
 		if err != nil {
 			_ = baseLis.Close()
 			_ = prepared.Cleanup()
