@@ -1,5 +1,11 @@
 # Quarkus Module Facts
 
+**AI service direct-call test**: `examples/doc-checkpoints/02-with-memory` has an `@QuarkusTest` that injects the generated `@RegisterAiService` `Agent`, calls it directly with a memory id, and points the real LangChain4j OpenAI client at a local OpenAI-compatible mock endpoint.
+
+**Configurable chat memory store**: The Quarkus extension registers the Memory Service-backed LangChain4j `ChatMemoryStore` when `memory-service.chat-memory.kind=memory-service` or is unset. Set `memory-service.chat-memory.kind=in-memory` to skip that extension bean and let Quarkiverse LangChain4j use its local in-memory store, avoiding Memory Service Dev Services.
+
+**Standalone Keycloak tests**: Standalone Quarkus checkpoint tests that use `quarkus-test-keycloak-server` must set `keycloak.version` themselves; for Quarkus `3.35.4`, use Keycloak `26.5.7` from the Quarkus build parent. Older `24.0.5` starts but returns null admin/user tokens with the 3.35 test helper.
+
 **Conversation channel naming**: Quarkus integrations should use `Channel.CONTEXT` for agent-managed conversation state and reserve `Channel.HISTORY` for user-visible turns.
 
 **Frontend event proxy boundary**: Keep `MemoryServiceProxy.streamEvents(...)` generic. Frontend-facing example handlers such as `EventsResource` should enforce history-only entry visibility themselves by forwarding only `entry_channel=history` entry notifications.
