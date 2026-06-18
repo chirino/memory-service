@@ -1,4 +1,4 @@
-FROM docker.io/library/node:22-alpine AS frontend-builder
+FROM docker.io/library/node:26-alpine AS frontend-builder
 
 WORKDIR /build
 COPY frontends/chat-frontend/package.json .
@@ -8,9 +8,12 @@ RUN npm install
 COPY frontends/chat-frontend .
 RUN npm run build
 
-FROM maven:3.9.9-eclipse-temurin-21 AS build
+FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1781533397 AS build
+
+USER 0
 
 WORKDIR /build
+RUN microdnf install -y gzip && microdnf clean all
 
 # Download mvn dependencies to speed up subsequent builds.
 COPY java/mvnw ./java/mvnw
@@ -44,7 +47,7 @@ COPY --chmod=755 --from=frontend-builder /build/dist ./java/quarkus/examples/cha
 COPY . .
 RUN ./java/mvnw -B -q -f java/pom.xml -am -pl :memory-service-extension-deployment,:chat-quarkus clean install -DskipTests
 
-FROM registry.access.redhat.com/ubi9/openjdk-21:1.23
+FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1781533397
 
 ENV LANGUAGE='en_US:en'
 
