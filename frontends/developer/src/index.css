@@ -1,0 +1,63 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 44 20% 99%; /* cream #FDFBF7 */
+    --foreground: 0 0% 10%; /* ink #1a1a1a */
+    --card: 44 20% 99%;
+    --card-foreground: 0 0% 10%;
+    --popover: 44 20% 99%;
+    --popover-foreground: 0 0% 10%;
+    --primary: 162 20% 54%; /* sage #7d9a8c */
+    --primary-foreground: 0 0% 100%;
+    --secondary: 30 5% 96%; /* mist #f5f3ef */
+    --secondary-foreground: 0 0% 10%;
+    --muted: 30 5% 96%;
+    --muted-foreground: 30 5% 54%; /* stone #8a8580 */
+    --accent: 30 5% 96%;
+    --accent-foreground: 0 0% 10%;
+    --destructive: 15 50% 57%; /* terracotta #c67a5c */
+    --destructive-foreground: 0 0% 100%;
+    --border: 30 5% 54% / 0.2;
+    --input: 30 5% 54% / 0.2;
+    --ring: 162 20% 54%;
+    --radius: 0.75rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'DM Sans', system-ui, sans-serif;
+  }
+  h1, h2, h3, h4, h5, h6 {
+    font-family: 'Instrument Serif', Georgia, serif;
+  }
+  code, pre {
+    font-family: 'JetBrains Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Made with Bob */
