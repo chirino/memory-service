@@ -1,11 +1,15 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState } from "react";
-import { Archive, ArchiveRestore, Eye } from "lucide-react";
+import { Archive, ArchiveRestore, Eye, SlidersHorizontal } from "lucide-react";
 import { useAdminConversations, useArchiveConversation, useUnarchiveConversation } from "@/hooks/useAdminApi";
 import { useAuth } from "@/lib/auth";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
 
 export const Route = createFileRoute("/conversations/")({
   component: ConversationsPage,
@@ -23,34 +27,44 @@ function ConversationsPage() {
 
   const handleArchive = (conversationId: string) => {
     if (confirm("Archive this conversation?")) {
-      archiveMutation.mutate(conversationId);
+      archiveMutation.mutate({
+        path: { id: conversationId },
+        body: { archived: true },
+      });
     }
   };
 
   const handleUnarchive = (conversationId: string) => {
-    unarchiveMutation.mutate(conversationId);
+    unarchiveMutation.mutate({
+      path: { id: conversationId },
+      body: { archived: false },
+    });
   };
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border bg-background px-8 py-6">
-        <h1 className="mb-2 text-3xl font-semibold text-foreground">Conversations</h1>
-        <p className="text-muted-foreground">Browse and inspect all conversations across users</p>
-      </div>
+      <div className="px-5 pb-6 pt-8 md:px-10 md:pt-10">
+        <div className="flex items-start justify-between gap-6">
+          <div>
+            <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Conversations</h1>
+            <p className="console-subtitle mt-3 text-base md:text-lg">Browse and inspect all conversations across users</p>
+          </div>
+          <button
+            type="button"
+            className="mt-3 inline-flex h-11 w-11 items-center justify-center rounded-lg border border-[rgba(43,39,34,0.12)] bg-white/70 text-primary transition-colors hover:bg-sage-soft/45"
+            aria-label="Filter conversations"
+          >
+            <SlidersHorizontal className="h-5 w-5" strokeWidth={1.55} />
+          </button>
+        </div>
 
-      {/* Filters */}
-      <div className="border-b border-border bg-background px-8 py-4">
-        <div className="flex items-center gap-2">
-          <span className="text-sm text-muted-foreground">Show:</span>
-          <div className="flex gap-1">
+        <div className="mt-6 flex items-center gap-3">
+          <div className="console-segmented">
             <button
               onClick={() => setArchiveFilter("exclude")}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                archiveFilter === "exclude"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50",
+                "console-segment",
+                archiveFilter === "exclude" && "console-segment-active",
               )}
             >
               Active
@@ -58,10 +72,8 @@ function ConversationsPage() {
             <button
               onClick={() => setArchiveFilter("include")}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                archiveFilter === "include"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50",
+                "console-segment",
+                archiveFilter === "include" && "console-segment-active",
               )}
             >
               All
@@ -69,10 +81,8 @@ function ConversationsPage() {
             <button
               onClick={() => setArchiveFilter("only")}
               className={cn(
-                "rounded-md px-3 py-1.5 text-sm transition-colors",
-                archiveFilter === "only"
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50",
+                "console-segment",
+                archiveFilter === "only" && "console-segment-active",
               )}
             >
               Archived
@@ -81,8 +91,7 @@ function ConversationsPage() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-y-auto px-5 pb-8 md:px-10">
         {isLoading && (
           <div className="flex items-center justify-center py-12">
             <div className="text-center">
@@ -93,13 +102,13 @@ function ConversationsPage() {
         )}
 
         {error && (
-          <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
-            <p className="text-sm text-destructive">Failed to load conversations: {error.message}</p>
+          <div className="console-panel rounded-xl p-4 text-center">
+            <p className="text-sm text-destructive">Failed to load conversations: {getErrorMessage(error)}</p>
           </div>
         )}
 
         {!isLoading && !error && conversations.length === 0 && (
-          <div className="rounded-lg border border-border bg-card p-12 text-center">
+          <div className="console-panel rounded-xl p-12 text-center">
             <p className="text-muted-foreground">
               {archiveFilter === "only" ? "No archived conversations found" : "No conversations found"}
             </p>
@@ -107,58 +116,63 @@ function ConversationsPage() {
         )}
 
         {!isLoading && !error && conversations.length > 0 && (
-          <div className="overflow-hidden rounded-lg border border-border bg-card">
-            <table className="w-full">
-              <thead className="border-b border-border bg-muted/50">
+          <div className="overflow-x-auto">
+            <table className="console-table">
+              <thead>
                 <tr>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Title</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Owner</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Created</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Updated</th>
-                  <th className="px-4 py-3 text-left text-sm font-medium text-muted-foreground">Status</th>
-                  <th className="px-4 py-3 text-right text-sm font-medium text-muted-foreground">Actions</th>
+                  <th>Title</th>
+                  <th>Owner</th>
+                  <th>Created</th>
+                  <th>Updated</th>
+                  <th>Status</th>
+                  <th className="text-right">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y divide-border">
-                {conversations.map((conversation) => (
-                  <tr key={conversation.id} className="hover:bg-muted/30 transition-colors">
-                    <td className="px-4 py-3">
+              <tbody>
+                {conversations.map((conversation) => {
+                  if (!conversation.id) {
+                    return null;
+                  }
+                  const conversationId = conversation.id;
+                  return (
+                  <tr key={conversationId}>
+                    <td>
                       <Link
                         to="/conversations/$conversationId"
-                        params={{ conversationId: conversation.id }}
+                        params={{ conversationId }}
                         className="font-medium text-foreground hover:text-primary hover:underline"
                       >
                         {conversation.title || "Untitled Conversation"}
                       </Link>
-                      {conversation.clientId && (
-                        <div className="mt-1 text-xs text-muted-foreground">
-                          Client: {conversation.clientId}
-                        </div>
-                      )}
+                        {conversation.clientId && (
+                          <div className="mt-1 text-xs text-muted-foreground">
+                            Client: {conversation.clientId}
+                          </div>
+                        )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="text-sm text-foreground">{conversation.ownerUserId}</span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="text-sm text-muted-foreground">
                         {formatRelativeTime(conversation.createdAt)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <span className="text-sm text-muted-foreground">
                         {formatRelativeTime(conversation.updatedAt)}
                       </span>
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       {conversation.archived ? (
                         <Badge variant="secondary">Archived</Badge>
                       ) : (
-                        <Badge variant="outline">Active</Badge>
+                        <Badge>Active</Badge>
                       )}
                     </td>
-                    <td className="px-4 py-3">
+                    <td>
                       <div className="flex items-center justify-end gap-2">
-                        <Link to="/conversations/$conversationId" params={{ conversationId: conversation.id }}>
+                        <Link to="/conversations/$conversationId" params={{ conversationId }}>
                           <Button variant="ghost" size="sm">
                             <Eye className="h-4 w-4" />
                             View
@@ -170,7 +184,7 @@ function ConversationsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleUnarchive(conversation.id)}
+                                onClick={() => handleUnarchive(conversationId)}
                                 disabled={unarchiveMutation.isPending}
                               >
                                 <ArchiveRestore className="h-4 w-4" />
@@ -180,7 +194,7 @@ function ConversationsPage() {
                               <Button
                                 variant="ghost"
                                 size="sm"
-                                onClick={() => handleArchive(conversation.id)}
+                                onClick={() => handleArchive(conversationId)}
                                 disabled={archiveMutation.isPending}
                               >
                                 <Archive className="h-4 w-4" />
@@ -192,7 +206,8 @@ function ConversationsPage() {
                       </div>
                     </td>
                   </tr>
-                ))}
+                  );
+                })}
               </tbody>
             </table>
           </div>

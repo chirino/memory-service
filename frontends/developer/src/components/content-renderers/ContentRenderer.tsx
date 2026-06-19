@@ -15,7 +15,7 @@ interface ContentRendererProps {
  * Main wrapper component that delegates to the appropriate content type renderer.
  *
  * Includes wrapper styling:
- * - JSON mode: bg-muted/50 rounded p-3 (code block appearance)
+ * - JSON mode: console-code rounded-lg p-3 (code block appearance)
  * - Rendered mode: no background (clean appearance for custom renderers)
  *
  * @param viewMode - When provided, controls which view to show. When omitted,
@@ -32,7 +32,7 @@ export function ContentRenderer({
   // If no custom renderer exists, always show JSON with code block styling
   if (!hasCustom) {
     return (
-      <div className="bg-muted/50 rounded p-3 overflow-x-auto">
+      <div className="console-code overflow-x-auto rounded-lg p-3">
         <JsonRenderer content={content} contentType={contentType} />
       </div>
     );
@@ -42,7 +42,7 @@ export function ContentRenderer({
     <div
       className={cn(
         "overflow-x-auto",
-        isRawMode ? "bg-muted/50 rounded p-3" : "",
+        isRawMode ? "console-code rounded-lg p-3" : "",
       )}
     >
       {isRawMode ? (

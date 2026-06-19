@@ -459,11 +459,11 @@ function MessageBubble({ message }: { message: Message }) {
             );
           })()}
         {message.events && message.events.length > 0 ? (
-          <div className="text-sm prose prose-sm max-w-none dark:prose-invert">
+          <div className="text-sm prose prose-sm max-w-none">
             <RichEventRenderer events={message.events} />
           </div>
         ) : message.text ? (
-          <div className="text-sm prose prose-sm max-w-none dark:prose-invert">
+          <div className="text-sm prose prose-sm max-w-none">
             <Streamdown>{message.text}</Streamdown>
           </div>
         ) : null}
@@ -643,18 +643,18 @@ function ThinkingSection({ content }: { content: string }) {
   if (!content.trim()) return null;
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-muted/50">
+    <div className="my-2 rounded-lg border border-[rgba(43,39,34,0.1)] bg-white/55">
       <button
         type="button"
         onClick={() => setIsExpanded(!isExpanded)}
-        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-muted"
+        className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-sage-soft/30"
       >
         {isExpanded ? (
           <ChevronDown className="h-4 w-4" />
         ) : (
           <ChevronRight className="h-4 w-4" />
         )}
-        <Brain className="h-4 w-4 text-accent-foreground" />
+        <Brain className="h-4 w-4 text-primary" />
         <span className="font-medium">Thinking</span>
       </button>
       {isExpanded && (
@@ -769,14 +769,14 @@ function ContentFetchedBlock({
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
-    <div className="my-2 rounded-lg border border-border bg-muted/30">
+    <div className="my-2 rounded-lg border border-[rgba(43,39,34,0.1)] bg-white/45">
       <button
         type="button"
         onClick={() => content && setIsExpanded(!isExpanded)}
         disabled={!content}
         className={cn(
           "flex w-full items-center gap-2 px-3 py-2 text-left text-sm",
-          content ? "cursor-pointer hover:bg-muted/50" : "cursor-default",
+          content ? "cursor-pointer hover:bg-sage-soft/30" : "cursor-default",
         )}
       >
         <FileText className="h-4 w-4 text-muted-foreground" />

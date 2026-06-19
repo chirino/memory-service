@@ -163,7 +163,7 @@ function ConversationDetailPage() {
 	if (isLoading) {
 		return (
 			<div className="flex h-full items-center justify-center">
-				<div className="text-center">
+				<div className="console-panel rounded-2xl p-10 text-center">
 					<Loader2 className="w-8 h-8 animate-spin text-muted-foreground mx-auto mb-4" />
 					<p className="text-sm text-muted-foreground">Loading conversation...</p>
 				</div>
@@ -175,7 +175,7 @@ function ConversationDetailPage() {
 	if (conversationError) {
 		return (
 			<div className="p-8">
-				<div className="bg-destructive/10 border border-destructive/20 rounded-lg p-8 text-center">
+				<div className="console-panel rounded-2xl p-8 text-center">
 					<p className="text-destructive font-medium">
 						Failed to load conversation
 					</p>
@@ -185,7 +185,7 @@ function ConversationDetailPage() {
 							: "Unknown error"}
 					</p>
 					<Link to="/conversations" className="inline-block mt-4">
-						<button className="px-4 py-2 bg-primary text-primary-foreground rounded-md hover:bg-primary/90">
+						<button className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90">
 							Back to Conversations
 						</button>
 					</Link>
@@ -225,7 +225,7 @@ function ConversationDetailPage() {
 	if (!conversation) {
 		return (
 			<div className="p-8">
-				<div className="bg-card border border-border rounded-lg p-8 text-center text-muted-foreground">
+				<div className="console-panel rounded-2xl p-8 text-center text-muted-foreground">
 					Conversation with ID {conversationId} was not found.
 				</div>
 			</div>
@@ -233,16 +233,14 @@ function ConversationDetailPage() {
 	}
 
 	return (
-		<div className="flex gap-6 p-8">
-			{/* Main Content */}
-			<div className="flex-1 min-w-0">
-				{/* Breadcrumb + Header */}
-				<nav className="mb-4">
+		<div className="flex h-full flex-col gap-8 overflow-hidden px-5 py-8 md:flex-row md:px-10">
+			<div className="min-w-0 flex-1 overflow-auto pr-2">
+				<nav className="mb-5">
 					<ol className="flex items-center gap-2 text-sm">
 						<li>
 							<Link
 								to="/conversations"
-								className="text-muted-foreground hover:text-foreground"
+								className="text-muted-foreground transition-colors hover:text-foreground"
 							>
 								Conversations
 							</Link>
@@ -254,15 +252,14 @@ function ConversationDetailPage() {
 					</ol>
 				</nav>
 
-				{/* Title and metadata */}
-				<div className="flex items-start justify-between mb-6">
+				<div className="mb-7 flex items-start justify-between gap-6">
 					<div>
-						<h1 className="text-2xl font-semibold text-foreground mb-2">
+						<h1 className="console-title mb-3 text-3xl leading-tight text-foreground md:text-4xl">
 							{conversation.title || "Untitled"}
 						</h1>
 						<div className="flex items-center gap-4 text-sm text-muted-foreground flex-wrap">
 							<div className="flex items-center gap-1.5">
-								<code className="bg-muted px-2 py-0.5 rounded text-xs font-mono">
+								<code className="console-code px-2 py-1 text-xs font-mono">
 									{conversationId}
 								</code>
 								<CopyButton value={conversationId} iconSize={3.5} />
@@ -302,22 +299,19 @@ function ConversationDetailPage() {
 							</div>
 						)}
 					</div>
-					<div className="text-right text-sm text-muted-foreground">
+					<div className="hidden text-right text-sm leading-7 text-muted-foreground lg:block">
 						<div>Created: {formatDate(conversation.createdAt || "")}</div>
 						<div>Updated: {formatDate(conversation.updatedAt || "")}</div>
 					</div>
 				</div>
 
-				{/* Tabs */}
-				<div className="border-b border-border mb-4">
-					<nav className="flex gap-4">
+				<div className="mb-5">
+					<nav className="console-segmented">
 						<button
 							onClick={() => setActiveTab("entries")}
 							className={cn(
-								"pb-2 text-sm font-medium border-b-2 transition-colors",
-								activeTab === "entries"
-									? "border-primary text-foreground tab-active"
-									: "border-transparent text-muted-foreground hover:text-foreground",
+								"console-segment",
+								activeTab === "entries" && "console-segment-active",
 							)}
 						>
 							Entries
@@ -325,10 +319,8 @@ function ConversationDetailPage() {
 						<button
 							onClick={() => setActiveTab("memberships")}
 							className={cn(
-								"pb-2 text-sm font-medium border-b-2 transition-colors",
-								activeTab === "memberships"
-									? "border-primary text-foreground tab-active"
-									: "border-transparent text-muted-foreground hover:text-foreground",
+								"console-segment",
+								activeTab === "memberships" && "console-segment-active",
 							)}
 						>
 							Memberships
@@ -340,9 +332,8 @@ function ConversationDetailPage() {
 				{activeTab === "entries" ? (
 					<div>
 						{/* Channel Filter */}
-						<div className="flex items-center gap-2 mb-4">
-							<span className="text-sm text-muted-foreground">Channel:</span>
-							<div className="flex gap-1">
+						<div className="mb-5 flex items-center gap-2">
+							<div className="console-segmented">
 								{(
 									["all", "history", "context"] as ChannelFilter[]
 								).map((channel) => (
@@ -350,10 +341,8 @@ function ConversationDetailPage() {
 										key={channel}
 										onClick={() => setChannelFilter(channel)}
 										className={cn(
-											"px-3 py-1 text-sm rounded-md transition-colors",
-											channelFilter === channel
-												? "bg-foreground text-background channel-btn-active"
-												: "text-muted-foreground hover:bg-muted",
+											"console-segment min-w-0 px-4",
+											channelFilter === channel && "console-segment-active",
 										)}
 									>
 										{channel.charAt(0).toUpperCase() + channel.slice(1)}
@@ -382,10 +371,9 @@ function ConversationDetailPage() {
 				)}
 			</div>
 
-			{/* Forks Sidebar */}
-			<aside className="w-72 flex-shrink-0 border-l border-border bg-card pl-6">
+			<aside className="hidden w-80 flex-shrink-0 overflow-auto border-l border-[rgba(43,39,34,0.1)] pl-7 lg:block">
 				<h3 className="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-					<GitFork className="w-4 h-4 text-accent forks-icon" />
+					<GitFork className="w-4 h-4 text-primary forks-icon" />
 					<span>Forks</span>
 				</h3>
 				<div className="space-y-3">
@@ -399,7 +387,7 @@ function ConversationDetailPage() {
 						/>
 					))}
 				</div>
-				<p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-border">
+				<p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-[rgba(43,39,34,0.1)]">
 					{forkTree.length} conversation{forkTree.length !== 1 ? "s" : ""} in
 					this fork tree
 				</p>
@@ -408,7 +396,7 @@ function ConversationDetailPage() {
 				{childConversations.length > 0 && (
 					<>
 						<h3 className="text-sm font-semibold text-foreground mt-6 mb-4 flex items-center gap-2">
-							<Network className="w-4 h-4 text-accent" />
+							<Network className="w-4 h-4 text-primary" />
 							<span>Child Conversations</span>
 						</h3>
 						<div className="space-y-3">
@@ -417,7 +405,7 @@ function ConversationDetailPage() {
 									key={child.id}
 									to="/conversations/$conversationId"
 									params={{ conversationId: child.id || "" }}
-									className="block p-3 rounded-lg border border-border bg-card hover:border-muted-foreground/30 transition-colors"
+									className="console-panel block rounded-xl p-3 transition-colors hover:bg-sage-soft/25"
 								>
 									<div className="text-sm font-medium text-foreground truncate">
 										{child.title || "Untitled"}
@@ -440,7 +428,7 @@ function ConversationDetailPage() {
 								</Link>
 							))}
 						</div>
-						<p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-border">
+						<p className="text-xs text-muted-foreground mt-4 pt-4 border-t border-[rgba(43,39,34,0.1)]">
 							{childConversations.length} child conversation{childConversations.length !== 1 ? "s" : ""}
 						</p>
 					</>
@@ -468,11 +456,11 @@ const EntryCard = React.forwardRef<
 	const getChannelColor = (channel: string) => {
 		switch (channel) {
 			case "history":
-				return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
+				return "bg-sage-soft text-primary";
 			case "context":
-				return "bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300";
+				return "bg-[#eadccd] text-[#98613d]";
 			default:
-				return "bg-muted text-muted-foreground";
+				return "bg-secondary text-muted-foreground";
 		}
 	};
 
@@ -481,10 +469,10 @@ const EntryCard = React.forwardRef<
 			ref={ref}
 			onClick={onClick}
 			className={cn(
-				"bg-card border rounded-lg p-4 transition-all duration-300 cursor-pointer hover:border-primary/30",
+				"console-panel cursor-pointer rounded-xl p-4 transition-all duration-300 hover:bg-sage-soft/20",
 				entry.isForkPoint
-					? "border-primary/50 ring-1 ring-primary/20"
-					: "border-border",
+					? "ring-1 ring-primary/20"
+					: "",
 				isHighlighted && "ring-2 ring-primary ring-offset-2 border-primary",
 			)}
 		>
@@ -500,7 +488,7 @@ const EntryCard = React.forwardRef<
 						{entry.channel}
 					</Badge>
 					{entry.epoch !== undefined && (
-						<Badge className="text-xs font-medium bg-purple-100 text-purple-800 dark:bg-purple-900/30 dark:text-purple-300">
+						<Badge className="text-xs font-medium bg-[#eadccd] text-[#98613d]">
 							epoch: {entry.epoch}
 						</Badge>
 					)}
@@ -576,10 +564,10 @@ function ForkCard({
 			params={{ conversationId: fork.id }}
 			search={Object.keys(searchParams).length > 0 ? searchParams : undefined}
 			className={cn(
-				"block p-3 rounded-lg border transition-colors",
+				"console-panel block rounded-xl p-3 transition-colors",
 				isActive
-					? "bg-muted border-2 border-border fork-card-active"
-					: "bg-card border-border hover:border-muted-foreground/30",
+					? "bg-sage-soft/45 ring-1 ring-primary/20 fork-card-active"
+					: "hover:bg-sage-soft/25",
 			)}
 		>
 			<code
@@ -624,11 +612,11 @@ function MembershipsTab({
 	const getAccessLevelBadge = (level: string) => {
 		switch (level) {
 			case "owner":
-				return "bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300";
+				return "bg-sage-soft text-primary";
 			case "writer":
-				return "bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300";
+				return "bg-[#e1ead8] text-[#5b6f43]";
 			case "reader":
-				return "bg-gray-100 text-gray-800 dark:bg-gray-800/50 dark:text-gray-300";
+				return "bg-secondary text-secondary-foreground";
 			default:
 				return "bg-muted text-muted-foreground";
 		}
@@ -636,35 +624,35 @@ function MembershipsTab({
 
 	if (memberships.length === 0) {
 		return (
-			<div className="bg-muted/50 rounded-lg p-8 text-center text-muted-foreground">
+			<div className="console-panel rounded-xl p-8 text-center text-muted-foreground">
 				No memberships found for this conversation.
 			</div>
 		);
 	}
 
 	return (
-		<div className="bg-card border border-border rounded-lg overflow-hidden">
-			<table className="w-full">
-				<thead className="bg-muted/50">
+		<div className="overflow-hidden">
+			<table className="console-table">
+				<thead>
 					<tr>
-						<th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">
+						<th>
 							User ID
 						</th>
-						<th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">
+						<th>
 							Access Level
 						</th>
-						<th className="text-left px-4 py-3 text-sm font-medium text-muted-foreground">
+						<th>
 							Added
 						</th>
 					</tr>
 				</thead>
-				<tbody className="divide-y divide-border">
+				<tbody>
 					{memberships.map((membership, idx) => (
-						<tr key={idx} className="hover:bg-muted/30">
-							<td className="px-4 py-3">
+						<tr key={idx}>
+							<td>
 								<code className="text-sm font-mono">{membership.userId}</code>
 							</td>
-							<td className="px-4 py-3">
+							<td>
 								<Badge
 									className={cn(
 										"capitalize",
@@ -674,7 +662,7 @@ function MembershipsTab({
 									{membership.accessLevel}
 								</Badge>
 							</td>
-							<td className="px-4 py-3 text-sm text-muted-foreground">
+							<td className="text-sm text-muted-foreground">
 								{formatDate(membership.createdAt || "")}
 							</td>
 						</tr>

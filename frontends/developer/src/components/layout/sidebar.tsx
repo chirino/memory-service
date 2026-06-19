@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Brain, MessageSquare, Search, LogOut, ChevronDown } from "lucide-react";
+import { Brain, MessageCircle, Search, LogOut, ChevronDown, Sprout } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
@@ -12,7 +12,7 @@ import {
 } from "@/components/ui/dropdown-menu";
 
 const navItems = [
-  { to: "/conversations", label: "Conversations", icon: MessageSquare },
+  { to: "/conversations", label: "Conversations", icon: MessageCircle },
   { to: "/memories", label: "Memories", icon: Brain },
   { to: "/search", label: "Search", icon: Search },
 ];
@@ -47,15 +47,18 @@ export function Sidebar() {
   };
 
   return (
-    <aside className="flex w-60 flex-col border-r border-border bg-background">
-      {/* Sidebar Header */}
-      <div className="border-b border-border p-4">
-        <h1 className="text-lg font-semibold text-foreground">Memory Service</h1>
-        <p className="text-sm text-muted-foreground">Developer Console</p>
+    <aside className="console-sidebar flex w-full shrink-0 flex-col md:w-[260px]">
+      <div className="px-4 py-4 md:px-5 md:pb-10 md:pt-9">
+        <div className="flex items-start gap-3">
+          <Sprout className="mt-1 h-7 w-7 text-primary" strokeWidth={1.35} />
+          <div>
+            <h1 className="console-title text-xl text-foreground">Memory Service</h1>
+            <p className="console-subtitle mt-1 text-sm">Developer Console</p>
+          </div>
+        </div>
       </div>
 
-      {/* Navigation */}
-      <nav className="flex-1 space-y-1 p-4">
+      <nav className="flex gap-1 px-3 pb-3 md:flex-1 md:flex-col md:gap-2 md:space-y-3 md:px-4 md:pb-0">
         {navItems.map((item) => {
           const isActive = currentPath.startsWith(item.to);
           const Icon = item.icon;
@@ -65,25 +68,24 @@ export function Sidebar() {
               key={item.to}
               to={item.to}
               className={cn(
-                "flex items-center space-x-3 rounded-md px-3 py-2 transition-colors",
+                "flex min-w-0 shrink items-center gap-1.5 rounded-lg px-2.5 py-3 text-xs font-medium transition-colors md:shrink-0 md:gap-4 md:px-4 md:py-4 md:text-sm",
                 isActive
-                  ? "bg-accent text-accent-foreground"
-                  : "text-muted-foreground hover:bg-accent/50 hover:text-foreground",
+                  ? "bg-sage-soft/55 text-primary shadow-[0_1px_0_rgba(43,39,34,0.03)]"
+                  : "text-stone hover:bg-white/55 hover:text-foreground",
               )}
             >
-              <Icon className="h-5 w-5" strokeWidth={1.5} />
-              <span className="text-sm font-medium">{item.label}</span>
+              <Icon className="h-5 w-5" strokeWidth={1.55} />
+              <span>{item.label}</span>
             </Link>
           );
         })}
       </nav>
 
-      {/* User Profile */}
-      <div className="border-t border-border p-4">
+      <div className="m-4 hidden border-t border-[rgba(43,39,34,0.12)] pt-6 md:block">
         <DropdownMenu>
           <DropdownMenuTrigger className="w-full">
-            <div className="flex items-center gap-3 rounded-md px-2 py-2 hover:bg-accent transition-colors">
-              <div className="flex h-8 w-8 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
+            <div className="flex items-center gap-3 rounded-xl px-1 py-2 transition-colors hover:bg-white/55">
+              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-primary">
                 {getInitials()}
               </div>
               <div className="min-w-0 flex-1 text-left">
@@ -92,7 +94,7 @@ export function Sidebar() {
                 </p>
                 <p className="text-xs text-muted-foreground">{roleLabel}</p>
               </div>
-              <ChevronDown className="h-4 w-4 text-muted-foreground" />
+              <ChevronDown className="h-4 w-4 text-stone" strokeWidth={1.6} />
             </div>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-56">

@@ -58,10 +58,10 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
         type="button"
         onClick={() => copy(value)}
         className={cn(
-          "p-1 rounded transition-colors",
+          "rounded-md p-1 transition-colors",
           copied
-            ? "text-green-500"
-            : "text-muted-foreground hover:text-foreground hover:bg-muted",
+            ? "text-primary"
+            : "text-muted-foreground hover:bg-white/75 hover:text-foreground",
           className,
         )}
         title={copied ? "Copied!" : "Copy to clipboard"}

@@ -94,8 +94,8 @@ export function RequireAuth({ roles = ["admin", "auditor"], children }: RequireA
 
   if (auth.isLoading) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
+      <div className="console-shell flex h-screen items-center justify-center">
+        <div className="console-panel rounded-2xl p-10 text-center">
           <div className="mb-4 h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
           <p className="text-muted-foreground">Loading...</p>
         </div>
@@ -105,13 +105,13 @@ export function RequireAuth({ roles = ["admin", "auditor"], children }: RequireA
 
   if (!auth.isAuthenticated) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <h1 className="mb-4 text-2xl font-semibold">Authentication Required</h1>
+      <div className="console-shell flex h-screen items-center justify-center">
+        <div className="console-panel max-w-md rounded-2xl p-10 text-center">
+          <h1 className="console-title mb-4 text-3xl">Authentication Required</h1>
           <p className="mb-6 text-muted-foreground">Please sign in to access the developer console.</p>
           <button
             onClick={auth.login}
-            className="rounded-lg bg-primary px-6 py-2 text-primary-foreground hover:bg-primary/90"
+            className="rounded-lg bg-primary px-6 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90"
           >
             Sign In
           </button>
@@ -123,9 +123,9 @@ export function RequireAuth({ roles = ["admin", "auditor"], children }: RequireA
   const hasRequiredRole = roles.some((role) => auth.hasRole(role));
   if (!hasRequiredRole) {
     return (
-      <div className="flex h-screen items-center justify-center">
-        <div className="text-center">
-          <h1 className="mb-4 text-2xl font-semibold">Access Denied</h1>
+      <div className="console-shell flex h-screen items-center justify-center">
+        <div className="console-panel max-w-md rounded-2xl p-10 text-center">
+          <h1 className="console-title mb-4 text-3xl">Access Denied</h1>
           <p className="mb-6 text-muted-foreground">
             You need admin or auditor role to access this console.
           </p>

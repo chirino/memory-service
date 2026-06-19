@@ -9,9 +9,9 @@ export const Route = createRootRoute({
 function RootComponent() {
   return (
     <RequireAuth roles={["admin", "auditor"]}>
-      <div className="flex h-screen">
+      <div className="console-shell flex h-screen flex-col text-foreground md:flex-row">
         <Sidebar />
-        <main className="flex-1 overflow-auto">
+        <main className="console-main min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
           <Outlet />
         </main>
       </div>

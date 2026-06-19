@@ -19,7 +19,7 @@ function MemoryDetailPage() {
   if (isLoading) {
     return (
       <div className="flex h-full items-center justify-center">
-        <div className="text-center">
+        <div className="console-panel rounded-2xl p-10 text-center">
           <Loader2 className="mb-4 inline-block h-8 w-8 animate-spin text-primary" />
           <p className="text-sm text-muted-foreground">Loading memory…</p>
         </div>
@@ -30,7 +30,7 @@ function MemoryDetailPage() {
   if (error) {
     return (
       <div className="flex h-full items-center justify-center p-8">
-        <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-6 text-center max-w-md">
+        <div className="console-panel max-w-md rounded-2xl p-6 text-center">
           <p className="text-sm text-destructive mb-4">
             {(error as Error).message || "Failed to load memory"}
           </p>
@@ -51,8 +51,7 @@ function MemoryDetailPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border bg-background px-8 py-6">
+      <div className="px-5 pb-6 pt-8 md:px-10">
         <div className="mb-4">
           <Link to="/memories">
             <Button variant="ghost" size="sm">
@@ -62,7 +61,6 @@ function MemoryDetailPage() {
           </Link>
         </div>
 
-        {/* Breadcrumb */}
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
           <Link to="/memories" className="hover:text-foreground transition-colors">
             Memories
@@ -80,11 +78,10 @@ function MemoryDetailPage() {
           )}
         </div>
 
-        {/* Title and metadata */}
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2 mb-2">
-              <h1 className="text-3xl font-semibold font-mono truncate">
+              <h1 className="truncate font-mono text-2xl font-semibold md:text-3xl">
                 {data.key ?? "(no key)"}
               </h1>
               <CopyButton value={data.key ?? ""} />
@@ -93,7 +90,7 @@ function MemoryDetailPage() {
             {/* Badges */}
             <div className="flex items-center gap-2 flex-wrap">
               {data.archived ? (
-                <Badge variant="secondary" className="bg-slate-100 text-slate-700">
+                <Badge variant="secondary">
                   <Archive className="w-3 h-3 mr-1" />
                   Archived
                   {data.archivedAt && (
@@ -103,7 +100,7 @@ function MemoryDetailPage() {
                   )}
                 </Badge>
               ) : (
-                <Badge variant="outline" className="text-emerald-700 border-emerald-300">
+                <Badge>
                   Active
                 </Badge>
               )}
@@ -135,8 +132,7 @@ function MemoryDetailPage() {
         </div>
       </div>
 
-      {/* Metadata bar */}
-      <div className="border-b border-border bg-muted/30 px-8 py-4">
+      <div className="border-y border-[rgba(43,39,34,0.1)] bg-white/35 px-5 py-4 md:px-10">
         <div className="grid grid-cols-2 gap-4 text-sm md:grid-cols-3">
           <div>
             <span className="text-muted-foreground">Memory ID</span>
@@ -159,13 +155,10 @@ function MemoryDetailPage() {
         </div>
       </div>
 
-      {/* Content */}
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-y-auto px-5 py-8 md:px-10">
         <div className="space-y-6">
-          {/* Value */}
           <JsonCard label="Value" data={data.value} />
 
-          {/* Attributes */}
           {data.attributes && Object.keys(data.attributes).length > 0 && (
             <JsonCard label="Attributes" data={data.attributes} />
           )}
@@ -191,15 +184,15 @@ function JsonCard({ label, data }: JsonCardProps) {
   }, [data]);
 
   return (
-    <div className="border rounded-md bg-card">
-      <div className="flex items-center justify-between px-4 py-2 border-b">
+    <div className="console-panel rounded-xl">
+      <div className="flex items-center justify-between border-b border-[rgba(43,39,34,0.1)] px-4 py-3">
         <div className="text-sm font-medium">{label}</div>
         <CopyButton value={text} />
       </div>
       <div className="p-4">
         <JsonHighlight
           value={data}
-          className="text-xs font-mono overflow-x-auto whitespace-pre-wrap"
+          className="console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-4 font-mono text-xs leading-6"
         />
       </div>
     </div>

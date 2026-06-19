@@ -7,13 +7,15 @@ export default {
   theme: {
     extend: {
       colors: {
-        // Minimal Light design system from chat-frontend
-        cream: '#FDFBF7',
-        mist: '#f5f3ef',
-        ink: '#1a1a1a',
-        stone: '#8a8580',
-        sage: '#7d9a8c',
-        terracotta: '#c67a5c',
+        cream: '#f7f3ec',
+        mist: '#ece6db',
+        ink: '#2b2722',
+        stone: '#6d655c',
+        sage: '#8a9a76',
+        'sage-soft': '#dfe5d8',
+        clay: '#c46f3f',
+        terracotta: '#c46f3f',
+        success: '#8a9a76',
         
         // Semantic colors
         border: 'hsl(var(--border))',
@@ -57,7 +59,7 @@ export default {
       },
       fontFamily: {
         sans: ['DM Sans', 'system-ui', 'sans-serif'],
-        serif: ['Instrument Serif', 'Georgia', 'serif'],
+        serif: ['Fraunces', 'Georgia', 'serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
     },

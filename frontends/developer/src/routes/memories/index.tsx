@@ -6,6 +6,10 @@ import { formatRelativeTime, truncate, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 
+function getErrorMessage(error: unknown): string {
+  return error instanceof Error ? error.message : "Unknown error";
+}
+
 export const Route = createFileRoute("/memories/")({
   component: MemoriesPage,
 });
@@ -16,13 +20,17 @@ function MemoriesPage() {
   const [keyPrefixFilter, setKeyPrefixFilter] = useState("");
 
   const { data, isLoading, error } = useAdminMemories({
-    archived: archiveFilter,
     namespacePrefix: namespaceFilter.length > 0 ? namespaceFilter : undefined,
     keyPrefix: keyPrefixFilter || undefined,
     limit: 50,
   });
 
-  const memories = data?.items || [];
+  const rawMemories = data?.items || [];
+  const memories = rawMemories.filter((memory) => {
+    if (archiveFilter === "include") return true;
+    if (archiveFilter === "only") return memory.archived;
+    return !memory.archived;
+  });
 
   // Extract unique namespace segments for navigation
   const namespaceSegments = new Set<string>();
@@ -42,26 +50,20 @@ function MemoriesPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border bg-background px-8 py-6">
-        <h1 className="mb-2 text-3xl font-semibold text-foreground">Memories</h1>
-        <p className="text-muted-foreground">Explore episodic memories by namespace hierarchy</p>
+      <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
+        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Memories</h1>
+        <p className="console-subtitle mt-3 text-base md:text-lg">Explore episodic memories by namespace hierarchy</p>
       </div>
 
-      {/* Filters */}
-      <div className="border-b border-border bg-background px-8 py-4">
+      <div className="px-5 pb-6 md:px-10">
         <div className="space-y-3">
-          {/* Archive filter */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Show:</span>
-            <div className="flex gap-1">
+            <div className="console-segmented">
               <button
                 onClick={() => setArchiveFilter("exclude")}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
-                  archiveFilter === "exclude"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50",
+                  "console-segment",
+                  archiveFilter === "exclude" && "console-segment-active",
                 )}
               >
                 Active
@@ -69,10 +71,8 @@ function MemoriesPage() {
               <button
                 onClick={() => setArchiveFilter("include")}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
-                  archiveFilter === "include"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50",
+                  "console-segment",
+                  archiveFilter === "include" && "console-segment-active",
                 )}
               >
                 All
@@ -80,10 +80,8 @@ function MemoriesPage() {
               <button
                 onClick={() => setArchiveFilter("only")}
                 className={cn(
-                  "rounded-md px-3 py-1.5 text-sm transition-colors",
-                  archiveFilter === "only"
-                    ? "bg-accent text-accent-foreground"
-                    : "text-muted-foreground hover:bg-accent/50",
+                  "console-segment",
+                  archiveFilter === "only" && "console-segment-active",
                 )}
               >
                 Archived
@@ -91,14 +89,13 @@ function MemoriesPage() {
             </div>
           </div>
 
-          {/* Namespace breadcrumb */}
           {namespaceFilter.length > 0 && (
             <div className="flex items-center gap-2">
               <span className="text-sm text-muted-foreground">Namespace:</span>
               <div className="flex items-center gap-1">
                 <button
                   onClick={() => setNamespaceFilter([])}
-                  className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent hover:text-accent-foreground"
+                  className="rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-white/65 hover:text-foreground"
                 >
                   root
                 </button>
@@ -107,7 +104,7 @@ function MemoriesPage() {
                     <ChevronRight className="h-4 w-4 text-muted-foreground" />
                     <button
                       onClick={() => handleNamespaceBreadcrumb(index + 1)}
-                      className="rounded-md px-2 py-1 text-sm text-foreground hover:bg-accent"
+                      className="rounded-md px-2 py-1 text-sm text-foreground hover:bg-white/65"
                     >
                       {segment}
                     </button>
@@ -117,7 +114,6 @@ function MemoriesPage() {
             </div>
           )}
 
-          {/* Key prefix filter */}
           <div className="flex items-center gap-2">
             <span className="text-sm text-muted-foreground">Key prefix:</span>
             <input
@@ -125,7 +121,7 @@ function MemoriesPage() {
               value={keyPrefixFilter}
               onChange={(e) => setKeyPrefixFilter(e.target.value)}
               placeholder="Filter by key..."
-              className="rounded-md border border-input bg-background px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+              className="console-input px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             />
             {keyPrefixFilter && (
               <button
@@ -139,18 +135,16 @@ function MemoriesPage() {
         </div>
       </div>
 
-      {/* Content */}
       <div className="flex flex-1 overflow-hidden">
-        {/* Namespace navigation sidebar */}
         {namespaceSegments.size > 0 && (
-          <div className="w-64 border-r border-border bg-muted/30 p-4">
-            <h3 className="mb-3 text-sm font-medium text-muted-foreground">Namespaces</h3>
+          <div className="ml-5 hidden w-64 border-r border-[rgba(43,39,34,0.1)] pr-4 pt-2 md:ml-10 md:block">
+            <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Namespaces</h3>
             <div className="space-y-1">
               {Array.from(namespaceSegments).sort().map((segment) => (
                 <button
                   key={segment}
                   onClick={() => handleNamespaceClick(segment)}
-                  className="flex w-full items-center gap-2 rounded-md px-3 py-2 text-left text-sm transition-colors hover:bg-accent hover:text-accent-foreground"
+                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone transition-colors hover:bg-white/65 hover:text-foreground"
                 >
                   <ChevronRight className="h-4 w-4" />
                   {segment}
@@ -160,8 +154,7 @@ function MemoriesPage() {
           </div>
         )}
 
-        {/* Memory list */}
-        <div className="flex-1 overflow-auto p-8">
+        <div className="flex-1 overflow-y-auto px-5 pb-8 md:px-10">
           {isLoading && (
             <div className="flex items-center justify-center py-12">
               <div className="text-center">
@@ -172,13 +165,13 @@ function MemoriesPage() {
           )}
 
           {error && (
-            <div className="rounded-lg border border-destructive/50 bg-destructive/10 p-4 text-center">
-              <p className="text-sm text-destructive">Failed to load memories: {error.message}</p>
+            <div className="console-panel rounded-xl p-4 text-center">
+              <p className="text-sm text-destructive">Failed to load memories: {getErrorMessage(error)}</p>
             </div>
           )}
 
           {!isLoading && !error && memories.length === 0 && (
-            <div className="rounded-lg border border-border bg-card p-12 text-center">
+            <div className="console-panel rounded-xl p-12 text-center">
               <p className="text-muted-foreground">
                 {archiveFilter === "only" ? "No archived memories found" : "No memories found"}
               </p>
@@ -186,14 +179,18 @@ function MemoriesPage() {
           )}
 
           {!isLoading && !error && memories.length > 0 && (
-            <div className="space-y-4">
-              {memories.map((memory) => (
-                <div key={memory.id} className="rounded-lg border border-border bg-card p-6">
+            <div className="space-y-3">
+              {memories.map((memory) => {
+                if (!memory.id) {
+                  return null;
+                }
+                return (
+                <div key={memory.id} className="console-panel rounded-xl p-5">
                   <div className="mb-3 flex items-start justify-between">
                     <div className="flex-1">
                       <div className="mb-2 flex items-center gap-2">
                         <span className="font-mono text-sm font-medium text-foreground">
-                          {memory.namespace.join(" / ")}
+                          {memory.namespace?.join(" / ") || "(no namespace)"}
                         </span>
                         {memory.archived && <Badge variant="secondary">Archived</Badge>}
                       </div>
@@ -213,9 +210,9 @@ function MemoriesPage() {
                   </div>
 
                   {/* Value preview */}
-                  <div className="mt-4 rounded-md bg-muted/50 p-4">
-                    <div className="text-xs text-muted-foreground mb-2">Value Preview:</div>
-                    <pre className="overflow-x-auto text-sm">
+                  <div className="console-code mt-4 rounded-lg p-4">
+                    <div className="mb-2 text-xs text-muted-foreground">Value Preview:</div>
+                    <pre className="overflow-x-auto text-sm leading-6">
                       {truncate(JSON.stringify(memory.value, null, 2), 200)}
                     </pre>
                   </div>
@@ -238,7 +235,8 @@ function MemoriesPage() {
                     Memory ID: <span className="font-mono">{memory.id}</span>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
           )}
 

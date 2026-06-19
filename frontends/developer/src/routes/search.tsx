@@ -2,7 +2,7 @@ import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Search as SearchIcon, MessageSquare, Database } from "lucide-react";
 import { useAdminConversations, useAdminMemories, type AdminConversation, type AdminMemory } from "@/hooks/useAdminApi";
-import { formatRelativeTime, truncate } from "@/lib/utils";
+import { formatRelativeTime, truncate, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
 export const Route = createFileRoute("/search")({
@@ -65,16 +65,13 @@ function SearchPage() {
 
   return (
     <div className="flex h-full flex-col">
-      {/* Header */}
-      <div className="border-b border-border bg-background px-8 py-6">
-        <h1 className="mb-2 text-3xl font-semibold text-foreground">Search</h1>
-        <p className="text-muted-foreground">Search across conversations and memories</p>
+      <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
+        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Search</h1>
+        <p className="console-subtitle mt-3 text-base md:text-lg">Search across conversations and memories</p>
       </div>
 
-      {/* Search Controls */}
-      <div className="border-b border-border bg-background px-8 py-4">
+      <div className="px-5 pb-6 md:px-10">
         <div className="space-y-4">
-          {/* Search Input */}
           <div className="relative">
             <SearchIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <input
@@ -82,41 +79,27 @@ function SearchPage() {
               placeholder="Search by title, ID, namespace, key, or content..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
-              className="w-full rounded-lg border border-input bg-background py-2 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="console-input w-full py-3 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
 
-          {/* Search Type Filter */}
           <div className="flex items-center gap-2">
-            <span className="text-sm text-muted-foreground">Search in:</span>
-            <div className="flex gap-1">
+            <div className="console-segmented">
               <button
                 onClick={() => setSearchType("all")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  searchType === "all"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
+                className={cn("console-segment", searchType === "all" && "console-segment-active")}
               >
                 All
               </button>
               <button
                 onClick={() => setSearchType("conversations")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  searchType === "conversations"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
+                className={cn("console-segment", searchType === "conversations" && "console-segment-active")}
               >
                 Conversations
               </button>
               <button
                 onClick={() => setSearchType("memories")}
-                className={`rounded-md px-3 py-1.5 text-sm font-medium transition-colors ${
-                  searchType === "memories"
-                    ? "bg-primary text-primary-foreground"
-                    : "bg-muted text-muted-foreground hover:bg-muted/80"
-                }`}
+                className={cn("console-segment", searchType === "memories" && "console-segment-active")}
               >
                 Memories
               </button>
@@ -125,12 +108,11 @@ function SearchPage() {
         </div>
       </div>
 
-      {/* Results */}
-      <div className="flex-1 overflow-auto p-8">
+      <div className="flex-1 overflow-y-auto px-5 pb-8 md:px-10">
         {!query && (
           <div className="flex h-full items-center justify-center">
             <div className="text-center">
-              <SearchIcon className="mx-auto mb-4 h-12 w-12 text-muted-foreground/50" />
+              <SearchIcon className="mx-auto mb-4 h-12 w-12 text-primary/40" strokeWidth={1.45} />
               <p className="text-muted-foreground">Enter a search query to get started</p>
             </div>
           </div>
@@ -170,7 +152,7 @@ function SearchPage() {
                       key={conversation.id}
                       to="/conversations/$conversationId"
                       params={{ conversationId: conversation.id! }}
-                      className="block rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent"
+                      className="console-panel block rounded-xl p-4 transition-colors hover:bg-sage-soft/25"
                     >
                       <div className="mb-2 flex items-start justify-between">
                         <h3 className="font-medium text-foreground">
@@ -204,7 +186,7 @@ function SearchPage() {
                       key={memory.id}
                       to="/memories/$memoryId"
                       params={{ memoryId: memory.id! }}
-                      className="block rounded-lg border border-border bg-card p-4 transition-colors hover:bg-accent"
+                      className="console-panel block rounded-xl p-4 transition-colors hover:bg-sage-soft/25"
                     >
                       <div className="mb-2 flex items-start justify-between">
                         <div>

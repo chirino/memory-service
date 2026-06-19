@@ -186,7 +186,7 @@ export function ForkPointBadge({
     default:
       "fork-point-badge inline-flex items-center gap-1 text-xs text-primary px-2 py-0.5",
     terminal:
-      "text-[10px] font-medium px-2 py-0.5 bg-purple-500/20 text-purple-400 rounded uppercase tracking-wider flex items-center space-x-1",
+      "flex items-center space-x-1 rounded bg-[#eadccd] px-2 py-0.5 text-[10px] font-medium uppercase tracking-wider text-[#98613d]",
     slate:
       "inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-primary/20 text-primary",
   };

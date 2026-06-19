@@ -100,7 +100,7 @@ export function JsonHighlight({
       <pre
         className={
           className ??
-          "overflow-x-auto whitespace-pre-wrap rounded bg-muted/50 p-2 text-sm text-foreground font-mono"
+          "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 text-sm text-foreground font-mono"
         }
       >
         {text}
@@ -121,7 +121,7 @@ export function JsonHighlight({
     <pre
       className={
         className ??
-        "overflow-x-auto whitespace-pre-wrap rounded bg-muted/50 p-2 text-sm font-mono"
+        "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 text-sm font-mono"
       }
     >
       {tokens.map((token, i) => (
