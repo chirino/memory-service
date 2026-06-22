@@ -44,64 +44,84 @@ services:
       POSTGRES_PASSWORD: postgres
     ports:
       - "55432:5432"
+    volumes:
+      - ../../../../deploy/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
+    tmpfs:
+      - /var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U postgres"]
       interval: 5s
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:7-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "56379:6379"
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
   keycloak:
-    image: quay.io/keycloak/keycloak:24.0.5
+    image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
     environment:
-      KEYCLOAK_ADMIN: admin
-      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
-      KC_DB_URL_DATABASE: postgres
-      KC_DB_USERNAME: postgres
-      KC_DB_PASSWORD: postgres
-      KC_HOSTNAME: ${KEYCLOAK_HOSTNAME:-localhost}
-      KC_HOSTNAME_PORT: ${KEYCLOAK_HOSTNAME_PORT:-8081}
+      KC_DB_URL_DATABASE: keycloak
+      KC_DB_USERNAME: keycloak
+      KC_DB_PASSWORD: keycloak
+      KC_HTTP_RELATIVE_PATH: /
+      KC_HEALTH_ENABLED: "true"
+      KC_HOSTNAME: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
       KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
     volumes:
-      - ./memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
+      - ../../../../deploy/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
     depends_on:
       postgres:
         condition: service_healthy
     ports:
       - "8081:8080"
+    healthcheck:
+      test:
+        [
+          "CMD-SHELL",
+          "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'",
+        ]
+      interval: 10s
+      timeout: 5s
+      retries: 15
+      start_period: 30s
 
   memory-service:
     image: ghcr.io/chirino/memory-service:latest
     environment:
-      # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
       MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
-      MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memory_service
+
+      # ── Self-contained storage ─────
+      MEMORY_SERVICE_DB_KIND: sqlite
+      MEMORY_SERVICE_DB_URL: file:/tmp/memory-service-dev/memory-service.db
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
-      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_CACHE_KIND: local
+      MEMORY_SERVICE_VECTOR_KIND: sqlite
+      MEMORY_SERVICE_EMBEDDING_KIND: local
+      MEMORY_SERVICE_ATTACHMENTS_KIND: fs
+      MEMORY_SERVICE_ATTACHMENTS_FS_DIR: /tmp/memory-service-dev/attachments
+      MEMORY_SERVICE_TEMP_DIR: /tmp/memory-service-dev/tmp
+
+      # ── Authentication & authorization ─────────────────────────
+      MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
-      MEMORY_SERVICE_CACHE_KIND: redis
-      MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
+      MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
+      MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
+
+      # ── Developer Frontend ─────────────────────────────────────
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
+      MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: "http://localhost:3000"
+
+      # ── Encryption ─────────────────────────────────────────────
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       keycloak:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "8082:8080"
     healthcheck:
@@ -111,8 +131,23 @@ services:
       retries: 12
 ```
 
-Add a [`memory-service-realm.json`](https://raw.githubusercontent.com/chirino/memory-service/refs/heads/main/deploy/keycloak/memory-service-realm.json) file
-to the root of your project. This file contains an example Keycloak realm configuration for the Memory Service.
+This configuration uses **self-contained storage** for the memory service (SQLite, local cache, filesystem attachments), while including Keycloak for OIDC authentication to enable the developer frontend.
+
+**Key features:**
+
+- **SQLite** for memory service database storage (ephemeral)
+- **Local cache** for in-memory caching
+- **Filesystem** for attachment storage
+- **Local embeddings** for vector operations
+- **Keycloak** for OIDC authentication (uses Postgres)
+- **Integrated developer frontend** at `http://localhost:8082/developer`
+
+**Access points:**
+
+- Memory service API: `http://localhost:8082`
+- Developer frontend: `http://localhost:8082/developer`
+- Keycloak admin console: `http://localhost:8081` (admin/admin)
+- API key: `agent-api-key-1`
 
 ## Service Connection
 
