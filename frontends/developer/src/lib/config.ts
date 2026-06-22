@@ -1,8 +1,10 @@
 export interface AppConfig {
-  apiBaseUrl: string;
-  oidcAuthority: string;
-  oidcClientId: string;
-  oidcRedirectUri: string;
+  apiUrl: string;
+  oidc: {
+    authority: string;
+    clientId: string;
+    redirectUri: string;
+  };
 }
 
 let cachedConfig: AppConfig | null = null;

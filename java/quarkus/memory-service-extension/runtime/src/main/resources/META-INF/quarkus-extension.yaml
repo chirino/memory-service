@@ -1,5 +1,5 @@
 ---
-name: "Memory Service Extension"
+name: "Memory Service"
 description: "Provides memory service client and dev services"
 metadata:
   keywords:
@@ -8,4 +8,3 @@ metadata:
   categories:
   - "integration"
   status: "preview"
-

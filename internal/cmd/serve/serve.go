@@ -71,36 +71,38 @@ func Command() *cli.Command {
 }
 
 type flagSetOptions struct {
-	includeServer        bool
-	includeListeners     bool
-	includeDatabase      bool
-	includeCache         bool
-	includeEventBus      bool
-	includeAttachments   bool
-	includeEncryption    bool
-	includeVector        bool
-	includeEmbedding     bool
-	includeAuthorization bool
-	includeEpisodic      bool
-	includeClustering    bool
-	includeMonitoring    bool
+	includeServer            bool
+	includeListeners         bool
+	includeDatabase          bool
+	includeCache             bool
+	includeEventBus          bool
+	includeAttachments       bool
+	includeEncryption        bool
+	includeVector            bool
+	includeEmbedding         bool
+	includeAuthorization     bool
+	includeEpisodic          bool
+	includeClustering        bool
+	includeMonitoring        bool
+	includeDeveloperFrontend bool
 }
 
 func Flags(cfg *config.Config, state *FlagState) []cli.Flag {
 	return flagsFor(cfg, state, flagSetOptions{
-		includeServer:        true,
-		includeListeners:     true,
-		includeDatabase:      true,
-		includeCache:         true,
-		includeEventBus:      true,
-		includeAttachments:   true,
-		includeEncryption:    true,
-		includeVector:        true,
-		includeEmbedding:     true,
-		includeAuthorization: true,
-		includeEpisodic:      true,
-		includeClustering:    true,
-		includeMonitoring:    true,
+		includeServer:            true,
+		includeListeners:         true,
+		includeDatabase:          true,
+		includeCache:             true,
+		includeEventBus:          true,
+		includeAttachments:       true,
+		includeEncryption:        true,
+		includeVector:            true,
+		includeEmbedding:         true,
+		includeAuthorization:     true,
+		includeEpisodic:          true,
+		includeClustering:        true,
+		includeMonitoring:        true,
+		includeDeveloperFrontend: true,
 	})
 }
 
@@ -166,6 +168,9 @@ func flagsFor(cfg *config.Config, state *FlagState, opts flagSetOptions) []cli.F
 	}
 	if opts.includeMonitoring {
 		flags = append(flags, monitoringFlags(cfg)...)
+	}
+	if opts.includeDeveloperFrontend {
+		flags = append(flags, developerFrontendFlags(cfg)...)
 	}
 	return flags
 }
@@ -710,6 +715,41 @@ func monitoringFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.MetricsLabels,
 			Value:       "service=memory-service",
 			Usage:       "Comma-separated key=value pairs added as constant labels to all Prometheus metrics. Supports ${VAR} expansion.",
+		},
+	}
+}
+
+func developerFrontendFlags(cfg *config.Config) []cli.Flag {
+	return []cli.Flag{
+		&cli.BoolFlag{
+			Name:        "developer-frontend-enabled",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED"),
+			Destination: &cfg.DeveloperFrontendEnabled,
+			Value:       cfg.DeveloperFrontendEnabled,
+			Usage:       "Enable serving the developer frontend SPA under /developer",
+		},
+		&cli.StringFlag{
+			Name:        "developer-frontend-dir",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR"),
+			Destination: &cfg.DeveloperFrontendDir,
+			Usage:       "Directory containing built developer frontend assets",
+		},
+		&cli.StringFlag{
+			Name:        "developer-frontend-client-id",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID"),
+			Destination: &cfg.DeveloperFrontendClientID,
+			Value:       cfg.DeveloperFrontendClientID,
+			Usage:       "OIDC public client ID for the developer frontend",
+		},
+		&cli.StringFlag{
+			Name:        "base-url",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_BASE_URL"),
+			Destination: &cfg.BaseURL,
+			Usage:       "External base URL for redirects and runtime config; defaults to advertised address or listener",
 		},
 	}
 }

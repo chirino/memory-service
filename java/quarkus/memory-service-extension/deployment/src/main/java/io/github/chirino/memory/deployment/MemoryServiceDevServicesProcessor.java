@@ -1,6 +1,7 @@
 package io.github.chirino.memory.deployment;
 
 import io.quarkus.deployment.IsDevServicesSupportedByLaunchMode;
+import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildProducer;
 import io.quarkus.deployment.annotations.BuildStep;
 import io.quarkus.deployment.builditem.DevServicesResultBuildItem;
@@ -9,12 +10,15 @@ import io.quarkus.deployment.builditem.LaunchModeBuildItem;
 import io.quarkus.deployment.builditem.Startable;
 import io.quarkus.deployment.dev.devservices.DevServicesConfig;
 import io.quarkus.devservices.common.StartableContainer;
+import io.quarkus.devui.spi.page.CardPageBuildItem;
+import io.quarkus.devui.spi.page.Page;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import org.eclipse.microprofile.config.ConfigProvider;
@@ -33,6 +37,29 @@ public class MemoryServiceDevServicesProcessor {
     private static final int API_KEY_BYTES = 32;
     private static final String OIDC_AUTH_SERVER_URL_CONFIG_KEY = "quarkus.oidc.auth-server-url";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    @BuildStep(onlyIf = IsDevelopment.class)
+    CardPageBuildItem devUiPages(
+            Optional<MemoryServiceDevServicesConfigBuildItem> memoryServiceConfig) {
+        CardPageBuildItem cardPage = new CardPageBuildItem();
+        String memoryServiceUrl =
+                memoryServiceConfig
+                        .map(MemoryServiceDevServicesConfigBuildItem::getUrl)
+                        .filter(url -> !url.isBlank())
+                        .orElseGet(MemoryServiceDevServicesProcessor::configuredMemoryServiceUrl);
+        if (memoryServiceUrl == null || memoryServiceUrl.isBlank()) {
+            return cardPage;
+        }
+
+        String developerUrl = developerUrl(memoryServiceUrl);
+        cardPage.addPage(
+                Page.externalPageBuilder("Developer Console")
+                        .url(developerUrl, developerUrl)
+                        .isHtmlContent()
+                        .doNotEmbed(true)
+                        .icon("font-awesome-solid:code"));
+        return cardPage;
+    }
 
     /**
      * Produces a MemoryServiceDevServicesConfigBuildItem by extracting memory-service
@@ -77,6 +104,27 @@ public class MemoryServiceDevServicesProcessor {
             }
         }
         return new MemoryServiceDevServicesConfigBuildItem(config);
+    }
+
+    private static String configuredMemoryServiceUrl() {
+        try {
+            var config = ConfigProvider.getConfig();
+            String configuredUrl =
+                    config.getOptionalValue("memory-service.client.url", String.class).orElse(null);
+            if (configuredUrl != null && !configuredUrl.isBlank()) {
+                return configuredUrl;
+            }
+            return config.getOptionalValue("memory-service.devservices.port", Integer.class)
+                    .map(port -> "http://localhost:" + port)
+                    .orElse(null);
+        } catch (IllegalStateException e) {
+            LOG.debug("Unable to read memory-service.client.url from config.", e);
+            return null;
+        }
+    }
+
+    private static String developerUrl(String memoryServiceUrl) {
+        return memoryServiceUrl.replaceAll("/+$", "") + "/developer/";
     }
 
     @BuildStep(onlyIf = {IsDevServicesSupportedByLaunchMode.class, DevServicesConfig.Enabled.class})
@@ -219,6 +267,9 @@ public class MemoryServiceDevServicesProcessor {
                                                         "MEMORY_SERVICE_DB_MIGRATE_AT_START",
                                                         "true")
                                                 .withEnv("MEMORY_SERVICE_CACHE_KIND", "local")
+                                                .withEnv(
+                                                        "MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED",
+                                                        "true")
                                                 .withEnv("MEMORY_SERVICE_VECTOR_KIND", "sqlite")
                                                 .withEnv("MEMORY_SERVICE_EMBEDDING_KIND", "local")
                                                 .withEnv("MEMORY_SERVICE_ATTACHMENTS_KIND", "fs")
@@ -229,6 +280,12 @@ public class MemoryServiceDevServicesProcessor {
                                                         "MEMORY_SERVICE_TEMP_DIR",
                                                         "/tmp/memory-service-dev/tmp")
                                                 .withLabel(DEV_SERVICE_LABEL, "memory-service");
+
+                                        if (fixedPort != null) {
+                                            container.withEnv(
+                                                    "MEMORY_SERVICE_BASE_URL",
+                                                    "http://localhost:" + fixedPort);
+                                        }
 
                                         // Apply additional environment variables from config
                                         for (Map.Entry<String, String> entry :

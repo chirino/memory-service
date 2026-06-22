@@ -29,11 +29,13 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 - Custom React Query hooks in `src/hooks/useAdminApi.ts`
 - Uses Admin API from `openapi-admin.yml`
 - Fetch-based implementation with auth token injection
-- Query keys follow pattern: `['admin', resource, ...params]`
+- Generated React Query helpers use typed object query keys from `@hey-api/openapi-ts`; do not replace them with string-array query keys.
+- The React Query generator intentionally skips Admin SSE operations (`adminEvict`, `adminSubscribeEvents`) because those endpoints use `client.sse.*`; use the raw generated SDK for streaming calls.
 
 ### Design System
 - Minimal Light palette: cream (#FAF8F5), sage (#8B9A8E), terracotta (#C17B6B)
 - Design tokens in `tailwind.config.js`
+- `src/index.css` imports Google Fonts; the integrated `/developer/*` CSP must allow `https://fonts.googleapis.com` in `style-src` and `https://fonts.gstatic.com` in `font-src`.
 - Reusable UI components in `src/components/ui/`
 - Consistent spacing and typography
 
@@ -98,15 +100,17 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 {
   "apiUrl": "http://localhost:8082",
   "oidc": {
-    "authority": "http://localhost:8080/realms/memory-service",
+    "authority": "http://localhost:8081/realms/memory-service",
     "clientId": "developer-frontend",
-    "redirectUri": "http://localhost:3000"
+    "redirectUri": "http://localhost:3000/developer/"
   }
 }
 ```
 
+
 ### Build Config
-- Vite config in `vite.config.ts` with TanStack Router plugin
+- Vite config in `vite.config.ts` with TanStack Router plugin; `src/routeTree.gen.ts` is generated and gitignored.
+- `npm run build` runs Vite before `tsc -b` so the route tree exists before TypeScript checks run.
 - TypeScript config in `tsconfig.json` with path aliases (`@/*`)
 - Tailwind config in `tailwind.config.js` with design tokens
 - ESLint config in `eslint.config.js`
@@ -128,11 +132,8 @@ npm run preview
 
 ### Type Checking
 ```bash
-npm run type-check
+npx tsc -b
 ```
-
-## TypeScript Errors
-All files currently show TypeScript errors because dependencies haven't been installed yet. This is expected and will resolve after running `npm install`.
 
 ## Design Decisions
 

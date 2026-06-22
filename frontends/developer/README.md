@@ -42,10 +42,12 @@ Edit `public/config.json` to match your environment:
 
 ```json
 {
-  "apiBaseUrl": "http://localhost:8082",
-  "oidcAuthority": "http://localhost:8080/realms/memory-service",
-  "oidcClientId": "developer-frontend",
-  "oidcRedirectUri": "http://localhost:3000"
+  "apiUrl": "http://localhost:8082",
+  "oidc": {
+    "authority": "http://localhost:8081/realms/memory-service",
+    "clientId": "developer-frontend",
+    "redirectUri": "http://localhost:3000/developer/"
+  }
 }
 ```
 
@@ -177,13 +179,13 @@ The errors are expected until dependencies are installed.
 ### OIDC Configuration
 
 Ensure your OIDC client is configured with:
-- Redirect URI: `http://localhost:3000`
+- Redirect URI: `http://localhost:3000/developer/`
 - Valid scopes: `openid profile email roles`
 - Client type: Public (SPA)
 
 ### API Connection
 
-Verify the Memory Service is running and accessible at the configured `apiBaseUrl`.
+Verify the Memory Service is running and accessible at the configured `apiUrl`.
 
 ## Contributing
 

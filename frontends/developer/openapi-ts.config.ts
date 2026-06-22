@@ -12,6 +12,22 @@ export default defineConfig({
     '@hey-api/sdk',
     {
       name: '@tanstack/react-query',
+      '~hooks': {
+        operations: {
+          isMutation: (operation) => {
+            if (operation.id === 'adminEvict') {
+              return false
+            }
+            return undefined
+          },
+          isQuery: (operation) => {
+            if (operation.id === 'adminSubscribeEvents') {
+              return false
+            }
+            return undefined
+          },
+        },
+      },
     },
   ],
 })

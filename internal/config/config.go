@@ -255,6 +255,12 @@ type Config struct {
 	KnowledgeClusteringEpsilon float64       // DBSCAN neighborhood radius in cosine distance (default 0.3)
 	KnowledgeClusteringMinPts  int           // DBSCAN minimum points to form a cluster (default 3)
 	KnowledgeClusteringDecay   time.Duration // Time with no new members before trend becomes decaying (default 30d)
+
+	// Developer frontend configuration
+	DeveloperFrontendEnabled  bool   // Enable serving the developer frontend SPA under /developer
+	DeveloperFrontendDir      string // Directory containing built developer frontend assets
+	DeveloperFrontendClientID string // OIDC public client ID for the developer frontend
+	BaseURL                   string // External base URL for /developer redirects and runtime config
 }
 
 // DefaultConfig returns a Config with sensible defaults.
@@ -338,6 +344,11 @@ func DefaultConfig() Config {
 		KnowledgeClusteringEpsilon: 0.3,
 		KnowledgeClusteringMinPts:  3,
 		KnowledgeClusteringDecay:   30 * 24 * time.Hour,
+
+		// Developer frontend defaults
+		DeveloperFrontendEnabled:  false,
+		DeveloperFrontendDir:      "",
+		DeveloperFrontendClientID: "developer-frontend",
 	}
 }
 

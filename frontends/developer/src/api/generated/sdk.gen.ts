@@ -30,6 +30,9 @@ import type {
   AdminGetEntriesData,
   AdminGetEntriesErrors,
   AdminGetEntriesResponses,
+  AdminGetEntryData,
+  AdminGetEntryErrors,
+  AdminGetEntryResponses,
   AdminGetMembershipsData,
   AdminGetMembershipsErrors,
   AdminGetMembershipsResponses,
@@ -236,6 +239,21 @@ export const adminGetMemory = <ThrowOnError extends boolean = false>(
   (options.client ?? client).get<AdminGetMemoryResponses, AdminGetMemoryErrors, ThrowOnError>({
     security: [{ scheme: "bearer", type: "http" }],
     url: "/admin/v1/memories/{id}",
+    ...options,
+  });
+
+/**
+ * Get any entry by ID (admin/auditor)
+ *
+ * Retrieves a conversation entry by its ID, including entries from archived
+ * conversations. Requires auditor or admin role.
+ */
+export const adminGetEntry = <ThrowOnError extends boolean = false>(
+  options: Options<AdminGetEntryData, ThrowOnError>,
+) =>
+  (options.client ?? client).get<AdminGetEntryResponses, AdminGetEntryErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/v1/admin/entries/{id}",
     ...options,
   });
 

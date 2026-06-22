@@ -172,7 +172,7 @@ export function useScrollToEntry({
 	}, []);
 
 	// Mark that the next URL change should not trigger scrolling (for in-page clicks)
-	const selectWithoutScroll = useCallback((_entryId: string) => {
+	const selectWithoutScroll = useCallback(() => {
 		skipNextScroll.current = true;
 	}, []);
 

@@ -46,12 +46,11 @@ export function useLineageEntries({
 	forkSummaries,
 }: UseLineageEntriesOptions): UseLineageEntriesResult {
 	// Fetch all entries for the conversation (with forks: "all" to get entire fork tree)
-	const { data: entriesData, isLoading } = useQuery<{ data?: Entry[] }>({
+	const { data: entriesData, isLoading } = useQuery({
 		...adminGetEntriesOptions({
 			path: { id: conversationId },
 			query: { forks: "all" },
 		}),
-		queryKey: ["admin", "conversations", conversationId, "entries", "all"],
 	});
 
 	// Build a map of fork conversationId -> fork summary for title lookup

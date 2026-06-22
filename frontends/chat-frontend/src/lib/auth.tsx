@@ -31,11 +31,12 @@ function fetchConfig(): Promise<FrontendConfig> {
 function buildOidcConfig(config: FrontendConfig) {
   const isSecure = typeof window !== "undefined" && window.isSecureContext;
   const disablePKCE = !isSecure;
+  const appUrl = typeof window !== "undefined" ? window.location.origin : "";
   return {
     authority: `${config.keycloakUrl}/realms/${config.keycloakRealm}`,
     client_id: config.keycloakClientId,
-    redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
-    post_logout_redirect_uri: typeof window !== "undefined" ? window.location.origin : "",
+    redirect_uri: appUrl,
+    post_logout_redirect_uri: appUrl,
     scope: "openid profile email",
     userStore: typeof window !== "undefined" ? new WebStorageStateStore({ store: window.localStorage }) : undefined,
     automaticSilentRenew: false,
@@ -246,7 +247,8 @@ function OidcAuthContextProvider({ children }: { children: React.ReactNode }) {
       savePreLoginUrl();
       auth.signinRedirect();
     },
-    logout: () => auth.signoutRedirect(),
+    logout: () =>
+      auth.signoutRedirect({ post_logout_redirect_uri: typeof window !== "undefined" ? window.location.origin : "" }),
     clearSessionAndLogin,
     authError,
     setAuthError,

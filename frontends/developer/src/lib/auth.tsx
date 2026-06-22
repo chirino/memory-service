@@ -30,21 +30,28 @@ interface AuthProviderProps {
 
 export function AuthProvider({ config, children }: AuthProviderProps) {
   const oidcConfig = {
-    authority: config.oidcAuthority,
-    client_id: config.oidcClientId,
-    redirect_uri: config.oidcRedirectUri,
+    authority: config.oidc.authority,
+    client_id: config.oidc.clientId,
+    redirect_uri: config.oidc.redirectUri,
+    post_logout_redirect_uri: config.oidc.redirectUri,
     scope: "openid profile email roles",
     automaticSilentRenew: true,
   };
 
   return (
     <OidcAuthProvider {...oidcConfig}>
-      <AuthContextProvider>{children}</AuthContextProvider>
+      <AuthContextProvider postLogoutRedirectUri={config.oidc.redirectUri}>{children}</AuthContextProvider>
     </OidcAuthProvider>
   );
 }
 
-function AuthContextProvider({ children }: { children: ReactNode }) {
+function AuthContextProvider({
+  children,
+  postLogoutRedirectUri,
+}: {
+  children: ReactNode;
+  postLogoutRedirectUri: string;
+}) {
   const auth = useOidcAuth();
 
   // Update access token when user changes
@@ -77,7 +84,7 @@ function AuthContextProvider({ children }: { children: ReactNode }) {
     isLoading: auth.isLoading,
     isAuthenticated: auth.isAuthenticated,
     login: () => auth.signinRedirect(),
-    logout: () => auth.signoutRedirect(),
+    logout: () => auth.signoutRedirect({ post_logout_redirect_uri: postLogoutRedirectUri }),
     hasRole,
   };
 

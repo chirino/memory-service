@@ -742,6 +742,45 @@ export type AdminGetMemoryResponses = {
 
 export type AdminGetMemoryResponse = AdminGetMemoryResponses[keyof AdminGetMemoryResponses];
 
+export type AdminGetEntryData = {
+  body?: never;
+  path: {
+    /**
+     * Entry identifier (UUID format).
+     */
+    id: string;
+  };
+  query?: {
+    /**
+     * Reason for this admin action (for audit log).
+     */
+    justification?: string;
+  };
+  url: "/v1/admin/entries/{id}";
+};
+
+export type AdminGetEntryErrors = {
+  /**
+   * Resource not found
+   */
+  404: ErrorResponse;
+  /**
+   * Error response
+   */
+  default: ErrorResponse;
+};
+
+export type AdminGetEntryError = AdminGetEntryErrors[keyof AdminGetEntryErrors];
+
+export type AdminGetEntryResponses = {
+  /**
+   * Entry details.
+   */
+  200: Entry;
+};
+
+export type AdminGetEntryResponse = AdminGetEntryResponses[keyof AdminGetEntryResponses];
+
 export type AdminGetMemoryIndexStatusData = {
   body?: never;
   path?: never;

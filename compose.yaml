@@ -199,6 +199,8 @@ services:
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
+      MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
 
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
