@@ -13,6 +13,7 @@ import (
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
 	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
+	routedeveloper "github.com/chirino/memory-service/internal/plugin/route/developer"
 	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
 	routememories "github.com/chirino/memory-service/internal/plugin/route/memories"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
@@ -251,6 +252,14 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// Register generated wrappers on the public router.
 	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
+
+	// Register developer frontend routes when enabled.
+	if cfg.DeveloperFrontendEnabled {
+		if err := routedeveloper.RegisterRoutes(router, cfg); err != nil {
+			return nil, fmt.Errorf("failed to register developer frontend routes: %w", err)
+		}
+		log.Info("Developer frontend enabled", "path", "/developer", "dir", cfg.DeveloperFrontendDir)
+	}
 
 	if starter, ok := store.(interface {
 		StartOutboxRelay(context.Context, registryeventbus.EventBus) error

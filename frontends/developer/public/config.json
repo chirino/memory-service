@@ -1,0 +1,8 @@
+{
+  "apiUrl": "http://localhost:8082",
+  "oidc": {
+    "authority": "http://localhost:8081/realms/memory-service",
+    "clientId": "developer-frontend",
+    "redirectUri": "http://localhost:3000/developer/"
+  }
+}

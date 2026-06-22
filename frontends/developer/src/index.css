@@ -1,0 +1,232 @@
+@import url('https://fonts.googleapis.com/css2?family=DM+Sans:opsz,wght@9..40,300;9..40,400;9..40,500;9..40,600&family=Fraunces:opsz,wght@9..144,300;9..144,400;9..144,500;9..144,600&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    --background: 36 28% 96%;
+    --foreground: 30 12% 18%;
+    --card: 0 0% 100%;
+    --card-foreground: 30 12% 18%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 30 12% 18%;
+    --primary: 95 14% 46%;
+    --primary-foreground: 36 28% 98%;
+    --secondary: 36 22% 93%;
+    --secondary-foreground: 30 12% 22%;
+    --muted: 36 22% 93%;
+    --muted-foreground: 30 8% 46%;
+    --accent: 30 5% 96%;
+    --accent-foreground: 30 12% 22%;
+    --destructive: 14 56% 56%;
+    --destructive-foreground: 36 28% 98%;
+    --border: 32 18% 88%;
+    --input: 32 18% 90%;
+    --ring: 95 14% 46%;
+    --radius: 1rem;
+
+    --cream: #f7f3ec;
+    --cream-2: #faf7f1;
+    --linen: #ece6db;
+    --stone: #2b2722;
+    --stone-soft: #6d655c;
+    --sage: #8a9a76;
+    --sage-soft: #dfe5d8;
+    --clay: #c46f3f;
+    --paper: #ffffff;
+    --shadow-soft: 0 28px 70px -48px rgba(43, 39, 34, 0.34);
+  }
+}
+
+@layer base {
+  html {
+    height: 100%;
+    background: var(--cream);
+  }
+
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    min-height: 100%;
+    font-family: 'DM Sans', ui-sans-serif, system-ui, sans-serif;
+    font-feature-settings:
+      'rlig' 1,
+      'calt' 1,
+      'ss01' 1;
+    -webkit-font-smoothing: antialiased;
+    text-rendering: optimizeLegibility;
+  }
+
+  h1 {
+    font-family: 'Fraunces', ui-serif, Georgia, serif;
+    font-weight: 500;
+  }
+
+  code, pre {
+    font-family: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+}
+
+@layer components {
+  .console-shell {
+    background:
+      radial-gradient(ellipse 64% 42% at 84% 0%, rgba(138, 154, 118, 0.1), transparent 58%),
+      linear-gradient(180deg, #faf7f1 0%, #f7f3ec 100%);
+  }
+
+  .console-main {
+    background: rgba(255, 255, 255, 0.58);
+  }
+
+  .console-sidebar {
+    background: rgba(250, 247, 241, 0.88);
+    box-shadow: inset -1px 0 0 rgba(43, 39, 34, 0.09);
+  }
+
+  .console-title {
+    font-family: 'Fraunces', ui-serif, Georgia, serif;
+    font-weight: 500;
+    letter-spacing: 0;
+  }
+
+  .console-subtitle {
+    color: var(--stone-soft);
+  }
+
+  .console-panel {
+    border: 1px solid rgba(43, 39, 34, 0.08);
+    background: rgba(255, 255, 255, 0.72);
+    box-shadow: var(--shadow-soft);
+  }
+
+  .console-hairline {
+    border-color: rgba(43, 39, 34, 0.1);
+  }
+
+  .console-segmented {
+    display: inline-flex;
+    gap: 0.25rem;
+    border: 1px solid rgba(43, 39, 34, 0.12);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.72);
+    padding: 0.25rem;
+  }
+
+  .console-segment {
+    min-width: 5.2rem;
+    border-radius: 0.55rem;
+    padding: 0.55rem 1rem;
+    color: var(--stone-soft);
+    font-size: 0.875rem;
+    font-weight: 500;
+    line-height: 1.1;
+    transition:
+      background-color 180ms ease,
+      color 180ms ease,
+      box-shadow 180ms ease;
+  }
+
+  .console-segment:hover {
+    color: var(--stone);
+    background: rgba(223, 229, 216, 0.28);
+  }
+
+  .console-segment-active {
+    color: #56633f;
+    background: rgba(223, 229, 216, 0.9);
+    box-shadow: 0 1px 0 rgba(43, 39, 34, 0.05);
+  }
+
+  .console-input {
+    border: 1px solid rgba(43, 39, 34, 0.12);
+    border-radius: 0.75rem;
+    background: rgba(255, 255, 255, 0.78);
+    color: var(--stone);
+    box-shadow: 0 1px 0 rgba(43, 39, 34, 0.02);
+  }
+
+  .console-table {
+    width: 100%;
+    min-width: 880px;
+    border-collapse: collapse;
+  }
+
+  .console-table thead {
+    border-bottom: 1px solid rgba(43, 39, 34, 0.14);
+  }
+
+  .console-table th {
+    padding: 0.7rem 0.9rem;
+    text-align: left;
+    color: var(--stone-soft);
+    font-size: 0.72rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+  }
+
+  .console-table td {
+    border-bottom: 1px solid rgba(43, 39, 34, 0.08);
+    padding: 0.78rem 0.9rem;
+    vertical-align: middle;
+  }
+
+  .console-table tbody tr {
+    transition: background-color 180ms ease;
+  }
+
+  .console-table tbody tr:hover {
+    background: rgba(223, 229, 216, 0.22);
+  }
+
+  .console-code {
+    border-radius: 0.5rem;
+    background: rgba(236, 230, 219, 0.55);
+    color: #514b43;
+  }
+
+  .text-syntax-key {
+    color: #7b6f3c;
+  }
+
+  .text-syntax-string {
+    color: #6c7d54;
+  }
+
+  .text-syntax-number,
+  .text-syntax-boolean {
+    color: #b9653f;
+  }
+
+  .text-syntax-null {
+    color: #8d8177;
+  }
+
+  .text-syntax-punct {
+    color: #6d655c;
+  }
+}
+
+@layer utilities {
+  .animate-fade-in {
+    animation: fadeIn 0.3s ease-in;
+  }
+  
+  @keyframes fadeIn {
+    from {
+      opacity: 0;
+      transform: translateY(10px);
+    }
+    to {
+      opacity: 1;
+      transform: translateY(0);
+    }
+  }
+}
+
+/* Made with Bob */

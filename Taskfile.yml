@@ -56,6 +56,13 @@ tasks:
       - npm ci
       - npm run generate
 
+  dev:developer-frontend:
+    desc: Run developer frontend in dev mode with hot-reloading
+    dir: frontends/developer
+    cmds:
+      - npm ci
+      - npm run dev
+
   generate:python:
     internal: true
     cmds:

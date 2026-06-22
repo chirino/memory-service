@@ -823,6 +823,38 @@ MEMORY_SERVICE_CORS_ENABLED=true
 MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000`}
 />
 
+## Developer Frontend Configuration
+
+The developer frontend is an optional web UI for browsing conversations, memories, and system administration. It is served directly from the memory-service binary under the `/developer` path.
+
+| Flag / Env Var                                                                             | Values          | Default              | Description                                            |
+| ------------------------------------------------------------------------------------------ | --------------- | -------------------- | ------------------------------------------------------ |
+| <Cfg p="--developer-frontend-enabled" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED" />     | `true`, `false` | `false`              | Enable the developer frontend                          |
+| <Cfg p="--developer-frontend-dir" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR" />             | path            | _(none)_             | Directory containing built frontend assets             |
+| <Cfg p="--developer-frontend-client-id" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID" /> | string          | `developer-frontend` | OIDC client ID for the frontend                        |
+| <Cfg p="--base-url" e="MEMORY_SERVICE_BASE_URL" />                                         | URL             | _(auto)_             | Base URL for OIDC redirects (auto-detected if not set) |
+
+The developer frontend requires:
+
+- OIDC authentication to be configured
+- Admin or auditor role for access
+- Built frontend assets in the specified directory
+
+<ConfigBlock
+  property={`# Enable developer frontend
+--developer-frontend-enabled
+--developer-frontend-dir=/app/memory-service-developer
+--oidc-issuer=http://localhost:8081/realms/memory-service`}
+  env={`# Enable developer frontend
+MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED=true
+MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR=/app/memory-service-developer
+MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8081/realms/memory-service`}
+/>
+
+When using the official Docker image, the developer frontend is pre-built. Set `MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED=true` to activate it.
+
+Access the developer frontend at `http://your-server:8080/developer/` after authentication.
+
 ## Monitoring
 
 Memory Service exposes Prometheus metrics and provides admin stats endpoints that query Prometheus for aggregated metrics across all service replicas.
