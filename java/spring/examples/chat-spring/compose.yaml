@@ -20,32 +20,6 @@ services:
       timeout: 5s
       retries: 10
 
-  redis:
-    image: redis:8-alpine
-    command: ["redis-server", "--save", "", "--appendonly", "no"]
-    ports:
-      - "56379:6379"
-    tmpfs:
-      # Keep Redis data in-memory and drop it with the container
-      - /data
-    healthcheck:
-      test: ["CMD", "redis-cli", "ping"]
-      interval: 5s
-      timeout: 3s
-      retries: 10
-
-  localstack:
-    image: localstack/localstack
-    environment:
-      SERVICES: s3
-    volumes:
-      - ../../../../deploy/localstack/init-ready.d:/etc/localstack/init/ready.d:ro
-    healthcheck:
-      test: ["CMD-SHELL", "curl -sf http://localhost:4566/_localstack/health"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
-
   keycloak:
     image: quay.io/keycloak/keycloak:26.6.3
     command: ["start-dev", "--import-realm"]
@@ -77,34 +51,6 @@ services:
       retries: 15
       start_period: 30s
 
-  prometheus:
-    image: prom/prometheus:latest
-    volumes:
-      - ./prometheus.yml:/etc/prometheus/prometheus.yml:ro
-    command:
-      - '--config.file=/etc/prometheus/prometheus.yml'
-      - '--storage.tsdb.path=/prometheus'
-      - '--storage.tsdb.retention.time=15d'
-    ports:
-      - "9090:9090"
-    healthcheck:
-      test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
-      interval: 10s
-      timeout: 5s
-      retries: 5
-
-  grafana:
-    image: grafana/grafana:latest
-    environment:
-      GF_SECURITY_ADMIN_PASSWORD: admin
-      GF_AUTH_ANONYMOUS_ENABLED: "true"
-      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
-    ports:
-      - "3001:3000"
-    depends_on:
-      prometheus:
-        condition: service_healthy
-
   memory-service:
     image: ghcr.io/chirino/memory-service:latest
     build:
@@ -115,50 +61,37 @@ services:
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
       MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
 
-      MEMORY_SERVICE_DB_KIND: postgres
-      MEMORY_SERVICE_DB_URL: postgresql://postgres:postgres@postgres:5432/memory_service
+      # ── Self-contained storage ─────
+      MEMORY_SERVICE_DB_KIND: sqlite
+      MEMORY_SERVICE_DB_URL: file:/tmp/memory-service-dev/memory-service.db
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
-      MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
-      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
-      MEMORY_SERVICE_CACHE_KIND: redis
-      MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
+      MEMORY_SERVICE_CACHE_KIND: local
+      MEMORY_SERVICE_VECTOR_KIND: sqlite
+      MEMORY_SERVICE_EMBEDDING_KIND: local
+      MEMORY_SERVICE_ATTACHMENTS_KIND: fs
+      MEMORY_SERVICE_ATTACHMENTS_FS_DIR: /tmp/memory-service-dev/attachments
+      MEMORY_SERVICE_TEMP_DIR: /tmp/memory-service-dev/tmp
 
-      # To allow admin access to the memory service
+      # ── Authentication & authorization ─────────────────────────
+      MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-      MEMORY_SERVICE_CORS_ENABLED: "true"
-      MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
+
+      # ── Developer Frontend ─────────────────────────────────────
+      # Enable the integrated developer frontend at http://localhost:8082/developer
       MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
       MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
-
-      # Prometheus URL for admin stats endpoints
-      MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: "http://localhost:3000"
 
       # ── Encryption ─────────────────────────────────────────────
       # Dev key — replace with a securely generated value in production.
       # Enables at-rest encryption and signed attachment download URLs.
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-
-      # S3 attachment storage via LocalStack
-      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
-      MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
-      MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
-      MEMORY_SERVICE_ATTACHMENTS_S3_DIRECT_DOWNLOAD: "false"
-      AWS_REGION: us-east-1
-      AWS_ACCESS_KEY_ID: test
-      AWS_SECRET_ACCESS_KEY: test
-      AWS_ENDPOINT_URL: http://localstack:4566
     depends_on:
-      postgres:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
       keycloak:
-        condition: service_healthy
-      prometheus:
-        condition: service_healthy
-      localstack:
         condition: service_healthy
     ports:
       - "8082:8080"
@@ -168,5 +101,4 @@ services:
       timeout: 5s
       retries: 12
 
-# Host port mappings are provided so Spring Boot service connections can reach the containers.
 # Spring Boot 3.1+ will auto-detect this compose file when running from this directory.
