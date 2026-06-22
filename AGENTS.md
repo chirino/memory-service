@@ -75,7 +75,7 @@ When you discover something meaningful about this project during your work—arc
 - Contract specs live in repo-root `contracts/`; Java modules should resolve them from `${maven.multiModuleProjectDirectory}/../contracts`, and the `java/memory-service-contracts` module publishes them via `../../contracts`.
 - The Maven wrapper and reactor root live under `java/`; repo-root Maven commands must use `./java/mvnw -f java/pom.xml ...`.
 - BDD event-stream matrix: keep broad datastore suites on their default config, and cover outbox behavior with dedicated runners (`TestFeaturesPgOutbox`, `TestFeaturesSQLiteOutbox`, `TestFeaturesMongoOutbox`). PostgreSQL is the only gRPC outbox suite; SQLite and Mongo outbox coverage is REST-only.
-- Release workflow: `.github/workflows/release.yml` is a manual Java/Docker-only release job. It creates/reuses `release/vX.Y.Z`, commits Maven version changes there, publishes Maven Central artifacts and GHCR images from that branch, tags `vX.Y.Z`, then deletes the release branch after success; Python and TypeScript packages are intentionally excluded.
+- Release workflow: `.github/workflows/release.yml` is a manual Java/Docker-only release job. It creates/reuses `release/vX.Y.Z`, commits Maven version changes there, publishes Maven Central artifacts and GHCR images from that branch, tags `vX.Y.Z`, then deletes the release branch after success; reruns tolerate existing tags/releases and already-published Maven artifacts. Python and TypeScript packages are intentionally excluded.
 
 
 ## Development Guidelines
