@@ -1162,6 +1162,24 @@ func (s *SQLiteStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (u
 	return entry.ConversationGroupID, nil
 }
 
+func (s *SQLiteStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (*model.Entry, error) {
+	var entry model.Entry
+	result := s.dbFor(ctx).Where("id = ?", entryID).First(&entry)
+	if result.Error != nil {
+		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
+			return nil, &NotFoundError{Resource: "entry", ID: entryID.String()}
+		}
+		return nil, result.Error
+	}
+
+	// Decrypt content if encryption is enabled
+	if decrypted, err := s.decrypt(entry.Content); err == nil {
+		entry.Content = decrypted
+	}
+
+	return &entry, nil
+}
+
 func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	db := s.writeDBFor(ctx, "sqlite store append entries")
 	var conv model.Conversation

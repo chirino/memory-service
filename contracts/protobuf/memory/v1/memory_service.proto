@@ -289,6 +289,13 @@ message AdminGetConversationRequest {
   optional string justification = 2;
 }
 
+message AdminGetEntryRequest {
+  // Entry identifier (UUID as 16-byte big-endian binary)
+  bytes entry_id = 1;
+  // Optional: admin/auditor justification, logged for admin access.
+  optional string justification = 2;
+}
+
 message AdminListConversationsRequest {
   reserved 3, 4; // unsupported client_id and agent_id filters removed
   PageRequest page = 1;
@@ -865,6 +872,11 @@ service EntriesService {
 
 service AdminEntriesService {
   rpc ListEntries(AdminListEntriesRequest) returns (ListEntriesResponse);
+  
+  // Get any entry by ID (admin/auditor).
+  // Retrieves a conversation entry by its ID, including entries from archived conversations.
+  // Requires admin or auditor role.
+  rpc GetEntry(AdminGetEntryRequest) returns (Entry);
 }
 
 service AdminConversationsService {

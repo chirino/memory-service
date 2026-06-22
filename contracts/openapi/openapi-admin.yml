@@ -306,6 +306,42 @@ paths:
       security:
         - BearerAuth: []
 
+  /v1/admin/entries/{id}:
+    get:
+      tags: [Admin]
+      summary: Get any entry by ID (admin/auditor)
+      description: |-
+        Retrieves a conversation entry by its ID, including entries from archived
+        conversations. Requires auditor or admin role.
+      operationId: adminGetEntry
+      parameters:
+        - name: id
+          in: path
+          required: true
+          description: Entry identifier (UUID format).
+          schema:
+            type: string
+            format: uuid
+        - name: justification
+          in: query
+          required: false
+          description: Reason for this admin action (for audit log).
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Entry details.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Entry'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+
   /admin/v1/memory-index/status:
     get:
       tags: [Admin]

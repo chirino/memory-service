@@ -1488,6 +1488,26 @@ func (s *MongoStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uu
 	return strToUUID(entry.ConversationGroupID), nil
 }
 
+func (s *MongoStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (*model.Entry, error) {
+	var doc entryDoc
+	err := s.entries().FindOne(ctx, bson.M{"_id": uuidToStr(entryID)}).Decode(&doc)
+	if err != nil {
+		if err == mongo.ErrNoDocuments {
+			return nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
+		}
+		return nil, err
+	}
+
+	entry := s.entryDocToModel(doc)
+
+	// Decrypt content if encryption is enabled
+	if decrypted, err := s.decrypt(entry.Content); err == nil {
+		entry.Content = decrypted
+	}
+
+	return &entry, nil
+}
+
 func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{

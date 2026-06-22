@@ -144,6 +144,11 @@ func (m *metricsStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (
 	return m.inner.GetEntryGroupID(ctx, entryID)
 }
 
+func (m *metricsStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (*model.Entry, error) {
+	defer observe("admin_get_entry_by_id", time.Now())
+	return m.inner.AdminGetEntryByID(ctx, entryID)
+}
+
 func (m *metricsStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry store.CreateEntryRequest, clientID string, agentID *string) (*store.SyncResult, error) {
 	defer observe("sync_agent_entry", time.Now())
 	return m.inner.SyncAgentEntry(ctx, userID, conversationID, entry, clientID, agentID)
