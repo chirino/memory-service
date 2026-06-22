@@ -10,10 +10,16 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/cmd/commands"
+	"github.com/chirino/memory-service/internal/runtimeversion"
 	"github.com/urfave/cli/v3"
 )
 
+// Version is set by release builds with -ldflags "-X main.Version=<version>".
+var Version string
+
 func main() {
+	runtimeversion.Set(Version)
+
 	if lvl := os.Getenv("MEMORY_SERVICE_LOG_LEVEL"); lvl != "" {
 		level, err := log.ParseLevel(lvl)
 		if err != nil {

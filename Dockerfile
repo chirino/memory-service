@@ -15,7 +15,8 @@ COPY go.mod go.sum ./
 RUN go mod download
 COPY . .
 ARG GO_BUILD_TAGS="sqlite_fts5 sqlite_json"
-RUN CGO_ENABLED=1 go build -buildvcs=false -tags "${GO_BUILD_TAGS}" -o /memory-service .
+ARG VERSION=""
+RUN CGO_ENABLED=1 go build -buildvcs=false -tags "${GO_BUILD_TAGS}" -ldflags "-X main.Version=${VERSION}" -o /memory-service .
 
 # Runtime image
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest

@@ -3,11 +3,11 @@ package turntraces
 import (
 	"context"
 	"fmt"
-	"os"
 	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/runtimeversion"
 	"github.com/urfave/cli/v3"
 )
 
@@ -185,8 +185,5 @@ func flags() []cli.Flag {
 }
 
 func runtimeVersion() string {
-	if version := strings.TrimSpace(os.Getenv("MEMORY_SERVICE_VERSION")); version != "" {
-		return version
-	}
-	return "dev"
+	return runtimeversion.Current()
 }

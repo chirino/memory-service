@@ -171,6 +171,8 @@ jobs:
           platforms: linux/amd64,linux/arm64
           push: true
           tags: ${{ steps.docker-tags.outputs.memory-tags }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
           cache-from: type=gha,scope=image-memory-service
           cache-to: type=gha,mode=max,scope=image-memory-service
 
