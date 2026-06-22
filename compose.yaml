@@ -1,5 +1,9 @@
 name: memory-service
 
+# ============================================================================
+# Langfuse Observability Stack (Optional - use --profile langfuse to enable)
+# ============================================================================
+
 x-langfuse-common-env: &langfuse-common-env
   DATABASE_URL: postgresql://postgres:postgres@postgres:5432/langfuse
   NEXTAUTH_URL: http://localhost:3002
@@ -265,39 +269,6 @@ services:
       timeout: 5s
       retries: 12
 
-  turn-traces-processor:
-    image: ghcr.io/chirino/memory-service:latest
-    build:
-      context: .
-      dockerfile: Dockerfile
-    entrypoint: ["/memory-service"]
-    command: ["process", "turn-traces"]
-    environment:
-      MEMORY_SERVICE_LOG_LEVEL: debug
-      MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
-      MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
-      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
-      MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
-      MEMORY_SERVICE_PROCESS_SCOPE: admin
-      MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
-      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME: memory-service.turn
-      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_SESSION_ID: conversation-group
-      MEMORY_SERVICE_TURN_TRACES_IDLE_TIMEOUT: 5m
-      MEMORY_SERVICE_TURN_TRACES_MAX_TURN_AGE: 30m
-      MEMORY_SERVICE_TURN_TRACES_MAX_OPEN_TURNS: 1000
-      OTEL_SERVICE_NAME: memory-service-turn-traces
-      OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
-      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4
-      LANGFUSE_TRACING_ENVIRONMENT: docker-compose
-    depends_on:
-      memory-service:
-        condition: service_healthy
-      langfuse-web:
-        condition: service_healthy
-      langfuse-worker:
-        condition: service_healthy
-    restart: unless-stopped
-
   prometheus:
     image: prom/prometheus:latest
     volumes:
@@ -352,12 +323,46 @@ services:
         echo 'Waiting for MinIO...'; sleep 2;
       done;
       mc mb --ignore-existing minio/memory-service-attachments;
-      mc mb --ignore-existing minio/langfuse"
+      if [ "$${LANGFUSE_ENABLED:-false}" = "true" ]; then
+        echo 'Creating Langfuse bucket...';
+        mc mb --ignore-existing minio/langfuse;
+      fi
+      "
+    environment:
+      LANGFUSE_ENABLED: "${LANGFUSE_ENABLED:-false}"
     depends_on:
       minio:
         condition: service_healthy
 
+  chat-quarkus:
+    image: ghcr.io/chirino/memory-service-chat-quarkus:latest
+    build:
+      context: .
+      dockerfile: ./java/quarkus/examples/chat-quarkus/Dockerfile
+    environment:
+      # Unified config - gRPC client settings are auto-derived from this URL
+      MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080
+      MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
+      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
+      QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
+      KEYCLOAK_FRONTEND_URL: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
+      KEYCLOAK_CLIENT_SECRET: change-me
+      OPENAI_API_KEY: ${OPENAI_API_KEY:-none}
+      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
+      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+    depends_on:
+      memory-service:
+        condition: service_healthy
+    ports:
+      - "8080:8080"
+
+  # ============================================================================
+  # Langfuse Observability Stack.  Run with:
+  #    docker compose --profile langfuse up -d
+  # ============================================================================
+
   clickhouse:
+    profiles: ["langfuse"]
     image: clickhouse/clickhouse-server:26.5.1.882
     environment:
       CLICKHOUSE_DB: default
@@ -373,6 +378,7 @@ services:
       retries: 10
 
   langfuse-worker:
+    profiles: ["langfuse"]
     image: langfuse/langfuse-worker:3
     environment:
       <<: *langfuse-common-env
@@ -393,6 +399,7 @@ services:
       start_period: 30s
 
   langfuse-web:
+    profiles: ["langfuse"]
     image: langfuse/langfuse:3
     environment:
       <<: *langfuse-common-env
@@ -423,24 +430,36 @@ services:
       retries: 20
       start_period: 30s
 
-  chat-quarkus:
-    image: ghcr.io/chirino/memory-service-chat-quarkus:latest
+  turn-traces-processor:
+    profiles: ["langfuse"]
+    image: ghcr.io/chirino/memory-service:latest
     build:
       context: .
-      dockerfile: ./java/quarkus/examples/chat-quarkus/Dockerfile
+      dockerfile: Dockerfile
+    entrypoint: ["/memory-service"]
+    command: ["process", "turn-traces"]
     environment:
-      # Unified config - gRPC client settings are auto-derived from this URL
-      MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080
-      MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
-      QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
-      QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
-      KEYCLOAK_FRONTEND_URL: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
-      KEYCLOAK_CLIENT_SECRET: change-me
-      OPENAI_API_KEY: ${OPENAI_API_KEY:-none}
-      OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
-      OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
+      MEMORY_SERVICE_LOG_LEVEL: debug
+      MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
+      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
+      MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
+      MEMORY_SERVICE_PROCESS_SCOPE: admin
+      MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME: memory-service.turn
+      MEMORY_SERVICE_TURN_TRACES_LANGFUSE_SESSION_ID: conversation-group
+      MEMORY_SERVICE_TURN_TRACES_IDLE_TIMEOUT: 5m
+      MEMORY_SERVICE_TURN_TRACES_MAX_TURN_AGE: 30m
+      MEMORY_SERVICE_TURN_TRACES_MAX_OPEN_TURNS: 1000
+      OTEL_SERVICE_NAME: memory-service-turn-traces
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
+      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4
+      LANGFUSE_TRACING_ENVIRONMENT: docker-compose
     depends_on:
       memory-service:
         condition: service_healthy
-    ports:
-      - "8080:8080"
+      langfuse-web:
+        condition: service_healthy
+      langfuse-worker:
+        condition: service_healthy
+    restart: unless-stopped
