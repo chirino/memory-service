@@ -178,7 +178,7 @@ jobs:
           file: Dockerfile
           platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ghcr.io/${{ github.repository_owner }}/memory-service:latest
+          tags: ghcr.io/${{ github.repository_owner }}/memory-service:main
           build-args: |
             VERSION=${{ github.sha }}
           cache-from: type=gha,scope=image-memory-service
@@ -192,6 +192,6 @@ jobs:
           file: java/quarkus/examples/chat-quarkus/Dockerfile
           platforms: ${{ github.ref == 'refs/heads/main' && 'linux/amd64,linux/arm64' || 'linux/amd64' }}
           push: ${{ github.ref == 'refs/heads/main' }}
-          tags: ghcr.io/${{ github.repository_owner }}/memory-service-chat-quarkus:latest
+          tags: ghcr.io/${{ github.repository_owner }}/memory-service-chat-quarkus:main
           cache-from: type=gha,scope=image-chat-quarkus
           cache-to: type=gha,mode=max,scope=image-chat-quarkus
