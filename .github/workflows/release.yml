@@ -76,7 +76,8 @@ jobs:
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - name: Prepare release branch
+      - name: Prepare release ref
+        id: prepare
         shell: bash
         run: |
           set -euo pipefail
@@ -85,10 +86,14 @@ jobs:
           TAG="${{ steps.release.outputs.tag }}"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
-            echo "Tag $TAG already exists" >&2
-            exit 1
+            git fetch origin "refs/tags/$TAG:refs/tags/$TAG"
+            git switch --detach "$TAG"
+            echo "Release tag $TAG already exists; continuing from the tagged commit"
+            echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
 
+          echo "tag_exists=false" >> "$GITHUB_OUTPUT"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -101,6 +106,7 @@ jobs:
           fi
 
       - name: Commit release version
+        if: steps.prepare.outputs.tag_exists != 'true'
         shell: bash
         run: |
           set -euo pipefail
@@ -118,7 +124,25 @@ jobs:
             git push
           fi
 
+      - name: Check Maven Central artifacts
+        id: maven-central
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.release.outputs.version }}"
+          URL="https://repo1.maven.org/maven2/io/github/chirino/memory-service/memory-service-parent/$VERSION/memory-service-parent-$VERSION.pom"
+
+          if curl --silent --fail --head "$URL" >/dev/null; then
+            echo "Java artifacts for $VERSION are already available in Maven Central"
+            echo "published=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Java artifacts for $VERSION are not available in Maven Central yet"
+            echo "published=false" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Validate Java release bundle
+        if: steps.maven-central.outputs.published != 'true'
         env:
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
@@ -188,12 +212,33 @@ jobs:
           cache-to: type=gha,mode=max,scope=image-chat-quarkus
 
       - name: Publish Java artifacts to Maven Central
+        if: steps.maven-central.outputs.published != 'true'
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          go run github.com/go-task/task/v3/cmd/task release:java VERSION="${{ steps.release.outputs.version }}" -- -q -B
+          set -euo pipefail
+
+          VERSION="${{ steps.release.outputs.version }}"
+          URL="https://repo1.maven.org/maven2/io/github/chirino/memory-service/memory-service-parent/$VERSION/memory-service-parent-$VERSION.pom"
+
+          set +e
+          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION" -- -q -B
+          status=$?
+          set -e
+
+          if [ "$status" -eq 0 ]; then
+            exit 0
+          fi
+
+          echo "Maven Central publish failed; checking whether artifacts were published before the failure"
+          if curl --silent --fail --head --retry 6 --retry-delay 10 "$URL" >/dev/null; then
+            echo "Java artifacts for $VERSION are available in Maven Central; treating publish as complete"
+            exit 0
+          fi
+
+          exit "$status"
 
       - name: Tag released version
         shell: bash
@@ -201,6 +246,10 @@ jobs:
           set -euo pipefail
 
           TAG="${{ steps.release.outputs.tag }}"
+          if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
+            echo "Tag $TAG already exists"
+            exit 0
+          fi
           git tag -a "$TAG" -m "Release $TAG"
           git push origin "$TAG"
 
@@ -209,6 +258,10 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
+          if gh release view "${{ steps.release.outputs.tag }}" >/dev/null 2>&1; then
+            echo "GitHub Release ${{ steps.release.outputs.tag }} already exists"
+            exit 0
+          fi
           gh release create "${{ steps.release.outputs.tag }}" \
             --title "${{ steps.release.outputs.tag }}" \
             --notes "Java artifacts and Docker images for ${{ steps.release.outputs.tag }}."
@@ -219,4 +272,8 @@ jobs:
           set -euo pipefail
 
           BRANCH="${{ steps.release.outputs.branch }}"
+          if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Release branch $BRANCH is already absent"
+            exit 0
+          fi
           git push origin --delete "$BRANCH"

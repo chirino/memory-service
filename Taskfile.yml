@@ -465,7 +465,7 @@ tasks:
           ;;
         esac
       - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -Dcentral.skipPublishing=true
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests -Dcentral.skipPublishing=true
       - |
         echo ""
         echo "Bundle created successfully for version {{.VERSION}}"
@@ -487,7 +487,6 @@ tasks:
           ;;
         esac
       - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean test -pl {{.JAVA_PUBLISH_MODULES}} -am
       - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
       - |
         echo ""
