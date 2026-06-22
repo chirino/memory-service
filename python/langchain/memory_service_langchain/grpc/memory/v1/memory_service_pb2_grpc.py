@@ -1053,6 +1053,11 @@ class AdminEntriesServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.FromString,
                 _registered_method=True)
+        self.GetEntry = channel.unary_unary(
+                '/memory.v1.AdminEntriesService/GetEntry',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminGetEntryRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.Entry.FromString,
+                _registered_method=True)
 
 
 class AdminEntriesServiceServicer(object):
@@ -1064,6 +1069,15 @@ class AdminEntriesServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def GetEntry(self, request, context):
+        """Get any entry by ID (admin/auditor).
+        Retrieves a conversation entry by its ID, including entries from archived conversations.
+        Requires admin or auditor role.
+        """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AdminEntriesServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1071,6 +1085,11 @@ def add_AdminEntriesServiceServicer_to_server(servicer, server):
                     servicer.ListEntries,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.SerializeToString,
+            ),
+            'GetEntry': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetEntry,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminGetEntryRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.Entry.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1100,6 +1119,33 @@ class AdminEntriesService(object):
             '/memory.v1.AdminEntriesService/ListEntries',
             memory_dot_v1_dot_memory__service__pb2.AdminListEntriesRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.ListEntriesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetEntry(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminEntriesService/GetEntry',
+            memory_dot_v1_dot_memory__service__pb2.AdminGetEntryRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.Entry.FromString,
             options,
             channel_credentials,
             insecure,

@@ -169,6 +169,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodPatch, "/v1/admin/conversations/:id", adminWrapper.AdminUpdateConversation)
 	register(http.MethodGet, "/v1/admin/conversations/:id/children", adminWrapper.AdminListChildConversations)
 	register(http.MethodGet, "/v1/admin/conversations/:id/entries", adminWrapper.AdminGetEntries)
+	register(http.MethodGet, "/v1/admin/entries/:id", adminWrapper.AdminGetEntry)
 	register(http.MethodGet, "/v1/admin/conversations/:id/forks", adminWrapper.AdminListForks)
 	register(http.MethodGet, "/v1/admin/conversations/:id/memberships", adminWrapper.AdminGetMemberships)
 	register(http.MethodPost, "/v1/admin/evict", adminWrapper.AdminEvict)
@@ -421,6 +422,12 @@ func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, _ openapi_types.UUI
 		return
 	}
 	routememories.HandleAdminDeleteMemory(c, p.episodicStore)
+}
+func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
+	if !p.authorize(c) {
+		return
+	}
+	routeadmin.HandleAdminGetEntry(c, p.store)
 }
 func (p *proxyAdminServer) AdminListAttachments(c *gin.Context, _ generatedadmin.AdminListAttachmentsParams) {
 	if !p.authorize(c) {

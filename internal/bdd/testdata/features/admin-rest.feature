@@ -304,6 +304,46 @@ Feature: Admin REST API
     And the response should contain 1 entry
     And entry at index 0 should have content "Admin context before bound"
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads a single entry by ID and appears parallel-safe.
+  Scenario: Admin can get any entry by ID
+    Given the conversation owned by "bob" has an entry "Test entry for ID lookup"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries"
+    Then the response status should be 200
+    And set "testEntryId" to the json response field "data[0].id"
+    # Now fetch that entry directly by ID
+    When I call GET "/v1/admin/entries/${testEntryId}"
+    Then the response status should be 200
+    And the response body should contain json:
+      """
+      {
+        "id": "${testEntryId}",
+        "content": [{"role": "USER", "text": "Test entry for ID lookup"}]
+      }
+      """
+
+  # Serial today only because this feature shares the serial admin runner; this scenario tests 404 for non-existent entry and appears parallel-safe.
+  Scenario: Admin get entry by ID returns 404 for non-existent entry
+    When I call GET "/v1/admin/entries/00000000-0000-0000-0000-000000000000"
+    Then the response status should be 404
+
+  # Serial today only because this feature shares the serial admin runner; this scenario tests auditor access to entry by ID and appears parallel-safe.
+  Scenario: Auditor can get any entry by ID
+    Given the conversation owned by "bob" has an entry "Auditor test entry"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries"
+    Then the response status should be 200
+    And set "auditorEntryId" to the json response field "data[0].id"
+    # Switch to auditor role
+    Given I am authenticated as auditor user "charlie"
+    When I call GET "/v1/admin/entries/${auditorEntryId}"
+    Then the response status should be 200
+    And the response body should contain json:
+      """
+      {
+        "id": "${auditorEntryId}",
+        "content": [{"role": "USER", "text": "Auditor test entry"}]
+      }
+      """
+
   # Serial today only because this feature shares the serial admin runner; this scenario reads memberships for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get memberships for any conversation
     When I call GET "/v1/admin/conversations/${bobConversationId}/memberships"

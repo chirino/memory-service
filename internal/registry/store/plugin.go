@@ -282,6 +282,9 @@ type MemoryStore interface {
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
 	SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)
 
+	// Admin entry access
+	AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (*model.Entry, error)
+
 	// Indexing
 	IndexEntries(ctx context.Context, entries []IndexEntryRequest) (*IndexConversationsResponse, error)
 	ListUnindexedEntries(ctx context.Context, limit int, afterCursor *string) ([]model.Entry, *string, error)

@@ -962,6 +962,12 @@ type AdminGetMembershipsParams struct {
 	Justification *string `form:"justification,omitempty" json:"justification,omitempty"`
 }
 
+// AdminGetEntryParams defines parameters for AdminGetEntry.
+type AdminGetEntryParams struct {
+	// Justification Reason for this admin action (for audit log).
+	Justification *string `form:"justification,omitempty" json:"justification,omitempty"`
+}
+
 // AdminSubscribeEventsParams defines parameters for AdminSubscribeEvents.
 type AdminSubscribeEventsParams struct {
 	// Justification Optional reason for subscribing, logged for audit when present. Servers configured to require admin justifications reject requests without one.
@@ -1180,6 +1186,9 @@ type ServerInterface interface {
 	// Get memberships for any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id}/memberships)
 	AdminGetMemberships(c *gin.Context, id openapi_types.UUID, params AdminGetMembershipsParams)
+	// Get any entry by ID (admin/auditor)
+	// (GET /v1/admin/entries/{id})
+	AdminGetEntry(c *gin.Context, id openapi_types.UUID, params AdminGetEntryParams)
 	// Subscribe to all real-time events (admin SSE)
 	// (GET /v1/admin/events)
 	AdminSubscribeEvents(c *gin.Context, params AdminSubscribeEventsParams)
@@ -2323,6 +2332,44 @@ func (siw *ServerInterfaceWrapper) AdminGetMemberships(c *gin.Context) {
 	siw.Handler.AdminGetMemberships(c, id, params)
 }
 
+// AdminGetEntry operation middleware
+func (siw *ServerInterfaceWrapper) AdminGetEntry(c *gin.Context) {
+
+	var err error
+	_ = err
+
+	// ------------- Path parameter "id" -------------
+	var id openapi_types.UUID
+
+	err = runtime.BindStyledParameterWithOptions("simple", "id", c.Param("id"), &id, runtime.BindStyledParameterOptions{ParamLocation: runtime.ParamLocationPath, Explode: false, Required: true, Type: "string", Format: "uuid"})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter id: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	c.Set(string(BearerAuthScopes), []string{})
+
+	// Parameter object where we will unmarshal all parameters from the context
+	var params AdminGetEntryParams
+
+	// ------------- Optional query parameter "justification" -------------
+
+	err = runtime.BindQueryParameterWithOptions("form", true, false, "justification", c.Request.URL.Query(), &params.Justification, runtime.BindQueryParameterOptions{Type: "string", Format: ""})
+	if err != nil {
+		siw.ErrorHandler(c, fmt.Errorf("Invalid format for parameter justification: %w", err), http.StatusBadRequest)
+		return
+	}
+
+	for _, middleware := range siw.HandlerMiddlewares {
+		middleware(c)
+		if c.IsAborted() {
+			return
+		}
+	}
+
+	siw.Handler.AdminGetEntry(c, id, params)
+}
+
 // AdminSubscribeEvents operation middleware
 func (siw *ServerInterfaceWrapper) AdminSubscribeEvents(c *gin.Context) {
 
@@ -2825,6 +2872,7 @@ func RegisterHandlersWithOptions(router gin.IRouter, si ServerInterface, options
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/entries", wrapper.AdminGetEntries)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/forks", wrapper.AdminListForks)
 	router.GET(options.BaseURL+"/v1/admin/conversations/:id/memberships", wrapper.AdminGetMemberships)
+	router.GET(options.BaseURL+"/v1/admin/entries/:id", wrapper.AdminGetEntry)
 	router.GET(options.BaseURL+"/v1/admin/events", wrapper.AdminSubscribeEvents)
 	router.POST(options.BaseURL+"/v1/admin/evict", wrapper.AdminEvict)
 	router.GET(options.BaseURL+"/v1/admin/stats/cache-hit-rate", wrapper.GetCacheHitRate)
@@ -4079,6 +4127,60 @@ func (response AdminGetMembershipsdefaultJSONResponse) VisitAdminGetMembershipsR
 	return err
 }
 
+type AdminGetEntryRequestObject struct {
+	Id     openapi_types.UUID `json:"id"`
+	Params AdminGetEntryParams
+}
+
+type AdminGetEntryResponseObject interface {
+	VisitAdminGetEntryResponse(w http.ResponseWriter) error
+}
+
+type AdminGetEntry200JSONResponse Entry
+
+func (response AdminGetEntry200JSONResponse) VisitAdminGetEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(200)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetEntry404JSONResponse struct{ NotFoundJSONResponse }
+
+func (response AdminGetEntry404JSONResponse) VisitAdminGetEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(404)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
+type AdminGetEntrydefaultJSONResponse struct {
+	Body       ErrorResponse
+	StatusCode int
+}
+
+func (response AdminGetEntrydefaultJSONResponse) VisitAdminGetEntryResponse(w http.ResponseWriter) error {
+
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(response.Body); err != nil {
+		return err
+	}
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(response.StatusCode)
+	_, err := buf.WriteTo(w)
+	return err
+}
+
 type AdminSubscribeEventsRequestObject struct {
 	Params AdminSubscribeEventsParams
 }
@@ -4894,6 +4996,9 @@ type StrictServerInterface interface {
 	// Get memberships for any conversation (admin/auditor)
 	// (GET /v1/admin/conversations/{id}/memberships)
 	AdminGetMemberships(ctx context.Context, request AdminGetMembershipsRequestObject) (AdminGetMembershipsResponseObject, error)
+	// Get any entry by ID (admin/auditor)
+	// (GET /v1/admin/entries/{id})
+	AdminGetEntry(ctx context.Context, request AdminGetEntryRequestObject) (AdminGetEntryResponseObject, error)
 	// Subscribe to all real-time events (admin SSE)
 	// (GET /v1/admin/events)
 	AdminSubscribeEvents(ctx context.Context, request AdminSubscribeEventsRequestObject) (AdminSubscribeEventsResponseObject, error)
@@ -5709,6 +5814,33 @@ func (sh *strictHandler) AdminGetMemberships(ctx *gin.Context, id openapi_types.
 	}
 }
 
+// AdminGetEntry operation middleware
+func (sh *strictHandler) AdminGetEntry(ctx *gin.Context, id openapi_types.UUID, params AdminGetEntryParams) {
+	var request AdminGetEntryRequestObject
+
+	request.Id = id
+	request.Params = params
+
+	handler := func(ctx *gin.Context, request interface{}) (interface{}, error) {
+		return sh.ssi.AdminGetEntry(ctx, request.(AdminGetEntryRequestObject))
+	}
+	for _, middleware := range sh.middlewares {
+		handler = middleware(handler, "AdminGetEntry")
+	}
+
+	response, err := handler(ctx, request)
+
+	if err != nil {
+		sh.options.HandlerErrorFunc(ctx, err)
+	} else if validResponse, ok := response.(AdminGetEntryResponseObject); ok {
+		if err := validResponse.VisitAdminGetEntryResponse(ctx.Writer); err != nil {
+			sh.options.ResponseErrorHandlerFunc(ctx, err)
+		}
+	} else if response != nil {
+		sh.options.ResponseErrorHandlerFunc(ctx, fmt.Errorf("unexpected response type: %T", response))
+	}
+}
+
 // AdminSubscribeEvents operation middleware
 func (sh *strictHandler) AdminSubscribeEvents(ctx *gin.Context, params AdminSubscribeEventsParams) {
 	var request AdminSubscribeEventsRequestObject
@@ -6116,39 +6248,40 @@ var swaggerSpec = []string{
 	"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",
-	"ygvvgff5B/fCAZ87B/QagG/FAD1yep6KcIOP3JGxYR/edgZ2VCmHfn5+4i6bWY03hoSZmVExtiOVtplt",
-	"8THk5e3JEvYy17QRuKh39zD6KRRxdlLBYILo7WVzMmXQfwIxKekhUzDkqBA71Ta2SawzuiCjMoXX6swW",
-	"hsokQw5G6Y1sxXdUlQ3uxkRYFVuBnFvjPhTKz0a2yfnJfJ1yLYXjQZbErtwQjE+6zdW5hWESYx8bn5jz",
-	"iAQfs0kmrdR2Swwtzkh3Qwt5mrQqitIJDg/iKZjNaE+B2QWjU9g20FeMx9bGsJ6Wlnnxtc3mw0J9ixw3",
-	"c4ECBSpgP2DMvkLm5GGjeUtkeiRuyBiozoxpJwzCuONfKoo2AxJxg6R0gbeUbFNyksC83ddl32nxbeQM",
-	"o3RvlL+Ms3UL1NQPynfB4Vk54rflKfGp3eU+Obag4FtTprQrWNlaCOh7PmzLgtwYne3Bdrcsi4bW7bB/",
-	"njF7SztJxLXhrisgtyN/x5HvSAoIh+F59wsijnhHWa/hRltREbwavfIitBEcruO7FR8iBQ4xURm6FwxW",
-	"5pX4BoFegNWrHCW/r3SQmjErZaoSoo2rkzBTv/drIjVxVv3ubWgix7LcYiEmI8ONLSdS9q4GprVzOqcM",
-	"1agNb58UMskhkRE2Cebk5nzSxVPPz0/W0B9YpJem1M0ot3n7EmZibnuKu8q2qERM6RzICMwx5Wk9Bue9",
-	"XuzWPVxWb/Q63WNj9L7N9S87vjJFmJSALb9G7g6K1SLyN2RmrAxORthcEgkOtXH2h22VOKIKSCKiq5x3",
-	"2JJtQ/7qVX7pCC9rqMNXr4a8R169Ol/waCoFF5l69ap0cR+S92YYc16aJWWXf6MTYgmislTEweAN+SSI",
-	"K+fQd8MWKhfjEzPw5f+masGj/7QpHEKSy6MoglQfkgaRXu4ekrzSRSrFRGJrNuLi+4pQ5RSG3rmhAqui",
-	"OEAdfKVv0pKvazeqyOWfw04xZueQfLq9NEPbltafzAkMevuDQZ985gTbEHYJzJhW5BIHOrQ/XtoieWYw",
-	"/L8Zadhx7s5h5/YS93z90kkniI0rlCy7JcWOFNsxZxQ1XMaVBhob429kzs4wlcqmtCpGeDKbNel4oJQT",
-	"3Ig7ZU8GWX7ZtdEQySGpIcHg1hxX8NHbJc/2B+Zhbd+q6Y8NLHVyBNGnfpL9dWpzmJMuPnSj7VhpUdCX",
-	"Ia9W6trtD3mIMhqE0SSKIa9TxbDjk8WwYxfWRhYoPIIFsE7q/KUqYwu+RFTJrorOELv9p76lSXZGtMnf",
-	"nW+qSzJ+xcU1LyRI3tr7ge3un6iMi1ZEjT6VJKV4O60K8yq5id1n9yIsljJluod9WNeqIWA+IVOmicRc",
-	"KEUocX1W6cT93+8avDIpNpdq7qUzKWagp2DE2CGpxoYMu2OVd/xm7P0hPx37z5htl1Yao6WsezvYJ5+E",
-	"JqcGS40OFrpL+SNorCbzE9NfbJvaGl8PnXT5yt652eNzTaXGOsDrvH2CXpx1R4a086BJsYFOx6Gs2FCD",
-	"/Cqa+Nrm4xC2hwZVHHCgvH4SUKpK88N762rE6tGpMLZdfg/OZxQEcSvMLuJRLxUi6WWaJewP635Zh2cU",
-	"Gm0kOAcrIMxAxBuozkn6LjBsiRuvzioyFddk5lyObiCbCeP6IMwVKTf4r815jkdnQiRfvZ1+YT/rs58C",
-	"4+po9sKJnoYTrcUCtmJKqKGur7/4PHBMfrq4OCt9z/Z+E1464OTtzY3VhtXfTamxePKi0WzGUhAXXrSZ",
-	"J+QhBUXejzaTUA08WvTSd2/X4hzv3hpb307KEsh5h/PGudEM53BFJP9ubONnu8Kzd29f+MYGfOPs3dsc",
-	"OV4Yx9MwDnMEDULdimc4VWF9dcNXMCzb2inUDduYyPCK3b8br3Cu3xclY0Nm4WPKC7d4Gm7RJNmtWAXW",
-	"ye7dVcnIuZWlV+wwhQOXsUTMcZLiCjhWmiWjhRdn1IsUyA70J/2uy7n/ULkMR9MUeHw0AZ5fXtv9C3Ge",
-	"GiC/ABZAsT3Dzs0uNQGSkBh4BM9hwISxIW9+2yenY5tghfvtQGNcaZnZ+bv4OMe3Ib9mSYIZOrNUL4Js",
-	"EQf+V9ajfjH29WreiK/1HHPUIUZZI4IXDevpNayWI2kypM25qJ5KkU2mrvrvSiZavk52Sj5Z0bde+Onf",
-	"hp9elMjxwk/vi5+WJPTCUp+GpbafyB05aj7LCkbq+sPbNsaWzaS20Hr9hlY3vx7btSzV/GVvhRZp8y5/",
-	"sMxSsBnE65VvrnMcGitXWSJZ2Hx/bQsz5TnnBqtx+1SfnGoSC0BMGvI8E7081ha2Yoi3SFp+2NI4/mRL",
-	"C+678ygWVzbCoVoRd6yPT60XLXtfbDthuYjJgbQgP04EvG3XLI4xPgeuUQsojnspJU2BJnraWqnnR9A/",
-	"2Tfu9f6S6w9byYATV6GE9HVq+ck5i1AA28Ustj6IMkMJB7IF5L0dtHX8zObdFj8G05SZ0tKWwD46O7W8",
-	"Rnk1AMtL4LUSzK4mLrM5dy4L0uY7hapquJOiCSIgU9roKzljcfeZ8NBjqqYjQWVcyfAuuUaORL4odYXp",
-	"a7SJWxSAz+FVE0q3lSc5VOV3bjdvv93+dwAAAP//",
+	"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",
 }
 
 // decodeSpec returns the embedded OpenAPI spec as raw JSON bytes,

@@ -1119,6 +1119,7 @@ var EntriesService_ServiceDesc = grpc.ServiceDesc{
 
 const (
 	AdminEntriesService_ListEntries_FullMethodName = "/memory.v1.AdminEntriesService/ListEntries"
+	AdminEntriesService_GetEntry_FullMethodName    = "/memory.v1.AdminEntriesService/GetEntry"
 )
 
 // AdminEntriesServiceClient is the client API for AdminEntriesService service.
@@ -1126,6 +1127,10 @@ const (
 // For semantics around ctx use and closing/ending streaming RPCs, please refer to https://pkg.go.dev/google.golang.org/grpc/?tab=doc#ClientConn.NewStream.
 type AdminEntriesServiceClient interface {
 	ListEntries(ctx context.Context, in *AdminListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error)
+	// Get any entry by ID (admin/auditor).
+	// Retrieves a conversation entry by its ID, including entries from archived conversations.
+	// Requires admin or auditor role.
+	GetEntry(ctx context.Context, in *AdminGetEntryRequest, opts ...grpc.CallOption) (*Entry, error)
 }
 
 type adminEntriesServiceClient struct {
@@ -1146,11 +1151,25 @@ func (c *adminEntriesServiceClient) ListEntries(ctx context.Context, in *AdminLi
 	return out, nil
 }
 
+func (c *adminEntriesServiceClient) GetEntry(ctx context.Context, in *AdminGetEntryRequest, opts ...grpc.CallOption) (*Entry, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(Entry)
+	err := c.cc.Invoke(ctx, AdminEntriesService_GetEntry_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminEntriesServiceServer is the server API for AdminEntriesService service.
 // All implementations must embed UnimplementedAdminEntriesServiceServer
 // for forward compatibility.
 type AdminEntriesServiceServer interface {
 	ListEntries(context.Context, *AdminListEntriesRequest) (*ListEntriesResponse, error)
+	// Get any entry by ID (admin/auditor).
+	// Retrieves a conversation entry by its ID, including entries from archived conversations.
+	// Requires admin or auditor role.
+	GetEntry(context.Context, *AdminGetEntryRequest) (*Entry, error)
 	mustEmbedUnimplementedAdminEntriesServiceServer()
 }
 
@@ -1163,6 +1182,9 @@ type UnimplementedAdminEntriesServiceServer struct{}
 
 func (UnimplementedAdminEntriesServiceServer) ListEntries(context.Context, *AdminListEntriesRequest) (*ListEntriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListEntries not implemented")
+}
+func (UnimplementedAdminEntriesServiceServer) GetEntry(context.Context, *AdminGetEntryRequest) (*Entry, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetEntry not implemented")
 }
 func (UnimplementedAdminEntriesServiceServer) mustEmbedUnimplementedAdminEntriesServiceServer() {}
 func (UnimplementedAdminEntriesServiceServer) testEmbeddedByValue()                             {}
@@ -1203,6 +1225,24 @@ func _AdminEntriesService_ListEntries_Handler(srv interface{}, ctx context.Conte
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminEntriesService_GetEntry_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AdminGetEntryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminEntriesServiceServer).GetEntry(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminEntriesService_GetEntry_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminEntriesServiceServer).GetEntry(ctx, req.(*AdminGetEntryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminEntriesService_ServiceDesc is the grpc.ServiceDesc for AdminEntriesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -1213,6 +1253,10 @@ var AdminEntriesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListEntries",
 			Handler:    _AdminEntriesService_ListEntries_Handler,
+		},
+		{
+			MethodName: "GetEntry",
+			Handler:    _AdminEntriesService_GetEntry_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

@@ -879,6 +879,26 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	return resp, nil
 }
 
+func (s *AdminEntriesServer) GetEntry(ctx context.Context, req *pb.AdminGetEntryRequest) (*pb.Entry, error) {
+	if !hasGRPCAdminEventAccess(ctx) {
+		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
+	}
+
+	entryID, err := bytesToUUID(req.GetEntryId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid entry_id")
+	}
+
+	entry, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Entry, error) {
+		return s.Store.AdminGetEntryByID(txCtx, entryID)
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+
+	return entryToProto(entry), nil
+}
+
 // --- Admin Conversations Service ---
 
 type AdminConversationsServer struct {

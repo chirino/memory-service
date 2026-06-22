@@ -96,6 +96,22 @@ curl "http://localhost:8080/v1/admin/conversations?archived=only" \
 
 Similarly, entries, memberships, forks, attachments, episodic memories, and semantic search all have admin counterparts that bypass ownership checks. Admin conversation payloads expose an `archived` boolean so clients can distinguish archived records without depending on storage timestamps.
 
+### Getting Entries
+
+Admins can retrieve entries from any conversation or fetch a specific entry by its ID:
+
+```bash
+# Get all entries from a conversation (including archived)
+curl "http://localhost:8080/v1/admin/conversations/{conversationId}/entries" \
+  -H "Authorization: Bearer <admin-token>"
+
+# Get a specific entry by ID (works across all conversations)
+curl "http://localhost:8080/v1/admin/entries/{entryId}" \
+  -H "Authorization: Bearer <admin-token>"
+```
+
+The entry-by-ID endpoint is useful for audit trails, debugging, or when you have an entry UUID but don't know which conversation it belongs to.
+
 ## Episodic Memory Administration
 
 Episodic memory admin routes use `/admin/v1/...` instead of `/v1/admin/...`. Read-only exploration endpoints allow `admin` or `auditor`; operational and destructive endpoints require `admin`.

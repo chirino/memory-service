@@ -43,6 +43,9 @@ func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore reg
 	g.GET("/conversations/:id/entries", func(c *gin.Context) {
 		adminGetEntries(c, store)
 	})
+	g.GET("/entries/:id", func(c *gin.Context) {
+		adminGetEntry(c, store)
+	})
 	g.GET("/conversations/:id/memberships", func(c *gin.Context) {
 		adminGetMemberships(c, store)
 	})
@@ -139,6 +142,14 @@ func HandleAdminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 	adminGetEntries(c, store)
+}
+
+// HandleAdminGetEntry exposes admin get entry by ID for wrapper-native adapters.
+func HandleAdminGetEntry(c *gin.Context, store registrystore.MemoryStore) {
+	if !runMiddlewares(c, security.RequireAuditorRole()) {
+		return
+	}
+	adminGetEntry(c, store)
 }
 
 // HandleAdminGetMemberships exposes admin get memberships for wrapper-native adapters.
@@ -426,6 +437,25 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 			return err
 		}
 		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+func adminGetEntry(c *gin.Context, store registrystore.MemoryStore) {
+	id, err := uuid.Parse(c.Param("id"))
+	if err != nil {
+		c.JSON(http.StatusNotFound, gin.H{"error": "entry not found"})
+		return
+	}
+
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		entry, err := store.AdminGetEntryByID(ctx, id)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, entry)
 		return nil
 	}); err != nil {
 		handleError(c, err)
