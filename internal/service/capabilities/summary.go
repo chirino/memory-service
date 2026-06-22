@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/runtimeversion"
 )
 
 type Summary struct {
@@ -94,18 +95,7 @@ func buildSummary(cfg *config.Config, info *debug.BuildInfo, ok bool) Summary {
 }
 
 func buildVersion(info *debug.BuildInfo, ok bool) string {
-	if !ok || info == nil {
-		return "dev"
-	}
-	if version := strings.TrimSpace(info.Main.Version); version != "" && version != "(devel)" {
-		return version
-	}
-	for _, setting := range info.Settings {
-		if setting.Key == "vcs.revision" && strings.TrimSpace(setting.Value) != "" {
-			return setting.Value
-		}
-	}
-	return "dev"
+	return runtimeversion.FromBuildInfo(info, ok)
 }
 
 func normalizedAttachments(cfg *config.Config) string {

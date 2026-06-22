@@ -1,31 +1,62 @@
-name: Release packages
+name: Release Java and Docker
 
 on:
-  release:
-    types: [published]
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version without the leading v, for example 0.0.1
+        required: true
+        type: string
+      update_latest:
+        description: Also update the latest Docker tags
+        required: true
+        default: true
+        type: boolean
+      create_github_release:
+        description: Create a GitHub Release after publishing artifacts
+        required: true
+        default: true
+        type: boolean
+
+permissions:
+  contents: write
+  packages: write
+
+concurrency:
+  group: release-${{ inputs.version }}
+  cancel-in-progress: false
 
 jobs:
-  publish-python:
+  release:
     runs-on: ubuntu-latest
     environment: release
-    permissions:
-      id-token: write
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v7
-      - name: Build wheel
-        run: uv build
-        working-directory: python/langchain
-      - name: Publish to PyPI
-        uses: pypa/gh-action-pypi-publish@release/v1
-        with:
-          packages-dir: python/dist/
+      - name: Validate release version
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
 
-  publish-java:
-    runs-on: ubuntu-latest
-    environment: release
-    steps:
-      - uses: actions/checkout@v4
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-.][0-9A-Za-z.-]+)?$ ]]; then
+            echo "Version must look like 0.0.1, without a leading v" >&2
+            exit 1
+          fi
+          if [[ "$VERSION" == *SNAPSHOT* ]]; then
+            echo "Release version cannot contain SNAPSHOT" >&2
+            exit 1
+          fi
+
+          {
+            echo "version=$VERSION"
+            echo "tag=v$VERSION"
+            echo "branch=release/v$VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -45,11 +76,147 @@ jobs:
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - name: Deploy to Maven Central
+      - name: Prepare release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH="${{ steps.release.outputs.branch }}"
+          TAG="${{ steps.release.outputs.tag }}"
+
+          if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
+            echo "Tag $TAG already exists" >&2
+            exit 1
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            git fetch origin "$BRANCH"
+            git switch -C "$BRANCH" "origin/$BRANCH"
+          else
+            git switch -c "$BRANCH"
+            git push --set-upstream origin "$BRANCH"
+          fi
+
+      - name: Commit release version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.release.outputs.version }}"
+          ./java/mvnw -q -B -f java/pom.xml versions:set \
+            -DnewVersion="$VERSION" \
+            -DgenerateBackupPoms=false
+
+          if git diff --quiet; then
+            echo "Release branch already has Maven version $VERSION"
+          else
+            git add java
+            git commit -s -m "chore(release): prepare $VERSION"
+            git push
+          fi
+
+      - name: Validate Java release bundle
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+        run: |
+          go run github.com/go-task/task/v3/cmd/task release:java:bundle VERSION="${{ steps.release.outputs.version }}" -- -q -B
+
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prepare Docker tags
+        id: docker-tags
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          VERSION="${{ steps.release.outputs.version }}"
+          OWNER="${{ github.repository_owner }}"
+
+          memory_tags="ghcr.io/$OWNER/memory-service:$VERSION"
+          chat_tags="ghcr.io/$OWNER/memory-service-chat-quarkus:$VERSION"
+
+          if [[ "${{ inputs.update_latest }}" == "true" ]]; then
+            memory_tags="$memory_tags"$'\n'"ghcr.io/$OWNER/memory-service:latest"
+            chat_tags="$chat_tags"$'\n'"ghcr.io/$OWNER/memory-service-chat-quarkus:latest"
+          fi
+
+          {
+            echo "memory-tags<<EOF"
+            echo "$memory_tags"
+            echo "EOF"
+            echo "chat-tags<<EOF"
+            echo "$chat_tags"
+            echo "EOF"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Build and push Docker image (memory-service)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker-tags.outputs.memory-tags }}
+          build-args: |
+            VERSION=${{ steps.release.outputs.version }}
+          cache-from: type=gha,scope=image-memory-service
+          cache-to: type=gha,mode=max,scope=image-memory-service
+
+      - name: Build and push Docker image (chat-quarkus)
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: java/quarkus/examples/chat-quarkus/Dockerfile
+          platforms: linux/amd64,linux/arm64
+          push: true
+          tags: ${{ steps.docker-tags.outputs.chat-tags }}
+          cache-from: type=gha,scope=image-chat-quarkus
+          cache-to: type=gha,mode=max,scope=image-chat-quarkus
+
+      - name: Publish Java artifacts to Maven Central
         env:
           CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
           CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
           MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
         run: |
-          VERSION="${GITHUB_REF_NAME#v}"
-          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION" -- q -B
+          go run github.com/go-task/task/v3/cmd/task release:java VERSION="${{ steps.release.outputs.version }}" -- -q -B
+
+      - name: Tag released version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          TAG="${{ steps.release.outputs.tag }}"
+          git tag -a "$TAG" -m "Release $TAG"
+          git push origin "$TAG"
+
+      - name: Create GitHub Release
+        if: inputs.create_github_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release create "${{ steps.release.outputs.tag }}" \
+            --title "${{ steps.release.outputs.tag }}" \
+            --notes "Java artifacts and Docker images for ${{ steps.release.outputs.tag }}."
+
+      - name: Delete release branch
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          BRANCH="${{ steps.release.outputs.branch }}"
+          git push origin --delete "$BRANCH"
