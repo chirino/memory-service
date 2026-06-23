@@ -27,6 +27,7 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
+    And the response body field "content[0].attachments[0].attachmentId" should be "${originalAttachmentId}"
     And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
     # Fork the conversation
     When I list entries for the conversation
@@ -50,6 +51,7 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
+    And the response body field "content[0].attachments[0].attachmentId" should be "${originalAttachmentId}"
     And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
     # The href should use a NEW attachment ID (shared reference, not the original)
     And set "newAttachmentHref" to the json response field "content[0].attachments[0].href"

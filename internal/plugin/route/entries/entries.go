@@ -577,8 +577,6 @@ func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore,
 				att["name"] = *attachment.Filename
 			}
 
-			// Remove attachmentId from the response content.
-			delete(att, "attachmentId")
 			attachments[ai] = att
 			modified = true
 		}
