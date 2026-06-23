@@ -61,6 +61,7 @@ Feature: Attachments REST API
     }
     """
     Then the response status should be 201
+    And the response body field "content[0].attachments[0].attachmentId" should be "${uploadedAttachmentId}"
     And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
 
   Scenario: History channel rejects attachment missing both href and attachmentId
