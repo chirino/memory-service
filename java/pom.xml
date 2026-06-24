@@ -3,7 +3,7 @@
   <modelVersion>4.0.0</modelVersion>
   <groupId>io.github.chirino.memory-service</groupId>
   <artifactId>memory-service-parent</artifactId>
-  <version>999-SNAPSHOT</version>
+  <version>0.0.2</version>
   <packaging>pom</packaging>
   <name>Memory Service - Parent</name>
   <description>Memory service for AI agents that stores messages exchanged with LLMs and users, supporting conversation replay and forking</description>
