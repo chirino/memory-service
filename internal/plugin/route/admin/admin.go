@@ -777,6 +777,13 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		return
 	}
 
+	// Read and validate disposition parameter (empty string means don't set header)
+	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
+	if disposition != "" && disposition != "inline" && disposition != "attachment" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+		return
+	}
+
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		attachment, err := store.AdminGetAttachment(ctx, attachmentID)
 		if err != nil {
@@ -812,8 +819,9 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		}
 		c.Header("Cache-Control", "private, max-age=300, immutable")
 		c.Header("Content-Type", attachment.ContentType)
-		if attachment.Filename != nil && *attachment.Filename != "" {
-			c.Header("Content-Disposition", fmt.Sprintf("attachment; filename=%q", *attachment.Filename))
+		// Only set Content-Disposition if disposition parameter was provided
+		if disposition != "" && attachment.Filename != nil && *attachment.Filename != "" {
+			c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, *attachment.Filename))
 		}
 		if attachment.Size != nil {
 			c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))

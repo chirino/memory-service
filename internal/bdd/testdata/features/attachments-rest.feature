@@ -132,6 +132,42 @@ Feature: Attachments REST API
     When I call GET "/v1/attachments/${privateAttId}" expecting binary
     Then the response status should be 200
     And the response header "Cache-Control" should contain "private"
+  @direct-stream-only
+  Scenario: Attachment download with disposition=inline sets Content-Disposition header
+    When I upload a file "inline-test.txt" with content type "text/plain" and content "Inline Content"
+    Then the response status should be 201
+    And set "inlineAttId" to the json response field "id"
+    When I call GET "/v1/attachments/${inlineAttId}?disposition=inline" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should contain "inline"
+    And the response header "Content-Disposition" should contain "filename="
+
+  @direct-stream-only
+  Scenario: Attachment download with disposition=attachment sets Content-Disposition header
+    When I upload a file "download-test.txt" with content type "text/plain" and content "Download Content"
+    Then the response status should be 201
+    And set "downloadAttId" to the json response field "id"
+    When I call GET "/v1/attachments/${downloadAttId}?disposition=attachment" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should contain "attachment"
+    And the response header "Content-Disposition" should contain "filename="
+
+  @direct-stream-only
+  Scenario: Attachment download without disposition parameter omits Content-Disposition header
+    When I upload a file "no-disposition.txt" with content type "text/plain" and content "No Disposition"
+    Then the response status should be 201
+    And set "noDispAttId" to the json response field "id"
+    When I call GET "/v1/attachments/${noDispAttId}" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should be empty
+
+  Scenario: Attachment download with invalid disposition returns 400
+    When I upload a file "invalid-disp.txt" with content type "text/plain" and content "Invalid Test"
+    Then the response status should be 201
+    And set "invalidDispAttId" to the json response field "id"
+    When I call GET "/v1/attachments/${invalidDispAttId}?disposition=invalid"
+    Then the response status should be 400
+
 
   @direct-stream-only
   Scenario: Signed token download includes ETag and Cache-Control headers
@@ -147,6 +183,8 @@ Feature: Attachments REST API
     And the response header "ETag" should contain "${tokenCachedSha}"
     And the response header "Cache-Control" should contain "private"
     And the response header "Cache-Control" should contain "max-age="
+    And the response header "Content-Disposition" should contain "inline"
+    And the response header "Content-Disposition" should contain "filename="
 
   @direct-stream-only
   Scenario: Signed token download returns 304 for matching ETag

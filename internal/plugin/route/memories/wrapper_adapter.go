@@ -5,6 +5,7 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/episodic"
+	"github.com/chirino/memory-service/internal/generated/api"
 	generatedapi "github.com/chirino/memory-service/internal/generated/api"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
@@ -39,7 +40,7 @@ func (a *apiServerAdapter) DownloadAttachmentByToken(c *gin.Context, _ string, _
 func (a *apiServerAdapter) DeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) GetAttachment(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) GetAttachment(c *gin.Context, _ openapi_types.UUID, _ api.GetAttachmentParams) {
 	notImplemented(c)
 }
 func (a *apiServerAdapter) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID) {

@@ -543,11 +543,25 @@ public class MemoryServiceProxy {
      * Retrieves an attachment by ID. Handles 302 redirects (e.g. S3 presigned URLs).
      */
     public Response retrieveAttachment(String id) {
+        return retrieveAttachment(id, null);
+    }
+
+    /**
+     * Retrieves an attachment by ID with optional disposition control.
+     * Handles 302 redirects (e.g. S3 presigned URLs).
+     *
+     * @param id the attachment ID
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public Response retrieveAttachment(String id, String disposition) {
         if (memoryServiceApiBuilder.usesUnixSocket()) {
             try {
+                String path = "/v1/attachments/" + id;
+                if (disposition != null && !disposition.isBlank()) {
+                    path += "?disposition=" + disposition;
+                }
                 UnixSocketHttpClient.HttpResponseData upstream =
-                        unixSocketClient()
-                                .exchange("GET", "/v1/attachments/" + id, null, (Object) null);
+                        unixSocketClient().exchange("GET", path, null, (Object) null);
                 return binaryResponse(upstream);
             } catch (Exception e) {
                 LOG.errorf(e, "Error retrieving attachment %s", id);
@@ -562,6 +576,9 @@ public class MemoryServiceProxy {
         Client client = ClientBuilder.newClient();
         try {
             String url = memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id;
+            if (disposition != null && !disposition.isBlank()) {
+                url += "?disposition=" + disposition;
+            }
             jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
 
             req = applyAuthHeaders(req);

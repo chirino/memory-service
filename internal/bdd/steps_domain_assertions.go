@@ -76,6 +76,7 @@ func init() {
 
 		// Response header assertions
 		ctx.Step(`^the response header "([^"]*)" should contain "([^"]*)"$`, d.theResponseHeaderShouldContain)
+		ctx.Step(`^the response header "([^"]*)" should be empty$`, d.theResponseHeaderShouldBeEmpty)
 
 		// Audit log assertions
 		ctx.Step(`^the admin audit log should contain "([^"]*)"$`, d.theAdminAuditLogShouldContain)
@@ -587,6 +588,15 @@ func (d *domainAssertionSteps) theResponseHeaderShouldContain(header, expected s
 	actual := session.Resp.Header.Get(header)
 	if !strings.Contains(actual, expanded) {
 		return fmt.Errorf("response header '%s' value '%s' does not contain '%s'", header, actual, expanded)
+	}
+	return nil
+}
+
+func (d *domainAssertionSteps) theResponseHeaderShouldBeEmpty(header string) error {
+	session := d.s.Session()
+	actual := session.Resp.Header.Get(header)
+	if actual != "" {
+		return fmt.Errorf("response header '%s' should be empty but has value '%s'", header, actual)
 	}
 	return nil
 }

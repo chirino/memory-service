@@ -1454,6 +1454,13 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
+         * Controls the Content-Disposition header. Use `inline` to display the attachment
+         * in the browser (e.g., images, PDFs), or `attachment` to force download.
+         * If not specified, the Content-Disposition header is not set, allowing the browser
+         * to use its default behavior based on content type.
+         */
+        disposition?: "inline" | "attachment";
+        /**
          * Attachment identifier (UUID format).
          */
         id: string;
