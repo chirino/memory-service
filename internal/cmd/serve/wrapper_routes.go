@@ -211,7 +211,7 @@ func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, _ string, _ s
 func (p *proxyAPIServer) DeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
 	routeattachments.HandleDeleteAttachment(c, p.store, p.attachStore)
 }
-func (p *proxyAPIServer) GetAttachment(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) GetAttachment(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentParams) {
 	routeattachments.HandleGetAttachment(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID) {

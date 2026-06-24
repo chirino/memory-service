@@ -188,6 +188,13 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 		return
 	}
 
+	// Read and validate disposition parameter (empty string means don't set header)
+	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
+	if disposition != "" && disposition != "inline" && disposition != "attachment" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+		return
+	}
+
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
 		if err != nil {
@@ -218,7 +225,7 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 			}
 		}
 
-		streamAttachment(c, attachStore, *attachment.StorageKey, attachment)
+		streamAttachment(c, attachStore, *attachment.StorageKey, attachment, disposition)
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -331,14 +338,14 @@ func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStor
 			c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
 			return nil
 		}
-		streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment)
+		streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment, "inline")
 		return nil
 	}); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
 	}
 }
 
-func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore, storageKey string, attachment *model.Attachment) {
+func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore, storageKey string, attachment *model.Attachment, disposition string) {
 	reader, err := attachStore.Retrieve(c.Request.Context(), storageKey)
 	if err != nil {
 		c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to retrieve attachment"})
@@ -358,8 +365,9 @@ func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore
 
 	c.Header("Cache-Control", "private, max-age=300, immutable")
 	c.Header("Content-Type", attachment.ContentType)
-	if attachment.Filename != nil && *attachment.Filename != "" {
-		c.Header("Content-Disposition", fmt.Sprintf("inline; filename=%q", *attachment.Filename))
+	// Only set Content-Disposition if disposition parameter was provided
+	if disposition != "" && attachment.Filename != nil && *attachment.Filename != "" {
+		c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, *attachment.Filename))
 	}
 	if attachment.Size != nil {
 		c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))

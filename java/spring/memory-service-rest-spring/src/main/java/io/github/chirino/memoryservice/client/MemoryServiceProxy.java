@@ -418,12 +418,31 @@ public class MemoryServiceProxy {
      * Binary content is streamed through a pipe without buffering in memory.
      */
     public ResponseEntity<?> retrieveAttachment(String id) {
+        return retrieveAttachment(id, null);
+    }
+
+    /**
+     * Retrieves an attachment by ID with optional disposition control.
+     * Handles 302 redirects (e.g. S3 presigned URLs).
+     * Binary content is streamed through a pipe without buffering in memory.
+     *
+     * @param id the attachment ID
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public ResponseEntity<?> retrieveAttachment(String id, @Nullable String disposition) {
         String bearer = resolveBearerToken(null);
 
         var upstream =
                 createWebClient()
                         .get()
-                        .uri("/v1/attachments/{id}", id)
+                        .uri(
+                                uriBuilder -> {
+                                    var builder = uriBuilder.path("/v1/attachments/{id}");
+                                    if (disposition != null && !disposition.isBlank()) {
+                                        builder.queryParam("disposition", disposition);
+                                    }
+                                    return builder.build(id);
+                                })
                         .headers(
                                 h -> {
                                     if (StringUtils.hasText(bearer)) {

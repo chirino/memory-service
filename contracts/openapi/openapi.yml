@@ -1408,6 +1408,17 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: disposition
+          in: query
+          required: false
+          description: |-
+            Controls the Content-Disposition header. Use `inline` to display the attachment
+            in the browser (e.g., images, PDFs), or `attachment` to force download.
+            If not specified, the Content-Disposition header is not set, allowing the browser
+            to use its default behavior based on content type.
+          schema:
+            type: string
+            enum: [inline, attachment]
       responses:
         '200':
           description: Attachment binary content.

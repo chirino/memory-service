@@ -267,3 +267,54 @@ Feature: Admin Attachments REST API
     When I call GET "/v1/admin/attachments/${adminEtagId}/content" expecting binary with header "If-None-Match" = "\"${adminEtagSha}\""
     Then the response status should be 304
     And the response header "ETag" should contain "${adminEtagSha}"
+
+  # --- Content-Disposition Tests ---
+
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
+  Scenario: Admin attachment content with disposition=inline sets Content-Disposition header
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin Inline Conv"
+    When I upload a file "admin-inline.txt" with content type "text/plain" and content "Admin Inline Content"
+    Then the response status should be 201
+    And set "adminInlineId" to the json response field "id"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminInlineId}/content?disposition=inline" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should contain "inline"
+    And the response header "Content-Disposition" should contain "filename="
+
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
+  Scenario: Admin attachment content with disposition=attachment sets Content-Disposition header
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin Download Conv"
+    When I upload a file "admin-download.txt" with content type "text/plain" and content "Admin Download Content"
+    Then the response status should be 201
+    And set "adminDownloadId" to the json response field "id"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminDownloadId}/content?disposition=attachment" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should contain "attachment"
+    And the response header "Content-Disposition" should contain "filename="
+
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
+  Scenario: Admin attachment content without disposition parameter omits Content-Disposition header
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin No Disp Conv"
+    When I upload a file "admin-no-disp.txt" with content type "text/plain" and content "Admin No Disposition"
+    Then the response status should be 201
+    And set "adminNoDispId" to the json response field "id"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminNoDispId}/content" expecting binary
+    Then the response status should be 200
+    And the response header "Content-Disposition" should be empty
+
+  # Serial today only because this feature shares the serial admin runner; this scenario is a pure validation check and appears parallel-safe.
+  Scenario: Admin attachment content with invalid disposition returns 400
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Admin Invalid Disp Conv"
+    When I upload a file "admin-invalid.txt" with content type "text/plain" and content "Admin Invalid Test"
+    Then the response status should be 201
+    And set "adminInvalidDispId" to the json response field "id"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${adminInvalidDispId}/content?disposition=invalid"
+    Then the response status should be 400

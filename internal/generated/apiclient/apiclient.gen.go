@@ -193,6 +193,24 @@ func (e AdminSubscribeEventsParamsDetail) Valid() bool {
 	}
 }
 
+// Defines values for GetAttachmentParamsDisposition.
+const (
+	GetAttachmentParamsDispositionAttachment GetAttachmentParamsDisposition = "attachment"
+	GetAttachmentParamsDispositionInline     GetAttachmentParamsDisposition = "inline"
+)
+
+// Valid indicates whether the value is a known member of the GetAttachmentParamsDisposition enum.
+func (e GetAttachmentParamsDisposition) Valid() bool {
+	switch e {
+	case GetAttachmentParamsDispositionAttachment:
+		return true
+	case GetAttachmentParamsDispositionInline:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for ListConversationsParamsMode.
 const (
 	ListConversationsParamsModeAll        ListConversationsParamsMode = "all"
@@ -1077,6 +1095,18 @@ type UploadAttachmentParams struct {
 	ExpiresIn *string `form:"expiresIn,omitempty" json:"expiresIn,omitempty"`
 }
 
+// GetAttachmentParams defines parameters for GetAttachment.
+type GetAttachmentParams struct {
+	// Disposition Controls the Content-Disposition header. Use `inline` to display the attachment
+	// in the browser (e.g., images, PDFs), or `attachment` to force download.
+	// If not specified, the Content-Disposition header is not set, allowing the browser
+	// to use its default behavior based on content type.
+	Disposition *GetAttachmentParamsDisposition `form:"disposition,omitempty" json:"disposition,omitempty"`
+}
+
+// GetAttachmentParamsDisposition defines parameters for GetAttachment.
+type GetAttachmentParamsDisposition string
+
 // ListConversationsParams defines parameters for ListConversations.
 type ListConversationsParams struct {
 	// Mode Listing mode for conversations. Controls which conversations are returned
@@ -1483,7 +1513,7 @@ type ClientInterface interface {
 	DeleteAttachment(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetAttachment request
-	GetAttachment(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetAttachment(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetAttachmentDownloadUrl request
 	GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1663,8 +1693,8 @@ func (c *Client) DeleteAttachment(ctx context.Context, id openapi_types.UUID, re
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetAttachment(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetAttachmentRequest(c.Server, id)
+func (c *Client) GetAttachment(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAttachmentRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2460,7 +2490,7 @@ func NewDeleteAttachmentRequest(server string, id openapi_types.UUID) (*http.Req
 }
 
 // NewGetAttachmentRequest generates requests for GetAttachment
-func NewGetAttachmentRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+func NewGetAttachmentRequest(server string, id openapi_types.UUID, params *GetAttachmentParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2483,6 +2513,33 @@ func NewGetAttachmentRequest(server string, id openapi_types.UUID) (*http.Reques
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Disposition != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "disposition", *params.Disposition, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -4382,7 +4439,7 @@ type ClientWithResponsesInterface interface {
 	DeleteAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteAttachmentResp, error)
 
 	// GetAttachmentWithResponse request
-	GetAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentResp, error)
+	GetAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*GetAttachmentResp, error)
 
 	// GetAttachmentDownloadUrlWithResponse request
 	GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error)
@@ -5714,8 +5771,8 @@ func (c *ClientWithResponses) DeleteAttachmentWithResponse(ctx context.Context, 
 }
 
 // GetAttachmentWithResponse request returning *GetAttachmentResp
-func (c *ClientWithResponses) GetAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentResp, error) {
-	rsp, err := c.GetAttachment(ctx, id, reqEditors...)
+func (c *ClientWithResponses) GetAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*GetAttachmentResp, error) {
+	rsp, err := c.GetAttachment(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

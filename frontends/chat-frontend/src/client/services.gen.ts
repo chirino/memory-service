@@ -1004,6 +1004,10 @@ export class AttachmentsService {
    * returned instead of streaming the bytes directly.
    * @param data The data for the request.
    * @param data.id Attachment identifier (UUID format).
+   * @param data.disposition Controls the Content-Disposition header. Use `inline` to display the attachment
+   * in the browser (e.g., images, PDFs), or `attachment` to force download.
+   * If not specified, the Content-Disposition header is not set, allowing the browser
+   * to use its default behavior based on content type.
    * @returns binary Attachment binary content.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -1018,6 +1022,9 @@ export class AttachmentsService {
       url: "/v1/attachments/{id}",
       path: {
         id: data.id,
+      },
+      query: {
+        disposition: data.disposition,
       },
       errors: {
         302: "Redirect to a signed URL for the attachment.",
