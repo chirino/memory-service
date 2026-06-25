@@ -550,6 +550,13 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.OIDCDiscoveryURL,
 			Usage:       "OIDC discovery URL (internal URL when issuer is not directly reachable)",
 		},
+		&cli.BoolFlag{
+			Name:        "oidc-tls-insecure-skip-verify",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY"),
+			Destination: &cfg.OIDCTLSSkipCertificateVerify,
+			Usage:       "Skip TLS certificate verification for OIDC discovery and JWKS requests (unsafe; for self-signed development issuers)",
+		},
 		&cli.StringFlag{
 			Name:        "roles-admin-oidc-role",
 			Category:    "Authorization:",

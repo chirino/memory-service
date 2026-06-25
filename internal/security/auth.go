@@ -2,6 +2,7 @@ package security
 
 import (
 	"context"
+	"crypto/tls"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -74,6 +75,13 @@ func NewTokenResolver(cfg *config.Config) *TokenResolver {
 
 	if oidcIssuer != "" {
 		ctx := context.Background()
+		if cfg.OIDCTLSSkipCertificateVerify {
+			transport := http.DefaultTransport.(*http.Transport).Clone()
+			transport.TLSClientConfig = &tls.Config{
+				InsecureSkipVerify: true, // #nosec G402 - explicitly enabled by OIDC TLS skip-verify config.
+			}
+			ctx = oidc.ClientContext(ctx, &http.Client{Transport: transport})
+		}
 		expectedIssuer := oidcIssuer // preserve the configured issuer for token validation
 		discoveryURL := cfg.OIDCDiscoveryURL
 		if discoveryURL != "" && discoveryURL != oidcIssuer {

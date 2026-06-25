@@ -137,8 +137,9 @@ type Config struct {
 	SearchFulltextEnabled bool
 
 	// OIDC
-	OIDCIssuer       string
-	OIDCDiscoveryURL string // Internal URL for OIDC discovery (when issuer URL is not reachable)
+	OIDCIssuer                   string
+	OIDCDiscoveryURL             string // Internal URL for OIDC discovery (when issuer URL is not reachable)
+	OIDCTLSSkipCertificateVerify bool   // Allow self-signed/untrusted certificates for OIDC discovery and JWKS requests.
 
 	// Prometheus
 	PrometheusURL string

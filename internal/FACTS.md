@@ -33,6 +33,7 @@
 **Unix-socket listener validation**: Listener selection conflicts must use explicit flag/env detection (`cmd.IsSet(...)`), not non-zero resolved port values, otherwise the default port `8080` falsely conflicts with `--unix-socket`. When a Unix-socket parent directory is missing, the serve layer creates it as `0700`; if it already exists and is group/world accessible, startup must fail fast instead of chmod-ing it.
 
 **TLS self-signed certificate opt-in**: Omitting `MEMORY_SERVICE_TLS_CERT_FILE` and `MEMORY_SERVICE_TLS_KEY_FILE` only generates an ephemeral self-signed certificate when `MEMORY_SERVICE_TLS_SELF_SIGNED=true` / `--tls-self-signed` is set. Dev launch surfaces that enable TLS without cert files must set this explicitly.
+**OIDC self-signed issuer opt-in**: `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY=true` / `--oidc-tls-insecure-skip-verify` only affects outbound OIDC discovery and JWKS fetches in `internal/security/auth.go`; it does not change listener TLS or general HTTP client behavior.
 
 **gRPC recorder disconnect cleanup**: In `ResponseRecorderServer.Record`, if the stream fails with gRPC/ctx `CANCELED` or `DEADLINE_EXCEEDED` after a recorder has been created, call `recorder.Complete()` before returning so the locator/cache registry entry for that conversation is removed.
 

@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/chirino/memory-service/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 )
@@ -83,4 +84,18 @@ func TestLoadServerCertificate_SelfSigned(t *testing.T) {
 	cert, err := loadServerCertificate("", "", true)
 	require.NoError(t, err)
 	require.NotEmpty(t, cert.Certificate)
+}
+
+func TestFlagsIncludeOIDCTLSSkipVerify(t *testing.T) {
+	cfg := config.DefaultConfig()
+	flags := Flags(&cfg, NewFlagState(&cfg))
+
+	flagNames := make(map[string]bool, len(flags))
+	for _, flag := range flags {
+		for _, name := range flag.Names() {
+			flagNames[name] = true
+		}
+	}
+
+	require.True(t, flagNames["oidc-tls-insecure-skip-verify"])
 }
