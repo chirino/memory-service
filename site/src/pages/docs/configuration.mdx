@@ -720,11 +720,21 @@ Authenticated agent/app clients can call `GET /v1/capabilities` or gRPC `SystemS
 
 Memory Service supports OIDC authentication via Keycloak or any compliant provider.
 
+| Flag                                                                                         | Values          | Default  | Description                                                                                                  |
+| -------------------------------------------------------------------------------------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
+| <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_OIDC_ISSUER" />                                     | URL             | _(none)_ | OIDC issuer URL; enables OIDC auth                                                                           |
+| <Cfg p="--oidc-discovery-url" e="MEMORY_SERVICE_OIDC_DISCOVERY_URL" />                       | URL             | _(none)_ | Internal discovery URL when the issuer URL is not directly reachable                                         |
+| <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `true`, `false` | `false`  | Skip TLS certificate verification for OIDC discovery and JWKS requests; use only for self-signed dev issuers |
+
 <ConfigBlock
   property={`# OIDC configuration
---oidc-issuer=http://localhost:8180/realms/memory-service`}
+--oidc-issuer=http://localhost:8180/realms/memory-service
+# Development/self-signed issuers only:
+--oidc-tls-insecure-skip-verify`}
   env={`# OIDC configuration
-MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service`}
+MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service
+# Development/self-signed issuers only:
+MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY=true`}
 />
 
 ## Admin Access Configuration
