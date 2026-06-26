@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strings"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -118,7 +119,7 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]fl
 	}
 
 	if result.Error != nil {
-		return nil, fmt.Errorf("openai embed error: %s", result.Error.Message)
+		return nil, fmt.Errorf("openai embed error: %s", redactKeys(result.Error.Message))
 	}
 	if len(result.Data) != len(texts) {
 		return nil, fmt.Errorf("openai embed: expected %d embeddings, got %d", len(texts), len(result.Data))
@@ -137,4 +138,10 @@ func ptrIfPositive(v int) *int {
 		return nil
 	}
 	return &v
+}
+
+var apiKeyPattern = regexp.MustCompile(`(sk-[a-zA-Z0-9_-]{4})[a-zA-Z0-9_-]{20,}`)
+
+func redactKeys(msg string) string {
+	return apiKeyPattern.ReplaceAllString(msg, "${1}…REDACTED")
 }
