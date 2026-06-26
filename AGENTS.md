@@ -93,6 +93,7 @@ When you discover something meaningful about this project during your work—arc
 - Cross-stack or uncertain impact: run all relevant checks above; full-repo compile is optional unless needed by the change scope.
 
 **Taskfile shell compatibility**: Task commands execute via `sh`; use POSIX redirection (`>/dev/null 2>&1`) instead of shell-specific forms like `&>` or malformed `2&>1`.
+- **Java/site test concurrency gotcha**: Do not run `task test:java` and `task test:site` concurrently in the same worktree. Both invoke Maven clean/build against Java targets and can race, producing failures such as `Failed to delete .../target`, `error reading .../target/generated-sources/...`, or missing generated client classes. Run them sequentially or in isolated worktrees.
 - **TypeScript example task gotcha**: Under `typescript/examples/vecelai/doc-checkpoints/`, both `05-response-resumption/` and `05b-response-resumption/` exist; keep `Taskfile.yml` entries explicit instead of assuming a sequential directory list.
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:
