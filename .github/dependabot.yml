@@ -10,6 +10,9 @@ updates:
       timezone: "America/New_York"
     cooldown:
       default-days: 7
+    groups:
+      github-actions-dependencies:
+        patterns: ["*"]
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -75,7 +78,6 @@ updates:
     groups:
       npm-dependencies:
         patterns: ["*"]
-        group-by: "dependency-name"
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -113,7 +115,6 @@ updates:
     groups:
       python-dependencies:
         patterns: ["*"]
-        group-by: "dependency-name"
     commit-message:
       prefix: "chore"
       include: "scope"
@@ -165,6 +166,9 @@ updates:
       timezone: "America/New_York"
     cooldown:
       default-days: 7
+    groups:
+      devcontainer-dependencies:
+        patterns: ["*"]
     commit-message:
       prefix: "chore"
       include: "scope"
