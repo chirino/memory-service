@@ -1,5 +1,5 @@
 # Build developer frontend
-FROM node:20-alpine AS frontend-builder
+FROM node:26-alpine AS frontend-builder
 WORKDIR /build
 COPY frontends/developer/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontends/developer/ ./
 RUN npm run build
 
 # Build Go binary
-FROM registry.access.redhat.com/ubi9/go-toolset:1.25 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:9.8 AS builder
 USER 0
 WORKDIR /src
 ENV GOTOOLCHAIN=auto
