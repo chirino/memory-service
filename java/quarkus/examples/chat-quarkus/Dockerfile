@@ -8,7 +8,7 @@ RUN npm install
 COPY frontends/chat-frontend .
 RUN npm run build
 
-FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1781533397 AS build
+FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1782292660 AS build
 
 USER 0
 
@@ -47,7 +47,7 @@ COPY --chmod=755 --from=frontend-builder /build/dist ./java/quarkus/examples/cha
 COPY . .
 RUN ./java/mvnw -B -q -f java/pom.xml -am -pl :memory-service-extension-deployment,:chat-quarkus clean install -DskipTests
 
-FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1781533397
+FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1782292660
 
 ENV LANGUAGE='en_US:en'
 
