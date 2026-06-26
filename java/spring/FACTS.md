@@ -27,3 +27,11 @@ configured `memory-service.client.url` and retry attempt when opening the
 `complete()` call if the eager constructor-time open failed. This is aimed at
 CI-only UDS flakes where stream creation appears to fail before the first SSE
 chunk is emitted.
+
+**Spring docs Protobuf override**: Standalone Spring docs checkpoints under
+`java/spring/examples/doc-checkpoints/` use `spring-boot-starter-parent` directly,
+so they do not inherit `java/spring/pom.xml` dependency management. If
+`memory-service-proto-spring` is generated with a newer `protobuf.version` than
+Spring Boot manages, those checkpoint POMs need their own `protobuf-java`
+dependency-management override or runtime will fail with Protobuf
+gencode/runtime version mismatches.
