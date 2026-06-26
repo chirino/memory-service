@@ -27,9 +27,14 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
-  release:
+  prepare:
     runs-on: ubuntu-latest
     environment: release
+    outputs:
+      branch: ${{ steps.release.outputs.branch }}
+      checkout-ref: ${{ steps.prepare.outputs.checkout-ref }}
+      tag: ${{ steps.release.outputs.tag }}
+      version: ${{ steps.release.outputs.version }}
     steps:
       - name: Validate release version
         id: release
@@ -90,10 +95,12 @@ jobs:
             git switch --detach "$TAG"
             echo "Release tag $TAG already exists; continuing from the tagged commit"
             echo "tag_exists=true" >> "$GITHUB_OUTPUT"
+            echo "checkout-ref=refs/tags/$TAG" >> "$GITHUB_OUTPUT"
             exit 0
           fi
 
           echo "tag_exists=false" >> "$GITHUB_OUTPUT"
+          echo "checkout-ref=$BRANCH" >> "$GITHUB_OUTPUT"
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
@@ -148,69 +155,6 @@ jobs:
         run: |
           go run github.com/go-task/task/v3/cmd/task release:java:bundle VERSION="${{ steps.release.outputs.version }}" -- -q -B
 
-      - name: Set up QEMU
-        uses: docker/setup-qemu-action@v3
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Prepare Docker tags
-        id: docker-tags
-        shell: bash
-        run: |
-          set -euo pipefail
-
-          VERSION="${{ steps.release.outputs.version }}"
-          OWNER="${{ github.repository_owner }}"
-
-          memory_tags="ghcr.io/$OWNER/memory-service:$VERSION"
-          chat_tags="ghcr.io/$OWNER/memory-service-chat-quarkus:$VERSION"
-
-          if [[ "${{ inputs.update_latest }}" == "true" ]]; then
-            memory_tags="$memory_tags"$'\n'"ghcr.io/$OWNER/memory-service:latest"
-            chat_tags="$chat_tags"$'\n'"ghcr.io/$OWNER/memory-service-chat-quarkus:latest"
-          fi
-
-          {
-            echo "memory-tags<<EOF"
-            echo "$memory_tags"
-            echo "EOF"
-            echo "chat-tags<<EOF"
-            echo "$chat_tags"
-            echo "EOF"
-          } >> "$GITHUB_OUTPUT"
-
-      - name: Build and push Docker image (memory-service)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.docker-tags.outputs.memory-tags }}
-          build-args: |
-            VERSION=${{ steps.release.outputs.version }}
-          cache-from: type=gha,scope=image-memory-service
-          cache-to: type=gha,mode=max,scope=image-memory-service
-
-      - name: Build and push Docker image (chat-quarkus)
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          file: java/quarkus/examples/chat-quarkus/Dockerfile
-          platforms: linux/amd64,linux/arm64
-          push: true
-          tags: ${{ steps.docker-tags.outputs.chat-tags }}
-          cache-from: type=gha,scope=image-chat-quarkus
-          cache-to: type=gha,mode=max,scope=image-chat-quarkus
-
       - name: Publish Java artifacts to Maven Central
         if: steps.maven-central.outputs.published != 'true'
         env:
@@ -240,12 +184,161 @@ jobs:
 
           exit "$status"
 
+  docker-build:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - image: memory-service
+            dockerfile: Dockerfile
+            platform: linux/amd64
+            platform-key: linux-amd64
+            cache-scope: image-memory-service-linux-amd64
+            cache-fallback-scope: image-memory-service
+            runner: ubuntu-latest
+          - image: memory-service
+            dockerfile: Dockerfile
+            platform: linux/arm64
+            platform-key: linux-arm64
+            cache-scope: image-memory-service-linux-arm64
+            cache-fallback-scope: image-memory-service
+            runner: ubuntu-24.04-arm
+          - image: memory-service-chat-quarkus
+            dockerfile: java/quarkus/examples/chat-quarkus/Dockerfile
+            platform: linux/amd64
+            platform-key: linux-amd64
+            cache-scope: image-chat-quarkus-linux-amd64
+            cache-fallback-scope: image-chat-quarkus
+            runner: ubuntu-latest
+          - image: memory-service-chat-quarkus
+            dockerfile: java/quarkus/examples/chat-quarkus/Dockerfile
+            platform: linux/arm64
+            platform-key: linux-arm64
+            cache-scope: image-chat-quarkus-linux-arm64
+            cache-fallback-scope: image-chat-quarkus
+            runner: ubuntu-24.04-arm
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout-ref }}
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push Docker image by digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ${{ matrix.dockerfile }}
+          platforms: ${{ matrix.platform }}
+          tags: ghcr.io/${{ github.repository_owner }}/${{ matrix.image }}
+          outputs: type=image,name=ghcr.io/${{ github.repository_owner }}/${{ matrix.image }},push-by-digest=true,name-canonical=true,push=true
+          build-args: ${{ matrix.image == 'memory-service' && format('VERSION={0}', needs.prepare.outputs.version) || '' }}
+          cache-from: |
+            type=gha,scope=${{ matrix.cache-scope }}
+            type=gha,scope=${{ matrix.cache-fallback-scope }}
+          cache-to: type=gha,mode=max,scope=${{ matrix.cache-scope }}
+
+      - name: Export digest
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="${{ steps.build.outputs.digest }}"
+          mkdir -p "/tmp/digests/${{ matrix.image }}"
+          touch "/tmp/digests/${{ matrix.image }}/${digest#sha256:}"
+
+      - name: Upload digest
+        uses: actions/upload-artifact@v4
+        with:
+          name: release-docker-digest-${{ matrix.image }}-${{ matrix.platform-key }}
+          path: /tmp/digests
+          if-no-files-found: error
+          retention-days: 1
+
+  docker-manifest:
+    needs:
+      - prepare
+      - docker-build
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download digests
+        uses: actions/download-artifact@v4
+        with:
+          pattern: release-docker-digest-*
+          path: /tmp/digests
+          merge-multiple: true
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create Docker manifests
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          create_manifest() {
+            local image="$1"
+            local image_ref="ghcr.io/${{ github.repository_owner }}/$image"
+            local version="${{ needs.prepare.outputs.version }}"
+            local tag_args=("-t" "$image_ref:$version")
+            local digest_refs=()
+
+            if [[ "${{ inputs.update_latest }}" == "true" ]]; then
+              tag_args+=("-t" "$image_ref:latest")
+            fi
+
+            while IFS= read -r digest_file; do
+              digest_refs+=("$image_ref@sha256:$(basename "$digest_file")")
+            done < <(find "/tmp/digests/$image" -type f | sort)
+
+            if [ "${#digest_refs[@]}" -eq 0 ]; then
+              echo "No digests found for $image" >&2
+              exit 1
+            fi
+
+            docker buildx imagetools create "${tag_args[@]}" "${digest_refs[@]}"
+          }
+
+          create_manifest memory-service
+          create_manifest memory-service-chat-quarkus
+
+  finish:
+    needs:
+      - prepare
+      - docker-manifest
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.prepare.outputs.checkout-ref }}
+          fetch-depth: 0
+
       - name: Tag released version
         shell: bash
         run: |
           set -euo pipefail
 
-          TAG="${{ steps.release.outputs.tag }}"
+          TAG="${{ needs.prepare.outputs.tag }}"
           if git rev-parse --verify --quiet "refs/tags/$TAG" >/dev/null; then
             echo "Tag $TAG already exists"
             exit 0
@@ -258,20 +351,20 @@ jobs:
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if gh release view "${{ steps.release.outputs.tag }}" >/dev/null 2>&1; then
-            echo "GitHub Release ${{ steps.release.outputs.tag }} already exists"
+          if gh release view "${{ needs.prepare.outputs.tag }}" >/dev/null 2>&1; then
+            echo "GitHub Release ${{ needs.prepare.outputs.tag }} already exists"
             exit 0
           fi
-          gh release create "${{ steps.release.outputs.tag }}" \
-            --title "${{ steps.release.outputs.tag }}" \
-            --notes "Java artifacts and Docker images for ${{ steps.release.outputs.tag }}."
+          gh release create "${{ needs.prepare.outputs.tag }}" \
+            --title "${{ needs.prepare.outputs.tag }}" \
+            --notes "Java artifacts and Docker images for ${{ needs.prepare.outputs.tag }}."
 
       - name: Delete release branch
         shell: bash
         run: |
           set -euo pipefail
 
-          BRANCH="${{ steps.release.outputs.branch }}"
+          BRANCH="${{ needs.prepare.outputs.branch }}"
           if ! git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
             echo "Release branch $BRANCH is already absent"
             exit 0

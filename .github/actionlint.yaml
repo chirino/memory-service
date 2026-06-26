@@ -1,0 +1,6 @@
+self-hosted-runner:
+  labels:
+    # Current GitHub-hosted arm64 Linux runner; older actionlint releases do
+    # not include it in their built-in label list yet.
+    - ubuntu-24.04-arm
+config-variables: null

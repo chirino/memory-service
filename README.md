@@ -1,6 +1,6 @@
 # Memory Service
 
-[![Build](https://github.com/chirino/memory-service/actions/workflows/pr-check.yml/badge.svg?branch=main)](https://github.com/chirino/memory-service/actions/workflows/pr-check.yml)
+[![Build](https://github.com/chirino/memory-service/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/chirino/memory-service/actions/workflows/ci.yml)
 
 A persistent memory service for AI agents that stores and manages conversation history, enabling agents to maintain context across sessions, replay conversations, fork conversations at any point, and perform semantic search across all conversations.
 

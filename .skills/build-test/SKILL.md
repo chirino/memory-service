@@ -25,6 +25,10 @@ task dev:memory-service
 cd frontends/chat-frontend
 npm run lint
 npm run build
+
+cd frontends/developer
+npm run lint
+npm run build
 ```
 
 ## Python
