@@ -33,32 +33,73 @@ import (
 
 func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface, eventBus registryeventbus.EventBus) {
 	authMiddleware := func(c *gin.Context) { auth(c) }
+	requireUserMiddleware := func(c *gin.Context) { security.RequireUser()(c) }
 
-	apiWrapper := &generatedapi.ServerInterfaceWrapper{
-		Handler: &proxyAPIServer{
-			cfg:            cfg,
-			store:          store,
-			attachStore:    attachStore,
-			signingKeys:    signingKeys,
-			embedder:       embedder,
-			vectorStore:    vectorStore,
-			resumer:        resumer,
-			resumerEnabled: resumerEnabled,
-			eventBus:       eventBus,
-		},
-		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
-			// Keep legacy parity for invalid UUID conversation ids on entry listing.
-			if statusCode == http.StatusBadRequest &&
-				c.Request.Method == http.MethodGet &&
-				c.FullPath() == "/v1/conversations/:conversationId/entries" &&
-				strings.Contains(err.Error(), "Invalid format for parameter conversationId") {
-				c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
-				return
-			}
-			c.JSON(statusCode, gin.H{"error": err.Error()})
-		},
-		HandlerMiddlewares: []generatedapi.MiddlewareFunc{authMiddleware},
+	apiErrorHandler := func(c *gin.Context, err error, statusCode int) {
+		// Keep legacy parity for invalid UUID conversation ids on entry listing.
+		if statusCode == http.StatusBadRequest &&
+			c.Request.Method == http.MethodGet &&
+			c.FullPath() == "/v1/conversations/:conversationId/entries" &&
+			strings.Contains(err.Error(), "Invalid format for parameter conversationId") {
+			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
+			return
+		}
+		c.JSON(statusCode, gin.H{"error": err.Error()})
 	}
+
+	apiHandler := &proxyAPIServer{
+		cfg:            cfg,
+		store:          store,
+		attachStore:    attachStore,
+		signingKeys:    signingKeys,
+		embedder:       embedder,
+		vectorStore:    vectorStore,
+		resumer:        resumer,
+		resumerEnabled: resumerEnabled,
+		eventBus:       eventBus,
+	}
+
+	apiWrapperFor := func(permission security.Permission) *generatedapi.ServerInterfaceWrapper {
+		return &generatedapi.ServerInterfaceWrapper{
+			Handler:      apiHandler,
+			ErrorHandler: apiErrorHandler,
+			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
+				authMiddleware,
+				requireUserMiddleware,
+				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
+			},
+		}
+	}
+
+	authOnlyWrapperFor := func(permission security.Permission) *generatedapi.ServerInterfaceWrapper {
+		return &generatedapi.ServerInterfaceWrapper{
+			Handler:      apiHandler,
+			ErrorHandler: apiErrorHandler,
+			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
+				authMiddleware,
+				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
+			},
+		}
+	}
+
+	// apiWrapper: requires user identity (normal user/agent endpoints).
+	apiWrapper := &generatedapi.ServerInterfaceWrapper{
+		Handler:            apiHandler,
+		ErrorHandler:       apiErrorHandler,
+		HandlerMiddlewares: []generatedapi.MiddlewareFunc{authMiddleware, requireUserMiddleware},
+	}
+
+	capabilitiesWrapper := authOnlyWrapperFor(security.PermissionSystemRead)
+	userEventsWrapper := apiWrapperFor(security.PermissionEventsRead)
+	adminEventsWrapper := authOnlyWrapperFor(security.PermissionAdminEventsRead)
+	attachmentsReadWrapper := apiWrapperFor(security.PermissionAttachmentsRead)
+	attachmentsWriteWrapper := apiWrapperFor(security.PermissionAttachmentsWrite)
+	conversationsReadWrapper := apiWrapperFor(security.PermissionConversationsRead)
+	conversationsWriteWrapper := apiWrapperFor(security.PermissionConversationsWrite)
+	sharingReadWrapper := apiWrapperFor(security.PermissionSharingRead)
+	sharingWriteWrapper := apiWrapperFor(security.PermissionSharingWrite)
+	searchReadWrapper := apiWrapperFor(security.PermissionSearchRead)
+	searchWriteWrapper := apiWrapperFor(security.PermissionSearchWrite)
 	publicAPIWrapper := &generatedapi.ServerInterfaceWrapper{
 		Handler: apiWrapper.Handler,
 		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
@@ -67,14 +108,21 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 		},
 	}
 
-	clientIDMiddleware := func(c *gin.Context) { security.ClientIDMiddleware()(c) }
-	memoriesWrapper := &generatedapi.ServerInterfaceWrapper{
-		Handler: memoriesAdapter,
-		ErrorHandler: func(c *gin.Context, err error, statusCode int) {
-			c.JSON(statusCode, gin.H{"error": err.Error()})
-		},
-		HandlerMiddlewares: []generatedapi.MiddlewareFunc{authMiddleware, clientIDMiddleware},
+	memoriesWrapperFor := func(permission security.Permission) *generatedapi.ServerInterfaceWrapper {
+		return &generatedapi.ServerInterfaceWrapper{
+			Handler: memoriesAdapter,
+			ErrorHandler: func(c *gin.Context, err error, statusCode int) {
+				c.JSON(statusCode, gin.H{"error": err.Error()})
+			},
+			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
+				authMiddleware,
+				requireUserMiddleware,
+				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
+			},
+		}
 	}
+	memoriesReadWrapper := memoriesWrapperFor(security.PermissionMemoriesRead)
+	memoriesWriteWrapper := memoriesWrapperFor(security.PermissionMemoriesWrite)
 
 	adminWrapper := &generatedadmin.ServerInterfaceWrapper{
 		Handler: &proxyAdminServer{
@@ -108,42 +156,54 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 		}
 	}
 
-	register(http.MethodPost, "/v1/attachments", apiWrapper.UploadAttachment)
+	// Capabilities: auth required but not user-scoped.
+	register(http.MethodGet, "/v1/capabilities", capabilitiesWrapper.GetCapabilities)
+
+	// Attachment endpoints: user-scoped (uploads/downloads tied to user identity).
+	register(http.MethodPost, "/v1/attachments", attachmentsWriteWrapper.UploadAttachment)
 	register(http.MethodGet, "/v1/attachments/download/:token/:filename", publicAPIWrapper.DownloadAttachmentByToken)
-	register(http.MethodDelete, "/v1/attachments/:id", apiWrapper.DeleteAttachment)
-	register(http.MethodGet, "/v1/attachments/:id", apiWrapper.GetAttachment)
-	register(http.MethodGet, "/v1/attachments/:id/download-url", apiWrapper.GetAttachmentDownloadUrl)
-	register(http.MethodGet, "/v1/capabilities", apiWrapper.GetCapabilities)
-	register(http.MethodGet, "/v1/conversations", apiWrapper.ListConversations)
-	register(http.MethodPost, "/v1/conversations", apiWrapper.CreateConversation)
-	register(http.MethodPost, "/v1/conversations/index", apiWrapper.IndexConversations)
-	register(http.MethodPost, "/v1/conversations/search", apiWrapper.SearchConversations)
-	register(http.MethodGet, "/v1/conversations/unindexed", apiWrapper.ListUnindexedEntries)
-	register(http.MethodGet, "/v1/conversations/:conversationId", apiWrapper.GetConversation)
-	register(http.MethodPatch, "/v1/conversations/:conversationId", apiWrapper.UpdateConversation)
-	register(http.MethodGet, "/v1/conversations/:conversationId/children", apiWrapper.ListConversationChildren)
-	register(http.MethodGet, "/v1/conversations/:conversationId/entries", apiWrapper.ListConversationEntries)
-	register(http.MethodPost, "/v1/conversations/:conversationId/entries", apiWrapper.AppendConversationEntry)
-	register(http.MethodPost, "/v1/conversations/:conversationId/entries/sync", apiWrapper.SyncConversationContext)
-	register(http.MethodGet, "/v1/conversations/:conversationId/forks", apiWrapper.ListConversationForks)
-	register(http.MethodGet, "/v1/conversations/:conversationId/memberships", apiWrapper.ListConversationMemberships)
-	register(http.MethodPost, "/v1/conversations/:conversationId/memberships", apiWrapper.ShareConversation)
-	register(http.MethodDelete, "/v1/conversations/:conversationId/memberships/:userId", apiWrapper.DeleteConversationMembership)
-	register(http.MethodPatch, "/v1/conversations/:conversationId/memberships/:userId", apiWrapper.UpdateConversationMembership)
-	register(http.MethodDelete, "/v1/conversations/:conversationId/response", apiWrapper.DeleteConversationResponse)
-	register(http.MethodPatch, "/v1/memories", memoriesWrapper.UpdateMemory)
-	register(http.MethodGet, "/v1/memories", memoriesWrapper.GetMemory)
-	register(http.MethodPut, "/v1/memories", memoriesWrapper.PutMemory)
-	register(http.MethodGet, "/v1/memories/events", memoriesWrapper.ListMemoryEvents)
-	register(http.MethodGet, "/v1/memories/namespaces", memoriesWrapper.ListMemoryNamespaces)
-	register(http.MethodPost, "/v1/memories/search", memoriesWrapper.SearchMemories)
-	register(http.MethodGet, "/v1/ownership-transfers", apiWrapper.ListPendingTransfers)
-	register(http.MethodPost, "/v1/ownership-transfers", apiWrapper.CreateOwnershipTransfer)
-	register(http.MethodDelete, "/v1/ownership-transfers/:transferId", apiWrapper.DeleteTransfer)
-	register(http.MethodGet, "/v1/ownership-transfers/:transferId", apiWrapper.GetTransfer)
-	register(http.MethodPost, "/v1/ownership-transfers/:transferId/accept", apiWrapper.AcceptTransfer)
-	register(http.MethodGet, "/v1/admin/events", apiWrapper.AdminSubscribeEvents)
-	register(http.MethodGet, "/v1/events", apiWrapper.SubscribeEvents)
+	register(http.MethodDelete, "/v1/attachments/:id", attachmentsWriteWrapper.DeleteAttachment)
+	register(http.MethodGet, "/v1/attachments/:id", attachmentsReadWrapper.GetAttachment)
+	register(http.MethodGet, "/v1/attachments/:id/download-url", attachmentsReadWrapper.GetAttachmentDownloadUrl)
+
+	// Conversations, entries, memberships, ownership-transfers: user-scoped.
+	register(http.MethodGet, "/v1/conversations", conversationsReadWrapper.ListConversations)
+	register(http.MethodPost, "/v1/conversations", conversationsWriteWrapper.CreateConversation)
+	register(http.MethodPost, "/v1/conversations/index", searchWriteWrapper.IndexConversations)
+	register(http.MethodPost, "/v1/conversations/search", searchReadWrapper.SearchConversations)
+	register(http.MethodGet, "/v1/conversations/unindexed", searchReadWrapper.ListUnindexedEntries)
+	register(http.MethodGet, "/v1/conversations/:conversationId", conversationsReadWrapper.GetConversation)
+	register(http.MethodPatch, "/v1/conversations/:conversationId", conversationsWriteWrapper.UpdateConversation)
+	register(http.MethodGet, "/v1/conversations/:conversationId/children", conversationsReadWrapper.ListConversationChildren)
+	register(http.MethodGet, "/v1/conversations/:conversationId/entries", conversationsReadWrapper.ListConversationEntries)
+	register(http.MethodPost, "/v1/conversations/:conversationId/entries", conversationsWriteWrapper.AppendConversationEntry)
+	register(http.MethodPost, "/v1/conversations/:conversationId/entries/sync", conversationsWriteWrapper.SyncConversationContext)
+	register(http.MethodGet, "/v1/conversations/:conversationId/forks", conversationsReadWrapper.ListConversationForks)
+	register(http.MethodGet, "/v1/conversations/:conversationId/memberships", sharingReadWrapper.ListConversationMemberships)
+	register(http.MethodPost, "/v1/conversations/:conversationId/memberships", sharingWriteWrapper.ShareConversation)
+	register(http.MethodDelete, "/v1/conversations/:conversationId/memberships/:userId", sharingWriteWrapper.DeleteConversationMembership)
+	register(http.MethodPatch, "/v1/conversations/:conversationId/memberships/:userId", sharingWriteWrapper.UpdateConversationMembership)
+	register(http.MethodDelete, "/v1/conversations/:conversationId/response", conversationsWriteWrapper.DeleteConversationResponse)
+
+	// Episodic memory: user-scoped.
+	register(http.MethodPatch, "/v1/memories", memoriesWriteWrapper.UpdateMemory)
+	register(http.MethodGet, "/v1/memories", memoriesReadWrapper.GetMemory)
+	register(http.MethodPut, "/v1/memories", memoriesWriteWrapper.PutMemory)
+	register(http.MethodGet, "/v1/memories/events", memoriesReadWrapper.ListMemoryEvents)
+	register(http.MethodGet, "/v1/memories/namespaces", memoriesReadWrapper.ListMemoryNamespaces)
+	register(http.MethodPost, "/v1/memories/search", memoriesReadWrapper.SearchMemories)
+
+	// Ownership transfers: user-scoped.
+	register(http.MethodGet, "/v1/ownership-transfers", sharingReadWrapper.ListPendingTransfers)
+	register(http.MethodPost, "/v1/ownership-transfers", sharingWriteWrapper.CreateOwnershipTransfer)
+	register(http.MethodDelete, "/v1/ownership-transfers/:transferId", sharingWriteWrapper.DeleteTransfer)
+	register(http.MethodGet, "/v1/ownership-transfers/:transferId", sharingReadWrapper.GetTransfer)
+	register(http.MethodPost, "/v1/ownership-transfers/:transferId/accept", sharingWriteWrapper.AcceptTransfer)
+
+	// Admin event stream: admin/role-scoped, not user-scoped.
+	register(http.MethodGet, "/v1/admin/events", adminEventsWrapper.AdminSubscribeEvents)
+	// User event stream: user-scoped.
+	register(http.MethodGet, "/v1/events", userEventsWrapper.SubscribeEvents)
 
 	register(http.MethodGet, "/admin/v1/memories", adminWrapper.AdminListMemories)
 	register(http.MethodPost, "/admin/v1/memories/search", adminWrapper.AdminSearchMemories)
@@ -331,232 +391,236 @@ type proxyAdminServer struct {
 	eventBus        registryeventbus.EventBus
 }
 
-func (p *proxyAdminServer) authorize(c *gin.Context) bool {
+func (p *proxyAdminServer) authorize(c *gin.Context, permission security.Permission) bool {
 	if p.auth == nil {
 		return true
 	}
 	p.auth(c)
+	if c.IsAborted() {
+		return false
+	}
+	security.RequireOIDCScope(permission)(c)
 	return !c.IsAborted()
 }
 
 func (p *proxyAdminServer) AdminGetMemoryIndexStatus(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminGetMemoryIndexStatus(c, p.episodicStore)
 }
 func (p *proxyAdminServer) AdminListMemories(c *gin.Context, _ generatedadmin.AdminListMemoriesParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminListMemories(c, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetMemory(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMemoryParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminGetMemory(c, p.episodicStore)
 }
 func (p *proxyAdminServer) AdminSearchMemories(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminSearchMemories(c, p.episodicStore, p.episodicPolicy, p.cfg, p.embedder)
 }
 func (p *proxyAdminServer) AdminListMemoryNamespaces(c *gin.Context, _ generatedadmin.AdminListMemoryNamespacesParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminListMemoryNamespaces(c, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin.AdminSubscribeEventsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminEventsRead) {
 		return
 	}
 	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetCheckpoint(c *gin.Context, _ string) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminCheckpointsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetCheckpoint(c, p.store)
 }
 func (p *proxyAdminServer) AdminPutCheckpoint(c *gin.Context, _ string) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminCheckpointsWrite) {
 		return
 	}
 	routeadmin.HandleAdminPutCheckpoint(c, p.store)
 }
 func (p *proxyAdminServer) AdminTriggerMemoryIndex(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
 	routememories.HandleAdminTriggerMemoryIndex(c, p.episodicIndexer)
 }
 func (p *proxyAdminServer) AdminGetMemoryPolicies(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminGetMemoryPolicies(c, p.episodicPolicy)
 }
 func (p *proxyAdminServer) AdminPutMemoryPolicies(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
 	routememories.HandleAdminPutMemoryPolicies(c, p.episodicPolicy, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetMemoryUsage(c *gin.Context, _ generatedadmin.AdminGetMemoryUsageParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminGetMemoryUsage(c, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminListTopMemoryUsage(c *gin.Context, _ generatedadmin.AdminListTopMemoryUsageParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
 	routememories.HandleAdminListTopMemoryUsage(c, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, _ openapi_types.UUID) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
 	routememories.HandleAdminDeleteMemory(c, p.episodicStore)
 }
 func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetEntry(c, p.store)
 }
 func (p *proxyAdminServer) AdminListAttachments(c *gin.Context, _ generatedadmin.AdminListAttachmentsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminListAttachments(c, p.store)
 }
 func (p *proxyAdminServer) AdminDeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminAttachmentsWrite) {
 		return
 	}
 	routeadmin.HandleAdminDeleteAttachment(c, p.store, p.attachStore)
 }
 func (p *proxyAdminServer) AdminGetAttachment(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetAttachment(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetAttachmentContent(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentContentParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetAttachmentContent(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentDownloadUrlParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetAttachmentDownloadURL(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminListConversations(c *gin.Context, _ generatedadmin.AdminListConversationsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminSearchConversations(c *gin.Context, _ generatedadmin.AdminSearchConversationsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminSearchConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, _ openapi_types.UUID) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsWrite) {
 		return
 	}
 	routeadmin.HandleAdminUpdateConversation(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetConversationParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetConversation(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetEntriesParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetEntries(c, p.store)
 }
 func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListForksParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListForks(c, p.store)
 }
 func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListChildConversationsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMembershipsParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetMemberships(c, p.store)
 }
 func (p *proxyAdminServer) AdminEvict(c *gin.Context, _ generatedadmin.AdminEvictParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminMaintenanceWrite) {
 		return
 	}
 	routeadmin.HandleAdminEvict(c, p.store, p.eventBus)
 }
 func (p *proxyAdminServer) GetCacheHitRate(c *gin.Context, _ generatedadmin.GetCacheHitRateParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsCacheHitRate(c, p.cfg)
 }
 func (p *proxyAdminServer) GetDbPoolUtilization(c *gin.Context, _ generatedadmin.GetDbPoolUtilizationParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsDbPoolUtilization(c, p.cfg)
 }
 func (p *proxyAdminServer) GetErrorRate(c *gin.Context, _ generatedadmin.GetErrorRateParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsErrorRate(c, p.cfg)
 }
 func (p *proxyAdminServer) GetLatencyP95(c *gin.Context, _ generatedadmin.GetLatencyP95Params) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsLatencyP95(c, p.cfg)
 }
 func (p *proxyAdminServer) GetRequestRate(c *gin.Context, _ generatedadmin.GetRequestRateParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsRequestRate(c, p.cfg)
 }
 func (p *proxyAdminServer) GetStatsSummary(c *gin.Context) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsSummary(c, p.store, p.episodicStore, p.cfg)
 }
 func (p *proxyAdminServer) GetStoreLatencyP95(c *gin.Context, _ generatedadmin.GetStoreLatencyP95Params) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsStoreLatencyP95(c, p.cfg)
 }
 func (p *proxyAdminServer) GetStoreThroughput(c *gin.Context, _ generatedadmin.GetStoreThroughputParams) {
-	if !p.authorize(c) {
+	if !p.authorize(c, security.PermissionAdminStatsRead) {
 		return
 	}
 	routeadmin.HandleAdminStatsStoreThroughput(c, p.cfg)

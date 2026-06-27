@@ -107,6 +107,7 @@ services:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent

@@ -15,6 +15,7 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
+	"github.com/chirino/memory-service/internal/security"
 	"github.com/gin-gonic/gin"
 	"github.com/urfave/cli/v3"
 
@@ -535,7 +536,7 @@ func embeddingFlags(cfg *config.Config) []cli.Flag {
 }
 
 func authorizationFlags(cfg *config.Config) []cli.Flag {
-	return []cli.Flag{
+	flags := []cli.Flag{
 		&cli.StringFlag{
 			Name:        "oidc-issuer",
 			Category:    "Authorization:",
@@ -622,7 +623,38 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.IndexerClients,
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
+		&cli.StringFlag{
+			Name:        "oidc-allowed-clients",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS"),
+			Destination: &cfg.OIDCAllowedClients,
+			Usage:       "Comma-separated OIDC client IDs allowed to call memory-service",
+		},
+		&cli.StringFlag{
+			Name:        "oidc-allowed-audiences",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"),
+			Destination: &cfg.OIDCAllowedAudiences,
+			Usage:       "Optional comma-separated OIDC audiences accepted by memory-service; empty disables audience checks",
+		},
 	}
+	for _, desc := range security.PermissionDescriptors() {
+		desc := desc
+		flags = append(flags, &cli.StringFlag{
+			Name:     desc.FlagName,
+			Category: "Authorization:",
+			Sources:  cli.EnvVars(desc.EnvVar),
+			Usage:    desc.Usage,
+			Action: func(_ context.Context, _ *cli.Command, value string) error {
+				if cfg.OIDCScopes == nil {
+					cfg.OIDCScopes = map[string]string{}
+				}
+				cfg.OIDCScopes[string(desc.Permission)] = value
+				return nil
+			},
+		})
+	}
+	return flags
 }
 
 func episodicFlags(cfg *config.Config) []cli.Flag {

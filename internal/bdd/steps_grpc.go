@@ -32,6 +32,7 @@ func init() {
 	cucumber.StepModules = append(cucumber.StepModules, func(ctx *godog.ScenarioContext, s *cucumber.TestScenario) {
 		g := &grpcSteps{s: s}
 
+		ctx.Step(`^I use gRPC metadata:$`, g.iUseGRPCMetadata)
 		ctx.Step(`^I send gRPC request "([^"]*)" with body:$`, g.iSendGRPCRequestWithBody)
 		ctx.Step(`^the gRPC response should not have an error$`, g.theGRPCResponseShouldNotHaveAnError)
 		ctx.Step(`^the gRPC response should have status "([^"]*)"$`, g.theGRPCResponseShouldHaveStatus)
@@ -69,6 +70,11 @@ func init() {
 	})
 }
 
+// grpcMetadataOverride stores per-scenario raw gRPC metadata pairs, set by the
+// "I use gRPC metadata:" step. When non-nil, authCtx() uses these verbatim instead
+// of deriving metadata from the session.
+const grpcMetadataOverrideKey = "grpcMetadataOverride"
+
 type grpcSteps struct {
 	s            *cucumber.TestScenario
 	grpcResp     map[string]any // last gRPC response as JSON-like map
@@ -93,20 +99,49 @@ func (g *grpcSteps) conn() (*grpc.ClientConn, error) {
 	return grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 }
 
+// iUseGRPCMetadata sets raw gRPC metadata pairs for the scenario from a Gherkin table.
+// When set, authCtx() uses these verbatim and ignores the session bearer/client-ID state.
+// This lets scenarios test exact gRPC header combinations (e.g. non-Bearer + valid API key).
+func (g *grpcSteps) iUseGRPCMetadata(table *godog.Table) error {
+	if len(table.Rows) < 1 {
+		return nil
+	}
+	var pairs []string
+	for _, row := range table.Rows {
+		if len(row.Cells) != 2 {
+			return fmt.Errorf("gRPC metadata table must have exactly 2 columns (key, value), got %d", len(row.Cells))
+		}
+		pairs = append(pairs, strings.ToLower(row.Cells[0].Value), row.Cells[1].Value)
+	}
+	g.s.Extra[grpcMetadataOverrideKey] = pairs
+	return nil
+}
+
 func (g *grpcSteps) authCtx() context.Context {
-	session := g.s.Session()
 	ctx := context.Background()
-	pairs := []string{}
+
+	// If raw gRPC metadata override is set, use it verbatim.
+	if raw, ok := g.s.Extra[grpcMetadataOverrideKey]; ok {
+		if pairs, ok := raw.([]string); ok && len(pairs) > 0 {
+			return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...))
+		}
+	}
+
+	session := g.s.Session()
+	var pairs []string
 	if session.TestUser != nil && session.TestUser.Subject != "" {
 		pairs = append(pairs, "authorization", "Bearer "+session.TestUser.Subject)
 	}
-	// Forward X-Client-ID if set on session headers
+	// Forward X-Client-ID if set on session headers.
 	if clientID := session.Header.Get("X-Client-ID"); clientID != "" {
 		pairs = append(pairs, "x-client-id", clientID)
 	}
+	// Forward X-API-Key if set on session headers (for API-key-only gRPC access).
+	if apiKey := session.Header.Get("X-API-Key"); apiKey != "" {
+		pairs = append(pairs, "x-api-key", apiKey)
+	}
 	if len(pairs) > 0 {
-		md := metadata.Pairs(pairs...)
-		ctx = metadata.NewOutgoingContext(ctx, md)
+		return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...))
 	}
 	return ctx
 }

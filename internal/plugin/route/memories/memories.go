@@ -35,8 +35,7 @@ func MountRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, policy *ep
 	if store == nil {
 		return
 	}
-	clientID := security.ClientIDMiddleware()
-	g := r.Group("/v1", auth, clientID)
+	g := r.Group("/v1", auth)
 	g.PUT("/memories", func(c *gin.Context) { putMemory(c, store, policy, cfg) })
 	g.GET("/memories", func(c *gin.Context) { getMemory(c, store, policy, cfg) })
 	g.PATCH("/memories", func(c *gin.Context) { updateMemory(c, store, policy, cfg) })

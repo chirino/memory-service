@@ -32,6 +32,8 @@ func (m *MockServer) IssueToken(username string) (string, error) {
 		"sub":                username,
 		"preferred_username": username,
 		"iss":                m.server.URL,
+		"azp":                "memory-service-client",
+		"aud":                []string{"memory-service"},
 		"iat":                now.Unix(),
 		"exp":                now.Add(1 * time.Hour).Unix(),
 	}))

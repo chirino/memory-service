@@ -35,9 +35,7 @@ func init() {
 // MountRoutes mounts conversation routes on the given router group.
 // Called after store initialization so the store is available.
 func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Config, auth gin.HandlerFunc, resumer *internalresumer.Store, resumerEnabled bool) {
-	clientID := security.ClientIDMiddleware()
-
-	g := r.Group("/v1", auth, clientID)
+	g := r.Group("/v1", auth)
 
 	g.GET("/conversations", func(c *gin.Context) {
 		listConversations(c, store)

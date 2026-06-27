@@ -16,6 +16,13 @@ var serialFeatureFiles = map[string]bool{
 	"task-queue.feature":             true,
 }
 
+// authModeFeatureFiles is the set of feature files that require dedicated auth-mode runners
+// and should not be picked up by general BDD runners.
+var authModeFeatureFiles = map[string]bool{
+	"auth-api-keys-rest.feature": true,
+	"auth-api-keys-grpc.feature": true,
+}
+
 func isSerialFeature(path string) bool {
 	base := filepath.Base(path)
 	if idx := strings.Index(base, ":"); idx >= 0 {
@@ -68,6 +75,9 @@ func collectRESTFeatureFiles(t *testing.T, resourcesDir string, skip map[string]
 		}
 		base := filepath.Base(featurePath)
 		if strings.Contains(base, "-grpc") {
+			continue
+		}
+		if authModeFeatureFiles[base] {
 			continue
 		}
 		if skip != nil && skip[base] {

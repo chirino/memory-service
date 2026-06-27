@@ -118,11 +118,13 @@ With this configuration, attachment bytes are stored under `/data/memory-service
 
 ### Authentication
 
-| Variable                                       | Description                                                                                                       | Default |
-| ---------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ------- |
-| `MEMORY_SERVICE_OIDC_ISSUER`                   | OIDC issuer URL                                                                                                   | -       |
-| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; use only with self-signed development issuers | `false` |
-| `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                        | -       |
+| Variable                                       | Description                                                                                                                 | Default |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------- |
+| `MEMORY_SERVICE_OIDC_ISSUER`                   | OIDC issuer URL                                                                                                             | -       |
+| `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS`          | Optional comma-separated OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer | -       |
+| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Optional comma-separated OIDC audiences accepted by Memory Service; empty disables audience checks                          | -       |
+| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; use only with self-signed development issuers           | `false` |
+| `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                                  | -       |
 
 ## Health Checks
 

@@ -99,6 +99,7 @@ func TestSiteDocs(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting // allows X-Client-ID header in BDD tests
 	cfg.OIDCIssuer = mock.URL()   // enables JWT validation using mock JWKS
+	cfg.OIDCAllowedClients = "memory-service-client"
 	cfg.DBURL = dbURL
 	// API key used by all checkpoint frameworks (Quarkus/Spring/Python) to authenticate
 	// as agent clients. Required for memory-channel access (clientID must be non-empty).
@@ -128,6 +129,7 @@ func TestSiteDocs(t *testing.T) {
 	udsCfg := config.DefaultConfig()
 	udsCfg.Mode = config.ModeTesting
 	udsCfg.OIDCIssuer = mock.URL()
+	udsCfg.OIDCAllowedClients = "memory-service-client"
 	udsCfg.DBURL = "file:" + filepath.Join(udsRoot, "memory-service.db")
 	udsCfg.DatastoreType = "sqlite"
 	udsCfg.CacheType = "local"

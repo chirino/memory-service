@@ -14,9 +14,9 @@ import (
 )
 
 const (
-	embeddedClientID    = "embedded-mcp"
-	embeddedAPIKey      = "embedded-mcp-api-key"
-	embeddedBearerToken = "embedded-mcp-user"
+	embeddedClientID      = "embedded-mcp"
+	embeddedAPIKey        = "embedded-mcp-api-key"
+	defaultEmbeddedUserID = "embedded-mcp-user"
 )
 
 type mcpServer struct {
@@ -63,13 +63,18 @@ func EmbeddedCommand() *cli.Command {
 	return &cli.Command{
 		Name:  "embedded",
 		Usage: "Run the MCP server with an embedded memory-service instance",
-		Flags: serve.EmbeddedFlags(&cfg, flagState),
+		Flags: append(serve.EmbeddedFlags(&cfg, flagState), embeddedExtraFlags()...),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			if err := serve.ApplyParsedFlags(&cfg, cmd, flagState, false); err != nil {
 				return err
 			}
 			if cfg.DBURL == "" {
 				return fmt.Errorf("required flag \"db-url\" not set")
+			}
+
+			userID := cmd.String("user-id")
+			if userID == "" {
+				userID = defaultEmbeddedUserID
 			}
 
 			runCtx, cancel := context.WithCancel(config.WithContext(ctx, &cfg))
@@ -82,7 +87,13 @@ func EmbeddedCommand() *cli.Command {
 				return err
 			}
 
-			client, err := newInProcessClient(srv.Router)
+			// Wire the embedded MCP synthetic identity into the resolver.
+			// This must happen after BuildServer so the resolver exists.
+			if r := serve.GetTokenResolver(srv); r != nil {
+				r.ConfigureEmbeddedMCP(userID, embeddedClientID)
+			}
+
+			client, err := newInProcessClient(srv.Router, userID)
 			if err != nil {
 				cancel()
 				return err
@@ -97,6 +108,16 @@ func EmbeddedCommand() *cli.Command {
 				err = shutdownErr
 			}
 			return err
+		},
+	}
+}
+
+func embeddedExtraFlags() []cli.Flag {
+	return []cli.Flag{
+		&cli.StringFlag{
+			Name:    "user-id",
+			Sources: cli.EnvVars("MEMORY_SERVICE_MCP_EMBEDDED_USER_ID"),
+			Usage:   "User identity for the embedded MCP instance (default: " + defaultEmbeddedUserID + ")",
 		},
 	}
 }
@@ -156,10 +177,17 @@ func ensureEmbeddedAuth(cfg *config.Config) {
 		cfg.APIKeys = map[string]string{}
 	}
 	cfg.APIKeys[embeddedAPIKey] = embeddedClientID
+	// Embedded MCP client has admin role so it can call admin-level APIs if needed.
+	if cfg.AdminClients == "" {
+		cfg.AdminClients = embeddedClientID
+	}
 }
 
 func defaultEmbeddedConfig() config.Config {
 	cfg := config.DefaultConfig()
+	// Embedded MCP runs in production mode: raw bearer users are rejected.
+	// The synthetic in-process identity is supplied via CredentialEmbeddedMCP, not raw bearer.
+	cfg.Mode = config.ModeProd
 	cfg.DatastoreType = "sqlite"
 	cfg.CacheType = "local"
 	cfg.AttachType = "fs"

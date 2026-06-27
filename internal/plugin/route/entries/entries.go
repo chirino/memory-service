@@ -22,9 +22,7 @@ import (
 
 // MountRoutes mounts entry routes.
 func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.HandlerFunc) {
-	clientID := security.ClientIDMiddleware()
-
-	g := r.Group("/v1", auth, clientID)
+	g := r.Group("/v1", auth)
 
 	g.GET("/conversations/:conversationId/entries", func(c *gin.Context) {
 		listEntries(c, store)
