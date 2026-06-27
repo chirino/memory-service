@@ -789,11 +789,11 @@ Roles can be assigned through three complementary mechanisms:
 
 Map OIDC token roles to internal Memory Service roles.
 
-| Flag                                                                               | Default   | Description                                                                                      |
-| ---------------------------------------------------------------------------------- | --------- | ------------------------------------------------------------------------------------------------ |
-| <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" />       | `admin`   | OIDC role name that maps to `admin`                                                              |
-| <Cfg p="--roles-auditor-oidc-role" e="MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE" />   | `auditor` | OIDC role name that maps to `auditor`                                                            |
-| <Cfg p="--roles-indexer-oidc-role" e="MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE" />   | _(none)_  | OIDC role name that maps to `indexer`                                                            |
+| Flag                                                                             | Default   | Description                           |
+| -------------------------------------------------------------------------------- | --------- | ------------------------------------- |
+| <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" />     | `admin`   | OIDC role name that maps to `admin`   |
+| <Cfg p="--roles-auditor-oidc-role" e="MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE" /> | `auditor` | OIDC role name that maps to `auditor` |
+| <Cfg p="--roles-indexer-oidc-role" e="MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE" /> | _(none)_  | OIDC role name that maps to `indexer` |
 
 <ConfigBlock property={`# Map OIDC "administrator" role to internal "admin" role
 --roles-admin-oidc-role=administrator
@@ -814,77 +814,81 @@ Each mapping is a comma-separated list of token `scope` values. Empty means that
 
 Coarse keys gate broad API families:
 
-| Permission key | Config property | Use when |
-| --- | --- | --- |
-| `user` | <Cfg p="--oidc-scopes-user" e="MEMORY_SERVICE_OIDC_SCOPES_USER" /> | One OIDC scope should allow all normal user API reads and writes after normal user authorization passes. |
-| `user_read` | <Cfg p="--oidc-scopes-user-read" e="MEMORY_SERVICE_OIDC_SCOPES_USER_READ" /> | One OIDC scope should allow all normal user API reads, but writes need a separate scope. |
-| `user_write` | <Cfg p="--oidc-scopes-user-write" e="MEMORY_SERVICE_OIDC_SCOPES_USER_WRITE" /> | One OIDC scope should allow all normal user API writes, but reads need a separate scope. |
-| `admin` | <Cfg p="--oidc-scopes-admin" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN" /> | One OIDC scope should allow all admin API reads and writes after normal admin/auditor/indexer authorization passes. |
-| `admin_read` | <Cfg p="--oidc-scopes-admin-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_READ" /> | One OIDC scope should allow all admin API reads, but writes need a separate scope. |
-| `admin_write` | <Cfg p="--oidc-scopes-admin-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_WRITE" /> | One OIDC scope should allow all admin API writes, but reads need a separate scope. |
+| Permission key | Config property                                                                  | Use when                                                                                                            |
+| -------------- | -------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------- |
+| `user`         | <Cfg p="--oidc-scopes-user" e="MEMORY_SERVICE_OIDC_SCOPES_USER" />               | One OIDC scope should allow all normal user API reads and writes after normal user authorization passes.            |
+| `user_read`    | <Cfg p="--oidc-scopes-user-read" e="MEMORY_SERVICE_OIDC_SCOPES_USER_READ" />     | One OIDC scope should allow all normal user API reads, but writes need a separate scope.                            |
+| `user_write`   | <Cfg p="--oidc-scopes-user-write" e="MEMORY_SERVICE_OIDC_SCOPES_USER_WRITE" />   | One OIDC scope should allow all normal user API writes, but reads need a separate scope.                            |
+| `admin`        | <Cfg p="--oidc-scopes-admin" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN" />             | One OIDC scope should allow all admin API reads and writes after normal admin/auditor/indexer authorization passes. |
+| `admin_read`   | <Cfg p="--oidc-scopes-admin-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_READ" />   | One OIDC scope should allow all admin API reads, but writes need a separate scope.                                  |
+| `admin_write`  | <Cfg p="--oidc-scopes-admin-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_WRITE" /> | One OIDC scope should allow all admin API writes, but reads need a separate scope.                                  |
 
 Resource aggregate keys are more granular than `user`/`admin`, but still cover both read and write for a resource family:
 
-| Permission key | Config property | Use when |
-| --- | --- | --- |
-| `conversations` | <Cfg p="--oidc-scopes-conversations" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS" /> | One scope should cover user conversation, entry, fork, child, and response-cancellation reads and writes. |
-| `sharing` | <Cfg p="--oidc-scopes-sharing" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING" /> | One scope should cover membership and ownership-transfer reads and writes. |
-| `search` | <Cfg p="--oidc-scopes-search" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH" /> | One scope should cover search/list-unindexed reads and indexing writes. |
-| `memories` | <Cfg p="--oidc-scopes-memories" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES" /> | One scope should cover user memory reads and writes. |
-| `attachments` | <Cfg p="--oidc-scopes-attachments" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS" /> | One scope should cover user attachment reads and writes. |
-| `recordings` | <Cfg p="--oidc-scopes-recordings" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS" /> | One scope should cover gRPC response-recording reads and writes. |
-| `admin_conversations` | <Cfg p="--oidc-scopes-admin-conversations" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS" /> | One scope should cover admin conversation and entry reads and writes. |
-| `admin_memories` | <Cfg p="--oidc-scopes-admin-memories" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES" /> | One scope should cover admin memory, policy, usage, and index APIs. |
-| `admin_attachments` | <Cfg p="--oidc-scopes-admin-attachments" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS" /> | One scope should cover admin attachment reads and writes. |
-| `admin_checkpoints` | <Cfg p="--oidc-scopes-admin-checkpoints" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS" /> | One scope should cover admin checkpoint reads and writes. |
+| Permission key        | Config property                                                                                  | Use when                                                                                                  |
+| --------------------- | ------------------------------------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------- |
+| `conversations`       | <Cfg p="--oidc-scopes-conversations" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS" />             | One scope should cover user conversation, entry, fork, child, and response-cancellation reads and writes. |
+| `sharing`             | <Cfg p="--oidc-scopes-sharing" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING" />                         | One scope should cover membership and ownership-transfer reads and writes.                                |
+| `search`              | <Cfg p="--oidc-scopes-search" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH" />                           | One scope should cover search/list-unindexed reads and indexing writes.                                   |
+| `memories`            | <Cfg p="--oidc-scopes-memories" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES" />                       | One scope should cover user memory reads and writes.                                                      |
+| `attachments`         | <Cfg p="--oidc-scopes-attachments" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS" />                 | One scope should cover user attachment reads and writes.                                                  |
+| `recordings`          | <Cfg p="--oidc-scopes-recordings" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS" />                   | One scope should cover gRPC response-recording reads and writes.                                          |
+| `admin_conversations` | <Cfg p="--oidc-scopes-admin-conversations" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS" /> | One scope should cover admin conversation and entry reads and writes.                                     |
+| `admin_memories`      | <Cfg p="--oidc-scopes-admin-memories" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES" />           | One scope should cover admin memory, policy, usage, and index APIs.                                       |
+| `admin_attachments`   | <Cfg p="--oidc-scopes-admin-attachments" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS" />     | One scope should cover admin attachment reads and writes.                                                 |
+| `admin_checkpoints`   | <Cfg p="--oidc-scopes-admin-checkpoints" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS" />     | One scope should cover admin checkpoint reads and writes.                                                 |
 
 Read/write-specific keys are the most granular option:
 
-| Permission key | Config property | Use when |
-| --- | --- | --- |
-| `system_read` | <Cfg p="--oidc-scopes-system-read" e="MEMORY_SERVICE_OIDC_SCOPES_SYSTEM_READ" /> | Capabilities and authenticated system reads need their own scope. Existing public health endpoints remain public. |
-| `conversations_read` | <Cfg p="--oidc-scopes-conversations-read" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_READ" /> | Conversation, entry, fork, and child reads need a separate scope. |
-| `conversations_write` | <Cfg p="--oidc-scopes-conversations-write" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_WRITE" /> | Conversation, entry, sync, and response-cancellation writes need a separate scope. |
-| `sharing_read` | <Cfg p="--oidc-scopes-sharing-read" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING_READ" /> | Membership and ownership-transfer reads need a separate scope. |
-| `sharing_write` | <Cfg p="--oidc-scopes-sharing-write" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING_WRITE" /> | Membership and ownership-transfer writes need a separate scope. |
-| `search_read` | <Cfg p="--oidc-scopes-search-read" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH_READ" /> | Search and list-unindexed reads need a separate scope. |
-| `search_write` | <Cfg p="--oidc-scopes-search-write" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH_WRITE" /> | Indexing writes need a separate scope. |
-| `memories_read` | <Cfg p="--oidc-scopes-memories-read" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_READ" /> | User memory reads need a separate scope. |
-| `memories_write` | <Cfg p="--oidc-scopes-memories-write" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_WRITE" /> | User memory writes need a separate scope. |
-| `attachments_read` | <Cfg p="--oidc-scopes-attachments-read" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_READ" /> | User attachment reads need a separate scope. |
-| `attachments_write` | <Cfg p="--oidc-scopes-attachments-write" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_WRITE" /> | User attachment writes need a separate scope. |
-| `events_read` | <Cfg p="--oidc-scopes-events-read" e="MEMORY_SERVICE_OIDC_SCOPES_EVENTS_READ" /> | User event streams need their own scope. |
-| `recordings_read` | <Cfg p="--oidc-scopes-recordings-read" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_READ" /> | gRPC response-recording reads need a separate scope. |
-| `recordings_write` | <Cfg p="--oidc-scopes-recordings-write" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_WRITE" /> | gRPC response-recording writes need a separate scope. |
-| `admin_conversations_read` | <Cfg p="--oidc-scopes-admin-conversations-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_READ" /> | Admin conversation and entry reads need a separate scope. |
-| `admin_conversations_write` | <Cfg p="--oidc-scopes-admin-conversations-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_WRITE" /> | Admin conversation writes need a separate scope. |
-| `admin_memories_read` | <Cfg p="--oidc-scopes-admin-memories-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_READ" /> | Admin memory, policy, usage, and index reads need a separate scope. |
-| `admin_memories_write` | <Cfg p="--oidc-scopes-admin-memories-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_WRITE" /> | Admin memory, policy, and indexing writes need a separate scope. |
-| `admin_attachments_read` | <Cfg p="--oidc-scopes-admin-attachments-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_READ" /> | Admin attachment reads need a separate scope. |
-| `admin_attachments_write` | <Cfg p="--oidc-scopes-admin-attachments-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_WRITE" /> | Admin attachment writes need a separate scope. |
-| `admin_events_read` | <Cfg p="--oidc-scopes-admin-events-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_EVENTS_READ" /> | Admin event streams need their own scope. |
-| `admin_checkpoints_read` | <Cfg p="--oidc-scopes-admin-checkpoints-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_READ" /> | Admin checkpoint reads need a separate scope. |
-| `admin_checkpoints_write` | <Cfg p="--oidc-scopes-admin-checkpoints-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_WRITE" /> | Admin checkpoint writes need a separate scope. |
-| `admin_stats_read` | <Cfg p="--oidc-scopes-admin-stats-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_STATS_READ" /> | Admin stats APIs need their own read scope. |
-| `admin_maintenance_write` | <Cfg p="--oidc-scopes-admin-maintenance-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MAINTENANCE_WRITE" /> | Admin eviction and maintenance APIs need their own write scope. |
+| Permission key              | Config property                                                                                              | Use when                                                                                                          |
+| --------------------------- | ------------------------------------------------------------------------------------------------------------ | ----------------------------------------------------------------------------------------------------------------- |
+| `system_read`               | <Cfg p="--oidc-scopes-system-read" e="MEMORY_SERVICE_OIDC_SCOPES_SYSTEM_READ" />                             | Capabilities and authenticated system reads need their own scope. Existing public health endpoints remain public. |
+| `conversations_read`        | <Cfg p="--oidc-scopes-conversations-read" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_READ" />               | Conversation, entry, fork, and child reads need a separate scope.                                                 |
+| `conversations_write`       | <Cfg p="--oidc-scopes-conversations-write" e="MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_WRITE" />             | Conversation, entry, sync, and response-cancellation writes need a separate scope.                                |
+| `sharing_read`              | <Cfg p="--oidc-scopes-sharing-read" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING_READ" />                           | Membership and ownership-transfer reads need a separate scope.                                                    |
+| `sharing_write`             | <Cfg p="--oidc-scopes-sharing-write" e="MEMORY_SERVICE_OIDC_SCOPES_SHARING_WRITE" />                         | Membership and ownership-transfer writes need a separate scope.                                                   |
+| `search_read`               | <Cfg p="--oidc-scopes-search-read" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH_READ" />                             | Search and list-unindexed reads need a separate scope.                                                            |
+| `search_write`              | <Cfg p="--oidc-scopes-search-write" e="MEMORY_SERVICE_OIDC_SCOPES_SEARCH_WRITE" />                           | Indexing writes need a separate scope.                                                                            |
+| `memories_read`             | <Cfg p="--oidc-scopes-memories-read" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_READ" />                         | User memory reads need a separate scope.                                                                          |
+| `memories_write`            | <Cfg p="--oidc-scopes-memories-write" e="MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_WRITE" />                       | User memory writes need a separate scope.                                                                         |
+| `attachments_read`          | <Cfg p="--oidc-scopes-attachments-read" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_READ" />                   | User attachment reads need a separate scope.                                                                      |
+| `attachments_write`         | <Cfg p="--oidc-scopes-attachments-write" e="MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_WRITE" />                 | User attachment writes need a separate scope.                                                                     |
+| `events_read`               | <Cfg p="--oidc-scopes-events-read" e="MEMORY_SERVICE_OIDC_SCOPES_EVENTS_READ" />                             | User event streams need their own scope.                                                                          |
+| `recordings_read`           | <Cfg p="--oidc-scopes-recordings-read" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_READ" />                     | gRPC response-recording reads need a separate scope.                                                              |
+| `recordings_write`          | <Cfg p="--oidc-scopes-recordings-write" e="MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_WRITE" />                   | gRPC response-recording writes need a separate scope.                                                             |
+| `admin_conversations_read`  | <Cfg p="--oidc-scopes-admin-conversations-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_READ" />   | Admin conversation and entry reads need a separate scope.                                                         |
+| `admin_conversations_write` | <Cfg p="--oidc-scopes-admin-conversations-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_WRITE" /> | Admin conversation writes need a separate scope.                                                                  |
+| `admin_memories_read`       | <Cfg p="--oidc-scopes-admin-memories-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_READ" />             | Admin memory, policy, usage, and index reads need a separate scope.                                               |
+| `admin_memories_write`      | <Cfg p="--oidc-scopes-admin-memories-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_WRITE" />           | Admin memory, policy, and indexing writes need a separate scope.                                                  |
+| `admin_attachments_read`    | <Cfg p="--oidc-scopes-admin-attachments-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_READ" />       | Admin attachment reads need a separate scope.                                                                     |
+| `admin_attachments_write`   | <Cfg p="--oidc-scopes-admin-attachments-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_WRITE" />     | Admin attachment writes need a separate scope.                                                                    |
+| `admin_events_read`         | <Cfg p="--oidc-scopes-admin-events-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_EVENTS_READ" />                 | Admin event streams need their own scope.                                                                         |
+| `admin_checkpoints_read`    | <Cfg p="--oidc-scopes-admin-checkpoints-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_READ" />       | Admin checkpoint reads need a separate scope.                                                                     |
+| `admin_checkpoints_write`   | <Cfg p="--oidc-scopes-admin-checkpoints-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_WRITE" />     | Admin checkpoint writes need a separate scope.                                                                    |
+| `admin_stats_read`          | <Cfg p="--oidc-scopes-admin-stats-read" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_STATS_READ" />                   | Admin stats APIs need their own read scope.                                                                       |
+| `admin_maintenance_write`   | <Cfg p="--oidc-scopes-admin-maintenance-write" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MAINTENANCE_WRITE" />     | Admin eviction and maintenance APIs need their own write scope.                                                   |
 
 <ConfigBlock property={`# Aggregate scope accepted for conversation reads and writes.
 --oidc-scopes-conversations=memory-service:conversations
 
 # Separate read/write scopes.
+
 --oidc-scopes-memories-read=memory-service:memories:read
 --oidc-scopes-memories-write=memory-service:memories:write
 
 # Admin API scopes still require normal admin/auditor/indexer role authorization.
+
 --oidc-scopes-admin=memory-service:admin`}
   env={`# Aggregate scope accepted for conversation reads and writes.
 MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS=memory-service:conversations
 
 # Separate read/write scopes.
+
 MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_READ=memory-service:memories:read
 MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_WRITE=memory-service:memories:write
 
 # Admin API scopes still require normal admin/auditor/indexer role authorization.
+
 MEMORY_SERVICE_OIDC_SCOPES_ADMIN=memory-service:admin`} />
 
 #### User-Based Assignment
