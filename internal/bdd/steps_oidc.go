@@ -15,10 +15,17 @@ type oidcTokenProvider interface {
 	EnsureUser(ctx context.Context, username, password string, realmRoles []string) error
 }
 
+// oidcTokenProviderWithScopes is an optional extension of oidcTokenProvider that supports
+// requesting a token with a specific set of scopes.
+type oidcTokenProviderWithScopes interface {
+	AccessTokenWithScopes(ctx context.Context, username, password, scopes string) (string, error)
+}
+
 func init() {
 	cucumber.StepModules = append(cucumber.StepModules, func(ctx *godog.ScenarioContext, s *cucumber.TestScenario) {
 		o := &oidcAuthSteps{s: s}
 		ctx.Step(`^I login via OIDC as user "([^"]*)" with password "([^"]*)"$`, o.iLoginViaOIDCAsUserWithPassword)
+		ctx.Step(`^I login via OIDC as user "([^"]*)" with scopes "([^"]*)"$`, o.iLoginViaOIDCAsUserWithScopes)
 		ctx.Step(`^I attempt OIDC login as user "([^"]*)" with password "([^"]*)"$`, o.iAttemptOIDCLoginAsUserWithPassword)
 		ctx.Step(`^OIDC login should fail$`, o.oidcLoginShouldFail)
 	})
@@ -44,6 +51,39 @@ func (o *oidcAuthSteps) iLoginViaOIDCAsUserWithPassword(userID, password string)
 	token, err := provider.AccessToken(context.Background(), isolatedUserID, password)
 	if err != nil {
 		return fmt.Errorf("OIDC login failed for user %q: %w", userID, err)
+	}
+
+	o.lastLoginErr = nil
+	o.setUserToken(userID, token)
+	session := o.s.Session()
+	session.Header.Del("Authorization")
+	session.Header.Del("X-Client-ID")
+	return nil
+}
+
+// iLoginViaOIDCAsUserWithScopes logs in via OIDC with a specific set of space-separated scopes.
+// The user's password is assumed to equal their username (as set by EnsureUser).
+// Scopes are passed directly to the token endpoint; the provider must support
+// AccessTokenWithScopes (the Keycloak test server does).
+func (o *oidcAuthSteps) iLoginViaOIDCAsUserWithScopes(userID, scopes string) error {
+	provider, err := o.provider()
+	if err != nil {
+		return err
+	}
+	scopedProvider, ok := provider.(oidcTokenProviderWithScopes)
+	if !ok {
+		return fmt.Errorf("OIDC token provider does not support AccessTokenWithScopes; got %T", provider)
+	}
+
+	o.s.RegisterCanonicalUsers(userID)
+	isolatedUserID := o.s.IsolatedUser(userID)
+	if err := provider.EnsureUser(context.Background(), isolatedUserID, userID, oidcRealmRoles(userID)); err != nil {
+		return fmt.Errorf("OIDC provision failed for user %q: %w", isolatedUserID, err)
+	}
+
+	token, err := scopedProvider.AccessTokenWithScopes(context.Background(), isolatedUserID, userID, scopes)
+	if err != nil {
+		return fmt.Errorf("OIDC scoped login failed for user %q scopes %q: %w", userID, scopes, err)
 	}
 
 	o.lastLoginErr = nil

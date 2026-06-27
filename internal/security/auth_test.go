@@ -26,10 +26,13 @@ func TestNewTokenResolverOIDCSelfSignedIssuerRequiresExplicitTLSBypass(t *testin
 	cfg.OIDCIssuer = "https://example.invalid"
 	cfg.OIDCDiscoveryURL = server.URL
 
-	resolver := NewTokenResolver(&cfg)
-	require.Nil(t, resolver.verifier)
+	resolver, err := NewTokenResolver(&cfg)
+	require.Error(t, err) // discovery must fail since the TLS cert is self-signed
 
 	cfg.OIDCTLSSkipCertificateVerify = true
-	resolver = NewTokenResolver(&cfg)
+	resolver, err = NewTokenResolver(&cfg)
+	require.NoError(t, err)
 	require.NotNil(t, resolver.verifier)
+	require.Empty(t, resolver.allowedClients)
+	require.Empty(t, resolver.allowedAudience)
 }

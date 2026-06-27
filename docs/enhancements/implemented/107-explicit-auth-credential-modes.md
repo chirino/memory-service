@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 107: OIDC Client and API Key Authentication
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
@@ -45,21 +45,19 @@ In that model, `Authorization` supplies the user principal and `X-API-Key` suppl
 
 ### Configuration Model
 
-Do not add an auth mode flag or per-credential compatibility toggles. Add one OIDC client allowlist and otherwise use the existing configuration as the source of truth:
+Do not add an auth mode flag or per-credential compatibility toggles. Add optional OIDC client and audience filters and otherwise use the existing configuration as the source of truth:
 
 | Config | Value shape | Required | Meaning |
 | --- | --- | --- | --- |
 | `MEMORY_SERVICE_OIDC_ISSUER` / `cfg.OIDCIssuer` | Single issuer URL, for example `https://idp.example.com/realms/memory-service`. | Required for OIDC deployments. | Enables OIDC/JWT bearer validation. Token `iss` must match this issuer. |
 | `MEMORY_SERVICE_OIDC_DISCOVERY_URL` / `cfg.OIDCDiscoveryURL` | Single URL. Optional internal discovery URL when the issuer URL is not directly reachable from memory-service. | Optional. | Used only for OIDC discovery and JWKS fetches; token issuer validation still uses `OIDCIssuer`. |
-| `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS` / `cfg.OIDCAllowedClients` | Comma-separated OIDC client IDs, for example `memory-service-client,frontend,developer-frontend`. | Optional if `OIDCAllowedAudiences` is set; otherwise required when `OIDCIssuer` is set. | When non-empty, allows only tokens whose signed `azp` or `client_id` claim matches one listed client ID. Empty means no client allowlist check. |
-| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES` / `cfg.OIDCAllowedAudiences` | Comma-separated audience values, for example `memory-service,memory-service-api`. | Optional if `OIDCAllowedClients` is set; otherwise required when `OIDCIssuer` is set. | When non-empty, token `aud` must contain at least one listed value. Empty means no audience check. |
+| `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS` / `cfg.OIDCAllowedClients` | Comma-separated OIDC client IDs, for example `memory-service-client,frontend,developer-frontend`. | Optional. | When non-empty, allows only tokens whose signed `azp` or `client_id` claim matches one listed client ID. Empty means no client allowlist check. |
+| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES` / `cfg.OIDCAllowedAudiences` | Comma-separated audience values, for example `memory-service,memory-service-api`. | Optional. | When non-empty, token `aud` must contain at least one listed value. Empty means no audience check. |
 | `MEMORY_SERVICE_API_KEYS_<CLIENT_ID>` / `cfg.APIKeys` | One env var per client ID. Value is one API key or comma-separated API keys. Example: `MEMORY_SERVICE_API_KEYS_AGENT=key-1,key-2`. | Optional. | Maps each configured API key value to the client ID from the env var suffix. Used as service-principal auth for admin/operational APIs, or as paired client identity alongside a bearer user/JWT. |
 | `MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE` / `cfg.AdminOIDCRole` | Single token role/group value. Empty keeps the current effective default of `admin`. | Optional. | Grants admin role to resolved OIDC users when the signed token contains this value. Admin implies auditor and indexer. |
 | `MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE` / `cfg.AuditorOIDCRole` | Single token role/group value. Empty keeps the current effective default of `auditor`. | Optional. | Grants auditor role to resolved OIDC users when the signed token contains this value. |
 | `MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE` / `cfg.IndexerOIDCRole` | Single token role/group value. Empty disables token-claim indexer grants. | Optional. | Grants indexer role to resolved OIDC users when the signed token contains this value. |
-| `MEMORY_SERVICE_ROLES_ADMIN_OIDC_SCOPE` / `cfg.AdminOIDCScope` | Single token scope value, for example `memory-service:admin`. | Optional. | When set, admin actions using an OIDC token require this signed `scope` value in addition to a normal admin role grant. |
-| `MEMORY_SERVICE_ROLES_AUDITOR_OIDC_SCOPE` / `cfg.AuditorOIDCScope` | Single token scope value, for example `memory-service:auditor`. | Optional. | When set, auditor actions using an OIDC token require this signed `scope` value in addition to a normal auditor role grant. |
-| `MEMORY_SERVICE_ROLES_INDEXER_OIDC_SCOPE` / `cfg.IndexerOIDCScope` | Single token scope value, for example `memory-service:indexer`. | Optional. | When set, indexer actions using an OIDC token require this signed `scope` value in addition to a normal indexer role grant. |
+| `MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>` / `cfg.OIDCScopes` | One comma-separated scope list per fixed permission key, for example `MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_READ=memory-service:conversations:read`. | Optional. | Adds an OIDC-only resource/API scope gate after normal user, membership, role, and API-key authorization. Empty means no scope gate for that permission. |
 | `MEMORY_SERVICE_ROLES_ADMIN_USERS` / `cfg.AdminUsers` | Comma-separated user IDs. Existing wildcard suffix matching such as `alice-*` is supported by the current role matcher. | Optional. | Grants admin role to resolved users. Admin implies auditor and indexer. |
 | `MEMORY_SERVICE_ROLES_AUDITOR_USERS` / `cfg.AuditorUsers` | Comma-separated user IDs. | Optional. | Grants auditor role to resolved users. |
 | `MEMORY_SERVICE_ROLES_INDEXER_USERS` / `cfg.IndexerUsers` | Comma-separated user IDs. | Optional. | Grants indexer role to resolved users. |
@@ -73,9 +71,7 @@ Add these fields to `internal/config.Config`:
 // OIDC
 OIDCAllowedClients   string
 OIDCAllowedAudiences string
-AdminOIDCScope       string
-AuditorOIDCScope     string
-IndexerOIDCScope     string
+OIDCScopes           map[string]string
 ```
 
 Add these serve flags:
@@ -97,29 +93,11 @@ Add these serve flags:
     Usage:       "Optional comma-separated OIDC audiences accepted by memory-service; empty disables audience checks",
 }
 
-&cli.StringFlag{
-    Name:        "roles-admin-oidc-scope",
-    Category:    "Authorization:",
-    Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_ADMIN_OIDC_SCOPE"),
-    Destination: &cfg.AdminOIDCScope,
-    Usage:       "Optional OIDC scope required to exercise admin permissions",
-}
-
-&cli.StringFlag{
-    Name:        "roles-auditor-oidc-scope",
-    Category:    "Authorization:",
-    Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_AUDITOR_OIDC_SCOPE"),
-    Destination: &cfg.AuditorOIDCScope,
-    Usage:       "Optional OIDC scope required to exercise auditor permissions",
-}
-
-&cli.StringFlag{
-    Name:        "roles-indexer-oidc-scope",
-    Category:    "Authorization:",
-    Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_INDEXER_OIDC_SCOPE"),
-    Destination: &cfg.IndexerOIDCScope,
-    Usage:       "Optional OIDC scope required to exercise indexer permissions",
-}
+// The fixed permission descriptor table registers one explicit flag/env pair
+// for each supported resource/API scope key:
+//
+// --oidc-scopes-<permission-key-with-dashes>
+// MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>
 ```
 
 API keys continue to be declared as:
@@ -157,13 +135,13 @@ The only new behavior is resolver semantics:
 
 | Config state | Accepted credential families |
 | --- | --- |
-| `OIDCIssuer` set and API keys configured | OIDC JWTs that pass configured client/audience checks, optionally paired with API-key client identity, plus `X-API-Key`-only service-principal requests for admin/operational APIs. Non-JWT bearer values are still rejected while OIDC is enabled. |
-| `OIDCIssuer` set and no API keys configured | OIDC JWTs that pass configured client/audience checks only. |
+| `OIDCIssuer` set and API keys configured | OIDC JWTs that pass configured client/audience checks when those optional filters are set, optionally paired with API-key client identity, plus `X-API-Key`-only service-principal requests for admin/operational APIs. Non-JWT bearer values are still rejected while OIDC is enabled. |
+| `OIDCIssuer` set and no API keys configured | OIDC JWTs that pass configured client/audience checks when those optional filters are set. |
 | API keys configured and `OIDCIssuer` empty | API-key-only service-principal requests using `X-API-Key` or `Authorization: Bearer <api-key>`. No production raw bearer user assertions are accepted. |
 | neither configured and `Mode == testing` | existing raw bearer test fixture behavior only when the binary is built with the test-only `auth_testfixtures` build tag. |
 | neither configured in production | startup error. |
 
-If `OIDCIssuer` is configured but provider discovery fails, startup should fail instead of silently falling back to API-key/raw-bearer behavior. If `OIDCIssuer` is configured and both `OIDCAllowedClients` and `OIDCAllowedAudiences` are empty, startup should fail with a clear message. That makes Keycloak deployments fail closed while allowing either client allowlisting, audience enforcement, or both. When both are configured, both checks must pass.
+If `OIDCIssuer` is configured but provider discovery fails, startup should fail instead of silently falling back to API-key/raw-bearer behavior. `OIDCAllowedClients` and `OIDCAllowedAudiences` are optional defense-in-depth filters; when both are empty, memory-service accepts any valid token from the configured issuer and relies on normal endpoint/user/role authorization. When both are configured, both checks must pass.
 
 ### OIDC Client Identity
 
@@ -190,6 +168,7 @@ Common deployment options:
 
 | Option | Config | Pros | Cons |
 | --- | --- | --- | --- |
+| Issuer only | Configure `MEMORY_SERVICE_OIDC_ISSUER` without allowed clients or audiences. | Matches the pre-boundary relaxed behavior; simplest deployment when the issuer realm itself is trusted. | Any valid token from the configured issuer can reach memory-service endpoint authorization. |
 | Allowed clients only | `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=frontend,agent-app` | Simple to configure; works with ordinary Keycloak access tokens; no token exchange required for services that already receive user tokens from allowed clients. | Does not prove the token was minted specifically for memory-service; any accepted client token from the realm may be usable unless endpoint/user authorization blocks it. |
 | Allowed audiences only | `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service-api` | Strong resource-server boundary; proves the token was minted for memory-service or an accepted API audience; works well with service-to-service delegation. | Callers may need IdP/client configuration changes or token exchange/on-behalf-of flow to obtain a token with the memory-service audience. |
 | Allowed clients and audiences | Configure both settings. | Strongest boundary: caller must be an allowed client and present a token intended for memory-service. | Most operational setup; services commonly need token exchange unless the original token already includes the memory-service audience. |
@@ -200,9 +179,11 @@ Do not use Keycloak client attributes directly. Client attributes are Keycloak a
 
 Client attributes are only appropriate if Keycloak maps them into a signed token claim through a protocol mapper. At that point memory-service is validating a token claim, not querying Keycloak attributes directly. Even then, prefer the standard `azp`, `client_id`, and optional `aud` checks for the first implementation, and reserve custom claims for later policy work.
 
-### OIDC Scopes
+### OIDC Resource/API Scopes
 
-Scopes are useful for controlling what an allowed OIDC client can do, but they should be treated as signed token claims and used as a delegation gate for the existing memory-service roles. Do not add a separate endpoint permission matrix in this enhancement. Scope gates are optional: if `MEMORY_SERVICE_ROLES_ADMIN_OIDC_SCOPE`, `MEMORY_SERVICE_ROLES_AUDITOR_OIDC_SCOPE`, and `MEMORY_SERVICE_ROLES_INDEXER_OIDC_SCOPE` are unset, scopes do not restrict access by themselves and memory-service continues to rely on OIDC role grants, user role allowlists, client role allowlists, and normal endpoint authorization.
+Scopes are useful for controlling what an allowed OIDC client can do, but they are treated as signed token claims and used only as an additional delegation gate. They do not grant access by themselves. Normal user identity, conversation membership, admin/auditor/indexer roles, API-key client roles, and endpoint authorization must still pass first.
+
+Scope gates are optional. If the fixed `MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>` mappings are unset, scopes do not restrict access and memory-service continues to rely on OIDC role grants, user role allowlists, client role allowlists, API-key client roles, ownership, membership, and normal endpoint authorization.
 
 The current resolver already extracts role grant values from:
 
@@ -211,29 +192,91 @@ The current resolver already extracts role grant values from:
 - whitespace-separated `scope`
 - Keycloak `realm_access.roles`
 
-This enhancement should keep that role-grant behavior for `MEMORY_SERVICE_ROLES_*_OIDC_ROLE`. Add separate optional scope-gate extraction from the signed whitespace-separated `scope` claim:
+This enhancement keeps that role-grant behavior for `MEMORY_SERVICE_ROLES_*_OIDC_ROLE`. It also stores the signed whitespace-separated `scope` claim on the resolved identity and checks configured resource/API scopes at REST and gRPC endpoint boundaries.
+
+Implemented permission keys, flags, and environment variables are organized by increasing granularity. Operators should start with broad keys, then move to resource aggregate or read/write-specific keys only when they need tighter delegation boundaries.
+
+Coarse keys gate broad API families:
+
+| Key | Flag | Environment variable | Use when |
+| --- | --- | --- | --- |
+| `user` | `--oidc-scopes-user` | `MEMORY_SERVICE_OIDC_SCOPES_USER` | One OIDC scope should allow all normal user API reads and writes after normal user authorization passes. |
+| `user_read` | `--oidc-scopes-user-read` | `MEMORY_SERVICE_OIDC_SCOPES_USER_READ` | One OIDC scope should allow all normal user API reads, but writes need a separate scope. |
+| `user_write` | `--oidc-scopes-user-write` | `MEMORY_SERVICE_OIDC_SCOPES_USER_WRITE` | One OIDC scope should allow all normal user API writes, but reads need a separate scope. |
+| `admin` | `--oidc-scopes-admin` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN` | One OIDC scope should allow all admin API reads and writes after normal admin/auditor/indexer authorization passes. |
+| `admin_read` | `--oidc-scopes-admin-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_READ` | One OIDC scope should allow all admin API reads, but writes need a separate scope. |
+| `admin_write` | `--oidc-scopes-admin-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_WRITE` | One OIDC scope should allow all admin API writes, but reads need a separate scope. |
+
+Resource aggregate keys are more granular than `user`/`admin`, but still cover both read and write for a resource family:
+
+| Key | Flag | Environment variable | Use when |
+| --- | --- | --- | --- |
+| `conversations` | `--oidc-scopes-conversations` | `MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS` | One scope should cover user conversation, entry, fork, child, and response-cancellation reads and writes. |
+| `sharing` | `--oidc-scopes-sharing` | `MEMORY_SERVICE_OIDC_SCOPES_SHARING` | One scope should cover membership and ownership-transfer reads and writes. |
+| `search` | `--oidc-scopes-search` | `MEMORY_SERVICE_OIDC_SCOPES_SEARCH` | One scope should cover search/list-unindexed reads and indexing writes. |
+| `memories` | `--oidc-scopes-memories` | `MEMORY_SERVICE_OIDC_SCOPES_MEMORIES` | One scope should cover user memory reads and writes. |
+| `attachments` | `--oidc-scopes-attachments` | `MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS` | One scope should cover user attachment reads and writes. |
+| `recordings` | `--oidc-scopes-recordings` | `MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS` | One scope should cover gRPC response-recording reads and writes. |
+| `admin_conversations` | `--oidc-scopes-admin-conversations` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS` | One scope should cover admin conversation and entry reads and writes. |
+| `admin_memories` | `--oidc-scopes-admin-memories` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES` | One scope should cover admin memory, policy, usage, and index APIs. |
+| `admin_attachments` | `--oidc-scopes-admin-attachments` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS` | One scope should cover admin attachment reads and writes. |
+| `admin_checkpoints` | `--oidc-scopes-admin-checkpoints` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS` | One scope should cover admin checkpoint reads and writes. |
+
+Read/write-specific keys are the most granular option:
+
+| Key | Flag | Environment variable | Use when |
+| --- | --- | --- | --- |
+| `system_read` | `--oidc-scopes-system-read` | `MEMORY_SERVICE_OIDC_SCOPES_SYSTEM_READ` | Capabilities and authenticated system reads need their own scope. Existing public health endpoints remain public. |
+| `conversations_read` | `--oidc-scopes-conversations-read` | `MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_READ` | Conversation, entry, fork, and child reads need a separate scope. |
+| `conversations_write` | `--oidc-scopes-conversations-write` | `MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_WRITE` | Conversation, entry, sync, and response-cancellation writes need a separate scope. |
+| `sharing_read` | `--oidc-scopes-sharing-read` | `MEMORY_SERVICE_OIDC_SCOPES_SHARING_READ` | Membership and ownership-transfer reads need a separate scope. |
+| `sharing_write` | `--oidc-scopes-sharing-write` | `MEMORY_SERVICE_OIDC_SCOPES_SHARING_WRITE` | Membership and ownership-transfer writes need a separate scope. |
+| `search_read` | `--oidc-scopes-search-read` | `MEMORY_SERVICE_OIDC_SCOPES_SEARCH_READ` | Search and list-unindexed reads need a separate scope. |
+| `search_write` | `--oidc-scopes-search-write` | `MEMORY_SERVICE_OIDC_SCOPES_SEARCH_WRITE` | Indexing writes need a separate scope. |
+| `memories_read` | `--oidc-scopes-memories-read` | `MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_READ` | User memory reads need a separate scope. |
+| `memories_write` | `--oidc-scopes-memories-write` | `MEMORY_SERVICE_OIDC_SCOPES_MEMORIES_WRITE` | User memory writes need a separate scope. |
+| `attachments_read` | `--oidc-scopes-attachments-read` | `MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_READ` | User attachment reads need a separate scope. |
+| `attachments_write` | `--oidc-scopes-attachments-write` | `MEMORY_SERVICE_OIDC_SCOPES_ATTACHMENTS_WRITE` | User attachment writes need a separate scope. |
+| `events_read` | `--oidc-scopes-events-read` | `MEMORY_SERVICE_OIDC_SCOPES_EVENTS_READ` | User event streams need their own scope. |
+| `recordings_read` | `--oidc-scopes-recordings-read` | `MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_READ` | gRPC response-recording reads need a separate scope. |
+| `recordings_write` | `--oidc-scopes-recordings-write` | `MEMORY_SERVICE_OIDC_SCOPES_RECORDINGS_WRITE` | gRPC response-recording writes need a separate scope. |
+| `admin_conversations_read` | `--oidc-scopes-admin-conversations-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_READ` | Admin conversation and entry reads need a separate scope. |
+| `admin_conversations_write` | `--oidc-scopes-admin-conversations-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS_WRITE` | Admin conversation writes need a separate scope. |
+| `admin_memories_read` | `--oidc-scopes-admin-memories-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_READ` | Admin memory, policy, usage, and index reads need a separate scope. |
+| `admin_memories_write` | `--oidc-scopes-admin-memories-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MEMORIES_WRITE` | Admin memory, policy, and indexing writes need a separate scope. |
+| `admin_attachments_read` | `--oidc-scopes-admin-attachments-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_READ` | Admin attachment reads need a separate scope. |
+| `admin_attachments_write` | `--oidc-scopes-admin-attachments-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_ATTACHMENTS_WRITE` | Admin attachment writes need a separate scope. |
+| `admin_events_read` | `--oidc-scopes-admin-events-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_EVENTS_READ` | Admin event streams need their own scope. |
+| `admin_checkpoints_read` | `--oidc-scopes-admin-checkpoints-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_READ` | Admin checkpoint reads need a separate scope. |
+| `admin_checkpoints_write` | `--oidc-scopes-admin-checkpoints-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CHECKPOINTS_WRITE` | Admin checkpoint writes need a separate scope. |
+| `admin_stats_read` | `--oidc-scopes-admin-stats-read` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_STATS_READ` | Admin stats APIs need their own read scope. |
+| `admin_maintenance_write` | `--oidc-scopes-admin-maintenance-write` | `MEMORY_SERVICE_OIDC_SCOPES_ADMIN_MAINTENANCE_WRITE` | Admin eviction and maintenance APIs need their own write scope. |
+
+Each key is configured with:
 
 ```bash
-MEMORY_SERVICE_ROLES_ADMIN_OIDC_SCOPE=memory-service:admin
-MEMORY_SERVICE_ROLES_AUDITOR_OIDC_SCOPE=memory-service:auditor
-MEMORY_SERVICE_ROLES_INDEXER_OIDC_SCOPE=memory-service:indexer
+MEMORY_SERVICE_OIDC_SCOPES_USER_READ=memory-service:user:read
+MEMORY_SERVICE_OIDC_SCOPES_ADMIN=memory-service:admin
+MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_READ=memory-service:conversations:read
+MEMORY_SERVICE_OIDC_SCOPES_CONVERSATIONS_WRITE=memory-service:conversations:write
+MEMORY_SERVICE_OIDC_SCOPES_ADMIN_CONVERSATIONS=memory-service:admin-conversations
 ```
 
 When scope gates are configured:
 
 - `OIDCAllowedClients`, when configured, answers "which OIDC clients may call memory-service at all?"
 - `OIDCAllowedAudiences`, when configured, answers "was this token minted for memory-service?"
-- `MEMORY_SERVICE_ROLES_*_OIDC_SCOPE` answers "which coarse memory-service roles may this token exercise on behalf of an authorized user or client?"
+- `MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>` answers "which Memory Service resource/API permission may this OIDC token exercise after normal authorization passes?"
 - normal conversation and memory authorization still uses the resolved user ID and conversation membership
 
-Configured scopes cap delegated capability; they do not grant memory-service roles by themselves. For an auditor-protected action, both gates must pass:
+Configured scopes cap delegated capability; they do not grant memory-service roles or resource ownership by themselves. For an admin conversation read, all gates must pass:
 
-1. The token must carry the configured auditor scope, such as `memory-service:auditor`.
-2. The resolved user or client must still satisfy the auditor role through `MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE`, `MEMORY_SERVICE_ROLES_AUDITOR_USERS`, `MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS`, or another existing trusted role source.
+1. The resolved user or client must still satisfy the admin/auditor role through OIDC roles, user allowlists, client allowlists, or API-key client roles.
+2. If the credential includes an OIDC JWT and `admin_conversations` or `admin_conversations_read` scopes are configured, the token must carry one of those signed scope values.
 
-The same two-gate rule applies to admin and indexer actions when their scope mappings are configured. A scoped token does not let the caller bypass conversation membership rules on ordinary user endpoints. If no scope mapping is configured for a role, this delegation cap is absent for that role and existing role/user/client configuration continues to decide access.
+The same rule applies to user resources: a scoped token does not bypass conversation membership rules, memory policy, or user-principal requirements. API-key-only and embedded MCP identities do not include an OIDC JWT, so these OIDC scope mappings are skipped for them.
 
-A future enhancement can add endpoint-level read/write scopes such as `memory-service:conversations:read` or `memory-service:entries:write` if product requirements call for OAuth-style delegated permissions on every agent endpoint. That is intentionally out of scope here because issue #181 only needs reliable client identity, client allowlisting, and existing role mapping.
+For read/write resources, aggregate keys are accepted for both read and write checks. A request for `conversations_read` accepts configured scopes from `user`, `user_read`, `conversations`, and `conversations_read`; a request for `admin_conversations_write` accepts configured scopes from `admin`, `admin_write`, `admin_conversations`, and `admin_conversations_write`.
 
 ### Credential Resolution
 
@@ -248,6 +291,7 @@ const (
     CredentialOIDCAPIKey          CredentialKind = "oidc-api-key"
     CredentialBearerAPIKey        CredentialKind = "bearer-api-key"
     CredentialRawBearerUserAPIKey CredentialKind = "raw-bearer-user-api-key"
+    CredentialEmbeddedMCP         CredentialKind = "embedded-mcp"
     CredentialTesting             CredentialKind = "testing-bearer-user"
 )
 
@@ -262,7 +306,7 @@ type Identity struct {
 
 Resolution rules:
 
-1. `Authorization: Bearer <jwt>` is validated as OIDC when `OIDCIssuer` is configured. The token's OIDC client ID must be present in `OIDCAllowedClients`; otherwise return `401` or `403`. If `OIDCAllowedAudiences` is non-empty, the token's `aud` claim must contain at least one configured audience.
+1. `Authorization: Bearer <jwt>` is validated as OIDC when `OIDCIssuer` is configured. If `OIDCAllowedClients` is non-empty, the token's OIDC client ID must be present in that list; otherwise return `401` or `403`. If `OIDCAllowedAudiences` is non-empty, the token's `aud` claim must contain at least one configured audience. If both lists are empty, a valid token from the configured issuer is accepted by the resolver and normal endpoint/user/role authorization still applies.
 2. When `OIDCIssuer` is configured, a non-JWT bearer value is rejected. It must not fall through to raw bearer-user behavior even if a valid `X-API-Key` is also present.
 3. When `X-API-Key` is present with a valid OIDC JWT and matches a configured API key, the JWT supplies `UserID`, the API key supplies `ClientID`, and role resolution unions OIDC/user roles with configured client roles.
 4. When `X-API-Key` matches a configured API key and no `Authorization` bearer token is present, an API-key-only request authenticates a client service principal: `ClientID` is set, `UserID` is empty, and configured client roles apply. This is allowed whether OIDC is configured or not, because OIDC configuration controls bearer-token validation and does not disable configured API-key service principals. This supports admin/processors and other client-role-protected APIs that do not require user context.
@@ -279,7 +323,7 @@ internal/security/
   identity.go                    # Identity, CredentialKind, role constants
   credentials.go                 # RequestCredentials and header/metadata names
   resolver.go                    # credential state machine and OIDC/API-key resolution
-  roles.go                       # user/client/OIDC role mapping and scope gates
+  roles.go                       # user/client/OIDC role mapping and resource/API scope gates
   raw_bearer_disabled.go         # //go:build !auth_testfixtures
   raw_bearer_testfixtures.go     # //go:build auth_testfixtures
   http_middleware.go             # Gin credential extraction and context attachment only
@@ -338,28 +382,58 @@ Missing credentials should return the existing unauthenticated behavior:
 
 The middleware may resolve a client-only identity, but normal user/agent APIs must still require a user principal before executing user-scoped behavior. Current gRPC methods already follow this pattern, for example `ConversationsServer.ListConversations` rejects empty `getUserID(ctx)` with `Unauthenticated`, while admin helpers such as `AdminConversationsServer.requireReadAccess` accept either a user or client identity and then check admin/auditor roles. REST wrapper-native agent endpoints should get the same explicit user-principal guard before handlers that currently derive ownership or membership from `security.GetUserID(c)`.
 
+### Embedded MCP Synthetic Identity
+
+Embedded MCP is a real runtime mode, not a test fixture, but it has a different trust boundary from remote HTTP/gRPC clients. In embedded mode, the MCP server creates an in-process memory-service instance and sends requests directly through the Gin router with a private `http.RoundTripper`. There is no external browser, agent app, OIDC provider, or network-facing bearer token involved.
+
+Do not make embedded MCP depend on the raw bearer test fixture path. `Authorization: Bearer <synthetic-user>` must remain rejected in default builds unless it is a real OIDC JWT or configured bearer API key. The `auth_testfixtures` build tag is only for relaxed BDD fixtures and must not be required for `./memory-service mcp embedded`.
+
+Handle embedded MCP with an explicit internal credential path:
+
+- Use a dedicated credential kind such as `CredentialEmbeddedMCP`.
+- Add an embedded MCP CLI flag and environment variable for the synthetic user principal:
+
+  ```bash
+  ./memory-service mcp embedded --user-id local-agent
+  MEMORY_SERVICE_MCP_EMBEDDED_USER_ID=local-agent ./memory-service mcp embedded
+  ```
+
+  If unset, use a stable default such as `embedded-mcp-user`.
+- The configured embedded user ID answers "which memory-service user should this embedded MCP instance act as?" It is not the proof that the request is trusted.
+- The in-process MCP client may attach an internal-only marker header, request context value, or resolver input field that cannot be supplied through normal remote listeners. That internal marker is the proof that the synthetic user is allowed.
+- The embedded credential should resolve both `UserID` from the embedded MCP user flag and `ClientID` from the embedded MCP client configuration, because MCP tools create and query normal user-scoped conversations.
+- The embedded client ID should remain a fixed internal client such as `embedded-mcp` unless a later requirement needs it configurable. It should still map to the configured embedded API key/client role data where role-gated behavior is needed.
+- The marker must be added only by `internal/cmd/mcp` when it builds the in-process client for an embedded server. Remote MCP mode must continue using real `X-API-Key` plus optional real bearer credentials.
+- Normal REST/gRPC listeners must not accept this internal marker from network traffic. If a header is used, strip or ignore it unless the request is known to come from the in-process transport.
+
+This keeps three cases separate:
+
+| Case | Runtime | Accepted principal source |
+| --- | --- | --- |
+| Raw bearer BDD fixtures | Tests only, `auth_testfixtures` build tag plus `ModeTesting` | Synthetic bearer user for legacy fixture coverage |
+| Embedded MCP | Normal binaries, in-process only | Explicit internal embedded MCP identity |
+| Remote service calls | Normal binaries, network-facing | OIDC JWTs, configured `X-API-Key`, or no-OIDC bearer API-key compatibility |
+
 ### Role Resolution
 
-Role mapping stays source-specific but uses the resolved credential kind. Configured OIDC scopes are evaluated as an additional role gate, not as a standalone role grant:
+Role mapping stays source-specific and uses the resolved credential kind. Resource/API scopes are not evaluated during role resolution and never grant or remove roles:
 
 | Source | Effect |
 | --- | --- |
 | `MEMORY_SERVICE_ROLES_ADMIN_USERS` / `AUDITOR_USERS` / `INDEXER_USERS` | Grants the role to a resolved non-empty `UserID`. |
 | `MEMORY_SERVICE_ROLES_ADMIN_CLIENTS` / `AUDITOR_CLIENTS` / `INDEXER_CLIENTS` | Grants the role to a resolved non-empty `ClientID` from API key or OIDC client claim. |
-| OIDC token values from `roles`, `groups`, `scope`, and `realm_access.roles` matched by `MEMORY_SERVICE_ROLES_*_OIDC_ROLE` | Grants the corresponding base role for OIDC tokens. Optional `MEMORY_SERVICE_ROLES_*_OIDC_SCOPE` values can then cap whether that role may be exercised. |
+| OIDC token values from `roles`, `groups`, `scope`, and `realm_access.roles` matched by `MEMORY_SERVICE_ROLES_*_OIDC_ROLE` | Grants the corresponding base role for OIDC tokens. |
 
 Admin continues to imply auditor and indexer.
 
-`TokenResolver.Resolve` should apply scope gates before storing final roles in `Identity.Roles`. Existing HTTP helpers such as `RequireAdminRole`, `RequireAuditorRole`, `HasRole`, and gRPC service methods can continue checking the final role map.
+`TokenResolver.Resolve` stores final roles in `Identity.Roles` and stores OIDC token scopes separately in `Identity.OIDCScopes` when the credential includes an OIDC JWT. Existing HTTP helpers such as `RequireAdminRole`, `RequireAuditorRole`, `HasRole`, and gRPC service methods check the role map. `RequireOIDCScope` and `CheckGRPCOIDCScope` then apply the configured resource/API scope gate for OIDC-bearing requests.
 
-Role calculation order:
+Role calculation order (as implemented):
 
 1. Resolve base role grants from OIDC role claims, configured user allowlists, and configured client allowlists.
-2. Apply admin implication to the base grants, so a base admin grant also grants auditor and indexer.
-3. If the credential includes an OIDC token (`CredentialOIDC` or `CredentialOIDCAPIKey`) and a `MEMORY_SERVICE_ROLES_<ROLE>_OIDC_SCOPE` value is configured, keep that role only when the signed token `scope` claim contains the configured value.
-4. Store only the gated final roles in `Identity.Roles` and derive `Identity.IsAdmin` from the final admin role.
-
-This keeps the two-gate behavior centralized in the resolver instead of duplicating scope checks across every protected endpoint.
+2. Apply admin implication. Admin implies auditor and indexer independently of resource/API scope configuration.
+3. Store final roles in `Identity.Roles` and derive `Identity.IsAdmin` from the final admin role.
+4. For OIDC-bearing requests, preserve token scopes on the identity so REST/gRPC endpoint guards can enforce `MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>` after normal role/user authorization passes.
 
 ### Endpoint Applicability
 
@@ -656,7 +730,7 @@ Feature: No-OIDC API key authentication
 
 Add focused unit tests around resolver construction and credential parsing:
 
-- startup validation errors when OIDC is enabled but both allowed clients and allowed audiences are empty
+- resolver startup succeeds when OIDC is enabled and both allowed clients and allowed audiences are empty
 - resolver matrix tests covering each credential shape through the transport-neutral `RequestCredentials` input
 - paired API-key lookup from `X-API-Key` when a bearer user/JWT is present
 - `X-API-Key`-only requests resolve `ClientID` with empty `UserID` in both OIDC and no-OIDC deployments
@@ -667,13 +741,16 @@ Add focused unit tests around resolver construction and credential parsing:
 - raw bearer-user plus API-key requests are rejected in production mode, regardless of OIDC configuration
 - `CredentialRawBearerUserAPIKey` is only produced when both `ModeTesting` and the `auth_testfixtures` build tag are active
 - default builds reject raw bearer users even when `ModeTesting` is configured
+- embedded MCP resolves its synthetic in-process user through `CredentialEmbeddedMCP` in default builds without enabling raw bearer fixture auth
+- embedded MCP `--user-id` / `MEMORY_SERVICE_MCP_EMBEDDED_USER_ID` controls the resolved synthetic `UserID`
+- embedded MCP does not accept the same synthetic credential through remote HTTP/gRPC listeners
 - OIDC client ID extraction from `azp` and `client_id`
 - OIDC allowed-client rejection
 - optional OIDC `aud` enforcement
 - audience-only configuration accepts tokens with an allowed audience and rejects tokens without one
-- configured OIDC scope gate requires both the mapped scope and the corresponding user/client role
-- configured OIDC scope alone does not grant admin/auditor/indexer access
-- absence of OIDC scope gates does not deny otherwise authorized requests
+- configured OIDC resource/API scope gates require the mapped scope after normal user/client role and membership authorization passes
+- configured OIDC scopes alone do not grant admin/auditor/indexer access or resource ownership
+- absence of OIDC resource/API scope gates does not deny otherwise authorized requests
 - OIDC-only rejection of raw bearer user values
 - role union when both OIDC and API key are present
 - guard tests proving `RequireUser` rejects client-only identities while admin/auditor guards accept properly role-granted client identities
@@ -681,50 +758,48 @@ Add focused unit tests around resolver construction and credential parsing:
 
 ## Tasks
 
-- [ ] Add `OIDCAllowedClients` and `OIDCAllowedAudiences` to `internal/config.Config`.
-- [ ] Add `--oidc-allowed-clients` and `--oidc-allowed-audiences` flags in `internal/cmd/serve/serve.go`.
-- [ ] Add fail-closed startup validation for OIDC provider discovery and missing OIDC token acceptance boundary.
-- [ ] Refactor `internal/security` into auditable resolver, role, middleware, guard, identity, credential, and raw-bearer build-tag files.
-- [ ] Refactor `TokenResolver` to accept transport-neutral `RequestCredentials` and resolve typed credential kinds.
-- [ ] Split raw bearer user fixture support behind an `auth_testfixtures` build tag with a default-build rejection path.
-- [ ] Update HTTP middleware so paired `X-API-Key` can reach the resolver alongside bearer auth.
-- [ ] Update CORS allowed headers to include `X-API-Key`.
-- [ ] Add explicit user-principal enforcement for normal REST user/agent endpoints so `X-API-Key`-only client identities cannot create, list, or read user-scoped resources.
-- [ ] Update gRPC interceptors to use the same credential rules.
-- [ ] Add real API-key BDD steps that set `X-API-Key`, bearer API-key compatibility credentials, paired `X-API-Key` credentials, and API-key-only user-scope rejection cases.
-- [ ] Add Keycloak-backed BDD scenarios for allowed clients, optional audiences, scope gates, OIDC API-key pairing, `X-API-Key` admin service principals, and OIDC rejection of raw bearer/bearer API-key fallback.
-- [ ] Add mixed OIDC/API-key and no-OIDC production-mode scenarios for API-key-only admin clients and normal user-scoped API rejection.
-- [ ] Update Go test commands or BDD runner tasks so relaxed raw-bearer fixture suites opt into `auth_testfixtures`, while production-mode API-key/OIDC auth suites run without that tag.
-- [ ] Update configuration documentation and examples.
+- [x] Add `OIDCAllowedClients` and `OIDCAllowedAudiences` to `internal/config.Config`.
+- [x] Add `--oidc-allowed-clients` and `--oidc-allowed-audiences` flags in `internal/cmd/serve/serve.go`.
+- [x] Add fail-closed startup validation for OIDC provider discovery; keep OIDC allowed-client and allowed-audience filters optional.
+- [x] Consolidate resolver, role, credential, guard, middleware, identity, and raw-bearer build-tag logic into `internal/security/auth.go` (single-file implementation; the planned multi-file split was not done — all logic lives in `auth.go` plus `raw_bearer_disabled.go` / `raw_bearer_testfixtures.go`).
+- [x] Refactor `TokenResolver` to accept transport-neutral `RequestCredentials` and resolve typed credential kinds.
+- [x] Split raw bearer user fixture support behind an `auth_testfixtures` build tag with a default-build rejection path (`internal/security/raw_bearer_disabled.go` / `raw_bearer_testfixtures.go`).
+- [x] Add an explicit embedded MCP synthetic identity path that works in default builds without enabling raw bearer fixture auth, including `mcp embedded --user-id` and `MEMORY_SERVICE_MCP_EMBEDDED_USER_ID`.
+- [x] Update HTTP middleware so paired `X-API-Key` can reach the resolver alongside bearer auth.
+- [x] Update CORS allowed headers to include `X-API-Key`.
+- [x] Add explicit user-principal enforcement for normal REST user/agent endpoints so `X-API-Key`-only client identities cannot create, list, or read user-scoped resources.
+- [x] Update gRPC interceptors to use the same credential rules.
+- [x] Add real API-key BDD steps (`internal/bdd/steps_auth_modes.go`) that set `X-API-Key`, bearer API-key compatibility credentials, paired `X-API-Key` credentials, and API-key-only user-scope rejection cases.
+- [x] Add Keycloak-backed BDD scenarios for issuer-only OIDC, allowed clients, audience enforcement, resource/API scope gates, OIDC API-key pairing, `X-API-Key` admin service principals, and OIDC rejection of raw bearer/bearer API-key fallback (`internal/bdd/testdata/features-oidc/auth-clients-rest.feature`).
+- [x] Add a Keycloak realm audience mapper so the `memory-service-client` fixture emits `aud=memory-service` for audience-enforcement tests.
+- [x] Add mixed OIDC/API-key and no-OIDC production-mode scenarios for API-key-only admin clients and normal user-scoped API rejection (`internal/bdd/testdata/features/auth-api-keys-rest.feature`).
+- [x] Update Go test commands or BDD runner tasks so relaxed raw-bearer fixture suites opt into `auth_testfixtures`, while production-mode API-key/OIDC auth suites run without that tag (`Taskfile.yml`).
+- [x] Update configuration documentation and deployment examples to document optional OIDC allowed-client and allowed-audience filters.
 
-## Files to Modify
+## Files Modified
 
 | File | Changes |
 | --- | --- |
-| `internal/config/config.go` | Add OIDC allowed client and optional audience fields. |
-| `internal/config/compat.go` | Load new OIDC allowlist/audience environment variables if compat loading remains outside CLI flags. |
-| `internal/cmd/serve/serve.go` | Add OIDC allowlist/audience flags and startup validation wiring. |
-| `internal/cmd/serve/cors.go` | Add `X-API-Key` to `Access-Control-Allow-Headers`. |
-| `internal/security/identity.go` | Add `Identity`, `CredentialKind`, role constants, and context identity helpers. |
-| `internal/security/credentials.go` | Add `RequestCredentials` and shared header/metadata names. |
-| `internal/security/resolver.go` | Refactor credential parsing and OIDC/API-key resolution into one auditable state machine. |
-| `internal/security/roles.go` | Move user/client/OIDC role mapping and scope gates out of middleware. |
+| `internal/config/config.go` | Added `OIDCAllowedClients` and `OIDCAllowedAudiences` fields. |
+| `internal/cmd/serve/serve.go` | Added `--oidc-allowed-clients` and `--oidc-allowed-audiences` flags and startup validation wiring. |
+| `internal/cmd/serve/cors.go` | Added `X-API-Key` to `Access-Control-Allow-Headers`. |
+| `internal/security/auth.go` | Consolidated resolver, credential kinds, role constants, optional client/audience filters, resource/API scope gates, identity helpers, HTTP middleware, gRPC interceptors, and admin-audit middleware. No multi-file refactor was done; the design's separate `identity.go`, `credentials.go`, `resolver.go`, `roles.go`, `guards.go`, `http_middleware.go`, `grpc_middleware.go` files were not created — everything is in `auth.go`. |
 | `internal/security/raw_bearer_disabled.go` | Default-build helper that rejects raw bearer user fixture auth. |
 | `internal/security/raw_bearer_testfixtures.go` | `//go:build auth_testfixtures` helper that enables raw bearer user fixture auth only in `ModeTesting`. |
-| `internal/security/http_middleware.go` | Keep Gin credential extraction/context attachment only. |
-| `internal/security/grpc_middleware.go` | Keep gRPC metadata extraction/context attachment only. |
-| `internal/security/guards.go` | Centralize `RequireAuthenticated`, `RequireUser`, `RequireAdminRole`, and `RequireAuditorRole`. |
-| `internal/cmd/serve/wrapper_routes.go` and/or route handlers under `internal/plugin/route/{conversations,entries,memories,search,...}` | Ensure normal user/agent endpoints require a non-empty authenticated user while admin routes can continue to authorize by role. |
-| `internal/bdd/cucumber_pg_keycloak_test.go` | Add or delegate to a Keycloak auth/client runner. |
-| `internal/bdd/cucumber_pg_apikey_test.go` or similar | Add a no-OIDC production-mode API-key runner. |
-| `internal/bdd/steps_auth.go` | Add real API-key auth steps that do not rely on `X-Client-ID`. |
-| `internal/bdd/testdata/features-oidc/auth-clients-rest.feature` | Add Keycloak-backed BDD scenarios for OIDC clients, audiences, scopes, OIDC API-key pairing, `X-API-Key` admin service principals, user-scoped rejection, and OIDC rejection of bearer API keys/raw bearer users. |
-| `internal/bdd/testdata/features/auth-api-keys-rest.feature` or similar | Add no-OIDC production-mode API-key-only admin and normal user-scope rejection coverage. |
-| `internal/cmd/serve/serve_test.go` | Verify new flags are registered. |
-| `internal/security/auth_matrix_test.go` | Add table-driven resolver matrix tests for every accepted/rejected credential shape. |
-| `internal/security/guards_test.go` | Add guard behavior tests for user-required and role-required paths. |
-| `Taskfile.yml` or dedicated BDD test scripts | Keep normal/default test runs free of raw bearer fixture auth unless a specific relaxed fixture suite passes `-tags auth_testfixtures`. |
-| `docs/` and site configuration docs | Document OIDC allowed clients, optional audiences, scope gates, paired API-key client identity, mixed/no-OIDC API-key admin clients, and API-key-only rejection on user-scoped paths. |
+| `internal/cmd/mcp/cmd.go` and `internal/cmd/mcp/inprocess.go` | Added `mcp embedded --user-id` / `MEMORY_SERVICE_MCP_EMBEDDED_USER_ID` and explicit in-process embedded MCP synthetic identity. |
+| `internal/cmd/serve/wrapper_routes.go` | Added `RequireUser` enforcement for normal REST user/agent endpoint groups. |
+| `internal/bdd/cucumber_pg_keycloak_auth_test.go` | New Keycloak auth/client/API-key BDD runner. |
+| `internal/bdd/cucumber_pg_apikey_test.go` | New no-OIDC production-mode API-key BDD runner. |
+| `internal/bdd/steps_auth_modes.go` | New auth-mode BDD steps: real API-key, OIDC audience, paired credentials, and server startup helpers. |
+| `internal/bdd/testdata/features-oidc/auth-clients-rest.feature` | Keycloak-backed scenarios for issuer-only OIDC, OIDC clients, audiences, resource/API scope gates, REST/gRPC scope coverage, pairing, `X-API-Key` admin principals, user-scoped rejection, and OIDC rejection of bearer API keys/raw bearer users. |
+| `internal/bdd/testdata/features/auth-api-keys-rest.feature` | No-OIDC production-mode API-key-only admin and normal user-scope rejection coverage. |
+| `deploy/keycloak/memory-service-realm.json` and kustomize realm fixtures | Added an explicit `memory-service` access-token audience mapper for the `memory-service-client` fixture. |
+| `compose.yaml`, kustomize auth overlays, Spring compose docs/examples, and Quarkus Dev Services | Added `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-frontend` wherever an OIDC issuer is configured. |
+| `site/src/pages/docs/configuration.mdx` and `site/src/pages/docs/deployment/docker.mdx` | Documented optional OIDC allowed-client / allowed-audience filters. |
+| `internal/security/scope_gate_test.go` | Focused scope-gate unit tests. |
+| `internal/security/client_id_middleware_test.go` | Client-ID middleware tests. |
+| `internal/security/embedded_mcp_test.go` | Embedded MCP synthetic identity tests. |
+| `Taskfile.yml` | Updated BDD runner tasks to separate `auth_testfixtures` suites from production-mode suites. |
 
 ## Verification
 
@@ -738,6 +813,10 @@ rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
 
 # Run resolver fixture tests with raw bearer fixture support compiled in.
 go test -tags auth_testfixtures ./internal/security -count=1 > test.log 2>&1
+rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
+
+# Run embedded MCP coverage in a default build; this must not require auth_testfixtures.
+go test -tags sqlite_fts5 ./internal/cmd/mcp -run Embedded -count=1 > test.log 2>&1
 rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
 
 # Run Keycloak-backed BDD coverage for the new OIDC client/API-key scenarios.
@@ -764,20 +843,22 @@ rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
 ## Design Decisions
 
 1. **Derive credential families from existing config**: `OIDCIssuer` enables OIDC validation, configured API keys enable API-key validation, and both together allow mixed deployments without a separate auth-mode flag.
-2. **Require an explicit OIDC token boundary**: `OIDCAllowedClients`, `OIDCAllowedAudiences`, or both make accepted tokens auditable at startup and prevent any valid realm token from calling memory-service by default.
+2. **Keep OIDC token filters optional**: `OIDCAllowedClients`, `OIDCAllowedAudiences`, or both can narrow accepted tokens when operators want a stricter boundary, but issuer-only deployments remain valid and match the previous relaxed behavior.
 3. **Keep `X-API-Key` canonical**: `X-API-Key` carries configured API-key client identity alongside bearer user/JWT identity or as a client-only service principal.
 4. **Allow configured service principals**: Configured API keys may authenticate a client-only service principal for admin/operational APIs that are already role-gated and do not need user context, even when the same deployment also accepts OIDC user tokens.
 5. **Keep normal APIs user-scoped**: Client-only API-key identities must not satisfy normal user/agent APIs because those APIs need a user principal for ownership, membership, and policy filtering.
-6. **Use scopes as role gates**: Signed `scope` values matched by `MEMORY_SERVICE_ROLES_*_OIDC_SCOPE` cap which coarse roles an OIDC token may exercise; the resolved user/client must still have the role through normal role config.
+6. **Use scopes as resource/API gates**: Signed `scope` values matched by `MEMORY_SERVICE_OIDC_SCOPES_<PERMISSION_KEY>` cap which Memory Service resource/API permissions an OIDC token may exercise after normal user/client role, ownership, membership, and endpoint checks pass.
 7. **Use Keycloak in the BDD matrix**: The regression is about API keys, but the risky behavior is the interaction between API keys, bearer tokens, OIDC client claims, audience claims, and scopes, so the OIDC test matrix should run with a real Keycloak issuer.
+8. **Treat embedded MCP as internal auth, not fixture auth**: Embedded MCP needs a synthetic user principal for normal user-scoped APIs, but that principal is valid only for the in-process MCP transport and must not reuse the raw bearer test fixture path.
 
 ## Security Considerations
 
 - OIDC-enabled deployments must reject raw bearer values so production Keycloak deployments do not accidentally accept arbitrary user IDs.
 - In OIDC-enabled deployments, `Authorization: Bearer` remains reserved for OIDC JWTs. API-key-only service principals must use `X-API-Key` so mixed deployments do not reintroduce raw bearer fallback.
-- OIDC bearer tokens must come from an allowed client, and when audiences are configured, must be minted for an accepted audience.
-- Scope gates must use signed token claims and namespaced scope values such as `memory-service:admin`, not arbitrary client attributes.
+- OIDC bearer tokens must come from the configured issuer. When allowed clients or audiences are configured, tokens must also satisfy those filters.
+- Resource/API scope gates must use signed token claims and namespaced scope values such as `memory-service:conversations:read`, not arbitrary client attributes.
 - API-key-only service principals are limited to routes whose authorization is role/client based; normal user-scoped routes must still require a user principal.
+- Embedded MCP synthetic identity is acceptable only for the in-process transport created by `internal/cmd/mcp`; remote listeners must not honor the same marker or synthetic bearer value.
 - The raw bearer-user fixture model must require both `cfg.Mode == config.ModeTesting` and the `auth_testfixtures` build tag. `Authorization: Bearer <user-id>` must not authenticate in production modes, even with a valid configured API key.
 - JWT-looking bearer values in mixed mode must be validated as OIDC and must not fall back to paired raw-bearer user auth.
 - API keys are bearer secrets. Logs must not include raw API-key values.

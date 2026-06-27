@@ -2,12 +2,9 @@ package mcp
 
 import (
 	"context"
-	"fmt"
-	"net/http"
 	"path/filepath"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/cmd/serve"
@@ -21,51 +18,6 @@ import (
 
 const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
-func setupTestServer(t *testing.T) *mcpServer {
-	t.Helper()
-	if !buildcaps.SQLite {
-		t.Skip("required build capabilities missing: sqlite")
-	}
-
-	dbURL := filepath.Join(t.TempDir(), "memory.db")
-
-	cfg := config.DefaultConfig()
-	cfg.Mode = config.ModeTesting
-	cfg.DatastoreType = "sqlite"
-	cfg.DBURL = dbURL
-	cfg.CacheType = "none"
-	cfg.AttachType = "fs"
-	cfg.VectorType = "none"
-	cfg.SearchSemanticEnabled = false
-	cfg.EncryptionKey = testEncryptionKey
-	cfg.EncryptionDBDisabled = true
-	cfg.EncryptionAttachmentsDisabled = true
-	cfg.AdminUsers = "alice,alice-*"
-	cfg.AuditorUsers = "alice,alice-*"
-	cfg.IndexerUsers = "alice,alice-*"
-	cfg.Listener.Port = 0
-	cfg.Listener.EnableTLS = false
-
-	ctx := config.WithContext(context.Background(), &cfg)
-	srv, err := serve.StartServer(ctx, &cfg)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
-
-	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
-	client, err := apiclient.NewClientWithResponses(
-		apiURL,
-		apiclient.WithHTTPClient(&http.Client{Timeout: 30 * time.Second}),
-		apiclient.WithRequestEditorFn(func(_ context.Context, req *http.Request) error {
-			req.Header.Set("X-API-Key", "test-key")
-			req.Header.Set("Authorization", "Bearer alice")
-			return nil
-		}),
-	)
-	require.NoError(t, err)
-
-	return &mcpServer{client: client}
-}
-
 func setupEmbeddedTestServer(t *testing.T) *mcpServer {
 	t.Helper()
 	if !buildcaps.SQLite {
@@ -74,14 +26,8 @@ func setupEmbeddedTestServer(t *testing.T) *mcpServer {
 
 	dbURL := filepath.Join(t.TempDir(), "memory.db")
 
-	cfg := config.DefaultConfig()
-	cfg.Mode = config.ModeTesting
-	cfg.DatastoreType = "sqlite"
+	cfg := defaultEmbeddedConfig()
 	cfg.DBURL = dbURL
-	cfg.CacheType = "none"
-	cfg.AttachType = "fs"
-	cfg.VectorType = "none"
-	cfg.SearchSemanticEnabled = false
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
@@ -97,7 +43,12 @@ func setupEmbeddedTestServer(t *testing.T) *mcpServer {
 		_ = srv.Shutdown(context.Background())
 	})
 
-	client, err := newInProcessClient(srv.Router)
+	// Wire the embedded MCP identity: uses CredentialEmbeddedMCP, not raw bearer.
+	if r := serve.GetTokenResolver(srv); r != nil {
+		r.ConfigureEmbeddedMCP(defaultEmbeddedUserID, embeddedClientID)
+	}
+
+	client, err := newInProcessClient(srv.Router, defaultEmbeddedUserID)
 	require.NoError(t, err)
 
 	return &mcpServer{client: client}
@@ -119,154 +70,6 @@ func callTool(t *testing.T, s *mcpServer, handler func(context.Context, mcp.Call
 	return text.Text
 }
 
-func TestSaveAndGetSession(t *testing.T) {
-	s := setupTestServer(t)
-
-	// Save session notes
-	saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Test session",
-		"notes": "These are test notes about a bugfix.",
-		"tags":  "test,bugfix",
-	})
-	assert.Contains(t, saveResult, "Session notes saved")
-	assert.Contains(t, saveResult, "Conversation ID:")
-
-	// Extract conversation ID
-	convID := extractConversationID(t, saveResult)
-
-	// Get session and verify content
-	getResult := callTool(t, s, s.handleGetSession, map[string]any{
-		"conversation_id": convID,
-	})
-	assert.Contains(t, getResult, "Test session")
-	assert.Contains(t, getResult, "These are test notes about a bugfix.")
-	assert.Contains(t, getResult, "Tags: test,bugfix")
-}
-
-func TestSaveAndGetSessionEmbedded(t *testing.T) {
-	s := setupEmbeddedTestServer(t)
-
-	saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Embedded session",
-		"notes": "These notes were saved through the embedded handler transport.",
-		"tags":  "embedded,test",
-	})
-	assert.Contains(t, saveResult, "Session notes saved")
-
-	convID := extractConversationID(t, saveResult)
-	getResult := callTool(t, s, s.handleGetSession, map[string]any{
-		"conversation_id": convID,
-	})
-	assert.Contains(t, getResult, "Embedded session")
-	assert.Contains(t, getResult, "embedded handler transport")
-	assert.Contains(t, getResult, "Tags: embedded,test")
-}
-
-func TestAppendNote(t *testing.T) {
-	s := setupTestServer(t)
-
-	// Save initial session
-	saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Append test",
-		"notes": "Initial notes.",
-	})
-	convID := extractConversationID(t, saveResult)
-
-	// Append additional note
-	appendResult := callTool(t, s, s.handleAppendNote, map[string]any{
-		"conversation_id": convID,
-		"notes":           "Follow-up note with more details.",
-	})
-	assert.Contains(t, appendResult, "Note appended")
-
-	// Verify both entries are present
-	getResult := callTool(t, s, s.handleGetSession, map[string]any{
-		"conversation_id": convID,
-	})
-	assert.Contains(t, getResult, "Initial notes.")
-	assert.Contains(t, getResult, "Follow-up note with more details.")
-}
-
-func TestListSessions(t *testing.T) {
-	s := setupTestServer(t)
-
-	// Save a couple of sessions
-	callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "First session",
-		"notes": "First notes.",
-	})
-	callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Second session",
-		"notes": "Second notes.",
-	})
-
-	// List and verify
-	listResult := callTool(t, s, s.handleListSessions, map[string]any{
-		"limit": float64(10),
-	})
-	assert.Contains(t, listResult, "Recent sessions")
-	assert.Contains(t, listResult, "First session")
-	assert.Contains(t, listResult, "Second session")
-}
-
-func TestListSessionsEmpty(t *testing.T) {
-	s := setupTestServer(t)
-
-	listResult := callTool(t, s, s.handleListSessions, map[string]any{})
-	assert.Contains(t, listResult, "No sessions found")
-}
-
-func TestSearchSessions(t *testing.T) {
-	if !buildcaps.SQLiteFTS5 {
-		t.Skip("required build capabilities missing: sqlite_fts5")
-	}
-
-	s := setupTestServer(t)
-
-	// Save a session with indexedContent so FTS5 can find it without a background indexer.
-	callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Cache serialization fix",
-		"notes": "Fixed the JSON marshal symmetry issue in cache layer.",
-		"tags":  "bugfix,cache",
-	})
-
-	// The save_session_notes tool does not set indexedContent, so the entry
-	// won't appear in FTS5 search without a background indexer. Manually
-	// append an indexed entry so we can verify the search tool works.
-	convID := extractConversationID(t, callTool(t, s, s.handleSaveSessionNotes, map[string]any{
-		"title": "Indexed session",
-		"notes": "Searchable content about deployment.",
-	}))
-	indexedContent := "Searchable content about deployment"
-	contentType := "history"
-	_, err := s.client.AppendConversationEntryWithResponse(context.Background(),
-		uuid.MustParse(convID),
-		apiclient.AppendConversationEntryJSONRequestBody{
-			ContentType:    contentType,
-			IndexedContent: &indexedContent,
-			Content: []interface{}{
-				map[string]any{"role": "USER", "text": "Searchable content about deployment."},
-			},
-		})
-	require.NoError(t, err)
-
-	searchResult := callTool(t, s, s.handleSearchSessions, map[string]any{
-		"query": "deployment",
-		"limit": float64(5),
-	})
-	assert.Contains(t, searchResult, "Found")
-	assert.Contains(t, searchResult, "Indexed session")
-}
-
-func TestSearchSessionsNoResults(t *testing.T) {
-	s := setupTestServer(t)
-
-	searchResult := callTool(t, s, s.handleSearchSessions, map[string]any{
-		"query": "nonexistent topic xyz",
-	})
-	assert.Contains(t, searchResult, "No matching sessions found")
-}
-
 func extractConversationID(t *testing.T, result string) string {
 	t.Helper()
 	for _, line := range strings.Split(result, "\n") {
@@ -277,4 +80,132 @@ func extractConversationID(t *testing.T, result string) string {
 	}
 	t.Fatal("could not find Conversation ID in result")
 	return ""
+}
+
+func runSessionToolContract(t *testing.T, setup func(*testing.T) *mcpServer, includeSearch bool) {
+	t.Helper()
+
+	t.Run("save and get session", func(t *testing.T) {
+		s := setup(t)
+
+		saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "Test session",
+			"notes": "These are test notes about a bugfix.",
+			"tags":  "test,bugfix",
+		})
+		assert.Contains(t, saveResult, "Session notes saved")
+		assert.Contains(t, saveResult, "Conversation ID:")
+
+		convID := extractConversationID(t, saveResult)
+		getResult := callTool(t, s, s.handleGetSession, map[string]any{
+			"conversation_id": convID,
+		})
+		assert.Contains(t, getResult, "Test session")
+		assert.Contains(t, getResult, "These are test notes about a bugfix.")
+		assert.Contains(t, getResult, "Tags: test,bugfix")
+	})
+
+	t.Run("append note", func(t *testing.T) {
+		s := setup(t)
+
+		saveResult := callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "Append test",
+			"notes": "Initial notes.",
+		})
+		convID := extractConversationID(t, saveResult)
+
+		appendResult := callTool(t, s, s.handleAppendNote, map[string]any{
+			"conversation_id": convID,
+			"notes":           "Follow-up note with more details.",
+		})
+		assert.Contains(t, appendResult, "Note appended")
+
+		getResult := callTool(t, s, s.handleGetSession, map[string]any{
+			"conversation_id": convID,
+		})
+		assert.Contains(t, getResult, "Initial notes.")
+		assert.Contains(t, getResult, "Follow-up note with more details.")
+	})
+
+	t.Run("list sessions", func(t *testing.T) {
+		s := setup(t)
+
+		callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "First session",
+			"notes": "First notes.",
+		})
+		callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "Second session",
+			"notes": "Second notes.",
+		})
+
+		listResult := callTool(t, s, s.handleListSessions, map[string]any{
+			"limit": float64(10),
+		})
+		assert.Contains(t, listResult, "Recent sessions")
+		assert.Contains(t, listResult, "First session")
+		assert.Contains(t, listResult, "Second session")
+	})
+
+	t.Run("list sessions empty", func(t *testing.T) {
+		s := setup(t)
+
+		listResult := callTool(t, s, s.handleListSessions, map[string]any{})
+		assert.Contains(t, listResult, "No sessions found")
+	})
+
+	if !includeSearch {
+		return
+	}
+
+	t.Run("search sessions", func(t *testing.T) {
+		if !buildcaps.SQLiteFTS5 {
+			t.Skip("required build capabilities missing: sqlite_fts5")
+		}
+
+		s := setup(t)
+
+		callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "Cache serialization fix",
+			"notes": "Fixed the JSON marshal symmetry issue in cache layer.",
+			"tags":  "bugfix,cache",
+		})
+
+		convID := extractConversationID(t, callTool(t, s, s.handleSaveSessionNotes, map[string]any{
+			"title": "Indexed session",
+			"notes": "Searchable content about deployment.",
+		}))
+		indexedContent := "Searchable content about deployment"
+		contentType := "history"
+		_, err := s.client.AppendConversationEntryWithResponse(context.Background(),
+			uuid.MustParse(convID),
+			apiclient.AppendConversationEntryJSONRequestBody{
+				ContentType:    contentType,
+				IndexedContent: &indexedContent,
+				Content: []interface{}{
+					map[string]any{"role": "USER", "text": "Searchable content about deployment."},
+				},
+			})
+		require.NoError(t, err)
+
+		searchResult := callTool(t, s, s.handleSearchSessions, map[string]any{
+			"query": "deployment",
+			"limit": float64(5),
+		})
+		assert.Contains(t, searchResult, "Found")
+		assert.Contains(t, searchResult, "Indexed session")
+	})
+
+	t.Run("search sessions no results", func(t *testing.T) {
+		s := setup(t)
+
+		searchResult := callTool(t, s, s.handleSearchSessions, map[string]any{
+			"query": "nonexistent topic xyz",
+		})
+		assert.Contains(t, searchResult, "No matching sessions found")
+	})
+}
+
+func TestSessionToolContractEmbedded(t *testing.T) {
+	runSessionToolContract(t, setupEmbeddedTestServer, false)
 }

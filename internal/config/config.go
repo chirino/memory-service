@@ -182,6 +182,11 @@ type Config struct {
 	AuditorClients  string
 	IndexerClients  string
 
+	// OIDC client/audience allowlisting and resource/API scope gates
+	OIDCAllowedClients   string
+	OIDCAllowedAudiences string
+	OIDCScopes           map[string]string // permission key -> comma-separated accepted OIDC scopes
+
 	// Encryption
 	EncryptionProviders          string
 	EncryptionProviderDEKType    string

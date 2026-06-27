@@ -23,6 +23,7 @@ configMapGenerator:
       - KEYCLOAK_FRONTEND_URL=http://keycloak:8080
       - OIDC_TOKEN_ISSUER=http://keycloak:8080/realms/memory-service
       - MEMORY_SERVICE_OIDC_ISSUER=http://keycloak:8080/realms/memory-service
+      - MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-frontend
       - MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=admin
       - MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE=auditor
 

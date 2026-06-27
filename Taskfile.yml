@@ -42,12 +42,13 @@ tasks:
       - generate:spotless
       - generate:chat-frontend
     cmds:
-      - task: generate:go # seems to break if you run concurrenlty
+      - task: generate:go # seems to break if you run concurrently
 
   generate:go:
     internal: true
     cmds:
-      - go generate ./...
+      - |
+        go generate $(go list ./... | grep -v '/node_modules/')
 
   generate:chat-frontend:
     internal: true
@@ -111,10 +112,26 @@ tasks:
         CGO_ENABLED=1 go install -tags='sqlite_fts5' . {{.CLI_ARGS}}
 
   test:go:
-    desc: Test go
+    desc: Test go, including production-mode auth and raw-bearer fixture suites
     cmds:
       - |
-        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5' ./... {{.CLI_ARGS}}
+        set -- $(go list ./... | grep -v '/node_modules/' | grep -v '/internal/bdd$')
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5' "$@" {{.CLI_ARGS}}
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5' -run 'TestFeaturesPg(APIKeys|Keycloak|KeycloakAuthClients)$' ./internal/bdd/ {{.CLI_ARGS}}
+      - task: test:go:fixtures
+        vars:
+          CLI_ARGS: '{{.CLI_ARGS}}'
+
+  test:go:fixtures:
+    desc: Run auth fixture suites for code paths enabled only by auth_testfixtures
+    cmds:
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5 auth_testfixtures' ./internal/security {{.CLI_ARGS}}
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5 auth_testfixtures' -run 'TestFeaturesAuthFixturesSQLite$' ./internal/bdd/ {{.CLI_ARGS}}
+      - |
+        CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5 auth_testfixtures' -run 'TestSessionToolContractFixtures$' ./internal/cmd/mcp/ {{.CLI_ARGS}}
 
   test:java:
     desc: Test java
@@ -177,6 +194,7 @@ tasks:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor

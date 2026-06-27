@@ -41,7 +41,17 @@ type Server struct {
 	Router          *gin.Engine
 	GRPCServer      *grpc.Server
 	Running         *RunningServers
+	TokenResolver   *security.TokenResolver
 	closeManagement func(context.Context) error
+}
+
+// GetTokenResolver returns the TokenResolver used by this server, or nil if not yet built.
+// Used by embedded MCP to call ConfigureEmbeddedMCP after BuildServer.
+func GetTokenResolver(s *Server) *security.TokenResolver {
+	if s == nil {
+		return nil
+	}
+	return s.TokenResolver
 }
 
 // Shutdown gracefully shuts down the server.
@@ -232,8 +242,14 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	resumer := internalresumer.NewTempFileStore(cfg.ResolvedTempDir(), cfg.ResumerTempFileRetention, locatorStore)
 
 	// Create shared token resolver and auth middleware.
-	resolver := security.NewTokenResolver(cfg)
+	resolver, err := security.NewTokenResolver(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("auth configuration error: %w", err)
+	}
 	auth := security.AuthMiddleware(resolver)
+	// Store resolver on Server so callers like embedded MCP can configure it after build.
+	var builtServer Server
+	builtServer.TokenResolver = resolver
 
 	// Initialize and mount episodic memory store + routes.
 	episodicStore, episodicPolicy, err := initEpisodic(ctx, cfg)
@@ -363,12 +379,11 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	})
 	pb.RegisterAdminCheckpointServiceServer(grpcServer, &grpcserver.AdminCheckpointServer{Store: store})
 
-	return &Server{
-		Config:     cfg,
-		Store:      store,
-		Router:     router,
-		GRPCServer: grpcServer,
-	}, nil
+	builtServer.Config = cfg
+	builtServer.Store = store
+	builtServer.Router = router
+	builtServer.GRPCServer = grpcServer
+	return &builtServer, nil
 }
 
 // StartServer initializes all subsystems and starts HTTP+gRPC on a single port.

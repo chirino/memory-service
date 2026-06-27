@@ -110,14 +110,29 @@ func StartKeycloak(tb testing.TB) *Server {
 	return server
 }
 
+// GetIssuerURL returns the issuer URL used for OIDC token validation.
+func (s *Server) GetIssuerURL() string { return s.IssuerURL }
+
+// GetDiscoveryURL returns the discovery URL for OIDC provider configuration.
+func (s *Server) GetDiscoveryURL() string { return s.DiscoveryURL }
+
 // AccessToken gets an OIDC access token using password grant for a Keycloak realm user.
 func (s *Server) AccessToken(ctx context.Context, username, password string) (string, error) {
+	return s.AccessTokenWithScopes(ctx, username, password, "")
+}
+
+// AccessTokenWithScopes gets an OIDC access token requesting only the given space-separated scopes.
+// When scopes is empty the default Keycloak scopes are used.
+func (s *Server) AccessTokenWithScopes(ctx context.Context, username, password, scopes string) (string, error) {
 	form := url.Values{}
 	form.Set("grant_type", "password")
 	form.Set("client_id", s.ClientID)
 	form.Set("client_secret", s.ClientSecret)
 	form.Set("username", username)
 	form.Set("password", password)
+	if scopes != "" {
+		form.Set("scope", scopes)
+	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, s.TokenURL, strings.NewReader(form.Encode()))
 	if err != nil {

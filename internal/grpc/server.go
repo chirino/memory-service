@@ -95,6 +95,16 @@ func requireGRPCIdentity(ctx context.Context) (*security.Identity, error) {
 	return id, nil
 }
 
+// requireGRPCUser requires a non-empty user principal (not just any authenticated identity).
+// Use this in user-scoped endpoints where an API-key-only client identity is insufficient.
+func requireGRPCUser(ctx context.Context) (string, error) {
+	id := security.IdentityFromContext(ctx)
+	if id == nil || strings.TrimSpace(id.UserID) == "" {
+		return "", status.Error(codes.Unauthenticated, "user authentication required")
+	}
+	return id.UserID, nil
+}
+
 func hasGRPCRole(ctx context.Context, role string) bool {
 	if id := security.IdentityFromContext(ctx); id != nil {
 		return id.Roles[role]
@@ -104,6 +114,10 @@ func hasGRPCRole(ctx context.Context, role string) bool {
 
 func hasGRPCAdminEventAccess(ctx context.Context) bool {
 	return hasGRPCRole(ctx, security.RoleAdmin) || hasGRPCRole(ctx, security.RoleAuditor)
+}
+
+func requireGRPCOIDCScope(ctx context.Context, permission security.Permission) error {
+	return security.CheckGRPCOIDCScope(ctx, permission)
 }
 
 func mapAccessLevel(level model.AccessLevel) pb.AccessLevel {
@@ -249,11 +263,16 @@ func (s *SystemServer) GetHealth(_ context.Context, _ *emptypb.Empty) (*pb.Healt
 }
 
 func (s *SystemServer) GetCapabilities(ctx context.Context, _ *emptypb.Empty) (*pb.CapabilitiesResponse, error) {
-	if getUserID(ctx) == "" {
+	// Accept both user and client-only identities; auth-only (no user required) to match the HTTP route.
+	id := security.IdentityFromContext(ctx)
+	if id == nil {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
 	if !hasCapabilitiesAccessGRPC(ctx) {
 		return nil, status.Error(codes.PermissionDenied, "client context or admin/auditor role required")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSystemRead); err != nil {
+		return nil, err
 	}
 	return mapCapabilitiesSummary(servicecapabilities.Build(s.Config)), nil
 }
@@ -324,6 +343,9 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
+		return nil, err
 	}
 
 	mode := model.ListModeLatestFork
@@ -411,6 +433,9 @@ func (s *ConversationsServer) CreateConversation(ctx context.Context, req *pb.Cr
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsWrite); err != nil {
+		return nil, err
+	}
 
 	var meta map[string]any
 	if req.GetMetadata() != nil {
@@ -433,6 +458,9 @@ func (s *ConversationsServer) GetConversation(ctx context.Context, req *pb.GetCo
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -452,6 +480,9 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsWrite); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -500,6 +531,9 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -559,6 +593,9 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
+		return nil, err
 	}
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -730,6 +767,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -818,6 +858,9 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	if !hasGRPCAdminEventAccess(ctx) {
 		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminConversationsRead); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -883,6 +926,9 @@ func (s *AdminEntriesServer) GetEntry(ctx context.Context, req *pb.AdminGetEntry
 	if !hasGRPCAdminEventAccess(ctx) {
 		return nil, status.Error(codes.PermissionDenied, "admin or auditor role required")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminConversationsRead); err != nil {
+		return nil, err
+	}
 
 	entryID, err := bytesToUUID(req.GetEntryId())
 	if err != nil {
@@ -915,6 +961,9 @@ func (s *AdminConversationsServer) requireReadAccess(ctx context.Context, justif
 	if !id.Roles[security.RoleAdmin] && !id.Roles[security.RoleAuditor] {
 		return status.Error(codes.PermissionDenied, "admin or auditor role required")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminConversationsRead); err != nil {
+		return err
+	}
 	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
 		return status.Error(codes.InvalidArgument, "admin justification required")
 	}
@@ -928,6 +977,9 @@ func (s *AdminConversationsServer) requireAdminAccess(ctx context.Context, justi
 	}
 	if !id.Roles[security.RoleAdmin] {
 		return status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminConversationsWrite); err != nil {
+		return err
 	}
 	if s.Config != nil && s.Config.RequireJustification && strings.TrimSpace(justification) == "" {
 		return status.Error(codes.InvalidArgument, "admin justification required")
@@ -1243,6 +1295,9 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 	if clientID == "" {
 		return nil, status.Error(codes.PermissionDenied, "API key (X-Client-ID) required for append")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsWrite); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -1352,6 +1407,9 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsWrite); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1496,6 +1554,9 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingRead); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -1549,6 +1610,9 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -1576,6 +1640,9 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
+	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
 	if err != nil {
@@ -1602,6 +1669,9 @@ func (s *MembershipsServer) DeleteMembership(ctx context.Context, req *pb.Delete
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1643,6 +1713,9 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingRead); err != nil {
+		return nil, err
 	}
 
 	role := ""
@@ -1701,6 +1774,9 @@ func (s *TransfersServer) GetOwnershipTransfer(ctx context.Context, req *pb.GetO
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingRead); err != nil {
+		return nil, err
+	}
 
 	transferID, err := bytesToUUID(req.GetTransferId())
 	if err != nil {
@@ -1727,6 +1803,9 @@ func (s *TransfersServer) CreateOwnershipTransfer(ctx context.Context, req *pb.C
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
 	}
 
 	convID, err := bytesToUUID(req.GetConversationId())
@@ -1755,6 +1834,9 @@ func (s *TransfersServer) AcceptOwnershipTransfer(ctx context.Context, req *pb.A
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
+	}
 
 	transferID, err := bytesToUUID(req.GetTransferId())
 	if err != nil {
@@ -1773,6 +1855,9 @@ func (s *TransfersServer) DeleteOwnershipTransfer(ctx context.Context, req *pb.D
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSharingWrite); err != nil {
+		return nil, err
 	}
 
 	transferID, err := bytesToUUID(req.GetTransferId())
@@ -1826,6 +1911,9 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchRead); err != nil {
+		return nil, err
 	}
 	if s.Config != nil && !s.Config.SearchFulltextEnabled {
 		return nil, status.Error(codes.Unavailable, "full-text search is disabled")
@@ -1883,6 +1971,9 @@ func (s *SearchServer) IndexConversations(ctx context.Context, req *pb.IndexConv
 	if !s.isIndexer(userID) {
 		return nil, status.Error(codes.PermissionDenied, "indexer or admin role required")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchWrite); err != nil {
+		return nil, err
+	}
 
 	var entries []registrystore.IndexEntryRequest
 	for _, e := range req.GetEntries() {
@@ -1917,6 +2008,9 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 	}
 	if !s.isIndexer(userID) {
 		return nil, status.Error(codes.PermissionDenied, "indexer or admin role required")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchRead); err != nil {
+		return nil, err
 	}
 
 	limit := int(req.GetLimit())
@@ -1978,7 +2072,10 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if _, err := requireGRPCIdentity(ctx); err != nil {
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesWrite); err != nil {
 		return nil, err
 	}
 	if req.GetValue() == nil {
@@ -2054,7 +2151,10 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if _, err := requireGRPCIdentity(ctx); err != nil {
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesRead); err != nil {
 		return nil, err
 	}
 
@@ -2130,7 +2230,10 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if _, err := requireGRPCIdentity(ctx); err != nil {
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesWrite); err != nil {
 		return nil, err
 	}
 
@@ -2178,7 +2281,10 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if _, err := requireGRPCIdentity(ctx); err != nil {
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesRead); err != nil {
 		return nil, err
 	}
 
@@ -2263,7 +2369,10 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if _, err := requireGRPCIdentity(ctx); err != nil {
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesRead); err != nil {
 		return nil, err
 	}
 
@@ -2320,6 +2429,9 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 
 func (s *AdminMemoriesServer) ListMemories(ctx context.Context, req *pb.AdminListMemoriesRequest) (*pb.AdminListMemoriesResponse, error) {
 	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
 		return nil, err
 	}
 	if s.Store == nil {
@@ -2387,6 +2499,9 @@ func (s *AdminMemoriesServer) GetMemory(ctx context.Context, req *pb.AdminGetMem
 	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
 		return nil, err
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
@@ -2422,6 +2537,9 @@ func (s *AdminMemoriesServer) GetMemory(ctx context.Context, req *pb.AdminGetMem
 
 func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminSearchMemoriesRequest) (*pb.AdminSearchMemoriesResponse, error) {
 	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
 		return nil, err
 	}
 	if s.Store == nil {
@@ -2520,6 +2638,9 @@ func (s *AdminMemoriesServer) ListNamespaces(ctx context.Context, req *pb.AdminL
 	if err := s.requireReadAccess(ctx, req.GetJustification()); err != nil {
 		return nil, err
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
@@ -2564,6 +2685,9 @@ func (s *AdminMemoriesServer) DeleteMemory(ctx context.Context, req *pb.AdminDel
 	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
 		return nil, err
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
+		return nil, err
+	}
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
@@ -2581,6 +2705,9 @@ func (s *AdminMemoriesServer) DeleteMemory(ctx context.Context, req *pb.AdminDel
 
 func (s *AdminMemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.AdminGetMemoryUsageRequest) (*pb.MemoryUsage, error) {
 	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
 		return nil, err
 	}
 	if s.Store == nil {
@@ -2607,6 +2734,9 @@ func (s *AdminMemoriesServer) GetMemoryUsage(ctx context.Context, req *pb.AdminG
 
 func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.AdminListTopMemoryUsageRequest) (*pb.ListTopMemoryUsageResponse, error) {
 	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
 		return nil, err
 	}
 	if s.Store == nil {
@@ -2657,6 +2787,9 @@ func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.Ad
 
 func (s *AdminMemoriesServer) GetMemoryIndexStatus(ctx context.Context, req *pb.AdminGetMemoryIndexStatusRequest) (*pb.MemoryIndexStatusResponse, error) {
 	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesRead); err != nil {
 		return nil, err
 	}
 	if s.Store == nil {
@@ -2989,6 +3122,9 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 	if userID == "" {
 		return status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(stream.Context(), security.PermissionAttachmentsWrite); err != nil {
+		return err
+	}
 
 	var metadata *pb.UploadMetadata
 	var resultCh chan struct {
@@ -3111,6 +3247,9 @@ func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttach
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAttachmentsRead); err != nil {
+		return nil, err
+	}
 	attachmentID, err := uuid.Parse(req.GetId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
@@ -3132,6 +3271,9 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 	userID := getUserID(stream.Context())
 	if userID == "" {
 		return status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(stream.Context(), security.PermissionAttachmentsRead); err != nil {
+		return err
 	}
 
 	attachmentID, err := uuid.Parse(req.GetId())
@@ -3514,6 +3656,13 @@ func (s *ResponseRecorderServer) requireConversationAccess(ctx context.Context, 
 	if userID == "" {
 		return status.Error(codes.Unauthenticated, "missing authorization")
 	}
+	permission := security.PermissionRecordingsRead
+	if minLevel.IsAtLeast(model.AccessLevelWriter) {
+		permission = security.PermissionRecordingsWrite
+	}
+	if err := requireGRPCOIDCScope(ctx, permission); err != nil {
+		return err
+	}
 	conv, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
 		return s.Store.GetConversation(txCtx, userID, conversationID)
 	})
@@ -3572,6 +3721,9 @@ func (s *AdminCheckpointServer) GetCheckpoint(ctx context.Context, req *pb.GetCh
 	if !hasGRPCRole(ctx, security.RoleAdmin) {
 		return nil, status.Error(codes.PermissionDenied, "admin role required")
 	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminCheckpointsRead); err != nil {
+		return nil, err
+	}
 	checkpoints, ok := s.Store.(registrystore.AdminCheckpointStore)
 	if !ok {
 		return nil, status.Error(codes.Unimplemented, "checkpoint storage unavailable")
@@ -3598,6 +3750,9 @@ func (s *AdminCheckpointServer) GetCheckpoint(ctx context.Context, req *pb.GetCh
 func (s *AdminCheckpointServer) PutCheckpoint(ctx context.Context, req *pb.PutCheckpointRequest) (*pb.AdminCheckpoint, error) {
 	if !hasGRPCRole(ctx, security.RoleAdmin) {
 		return nil, status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminCheckpointsWrite); err != nil {
+		return nil, err
 	}
 	checkpoints, ok := s.Store.(registrystore.AdminCheckpointStore)
 	if !ok {
@@ -3701,6 +3856,9 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		if !hasGRPCAdminEventAccess(stream.Context()) {
 			return status.Error(codes.PermissionDenied, "admin or auditor role required")
 		}
+		if err := requireGRPCOIDCScope(stream.Context(), security.PermissionAdminEventsRead); err != nil {
+			return err
+		}
 		justification := strings.TrimSpace(req.GetJustification())
 		if s.Config != nil && s.Config.RequireJustification && justification == "" {
 			return status.Error(codes.InvalidArgument, "admin justification required")
@@ -3713,6 +3871,11 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	userID := getUserID(stream.Context())
 	if !adminScope && userID == "" {
 		return status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if !adminScope {
+		if err := requireGRPCOIDCScope(stream.Context(), security.PermissionEventsRead); err != nil {
+			return err
+		}
 	}
 
 	// Parse kinds filter from request.
