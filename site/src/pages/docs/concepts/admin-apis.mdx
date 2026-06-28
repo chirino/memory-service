@@ -225,13 +225,13 @@ curl "http://localhost:8080/v1/admin/attachments?userId=alice&status=unlinked" \
 curl "http://localhost:8080/v1/admin/attachments/{id}" \
   -H "Authorization: Bearer <admin-token>"
 
-# Download attachment content
-curl "http://localhost:8080/v1/admin/attachments/{id}/content" \
+# Download attachment content; add disposition=inline or attachment when needed
+curl "http://localhost:8080/v1/admin/attachments/{id}/content?disposition=attachment" \
   -H "Authorization: Bearer <admin-token>" \
   -o file.bin
 
-# Get a signed download URL
-curl "http://localhost:8080/v1/admin/attachments/{id}/download-url" \
+# Get a signed download URL with the same disposition behavior
+curl "http://localhost:8080/v1/admin/attachments/{id}/download-url?disposition=attachment" \
   -H "Authorization: Bearer <admin-token>"
 
 # Delete any attachment (admin only)

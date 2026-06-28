@@ -326,19 +326,34 @@ class MemoryServiceProxy:
             json_body=payload,
         )
 
-    async def get_attachment(self, attachment_id: str) -> httpx.Response:
-        return await self._request("GET", f"/v1/attachments/{attachment_id}")
+    async def get_attachment(
+        self, attachment_id: str, disposition: str | None = None
+    ) -> httpx.Response:
+        return await self._request(
+            "GET",
+            f"/v1/attachments/{attachment_id}",
+            params=self._compact_params({"disposition": disposition}),
+        )
 
-    async def get_attachment_download_url(self, attachment_id: str) -> httpx.Response:
-        return await self._request("GET", f"/v1/attachments/{attachment_id}/download-url")
+    async def get_attachment_download_url(
+        self, attachment_id: str, disposition: str | None = None
+    ) -> httpx.Response:
+        return await self._request(
+            "GET",
+            f"/v1/attachments/{attachment_id}/download-url",
+            params=self._compact_params({"disposition": disposition}),
+        )
 
     async def delete_attachment(self, attachment_id: str) -> httpx.Response:
         return await self._request("DELETE", f"/v1/attachments/{attachment_id}")
 
-    async def download_attachment_by_token(self, token: str, filename: str) -> httpx.Response:
+    async def download_attachment_by_token(
+        self, token: str, filename: str, disposition: str | None = None
+    ) -> httpx.Response:
         return await self._request(
             "GET",
             f"/v1/attachments/download/{token}/{filename}",
+            params=self._compact_params({"disposition": disposition}),
             include_api_key=False,
             include_authorization=False,
         )

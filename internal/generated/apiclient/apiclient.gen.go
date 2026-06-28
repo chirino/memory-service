@@ -193,6 +193,24 @@ func (e AdminSubscribeEventsParamsDetail) Valid() bool {
 	}
 }
 
+// Defines values for DownloadAttachmentByTokenParamsDisposition.
+const (
+	DownloadAttachmentByTokenParamsDispositionAttachment DownloadAttachmentByTokenParamsDisposition = "attachment"
+	DownloadAttachmentByTokenParamsDispositionInline     DownloadAttachmentByTokenParamsDisposition = "inline"
+)
+
+// Valid indicates whether the value is a known member of the DownloadAttachmentByTokenParamsDisposition enum.
+func (e DownloadAttachmentByTokenParamsDisposition) Valid() bool {
+	switch e {
+	case DownloadAttachmentByTokenParamsDispositionAttachment:
+		return true
+	case DownloadAttachmentByTokenParamsDispositionInline:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for GetAttachmentParamsDisposition.
 const (
 	GetAttachmentParamsDispositionAttachment GetAttachmentParamsDisposition = "attachment"
@@ -205,6 +223,24 @@ func (e GetAttachmentParamsDisposition) Valid() bool {
 	case GetAttachmentParamsDispositionAttachment:
 		return true
 	case GetAttachmentParamsDispositionInline:
+		return true
+	default:
+		return false
+	}
+}
+
+// Defines values for GetAttachmentDownloadUrlParamsDisposition.
+const (
+	GetAttachmentDownloadUrlParamsDispositionAttachment GetAttachmentDownloadUrlParamsDisposition = "attachment"
+	GetAttachmentDownloadUrlParamsDispositionInline     GetAttachmentDownloadUrlParamsDisposition = "inline"
+)
+
+// Valid indicates whether the value is a known member of the GetAttachmentDownloadUrlParamsDisposition enum.
+func (e GetAttachmentDownloadUrlParamsDisposition) Valid() bool {
+	switch e {
+	case GetAttachmentDownloadUrlParamsDispositionAttachment:
+		return true
+	case GetAttachmentDownloadUrlParamsDispositionInline:
 		return true
 	default:
 		return false
@@ -404,13 +440,13 @@ type AccessLevel string
 //
 // **Server-stored (Phase 2)**: Provide `attachmentId` to reference a file
 // previously uploaded via `POST /v1/attachments`. When the entry is created,
-// the server replaces `attachmentId` with an `href` pointing to
-// `/v1/attachments/{id}`.
+// the server preserves `attachmentId` and links the attachment to the entry.
 //
 // At least one of `href` or `attachmentId` must be present.
 type Attachment struct {
 	// AttachmentId ID of a previously uploaded attachment (from POST /v1/attachments).
-	// When the entry is created, this is replaced with an href.
+	// When the entry is created, this is preserved as the stable server-stored
+	// attachment reference.
 	AttachmentId *string `json:"attachmentId,omitempty"`
 
 	// ContentType MIME type of the attachment (e.g., "image/jpeg", "audio/mp3"). Required when href is provided directly.
@@ -1095,6 +1131,18 @@ type UploadAttachmentParams struct {
 	ExpiresIn *string `form:"expiresIn,omitempty" json:"expiresIn,omitempty"`
 }
 
+// DownloadAttachmentByTokenParams defines parameters for DownloadAttachmentByToken.
+type DownloadAttachmentByTokenParams struct {
+	// Disposition Controls the Content-Disposition header. Use `inline` to display the attachment
+	// in the browser (e.g., images, PDFs), or `attachment` to force download.
+	// If not specified, the Content-Disposition header is not set, allowing the browser
+	// to use its default behavior based on content type.
+	Disposition *DownloadAttachmentByTokenParamsDisposition `form:"disposition,omitempty" json:"disposition,omitempty"`
+}
+
+// DownloadAttachmentByTokenParamsDisposition defines parameters for DownloadAttachmentByToken.
+type DownloadAttachmentByTokenParamsDisposition string
+
 // GetAttachmentParams defines parameters for GetAttachment.
 type GetAttachmentParams struct {
 	// Disposition Controls the Content-Disposition header. Use `inline` to display the attachment
@@ -1106,6 +1154,19 @@ type GetAttachmentParams struct {
 
 // GetAttachmentParamsDisposition defines parameters for GetAttachment.
 type GetAttachmentParamsDisposition string
+
+// GetAttachmentDownloadUrlParams defines parameters for GetAttachmentDownloadUrl.
+type GetAttachmentDownloadUrlParams struct {
+	// Disposition Controls the Content-Disposition header on the returned download URL.
+	// Use `inline` to display the attachment in the browser (e.g., images, PDFs),
+	// or `attachment` to force download. If not specified, the
+	// Content-Disposition header is not set, allowing the browser to use its
+	// default behavior based on content type.
+	Disposition *GetAttachmentDownloadUrlParamsDisposition `form:"disposition,omitempty" json:"disposition,omitempty"`
+}
+
+// GetAttachmentDownloadUrlParamsDisposition defines parameters for GetAttachmentDownloadUrl.
+type GetAttachmentDownloadUrlParamsDisposition string
 
 // ListConversationsParams defines parameters for ListConversations.
 type ListConversationsParams struct {
@@ -1507,7 +1568,7 @@ type ClientInterface interface {
 	UploadAttachment(ctx context.Context, params *UploadAttachmentParams, body UploadAttachmentJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DownloadAttachmentByToken request
-	DownloadAttachmentByToken(ctx context.Context, token string, filename string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DownloadAttachmentByToken(ctx context.Context, token string, filename string, params *DownloadAttachmentByTokenParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteAttachment request
 	DeleteAttachment(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1516,7 +1577,7 @@ type ClientInterface interface {
 	GetAttachment(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetAttachmentDownloadUrl request
-	GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetCapabilities request
 	GetCapabilities(ctx context.Context, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1669,8 +1730,8 @@ func (c *Client) UploadAttachment(ctx context.Context, params *UploadAttachmentP
 	return c.Client.Do(req)
 }
 
-func (c *Client) DownloadAttachmentByToken(ctx context.Context, token string, filename string, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewDownloadAttachmentByTokenRequest(c.Server, token, filename)
+func (c *Client) DownloadAttachmentByToken(ctx context.Context, token string, filename string, params *DownloadAttachmentByTokenParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewDownloadAttachmentByTokenRequest(c.Server, token, filename, params)
 	if err != nil {
 		return nil, err
 	}
@@ -1705,8 +1766,8 @@ func (c *Client) GetAttachment(ctx context.Context, id openapi_types.UUID, param
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewGetAttachmentDownloadUrlRequest(c.Server, id)
+func (c *Client) GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAttachmentDownloadUrlRequest(c.Server, id, params)
 	if err != nil {
 		return nil, err
 	}
@@ -2415,7 +2476,7 @@ func NewUploadAttachmentRequestWithBody(server string, params *UploadAttachmentP
 }
 
 // NewDownloadAttachmentByTokenRequest generates requests for DownloadAttachmentByToken
-func NewDownloadAttachmentByTokenRequest(server string, token string, filename string) (*http.Request, error) {
+func NewDownloadAttachmentByTokenRequest(server string, token string, filename string, params *DownloadAttachmentByTokenParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2445,6 +2506,33 @@ func NewDownloadAttachmentByTokenRequest(server string, token string, filename s
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Disposition != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "disposition", *params.Disposition, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -2551,7 +2639,7 @@ func NewGetAttachmentRequest(server string, id openapi_types.UUID, params *GetAt
 }
 
 // NewGetAttachmentDownloadUrlRequest generates requests for GetAttachmentDownloadUrl
-func NewGetAttachmentDownloadUrlRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+func NewGetAttachmentDownloadUrlRequest(server string, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -2574,6 +2662,33 @@ func NewGetAttachmentDownloadUrlRequest(server string, id openapi_types.UUID) (*
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
+	}
+
+	if params != nil {
+		// queryValues collects non-styled parameters (passthrough, JSON)
+		// that are safe to round-trip through url.Values.Encode().
+		queryValues := queryURL.Query()
+		// rawQueryFragments collects pre-encoded query fragments from
+		// styled parameters, preserving literal commas as delimiters
+		// per the OpenAPI spec (e.g. "color=blue,black,brown").
+		var rawQueryFragments []string
+
+		if params.Disposition != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "disposition", *params.Disposition, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if encoded := queryValues.Encode(); encoded != "" {
+			rawQueryFragments = append(rawQueryFragments, encoded)
+		}
+		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -4433,7 +4548,7 @@ type ClientWithResponsesInterface interface {
 	UploadAttachmentWithResponse(ctx context.Context, params *UploadAttachmentParams, body UploadAttachmentJSONRequestBody, reqEditors ...RequestEditorFn) (*UploadAttachmentResp, error)
 
 	// DownloadAttachmentByTokenWithResponse request
-	DownloadAttachmentByTokenWithResponse(ctx context.Context, token string, filename string, reqEditors ...RequestEditorFn) (*DownloadAttachmentByTokenResp, error)
+	DownloadAttachmentByTokenWithResponse(ctx context.Context, token string, filename string, params *DownloadAttachmentByTokenParams, reqEditors ...RequestEditorFn) (*DownloadAttachmentByTokenResp, error)
 
 	// DeleteAttachmentWithResponse request
 	DeleteAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteAttachmentResp, error)
@@ -4442,7 +4557,7 @@ type ClientWithResponsesInterface interface {
 	GetAttachmentWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentParams, reqEditors ...RequestEditorFn) (*GetAttachmentResp, error)
 
 	// GetAttachmentDownloadUrlWithResponse request
-	GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error)
+	GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error)
 
 	// GetCapabilitiesWithResponse request
 	GetCapabilitiesWithResponse(ctx context.Context, reqEditors ...RequestEditorFn) (*GetCapabilitiesResp, error)
@@ -5753,8 +5868,8 @@ func (c *ClientWithResponses) UploadAttachmentWithResponse(ctx context.Context, 
 }
 
 // DownloadAttachmentByTokenWithResponse request returning *DownloadAttachmentByTokenResp
-func (c *ClientWithResponses) DownloadAttachmentByTokenWithResponse(ctx context.Context, token string, filename string, reqEditors ...RequestEditorFn) (*DownloadAttachmentByTokenResp, error) {
-	rsp, err := c.DownloadAttachmentByToken(ctx, token, filename, reqEditors...)
+func (c *ClientWithResponses) DownloadAttachmentByTokenWithResponse(ctx context.Context, token string, filename string, params *DownloadAttachmentByTokenParams, reqEditors ...RequestEditorFn) (*DownloadAttachmentByTokenResp, error) {
+	rsp, err := c.DownloadAttachmentByToken(ctx, token, filename, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -5780,8 +5895,8 @@ func (c *ClientWithResponses) GetAttachmentWithResponse(ctx context.Context, id 
 }
 
 // GetAttachmentDownloadUrlWithResponse request returning *GetAttachmentDownloadUrlResp
-func (c *ClientWithResponses) GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error) {
-	rsp, err := c.GetAttachmentDownloadUrl(ctx, id, reqEditors...)
+func (c *ClientWithResponses) GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error) {
+	rsp, err := c.GetAttachmentDownloadUrl(ctx, id, params, reqEditors...)
 	if err != nil {
 		return nil, err
 	}

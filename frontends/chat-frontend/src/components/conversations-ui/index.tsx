@@ -120,27 +120,26 @@ function formatMessageTime(createdAt?: string): string {
 }
 
 /**
- * Extracts the attachment ID from an href like "/v1/attachments/{uuid}".
- */
-function extractAttachmentId(attachment: ChatAttachment): string | undefined {
-  if (attachment.attachmentId) return attachment.attachmentId;
-  if (!attachment.href) return undefined;
-  const match = attachment.href.match(/\/v1\/attachments\/([0-9a-f-]{36})$/i);
-  return match ? match[1] : undefined;
-}
-
-/**
  * Fetches a signed download URL for a server-stored attachment.
  * For external URLs (no attachment ID), returns the href directly.
  */
-async function fetchSignedDownloadUrl(attachment: ChatAttachment): Promise<string | undefined> {
-  const attachmentId = extractAttachmentId(attachment);
-  if (!attachmentId) {
+type AttachmentDisposition = "inline" | "attachment";
+
+function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisposition): string {
+  const params = new URLSearchParams({ disposition });
+  return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
+}
+
+async function fetchSignedDownloadUrl(
+  attachment: ChatAttachment,
+  disposition: AttachmentDisposition,
+): Promise<string | undefined> {
+  if (!attachment.attachmentId) {
     // External URL — return href directly
     return attachment.href;
   }
   const token = getAccessToken();
-  const resp = await fetch(`/v1/attachments/${attachmentId}/download-url`, {
+  const resp = await fetch(attachmentDownloadUrl(attachment.attachmentId, disposition), {
     headers: token ? { Authorization: `Bearer ${token}` } : {},
   });
   if (!resp.ok) {
@@ -178,7 +177,7 @@ function ImageAttachmentPreview({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (!cancelled && url) {
         setImageUrl(url);
       }
@@ -192,7 +191,7 @@ function ImageAttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) window.open(url, "_blank");
     } finally {
       setIsLoading(false);
@@ -203,7 +202,7 @@ function ImageAttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "attachment");
       if (url) {
         const a = document.createElement("a");
         a.href = url;
@@ -274,7 +273,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAtta
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) {
         window.open(url, "_blank");
       }
@@ -287,7 +286,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAtta
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "attachment");
       if (url) {
         const a = document.createElement("a");
         a.href = url;
@@ -397,20 +396,13 @@ function ConversationsUIMessageRow({
                             ))}
                           </div>
                         )}
-                        {imageAtts.length > 0 &&
-                          (isUser ? (
-                            <div className="mb-2 flex flex-wrap gap-1.5">
-                              {imageAtts.map((att, i) => (
-                                <AttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                              ))}
-                            </div>
-                          ) : (
-                            <div className="mb-2 flex flex-wrap gap-2">
-                              {imageAtts.map((att, i) => (
-                                <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
-                              ))}
-                            </div>
-                          ))}
+                        {imageAtts.length > 0 && (
+                          <div className="mb-2 flex flex-wrap gap-2">
+                            {imageAtts.map((att, i) => (
+                              <ImageAttachmentPreview key={i} attachment={att} isUserMessage={isUser} />
+                            ))}
+                          </div>
+                        )}
                       </>
                     );
                   })()}

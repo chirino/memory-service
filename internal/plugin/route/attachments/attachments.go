@@ -188,10 +188,8 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 		return
 	}
 
-	// Read and validate disposition parameter (empty string means don't set header)
-	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
-	if disposition != "" && disposition != "inline" && disposition != "attachment" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+	disposition, ok := parseDisposition(c, "")
+	if !ok {
 		return
 	}
 
@@ -219,7 +217,7 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 		}
 
 		if cfg.S3DirectDownload {
-			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(disposition, attachment.Filename)); err == nil {
 				c.Redirect(http.StatusFound, signed.String())
 				return nil
 			}
@@ -270,6 +268,10 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "attachment not found"})
 		return
 	}
+	disposition, ok := parseDisposition(c, "")
+	if !ok {
+		return
+	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
@@ -298,7 +300,7 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 		}
 
 		if cfg.S3DirectDownload {
-			if signedURL, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+			if signedURL, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(disposition, attachment.Filename)); err == nil {
 				c.JSON(http.StatusOK, gin.H{"url": signedURL.String(), "expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds())})
 				return nil
 			}
@@ -314,8 +316,12 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 			filename = *attachment.Filename
 		}
 		token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
+		downloadURL := fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename)
+		if disposition != "" {
+			downloadURL += "?disposition=" + url.QueryEscape(disposition)
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"url":       fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename),
+			"url":       downloadURL,
 			"expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds()),
 		})
 		return nil
@@ -325,6 +331,11 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 }
 
 func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte) {
+	disposition, ok := parseDisposition(c, "")
+	if !ok {
+		return
+	}
+
 	storageKey, ok := verifyDownloadToken(c.Param("token"), signingKeys, time.Now())
 	if !ok {
 		c.JSON(http.StatusForbidden, gin.H{"error": "invalid or expired token"})
@@ -338,11 +349,44 @@ func downloadByToken(c *gin.Context, store registrystore.MemoryStore, attachStor
 			c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
 			return nil
 		}
-		streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment, "inline")
+		streamAttachment(c, attachStore, storageKey, &adminAtt.Attachment, disposition)
 		return nil
 	}); err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
 	}
+}
+
+func parseDisposition(c *gin.Context, defaultValue string) (string, bool) {
+	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
+	if disposition == "" {
+		return defaultValue, true
+	}
+	if disposition != "inline" && disposition != "attachment" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+		return "", false
+	}
+	return disposition, true
+}
+
+func signedURLOptions(disposition string, filename *string) *registryattach.SignedURLOptions {
+	if disposition == "" {
+		return nil
+	}
+	opts := &registryattach.SignedURLOptions{Disposition: disposition}
+	if filename != nil {
+		opts.Filename = strings.TrimSpace(*filename)
+	}
+	return opts
+}
+
+func contentDisposition(disposition string, filename *string) string {
+	if disposition == "" {
+		return ""
+	}
+	if filename == nil || strings.TrimSpace(*filename) == "" {
+		return disposition
+	}
+	return fmt.Sprintf("%s; filename=%q", disposition, strings.TrimSpace(*filename))
 }
 
 func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore, storageKey string, attachment *model.Attachment, disposition string) {
@@ -365,9 +409,8 @@ func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore
 
 	c.Header("Cache-Control", "private, max-age=300, immutable")
 	c.Header("Content-Type", attachment.ContentType)
-	// Only set Content-Disposition if disposition parameter was provided
-	if disposition != "" && attachment.Filename != nil && *attachment.Filename != "" {
-		c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, *attachment.Filename))
+	if header := contentDisposition(disposition, attachment.Filename); header != "" {
+		c.Header("Content-Disposition", header)
 	}
 	if attachment.Size != nil {
 		c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))

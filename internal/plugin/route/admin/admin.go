@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -777,10 +778,8 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		return
 	}
 
-	// Read and validate disposition parameter (empty string means don't set header)
-	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
-	if disposition != "" && disposition != "inline" && disposition != "attachment" {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+	disposition, ok := parseDisposition(c)
+	if !ok {
 		return
 	}
 
@@ -795,7 +794,7 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		}
 
 		if cfg != nil && cfg.S3DirectDownload {
-			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn); err == nil {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(disposition, attachment.Filename)); err == nil {
 				c.Redirect(http.StatusFound, signed.String())
 				return nil
 			}
@@ -819,9 +818,8 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 		}
 		c.Header("Cache-Control", "private, max-age=300, immutable")
 		c.Header("Content-Type", attachment.ContentType)
-		// Only set Content-Disposition if disposition parameter was provided
-		if disposition != "" && attachment.Filename != nil && *attachment.Filename != "" {
-			c.Header("Content-Disposition", fmt.Sprintf("%s; filename=%q", disposition, *attachment.Filename))
+		if header := contentDisposition(disposition, attachment.Filename); header != "" {
+			c.Header("Content-Disposition", header)
 		}
 		if attachment.Size != nil {
 			c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
@@ -838,6 +836,10 @@ func adminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemorySto
 	attachmentID, err := uuid.Parse(c.Param("id"))
 	if err != nil {
 		c.JSON(http.StatusNotFound, gin.H{"error": "attachment not found"})
+		return
+	}
+	disposition, ok := parseDisposition(c)
+	if !ok {
 		return
 	}
 
@@ -857,20 +859,57 @@ func adminGetAttachmentDownloadURL(c *gin.Context, store registrystore.MemorySto
 		}
 
 		if cfg == nil || cfg.S3DirectDownload {
-			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, expires); err == nil {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, expires, signedURLOptions(disposition, attachment.Filename)); err == nil {
 				c.JSON(http.StatusOK, gin.H{"url": signed.String(), "expiresIn": int(expires.Seconds())})
 				return nil
 			}
 		}
 
+		downloadURL := fmt.Sprintf("/v1/admin/attachments/%s/content", attachment.ID)
+		if disposition != "" {
+			downloadURL += "?disposition=" + url.QueryEscape(disposition)
+		}
 		c.JSON(http.StatusOK, gin.H{
-			"url":       fmt.Sprintf("/v1/admin/attachments/%s/content", attachment.ID),
+			"url":       downloadURL,
 			"expiresIn": int(expires.Seconds()),
 		})
 		return nil
 	}); err != nil {
 		handleError(c, err)
 	}
+}
+
+func parseDisposition(c *gin.Context) (string, bool) {
+	disposition := strings.ToLower(strings.TrimSpace(c.Query("disposition")))
+	if disposition == "" {
+		return "", true
+	}
+	if disposition != "inline" && disposition != "attachment" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "disposition must be 'inline' or 'attachment'"})
+		return "", false
+	}
+	return disposition, true
+}
+
+func signedURLOptions(disposition string, filename *string) *registryattach.SignedURLOptions {
+	if disposition == "" {
+		return nil
+	}
+	opts := &registryattach.SignedURLOptions{Disposition: disposition}
+	if filename != nil {
+		opts.Filename = strings.TrimSpace(*filename)
+	}
+	return opts
+}
+
+func contentDisposition(disposition string, filename *string) string {
+	if disposition == "" {
+		return ""
+	}
+	if filename == nil || strings.TrimSpace(*filename) == "" {
+		return disposition
+	}
+	return fmt.Sprintf("%s; filename=%q", disposition, strings.TrimSpace(*filename))
 }
 
 func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {

@@ -114,7 +114,7 @@ func (s *AttachmentStore) Delete(_ context.Context, storageKey string) error {
 	return nil
 }
 
-func (s *AttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration) (*url.URL, error) {
+func (s *AttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration, _ *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("signed url unsupported")
 }
 

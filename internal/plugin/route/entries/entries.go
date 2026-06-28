@@ -473,8 +473,8 @@ func validateHistoryEntry(entry registrystore.CreateEntryRequest, _ int) error {
 }
 
 // resolveAttachmentRefs scans content JSON for attachmentId references,
-// validates access, creates new attachment records for cross-references,
-// and replaces attachmentId with href. Returns modified content (or nil if unchanged),
+// validates access, and creates new attachment records for cross-references.
+// Returns modified content (or nil if unchanged),
 // the list of attachment IDs to link, and any error.
 func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore, userID string, convID uuid.UUID, content json.RawMessage) (json.RawMessage, []uuid.UUID, error) {
 	var contentArr []map[string]any
@@ -560,11 +560,10 @@ func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore,
 					return nil, nil, err
 				}
 				linkedIDs = append(linkedIDs, newAttachment.ID)
-				att["href"] = "/v1/attachments/" + newAttachment.ID.String()
+				att["attachmentId"] = newAttachment.ID.String()
 			} else {
 				// Unlinked attachment — link directly.
 				linkedIDs = append(linkedIDs, attachmentID)
-				att["href"] = "/v1/attachments/" + attachmentID.String()
 			}
 
 			// Backfill contentType and name from the attachment record if not already set.

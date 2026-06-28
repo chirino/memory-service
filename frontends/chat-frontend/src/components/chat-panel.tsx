@@ -129,9 +129,9 @@ function ChatMessageRow({
   useEffect(() => {
     if (isEditing && !prevEditingRef.current && message.attachments && message.attachments.length > 0) {
       const existing = message.attachments
-        .filter((a) => a.href?.startsWith("/v1/attachments/"))
+        .filter((a) => a.attachmentId)
         .map((a) => ({
-          attachmentId: a.href!.replace("/v1/attachments/", ""),
+          attachmentId: a.attachmentId!,
           contentType: a.contentType,
           name: a.name,
         }));

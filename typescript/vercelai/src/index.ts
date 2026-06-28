@@ -7,6 +7,8 @@ import { fileURLToPath } from "node:url";
 type HistoryRole = "USER" | "AI";
 const MAX_MESSAGES_PER_MEMORY_ENTRY = 100;
 
+export type AttachmentDisposition = "inline" | "attachment";
+
 export type MemoryServiceConfig = {
   baseUrl: string;
   apiKey: string;
@@ -368,6 +370,40 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
       return memoryServiceRequest(
         "DELETE",
         `/v1/conversations/${conversationId}/response`,
+        options,
+      );
+    },
+    getAttachment(
+      attachmentId: string,
+      query: { disposition?: AttachmentDisposition | null } = {},
+    ): Promise<Response> {
+      const qs = compactQuery(query);
+      return memoryServiceRequest(
+        "GET",
+        `/v1/attachments/${attachmentId}${qs}`,
+        options,
+      );
+    },
+    getAttachmentDownloadUrl(
+      attachmentId: string,
+      query: { disposition?: AttachmentDisposition | null } = {},
+    ): Promise<Response> {
+      const qs = compactQuery(query);
+      return memoryServiceRequest(
+        "GET",
+        `/v1/attachments/${attachmentId}/download-url${qs}`,
+        options,
+      );
+    },
+    downloadAttachmentByToken(
+      token: string,
+      filename: string,
+      query: { disposition?: AttachmentDisposition | null } = {},
+    ): Promise<Response> {
+      const qs = compactQuery(query);
+      return memoryServiceRequest(
+        "GET",
+        `/v1/attachments/download/${token}/${filename}${qs}`,
         options,
       );
     },

@@ -507,12 +507,30 @@ public class MemoryServiceProxy {
      * Gets a signed download URL for an attachment.
      */
     public ResponseEntity<?> getAttachmentDownloadUrl(String id) {
+        return getAttachmentDownloadUrl(id, null);
+    }
+
+    /**
+     * Gets a signed download URL for an attachment with optional disposition control.
+     *
+     * @param id the attachment ID
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public ResponseEntity<?> getAttachmentDownloadUrl(String id, @Nullable String disposition) {
         String bearer = resolveBearerToken(null);
 
         var upstream =
                 createWebClient()
                         .get()
-                        .uri("/v1/attachments/{id}/download-url", id)
+                        .uri(
+                                uriBuilder -> {
+                                    var builder =
+                                            uriBuilder.path("/v1/attachments/{id}/download-url");
+                                    if (disposition != null && !disposition.isBlank()) {
+                                        builder.queryParam("disposition", disposition);
+                                    }
+                                    return builder.build(id);
+                                })
                         .headers(
                                 h -> {
                                     if (StringUtils.hasText(bearer)) {
@@ -586,10 +604,32 @@ public class MemoryServiceProxy {
      * Binary content is streamed through a pipe without buffering in memory.
      */
     public ResponseEntity<?> downloadAttachmentByToken(String token, String filename) {
+        return downloadAttachmentByToken(token, filename, null);
+    }
+
+    /**
+     * Downloads an attachment using a signed token with optional disposition control.
+     * Binary content is streamed through a pipe without buffering in memory.
+     *
+     * @param token signed download token
+     * @param filename path filename
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public ResponseEntity<?> downloadAttachmentByToken(
+            String token, String filename, @Nullable String disposition) {
         var upstream =
                 createWebClient()
                         .get()
-                        .uri("/v1/attachments/download/{token}/{filename}", token, filename)
+                        .uri(
+                                uriBuilder -> {
+                                    var builder =
+                                            uriBuilder.path(
+                                                    "/v1/attachments/download/{token}/{filename}");
+                                    if (disposition != null && !disposition.isBlank()) {
+                                        builder.queryParam("disposition", disposition);
+                                    }
+                                    return builder.build(token, filename);
+                                })
                         .exchangeToMono(
                                 response -> {
                                     HttpStatus status =

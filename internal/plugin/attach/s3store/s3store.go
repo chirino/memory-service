@@ -165,12 +165,20 @@ func (s *S3AttachmentStore) Delete(ctx context.Context, storageKey string) error
 	return err
 }
 
-func (s *S3AttachmentStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration) (*url.URL, error) {
+func (s *S3AttachmentStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration, opts *registryattach.SignedURLOptions) (*url.URL, error) {
 	s3Key := s.s3Key(storageKey)
-	resp, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+	input := &s3.GetObjectInput{
 		Bucket: &s.bucket,
 		Key:    &s3Key,
-	}, s3.WithPresignExpires(expiry))
+	}
+	if opts != nil && opts.Disposition != "" {
+		contentDisposition := opts.Disposition
+		if opts.Filename != "" {
+			contentDisposition = fmt.Sprintf("%s; filename=%q", opts.Disposition, opts.Filename)
+		}
+		input.ResponseContentDisposition = aws.String(contentDisposition)
+	}
+	resp, err := s.presigner.PresignGetObject(ctx, input, s3.WithPresignExpires(expiry))
 	if err != nil {
 		return nil, fmt.Errorf("s3store: presign: %w", err)
 	}

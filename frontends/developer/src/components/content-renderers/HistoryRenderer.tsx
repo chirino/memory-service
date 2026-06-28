@@ -14,6 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
+import { getAccessToken } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { JsonHighlight } from "./JsonHighlight";
 import type { ContentRendererProps } from "./index";
@@ -92,8 +93,7 @@ export function HistoryRenderer({ content }: ContentRendererProps) {
     if (obj.role !== "USER" && obj.role !== "AI") return false;
     // A message is valid if it has text, attachments, or events
     const hasText = typeof obj.text === "string";
-    const hasAttachments =
-      Array.isArray(obj.attachments) && obj.attachments.length > 0;
+    const hasAttachments = Array.isArray(obj.attachments) && obj.attachments.length > 0;
     const hasEvents = Array.isArray(obj.events) && obj.events.length > 0;
     return hasText || hasAttachments || hasEvents;
   };
@@ -102,11 +102,7 @@ export function HistoryRenderer({ content }: ContentRendererProps) {
   const messages = (content as unknown[]).filter(isValidMessage);
 
   if (messages.length === 0) {
-    return (
-      <div className="text-sm text-muted-foreground italic">
-        No valid messages to display
-      </div>
-    );
+    return <div className="text-sm italic text-muted-foreground">No valid messages to display</div>;
   }
 
   return (
@@ -118,33 +114,34 @@ export function HistoryRenderer({ content }: ContentRendererProps) {
   );
 }
 
-/**
- * Extracts the attachment UUID from an href like "/v1/attachments/{uuid}".
- */
-function extractAttachmentId(attachment: Attachment): string | undefined {
-  if (attachment.attachmentId) return attachment.attachmentId;
-  if (!attachment.href) return undefined;
-  const match = attachment.href.match(/\/v1\/attachments\/([0-9a-f-]{36})$/i);
-  return match ? match[1] : undefined;
+type AttachmentDisposition = "inline" | "attachment";
+
+function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisposition): string {
+  const params = new URLSearchParams({ disposition });
+  return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
 }
 
 /**
- * Fetches a signed download URL for an attachment via the admin API.
+ * Fetches a signed download URL for an attachment.
  * For external URLs (no attachment ID), returns the href directly.
  */
 async function fetchSignedDownloadUrl(
   attachment: Attachment,
+  disposition: AttachmentDisposition,
 ): Promise<string | undefined> {
-  const attachmentId = extractAttachmentId(attachment);
-  if (!attachmentId) {
+  if (!attachment.attachmentId) {
     return attachment.href;
   }
   try {
-    const response = await fetch(`/v1/admin/attachments/${attachmentId}/download-url`, {
-      headers: {
-        Authorization: `Bearer ${localStorage.getItem("access_token") || ""}`,
-      },
-    });
+    const headers = new Headers();
+    const token = getAccessToken();
+    if (token) {
+      headers.set("Authorization", `Bearer ${token}`);
+    }
+    const response = await fetch(attachmentDownloadUrl(attachment.attachmentId, disposition), { headers });
+    if (!response.ok) {
+      return undefined;
+    }
     const data = await response.json();
     return data?.url ?? undefined;
   } catch {
@@ -156,13 +153,7 @@ async function fetchSignedDownloadUrl(
 /**
  * Returns the appropriate icon for a file based on its MIME type.
  */
-function FileIcon({
-  contentType,
-  className,
-}: {
-  contentType: string;
-  className?: string;
-}) {
+function FileIcon({ contentType, className }: { contentType: string; className?: string }) {
   const major = contentType?.split("/")[0];
   if (major === "image") return <Image className={className} />;
   if (major === "video") return <Film className={className} />;
@@ -175,13 +166,7 @@ function FileIcon({
  * Shows file-type icon, filename, and preview/download action buttons.
  * Uses the admin download-url endpoint for signed URLs.
  */
-function AttachmentPreview({
-  attachment,
-  isUserMessage,
-}: {
-  attachment: Attachment;
-  isUserMessage?: boolean;
-}) {
+function AttachmentPreview({ attachment, isUserMessage }: { attachment: Attachment; isUserMessage?: boolean }) {
   const displayName = attachment.name || "Attachment";
   const [isLoading, setIsLoading] = useState(false);
   const hasLink = !!(attachment.href || attachment.attachmentId);
@@ -190,7 +175,7 @@ function AttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) {
         window.open(url, "_blank");
       }
@@ -203,7 +188,7 @@ function AttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "attachment");
       if (url) {
         const a = document.createElement("a");
         a.href = url;
@@ -226,10 +211,7 @@ function AttachmentPreview({
           : "border-muted-foreground/20 bg-background/60 text-foreground",
       )}
     >
-      <FileIcon
-        contentType={attachment.contentType}
-        className="h-3.5 w-3.5 shrink-0 opacity-60"
-      />
+      <FileIcon contentType={attachment.contentType} className="h-3.5 w-3.5 shrink-0 opacity-60" />
       <span className="max-w-35 truncate">{displayName}</span>
       {hasLink && (
         <>
@@ -279,13 +261,7 @@ function isImageAttachment(attachment: Attachment): boolean {
  * Renders the image with max 50% width and hover overlay buttons
  * for opening in a new tab or downloading.
  */
-function ImageAttachmentPreview({
-  attachment,
-  isUserMessage,
-}: {
-  attachment: Attachment;
-  isUserMessage?: boolean;
-}) {
+function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: Attachment; isUserMessage?: boolean }) {
   const [imageUrl, setImageUrl] = useState<string | undefined>(undefined);
   const [isLoading, setIsLoading] = useState(false);
   const displayName = attachment.name || "Image";
@@ -293,7 +269,7 @@ function ImageAttachmentPreview({
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (!cancelled && url) {
         setImageUrl(url);
       }
@@ -307,7 +283,7 @@ function ImageAttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) window.open(url, "_blank");
     } finally {
       setIsLoading(false);
@@ -318,7 +294,7 @@ function ImageAttachmentPreview({
     if (isLoading) return;
     setIsLoading(true);
     try {
-      const url = await fetchSignedDownloadUrl(attachment);
+      const url = await fetchSignedDownloadUrl(attachment, "attachment");
       if (url) {
         const a = document.createElement("a");
         a.href = url;
@@ -345,17 +321,13 @@ function ImageAttachmentPreview({
         <div
           className={cn(
             "flex h-24 w-32 items-center justify-center rounded-lg",
-            isUserMessage
-              ? "bg-primary-foreground/10"
-              : "bg-foreground/5",
+            isUserMessage ? "bg-primary-foreground/10" : "bg-foreground/5",
           )}
         >
           <Image
             className={cn(
               "h-6 w-6 animate-pulse",
-              isUserMessage
-                ? "text-primary-foreground/40"
-                : "text-muted-foreground/40",
+              isUserMessage ? "text-primary-foreground/40" : "text-muted-foreground/40",
             )}
           />
         </div>
@@ -397,14 +369,12 @@ function MessageBubble({ message }: { message: Message }) {
       <div
         className={cn(
           "max-w-[80%] rounded-2xl px-4 py-2",
-          isUser
-            ? "bg-primary text-primary-foreground rounded-br-md"
-            : "bg-muted text-foreground rounded-bl-md",
+          isUser ? "rounded-br-md bg-primary text-primary-foreground" : "rounded-bl-md bg-muted text-foreground",
         )}
       >
         <div
           className={cn(
-            "text-[10px] font-medium uppercase tracking-wide mb-1",
+            "mb-1 text-[10px] font-medium uppercase tracking-wide",
             isUser ? "text-primary-foreground/70" : "text-muted-foreground",
           )}
         >
@@ -413,45 +383,23 @@ function MessageBubble({ message }: { message: Message }) {
         {message.attachments &&
           message.attachments.length > 0 &&
           (() => {
-            const nonImageAtts = message.attachments.filter(
-              (a) => !isImageAttachment(a),
-            );
-            const imageAtts = message.attachments.filter((a) =>
-              isImageAttachment(a),
-            );
+            const nonImageAtts = message.attachments.filter((a) => !isImageAttachment(a));
+            const imageAtts = message.attachments.filter((a) => isImageAttachment(a));
             return (
               <>
                 {nonImageAtts.length > 0 && (
                   <div className="mb-2 flex flex-wrap gap-1.5">
                     {nonImageAtts.map((att, i) => {
-                      const key =
-                        att.attachmentId ??
-                        att.name ??
-                        `att-${i}`;
-                      return (
-                        <AttachmentPreview
-                          key={key}
-                          attachment={att}
-                          isUserMessage={isUser}
-                        />
-                      );
+                      const key = att.attachmentId ?? att.name ?? `att-${i}`;
+                      return <AttachmentPreview key={key} attachment={att} isUserMessage={isUser} />;
                     })}
                   </div>
                 )}
                 {imageAtts.length > 0 && (
                   <div className="mb-2 flex flex-wrap gap-2">
                     {imageAtts.map((att, i) => {
-                      const key =
-                        att.attachmentId ??
-                        att.name ??
-                        `img-${i}`;
-                      return (
-                        <ImageAttachmentPreview
-                          key={key}
-                          attachment={att}
-                          isUserMessage={isUser}
-                        />
-                      );
+                      const key = att.attachmentId ?? att.name ?? `img-${i}`;
+                      return <ImageAttachmentPreview key={key} attachment={att} isUserMessage={isUser} />;
                     })}
                   </div>
                 )}
@@ -459,11 +407,11 @@ function MessageBubble({ message }: { message: Message }) {
             );
           })()}
         {message.events && message.events.length > 0 ? (
-          <div className="text-sm prose prose-sm max-w-none">
+          <div className="prose prose-sm max-w-none text-sm">
             <RichEventRenderer events={message.events} />
           </div>
         ) : message.text ? (
-          <div className="text-sm prose prose-sm max-w-none">
+          <div className="prose prose-sm max-w-none text-sm">
             <Streamdown>{message.text}</Streamdown>
           </div>
         ) : null}
@@ -494,10 +442,7 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
 
   // Build a lookup of completed tool executions by id so we can merge them
   // with their corresponding BeforeToolExecution events.
-  const completedTools = new Map<
-    string,
-    { toolName: string; input?: unknown; output?: unknown }
-  >();
+  const completedTools = new Map<string, { toolName: string; input?: unknown; output?: unknown }>();
   const consumedToolExecutedIds = new Set<string>();
   for (const event of events) {
     if (event.eventType === "ToolExecuted" && event.id) {
@@ -537,9 +482,7 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
         flushText();
         flushThinking();
         // If we have a matching ToolExecuted, render as completed directly
-        const completed = event.id
-          ? completedTools.get(event.id)
-          : undefined;
+        const completed = event.id ? completedTools.get(event.id) : undefined;
         if (completed && event.id) {
           consumedToolExecutedIds.add(event.id);
           groups.push({
@@ -621,17 +564,9 @@ function EventBlock({ group }: { group: EventGroup }) {
     case "tool-pending":
       return <ToolCallPending name={group.toolName} input={group.input} />;
     case "tool-result":
-      return (
-        <ToolCallResult
-          name={group.toolName}
-          input={group.input}
-          output={group.output}
-        />
-      );
+      return <ToolCallResult name={group.toolName} input={group.input} output={group.output} />;
     case "content-fetched":
-      return (
-        <ContentFetchedBlock source={group.source} content={group.content} />
-      );
+      return <ContentFetchedBlock source={group.source} content={group.content} />;
     default:
       return null;
   }
@@ -649,11 +584,7 @@ function ThinkingSection({ content }: { content: string }) {
         onClick={() => setIsExpanded(!isExpanded)}
         className="flex w-full items-center gap-2 px-3 py-2 text-left text-sm text-muted-foreground transition-colors hover:bg-sage-soft/30"
       >
-        {isExpanded ? (
-          <ChevronDown className="h-4 w-4" />
-        ) : (
-          <ChevronRight className="h-4 w-4" />
-        )}
+        {isExpanded ? <ChevronDown className="h-4 w-4" /> : <ChevronRight className="h-4 w-4" />}
         <Brain className="h-4 w-4 text-primary" />
         <span className="font-medium">Thinking</span>
       </button>
@@ -703,19 +634,9 @@ function ToolCallPending({ name, input }: { name: string; input?: unknown }) {
   );
 }
 
-function ToolCallResult({
-  name,
-  input,
-  output,
-}: {
-  name: string;
-  input?: unknown;
-  output?: unknown;
-}) {
+function ToolCallResult({ name, input, output }: { name: string; input?: unknown; output?: unknown }) {
   const [isExpanded, setIsExpanded] = useState(false);
-  const hasDetails =
-    (input !== undefined && input !== null) ||
-    (output !== undefined && output !== null);
+  const hasDetails = (input !== undefined && input !== null) || (output !== undefined && output !== null);
 
   return (
     <div className="my-2 rounded-lg border border-success/30 bg-success/10">
@@ -759,13 +680,7 @@ function ToolCallResult({
   );
 }
 
-function ContentFetchedBlock({
-  source,
-  content,
-}: {
-  source?: string;
-  content?: string;
-}) {
+function ContentFetchedBlock({ source, content }: { source?: string; content?: string }) {
   const [isExpanded, setIsExpanded] = useState(false);
 
   return (
@@ -781,11 +696,7 @@ function ContentFetchedBlock({
       >
         <FileText className="h-4 w-4 text-muted-foreground" />
         <span className="text-xs text-muted-foreground">Retrieved content</span>
-        {source && (
-          <span className="truncate text-xs font-medium text-foreground">
-            {source}
-          </span>
-        )}
+        {source && <span className="truncate text-xs font-medium text-foreground">{source}</span>}
         {content &&
           (isExpanded ? (
             <ChevronDown className="ml-auto h-4 w-4 text-muted-foreground" />
@@ -795,9 +706,7 @@ function ContentFetchedBlock({
       </button>
       {isExpanded && content && (
         <div className="border-t border-border px-3 py-2">
-          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">
-            {content}
-          </pre>
+          <pre className="whitespace-pre-wrap text-xs text-muted-foreground">{content}</pre>
         </div>
       )}
     </div>

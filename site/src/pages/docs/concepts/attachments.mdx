@@ -132,8 +132,8 @@ curl -X POST "http://localhost:8080/v1/conversations/{conversationId}/entries" \
 On persistence, the server:
 
 1. Links the attachment to the entry (clears the TTL)
-2. Rewrites `attachmentId` to an `href` in the stored content
-3. Auto-populates `contentType`, `name`, `size`, and `sha256` from the attachment record
+2. Preserves `attachmentId` in the stored content
+3. Auto-populates `contentType` and `name` from the attachment record when they were not provided
 
 The stored entry content will look like:
 
@@ -143,11 +143,9 @@ The stored entry content will look like:
   "text": "What breed is this dog?",
   "attachments": [
     {
-      "href": "/v1/attachments/7c9e6679-7425-40de-944b-e07fc1f90ae7",
+      "attachmentId": "7c9e6679-7425-40de-944b-e07fc1f90ae7",
       "contentType": "image/jpeg",
-      "name": "photo.jpg",
-      "size": 204800,
-      "sha256": "e3b0c44298fc1c149afbf4c8996fb924..."
+      "name": "photo.jpg"
     }
   ]
 }
@@ -155,15 +153,17 @@ The stored entry content will look like:
 
 ### Attachment Properties
 
-| Property       | Required                        | Description                                            |
-| -------------- | ------------------------------- | ------------------------------------------------------ |
-| `attachmentId` | One of `href` or `attachmentId` | ID of a server-stored attachment                       |
-| `href`         | One of `href` or `attachmentId` | URL to an external resource                            |
-| `contentType`  | Required with `href`            | MIME type (auto-populated for `attachmentId`)          |
-| `name`         | No                              | Display name                                           |
-| `description`  | No                              | Alt text or description                                |
-| `size`         | No                              | File size in bytes (auto-populated for `attachmentId`) |
-| `sha256`       | No                              | SHA-256 hash (auto-populated for `attachmentId`)       |
+| Property       | Required                        | Description                                   |
+| -------------- | ------------------------------- | --------------------------------------------- |
+| `attachmentId` | One of `href` or `attachmentId` | ID of a server-stored attachment              |
+| `href`         | One of `href` or `attachmentId` | URL to an external resource                   |
+| `contentType`  | Required with `href`            | MIME type (auto-populated for `attachmentId`) |
+| `name`         | No                              | Display name                                  |
+| `description`  | No                              | Alt text or description                       |
+| `size`         | No                              | File size in bytes                            |
+| `sha256`       | No                              | SHA-256 hash                                  |
+
+For server-stored attachments, `size` and `sha256` are available from the attachment metadata response. They are not automatically copied into the stored entry content.
 
 ## Multi-Modal Content
 
@@ -186,10 +186,12 @@ Agent frameworks like LangChain4j and Spring AI map these content types to their
 Retrieve attachment content with an Authorization header:
 
 ```bash
-curl "http://localhost:8080/v1/attachments/{id}" \
+curl "http://localhost:8080/v1/attachments/{id}?disposition=inline" \
   -H "Authorization: Bearer <token>" \
   -o downloaded-file.jpg
 ```
+
+Use `disposition=inline` to request browser display or `disposition=attachment` to request a download prompt. If omitted, the response does not set `Content-Disposition` and the browser chooses its default behavior from the content type.
 
 Access control:
 
@@ -201,7 +203,7 @@ Access control:
 Browser elements like `<img>`, `<audio>`, `<video>`, and `<a>` tags cannot send Authorization headers. Signed download URLs solve this by embedding a time-limited token in the URL itself.
 
 ```bash
-curl "http://localhost:8080/v1/attachments/{id}/download-url" \
+curl "http://localhost:8080/v1/attachments/{id}/download-url?disposition=attachment" \
   -H "Authorization: Bearer <token>"
 ```
 
@@ -209,12 +211,21 @@ Response:
 
 ```json
 {
-  "url": "/v1/attachments/download/dG9rZW4.../photo.jpg",
+  "url": "/v1/attachments/download/dG9rZW4.../photo.jpg?disposition=attachment",
   "expiresIn": 300
 }
 ```
 
 The returned URL requires no authentication — it can be used directly in HTML tags or opened in a browser. The URL expires after 5 minutes by default.
+
+Use `disposition=inline` to request browser display or `disposition=attachment` to request a download prompt. If omitted, the response does not set `Content-Disposition` and the browser chooses its default behavior from the content type.
+
+You can pass `disposition` either when requesting the signed URL or directly on Memory Service signed token URLs:
+
+```bash
+curl "http://localhost:8080/v1/attachments/download/{token}/{filename}?disposition=attachment" \
+  -o downloaded-file.jpg
+```
 
 How signed URLs are generated depends on the storage backend:
 
@@ -290,10 +301,10 @@ All attachment settings (max file size, TTLs, cleanup interval, storage backend)
 ### REST
 
 - `POST /v1/attachments` — Upload a file
-- `GET /v1/attachments/{id}` — Download attachment content
-- `GET /v1/attachments/{id}/download-url` — Get a signed download URL
+- `GET /v1/attachments/{id}?disposition=inline|attachment` — Download attachment content
+- `GET /v1/attachments/{id}/download-url?disposition=inline|attachment` — Get a signed download URL
 - `DELETE /v1/attachments/{id}` — Delete an unlinked attachment
-- `GET /v1/attachments/download/{token}/{filename}` — Download via signed token (no auth required)
+- `GET /v1/attachments/download/{token}/{filename}?disposition=inline|attachment` — Download via signed token (no auth required)
 
 ### gRPC
 

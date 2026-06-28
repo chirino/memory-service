@@ -35,13 +35,17 @@ class AttachmentsProxyController {
     }
 
     @GetMapping("/{id}")
-    public ResponseEntity<?> retrieve(@PathVariable String id) {
-        return proxy.retrieveAttachment(id);
+    public ResponseEntity<?> retrieve(
+            @PathVariable String id,
+            @RequestParam(value = "disposition", required = false) String disposition) {
+        return proxy.retrieveAttachment(id, disposition);
     }
 
     @GetMapping("/{id}/download-url")
-    public ResponseEntity<?> getDownloadUrl(@PathVariable String id) {
-        return proxy.getAttachmentDownloadUrl(id);
+    public ResponseEntity<?> getDownloadUrl(
+            @PathVariable String id,
+            @RequestParam(value = "disposition", required = false) String disposition) {
+        return proxy.getAttachmentDownloadUrl(id, disposition);
     }
 
     @DeleteMapping("/{id}")

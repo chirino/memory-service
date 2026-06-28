@@ -8,6 +8,8 @@
 
 **Proxy pattern**: Use `memory_service_langchain.MemoryServiceProxy` plus `to_fastapi_response(...)` in checkpoint apps for API-like Memory Service passthrough methods (`list_conversation_entries`, `list_memberships`, etc.) instead of ad-hoc `memory_service_request(...)` calls.
 
+**Attachment proxy methods**: `MemoryServiceProxy` owns FastAPI passthrough helpers for attachment upload, `GET /v1/attachments/{id}`, `GET /v1/attachments/{id}/download-url`, delete, and signed token download; keep new attachment query options exposed there and forwarded by the chat example routes.
+
 **Chat simplification**: For checkpoint-style FastAPI chat routes, keep a single stateful agent and use `extract_assistant_text(...)`; fork metadata is passed via `memory_service_scope(...)` and consumed by the LangChain integration (middleware + checkpointer).
 
 **Request scope helper**: Prefer `memory_service_langchain.memory_service_scope(conversation_id, forked_at_conversation_id, forked_at_entry_id)` for route context binding.
