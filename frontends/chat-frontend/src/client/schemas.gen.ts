@@ -726,8 +726,7 @@ an externally-hosted resource.
 
 **Server-stored (Phase 2)**: Provide \`attachmentId\` to reference a file
 previously uploaded via \`POST /v1/attachments\`. When the entry is created,
-the server replaces \`attachmentId\` with an \`href\` pointing to
-\`/v1/attachments/{id}\`.
+the server preserves \`attachmentId\` and links the attachment to the entry.
 
 At least one of \`href\` or \`attachmentId\` must be present.`,
   properties: {
@@ -739,7 +738,8 @@ At least one of \`href\` or \`attachmentId\` must be present.`,
     attachmentId: {
       type: "string",
       description: `ID of a previously uploaded attachment (from POST /v1/attachments).
-When the entry is created, this is replaced with an href.`,
+When the entry is created, this is preserved as the stable server-stored
+attachment reference.`,
     },
     contentType: {
       type: "string",

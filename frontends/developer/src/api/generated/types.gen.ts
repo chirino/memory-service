@@ -1588,6 +1588,13 @@ export type AdminGetAttachmentContentData = {
      * Reason for this admin action (for audit log).
      */
     justification?: string;
+    /**
+     * Controls the Content-Disposition header. Use `inline` to display the attachment
+     * in the browser (e.g., images, PDFs), or `attachment` to force download.
+     * If not specified, the Content-Disposition header is not set, allowing the browser
+     * to use its default behavior based on content type.
+     */
+    disposition?: "inline" | "attachment";
   };
   url: "/v1/admin/attachments/{id}/content";
 };
@@ -1628,6 +1635,14 @@ export type AdminGetAttachmentDownloadUrlData = {
      * Reason for this admin action (for audit log).
      */
     justification?: string;
+    /**
+     * Controls the Content-Disposition header on the returned download URL.
+     * Use `inline` to display the attachment in the browser (e.g., images, PDFs),
+     * or `attachment` to force download. If not specified, the
+     * Content-Disposition header is not set, allowing the browser to use its
+     * default behavior based on content type.
+     */
+    disposition?: "inline" | "attachment";
   };
   url: "/v1/admin/attachments/{id}/download-url";
 };

@@ -31,6 +31,7 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 - Fetch-based implementation with auth token injection
 - Generated React Query helpers use typed object query keys from `@hey-api/openapi-ts`; do not replace them with string-array query keys.
 - The React Query generator intentionally skips Admin SSE operations (`adminEvict`, `adminSubscribeEvents`) because those endpoints use `client.sse.*`; use the raw generated SDK for streaming calls.
+- History attachment rendering uses stored `attachmentId` to build admin download-url endpoints; do not parse internal `/v1/attachments/{id}` IDs out of `href`, because stored history entries no longer include server-generated attachment hrefs.
 
 ### Design System
 - Minimal Light palette: cream (#FAF8F5), sage (#8B9A8E), terracotta (#C17B6B)

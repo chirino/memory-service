@@ -207,7 +207,7 @@ func (s *MongoAttachmentStore) Delete(ctx context.Context, storageKey string) er
 	return err
 }
 
-func (s *MongoAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration) (*url.URL, error) {
+func (s *MongoAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration, _ *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("signed URLs not supported for mongo attachment store")
 }
 

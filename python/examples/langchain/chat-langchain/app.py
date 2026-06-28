@@ -331,8 +331,10 @@ async def create_attachment(
 
 
 @app.get("/v1/attachments/{attachment_id}/download-url")
-async def get_attachment_download_url(attachment_id: str):
-    response = await proxy.get_attachment_download_url(attachment_id)
+async def get_attachment_download_url(
+    attachment_id: str, disposition: str | None = Query(default=None)
+):
+    response = await proxy.get_attachment_download_url(attachment_id, disposition=disposition)
     return to_fastapi_response(response)
 
 
@@ -343,8 +345,10 @@ async def delete_attachment(attachment_id: str):
 
 
 @app.get("/v1/attachments/download/{token}/{filename}")
-async def download_attachment_by_token(token: str, filename: str):
-    response = await proxy.download_attachment_by_token(token, filename)
+async def download_attachment_by_token(
+    token: str, filename: str, disposition: str | None = Query(default=None)
+):
+    response = await proxy.download_attachment_by_token(token, filename, disposition=disposition)
     return to_fastapi_response(response)
 
 

@@ -18,6 +18,12 @@ type FileStoreResult struct {
 	SHA256     string
 }
 
+// SignedURLOptions controls optional response overrides for signed download URLs.
+type SignedURLOptions struct {
+	Disposition string
+	Filename    string
+}
+
 // AttachmentStore defines the interface for file storage backends.
 type AttachmentStore interface {
 	// Store writes file data and returns storage key, size, and SHA256.
@@ -27,7 +33,7 @@ type AttachmentStore interface {
 	// Delete removes the stored file.
 	Delete(ctx context.Context, storageKey string) error
 	// GetSignedURL returns a time-limited signed download URL, if supported.
-	GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration) (*url.URL, error)
+	GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration, opts *SignedURLOptions) (*url.URL, error)
 }
 
 // Loader creates an AttachmentStore from config.

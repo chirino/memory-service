@@ -260,7 +260,7 @@ type proxyAPIServer struct {
 func (p *proxyAPIServer) UploadAttachment(c *gin.Context, _ generatedapi.UploadAttachmentParams) {
 	routeattachments.HandleUpload(c, p.store, p.attachStore, p.cfg)
 }
-func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, _ string, _ string) {
+func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, _ string, _ string, _ generatedapi.DownloadAttachmentByTokenParams) {
 	// Wrapper binding already validated token/filename as strings. Keep this guard for misconfigured routing.
 	if c.Param("token") == "" || c.Param("filename") == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid format for parameter token or filename"})
@@ -274,7 +274,7 @@ func (p *proxyAPIServer) DeleteAttachment(c *gin.Context, _ openapi_types.UUID) 
 func (p *proxyAPIServer) GetAttachment(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentParams) {
 	routeattachments.HandleGetAttachment(c, p.store, p.attachStore, p.cfg)
 }
-func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
 	var primary []byte
 	if len(p.signingKeys) > 0 {
 		primary = p.signingKeys[0]

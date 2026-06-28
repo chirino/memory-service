@@ -56,7 +56,7 @@ export type ChatEvent =
 
 // Attachment type for multi-modal content - references external or server-stored resources
 export type ChatAttachment = {
-  href?: string; // External URL (Phase 1) or internal /v1/attachments/{id}
+  href?: string; // External URL reference
   attachmentId?: string; // Internal attachment reference (Phase 2)
   contentType: string;
   name?: string;

@@ -96,7 +96,7 @@ func (s *EncryptStore) Delete(ctx context.Context, storageKey string) error {
 	return s.inner.Delete(ctx, storageKey)
 }
 
-func (s *EncryptStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration) (*url.URL, error) {
+func (s *EncryptStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration, opts *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("signed URLs not supported for encrypted attachment store")
 }
 

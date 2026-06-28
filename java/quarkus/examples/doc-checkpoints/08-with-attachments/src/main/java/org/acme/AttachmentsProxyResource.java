@@ -37,15 +37,17 @@ public class AttachmentsProxyResource {
 
     @GET
     @Path("/{id}")
-    public Response retrieve(@PathParam("id") String id) {
-        return proxy.retrieveAttachment(id);
+    public Response retrieve(
+            @PathParam("id") String id, @QueryParam("disposition") String disposition) {
+        return proxy.retrieveAttachment(id, disposition);
     }
 
     @GET
     @Path("/{id}/download-url")
     @Produces(MediaType.APPLICATION_JSON)
-    public Response getDownloadUrl(@PathParam("id") String id) {
-        return proxy.getAttachmentDownloadUrl(id);
+    public Response getDownloadUrl(
+            @PathParam("id") String id, @QueryParam("disposition") String disposition) {
+        return proxy.getAttachmentDownloadUrl(id, disposition);
     }
 
     @DELETE

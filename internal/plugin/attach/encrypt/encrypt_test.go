@@ -104,6 +104,6 @@ func (s *captureAttachmentStore) Delete(_ context.Context, storageKey string) er
 	return nil
 }
 
-func (s *captureAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration) (*url.URL, error) {
+func (s *captureAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration, _ *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("unsupported")
 }

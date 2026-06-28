@@ -7,6 +7,7 @@ import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
+import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.Response;
 
 /**
@@ -23,7 +24,9 @@ public class AttachmentDownloadProxyResource {
     @GET
     @Path("/{token}/{filename}")
     public Response download(
-            @PathParam("token") String token, @PathParam("filename") String filename) {
-        return proxy.downloadAttachmentByToken(token, filename);
+            @PathParam("token") String token,
+            @PathParam("filename") String filename,
+            @QueryParam("disposition") String disposition) {
+        return proxy.downloadAttachmentByToken(token, filename, disposition);
     }
 }

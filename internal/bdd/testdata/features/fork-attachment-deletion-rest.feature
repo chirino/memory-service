@@ -100,10 +100,10 @@ Feature: Fork with attachment deletion edge cases REST API
     }
     """
     Then the response status should be 201
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
-    And set "forkAttachmentHref" to the json response field "content[0].attachments[0].href"
+    And the response body field "content[0].attachments[0].href" should be null
+    And set "forkResponseAttachmentId" to the json response field "content[0].attachments[0].attachmentId"
 
     # Verify the attachment is accessible
-    When I call GET "${forkAttachmentHref}" expecting binary
+    When I call GET "/v1/attachments/${forkResponseAttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "fork-image-data"

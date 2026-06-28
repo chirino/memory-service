@@ -6,5 +6,6 @@
 - Site BDD fixture framework key for this track is `typescript-vecelai`.
 - Visible docs/README terminology for checkpoint `05*` should say "Response Recording and Resumption" even though the stable checkpoint directory names remain `05-response-resumption` and `05b-response-resumption`.
 - `typescript/vercelai` does not use a generated REST client; it proxies REST calls with plain `fetch` from `MEMORY_SERVICE_URL`, while response-recording gRPC uses generated proto loading with `@grpc/grpc-js` and an explicit target string.
+- `typescript/vercelai` exposes a lightweight API proxy through `createMemoryServiceProxy` / `withProxy`; add API passthrough helpers there rather than introducing generated REST-client dependencies.
 - `MEMORY_SERVICE_UNIX_SOCKET` now drives both transports in `typescript/vercelai`: REST uses an `undici` agent with `connect.socketPath`, and gRPC derives `unix:///absolute/path.sock` unless an explicit gRPC target override is supplied.
 - `typescript/examples/vecelai/doc-checkpoints/05b-response-resumption` exposes `/chat`, `/v1/conversations/resume-check`, `/v1/conversations/:id/resume`, and `/v1/conversations/:id/cancel`, but it does not expose `GET /v1/conversations/:id`. Site docs/tests for that checkpoint should not assume the conversation proxy routes exist.

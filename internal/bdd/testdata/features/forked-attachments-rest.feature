@@ -28,7 +28,7 @@ Feature: Forked Attachments REST API
     """
     Then the response status should be 201
     And the response body field "content[0].attachments[0].attachmentId" should be "${originalAttachmentId}"
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
+    And the response body field "content[0].attachments[0].href" should be null
     # Fork the conversation
     When I list entries for the conversation
     And set "firstEntryId" to the json response field "data[0].id"
@@ -51,12 +51,11 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
-    And the response body field "content[0].attachments[0].attachmentId" should be "${originalAttachmentId}"
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
-    # The href should use a NEW attachment ID (shared reference, not the original)
-    And set "newAttachmentHref" to the json response field "content[0].attachments[0].href"
+    And the response body field "content[0].attachments[0].href" should be null
+    # The attachmentId should use a NEW attachment record (shared blob, not the original record)
+    And set "newAttachmentId" to the json response field "content[0].attachments[0].attachmentId"
     # The new attachment should be retrievable
-    When I call GET "${newAttachmentHref}" expecting binary
+    When I call GET "/v1/attachments/${newAttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "fake-png-data"
 
@@ -102,7 +101,8 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
+    And the response body field "content[0].attachments[0].href" should be null
+    And the response body field "content[0].attachments[0].attachmentId" should not be null
 
   Scenario: Blob survives when one referencing conversation is archived
     # Upload and link to first entry
@@ -144,7 +144,7 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
-    And set "newAttachmentHref" to the json response field "content[0].attachments[0].href"
+    And set "newAttachmentId" to the json response field "content[0].attachments[0].attachmentId"
     # Archive the forked conversation; the remaining reference should still keep the blob accessible.
     When I call PATCH "/v1/conversations/${forkedConversationId}" with body:
     """
@@ -289,22 +289,22 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
-    # Both attachments should have href links
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
+    # Both attachments should preserve attachmentId references
+    And the response body field "content[0].attachments[0].href" should be null
     And the response body field "content[0].attachments[0].contentType" should be "image/png"
     And the response body field "content[0].attachments[0].name" should be "original.png"
-    And the response body field "content[0].attachments[1].href" should contain "/v1/attachments/"
+    And the response body field "content[0].attachments[1].href" should be null
     And the response body field "content[0].attachments[1].contentType" should be "application/pdf"
     And the response body field "content[0].attachments[1].name" should be "new-doc.pdf"
-    # Extract hrefs before doing binary GETs (binary responses clear the JSON context)
-    And set "referencedHref" to the json response field "content[0].attachments[0].href"
-    And set "freshHref" to the json response field "content[0].attachments[1].href"
+    # Extract IDs before doing binary GETs (binary responses clear the JSON context)
+    And set "referencedAttachmentId" to the json response field "content[0].attachments[0].attachmentId"
+    And set "freshResponseAttachmentId" to the json response field "content[0].attachments[1].attachmentId"
     # Verify the referenced attachment content is accessible (blob shared from original)
-    When I call GET "${referencedHref}" expecting binary
+    When I call GET "/v1/attachments/${referencedAttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "original-png-data"
     # Verify the fresh attachment content is accessible
-    When I call GET "${freshHref}" expecting binary
+    When I call GET "/v1/attachments/${freshResponseAttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "fresh-pdf-data"
 
@@ -364,20 +364,20 @@ Feature: Forked Attachments REST API
     }
     """
     Then the response status should be 201
-    # All three should have hrefs
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
-    And the response body field "content[0].attachments[1].href" should contain "/v1/attachments/"
-    And the response body field "content[0].attachments[2].href" should contain "/v1/attachments/"
+    # All three should preserve attachmentId references
+    And the response body field "content[0].attachments[0].href" should be null
+    And the response body field "content[0].attachments[1].href" should be null
+    And the response body field "content[0].attachments[2].href" should be null
     # Verify each blob is accessible with correct content
-    And set "ref1Href" to the json response field "content[0].attachments[0].href"
-    And set "ref2Href" to the json response field "content[0].attachments[1].href"
-    And set "ref3Href" to the json response field "content[0].attachments[2].href"
-    When I call GET "${ref1Href}" expecting binary
+    And set "ref1AttachmentId" to the json response field "content[0].attachments[0].attachmentId"
+    And set "ref2AttachmentId" to the json response field "content[0].attachments[1].attachmentId"
+    And set "ref3AttachmentId" to the json response field "content[0].attachments[2].attachmentId"
+    When I call GET "/v1/attachments/${ref1AttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "jpeg-data-1"
-    When I call GET "${ref2Href}" expecting binary
+    When I call GET "/v1/attachments/${ref2AttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "jpeg-data-2"
-    When I call GET "${ref3Href}" expecting binary
+    When I call GET "/v1/attachments/${ref3AttachmentId}" expecting binary
     Then the response status should be 200
     And the binary response content should be "my-notes"

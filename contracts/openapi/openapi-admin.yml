@@ -1365,6 +1365,18 @@ paths:
           description: Reason for this admin action (for audit log).
           schema:
             type: string
+        - name: disposition
+          in: query
+          required: false
+          description: |-
+            Controls the Content-Disposition header on the returned download URL.
+            Use `inline` to display the attachment in the browser (e.g., images, PDFs),
+            or `attachment` to force download. If not specified, the
+            Content-Disposition header is not set, allowing the browser to use its
+            default behavior based on content type.
+          schema:
+            type: string
+            enum: [inline, attachment]
       responses:
         '200':
           description: Signed download URL.

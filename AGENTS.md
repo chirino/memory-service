@@ -94,7 +94,7 @@ When you discover something meaningful about this project during your work—arc
 
 **Taskfile shell compatibility**: Task commands execute via `sh`; use POSIX redirection (`>/dev/null 2>&1`) instead of shell-specific forms like `&>` or malformed `2&>1`.
 - **Java/site test concurrency gotcha**: Do not run `task test:java` and `task test:site` concurrently in the same worktree. Both invoke Maven clean/build against Java targets and can race, producing failures such as `Failed to delete .../target`, `error reading .../target/generated-sources/...`, or missing generated client classes. Run them sequentially or in isolated worktrees.
-- **Generate task gotcha**: `task generate` creates frontend `node_modules` before Go generation; keep Go package expansion from traversing `node_modules` because packages like `flatted/golang` can break `go generate ./...`.
+- **Generate task gotcha**: `task generate` creates frontend `node_modules` before Go generation; Go generation should stay scoped to the repo-root `go generate .` directive instead of expanding `./...`, which traverses frontend `node_modules` and build-tag-only packages.
 - **TypeScript example task gotcha**: Under `typescript/examples/vecelai/doc-checkpoints/`, both `05-response-resumption/` and `05b-response-resumption/` exist; keep `Taskfile.yml` entries explicit instead of assuming a sequential directory list.
 
 **Test output strategy**: When running tests, redirect output to a file and search for errors instead of using `| tail`. This ensures you see all relevant error context:

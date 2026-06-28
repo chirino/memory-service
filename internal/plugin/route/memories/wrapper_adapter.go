@@ -34,7 +34,7 @@ type apiServerAdapter struct {
 func (a *apiServerAdapter) UploadAttachment(c *gin.Context, _ generatedapi.UploadAttachmentParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) DownloadAttachmentByToken(c *gin.Context, _ string, _ string) {
+func (a *apiServerAdapter) DownloadAttachmentByToken(c *gin.Context, _ string, _ string, _ generatedapi.DownloadAttachmentByTokenParams) {
 	notImplemented(c)
 }
 func (a *apiServerAdapter) DeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
@@ -43,7 +43,7 @@ func (a *apiServerAdapter) DeleteAttachment(c *gin.Context, _ openapi_types.UUID
 func (a *apiServerAdapter) GetAttachment(c *gin.Context, _ openapi_types.UUID, _ api.GetAttachmentParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
 	notImplemented(c)
 }
 func (a *apiServerAdapter) GetCapabilities(c *gin.Context) {

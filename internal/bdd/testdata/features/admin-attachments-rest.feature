@@ -122,6 +122,19 @@ Feature: Admin Attachments REST API
     And the response body field "url" should not be null
     And the response body field "expiresIn" should not be null
 
+  # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local attachment by ID and appears parallel-safe.
+  Scenario: Admin download URL with disposition=attachment includes disposition
+    Given I am authenticated as user "bob"
+    And I have a conversation with title "Bob DL URL Disposition Conv"
+    When I upload a file "url-disposition.txt" with content type "text/plain" and content "url-disposition-content"
+    Then the response status should be 201
+    And set "urlDispositionAttachmentId" to the json response field "id"
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/attachments/${urlDispositionAttachmentId}/download-url?disposition=attachment"
+    Then the response status should be 200
+    And the response body field "url" should contain "disposition=attachment"
+    And the response body field "expiresIn" should not be null
+
   # Serial today only because this feature shares the serial admin runner; this scenario is a pure not-found check and appears parallel-safe.
   Scenario: Download content returns 404 for non-existent attachment
     Given I am authenticated as admin user "alice"

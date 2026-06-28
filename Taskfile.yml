@@ -47,8 +47,7 @@ tasks:
   generate:go:
     internal: true
     cmds:
-      - |
-        go generate $(go list ./... | grep -v '/node_modules/')
+      - go generate .
 
   generate:chat-frontend:
     internal: true

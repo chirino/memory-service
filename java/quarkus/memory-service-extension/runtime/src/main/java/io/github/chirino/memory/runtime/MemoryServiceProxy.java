@@ -621,15 +621,24 @@ public class MemoryServiceProxy {
      * Gets a signed download URL for an attachment.
      */
     public Response getAttachmentDownloadUrl(String id) {
+        return getAttachmentDownloadUrl(id, null);
+    }
+
+    /**
+     * Gets a signed download URL for an attachment with optional disposition control.
+     *
+     * @param id the attachment ID
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public Response getAttachmentDownloadUrl(String id, String disposition) {
         if (memoryServiceApiBuilder.usesUnixSocket()) {
             try {
+                String path = "/v1/attachments/" + id + "/download-url";
+                if (disposition != null && !disposition.isBlank()) {
+                    path += "?disposition=" + disposition;
+                }
                 UnixSocketHttpClient.HttpResponseData upstream =
-                        unixSocketClient()
-                                .exchange(
-                                        "GET",
-                                        "/v1/attachments/" + id + "/download-url",
-                                        null,
-                                        (Object) null);
+                        unixSocketClient().exchange("GET", path, null, (Object) null);
                 return jsonResponse(upstream);
             } catch (Exception e) {
                 LOG.errorf(e, "Error getting attachment download URL for %s", id);
@@ -649,6 +658,9 @@ public class MemoryServiceProxy {
                             + "/v1/attachments/"
                             + id
                             + "/download-url";
+            if (disposition != null && !disposition.isBlank()) {
+                url += "?disposition=" + disposition;
+            }
             jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
 
             req = applyAuthHeaders(req);
@@ -713,19 +725,30 @@ public class MemoryServiceProxy {
      * Downloads an attachment using a signed token. No authentication required.
      */
     public Response downloadAttachmentByToken(String token, String filename) {
+        return downloadAttachmentByToken(token, filename, null);
+    }
+
+    /**
+     * Downloads an attachment using a signed token with optional disposition control.
+     *
+     * @param token signed download token
+     * @param filename path filename
+     * @param disposition optional disposition ("inline" or "attachment"), null to use browser default
+     */
+    public Response downloadAttachmentByToken(String token, String filename, String disposition) {
         if (memoryServiceApiBuilder.usesUnixSocket()) {
             try {
+                String path = "/v1/attachments/download/" + token + "/" + filename;
+                if (disposition != null && !disposition.isBlank()) {
+                    path += "?disposition=" + disposition;
+                }
                 UnixSocketHttpClient.HttpResponseData upstream =
                         new UnixSocketHttpClient(
                                         memoryServiceApiBuilder.getUnixSocketPath(),
                                         OBJECT_MAPPER,
                                         null,
                                         null)
-                                .exchange(
-                                        "GET",
-                                        "/v1/attachments/download/" + token + "/" + filename,
-                                        null,
-                                        (Object) null);
+                                .exchange("GET", path, null, (Object) null);
                 return binaryResponse(upstream);
             } catch (Exception e) {
                 LOG.errorf(e, "Error downloading attachment by token");
@@ -745,6 +768,9 @@ public class MemoryServiceProxy {
                             + token
                             + "/"
                             + filename;
+            if (disposition != null && !disposition.isBlank()) {
+                url += "?disposition=" + disposition;
+            }
             Response upstream = client.target(url).request().get();
 
             if (upstream.getStatus() == 200) {

@@ -296,8 +296,7 @@ export type ListMemoryEventsResponse = {
  *
  * **Server-stored (Phase 2)**: Provide `attachmentId` to reference a file
  * previously uploaded via `POST /v1/attachments`. When the entry is created,
- * the server replaces `attachmentId` with an `href` pointing to
- * `/v1/attachments/{id}`.
+ * the server preserves `attachmentId` and links the attachment to the entry.
  *
  * At least one of `href` or `attachmentId` must be present.
  */
@@ -308,7 +307,8 @@ export type Attachment = {
   href?: string;
   /**
    * ID of a previously uploaded attachment (from POST /v1/attachments).
-   * When the entry is created, this is replaced with an href.
+   * When the entry is created, this is preserved as the stable server-stored
+   * attachment reference.
    */
   attachmentId?: string;
   /**
@@ -1519,6 +1519,14 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
+         * Controls the Content-Disposition header on the returned download URL.
+         * Use `inline` to display the attachment in the browser (e.g., images, PDFs),
+         * or `attachment` to force download. If not specified, the
+         * Content-Disposition header is not set, allowing the browser to use its
+         * default behavior based on content type.
+         */
+        disposition?: "inline" | "attachment";
+        /**
          * Attachment identifier (UUID format).
          */
         id: string;
@@ -1542,6 +1550,13 @@ export type $OpenApiTs = {
   "/v1/attachments/download/{token}/{filename}": {
     get: {
       req: {
+        /**
+         * Controls the Content-Disposition header. Use `inline` to display the attachment
+         * in the browser (e.g., images, PDFs), or `attachment` to force download.
+         * If not specified, the Content-Disposition header is not set, allowing the browser
+         * to use its default behavior based on content type.
+         */
+        disposition?: "inline" | "attachment";
         /**
          * Filename for the download (used in Content-Disposition).
          */

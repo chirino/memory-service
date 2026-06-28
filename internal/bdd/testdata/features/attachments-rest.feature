@@ -62,7 +62,7 @@ Feature: Attachments REST API
     """
     Then the response status should be 201
     And the response body field "content[0].attachments[0].attachmentId" should be "${uploadedAttachmentId}"
-    And the response body field "content[0].attachments[0].href" should contain "/v1/attachments/"
+    And the response body field "content[0].attachments[0].href" should be null
 
   Scenario: History channel rejects attachment missing both href and attachmentId
     Given I am authenticated as agent with API key "test-agent-key"
@@ -139,8 +139,7 @@ Feature: Attachments REST API
     And set "inlineAttId" to the json response field "id"
     When I call GET "/v1/attachments/${inlineAttId}?disposition=inline" expecting binary
     Then the response status should be 200
-    And the response header "Content-Disposition" should contain "inline"
-    And the response header "Content-Disposition" should contain "filename="
+    And the response header "Content-Disposition" should be empty
 
   @direct-stream-only
   Scenario: Attachment download with disposition=attachment sets Content-Disposition header
@@ -185,6 +184,30 @@ Feature: Attachments REST API
     And the response header "Cache-Control" should contain "max-age="
     And the response header "Content-Disposition" should contain "inline"
     And the response header "Content-Disposition" should contain "filename="
+
+  @direct-stream-only
+  Scenario: Signed token download with disposition=attachment sets Content-Disposition header
+    When I upload a file "token-download.txt" with content type "text/plain" and content "Token Download Content"
+    Then the response status should be 201
+    And set "tokenDownloadId" to the json response field "id"
+    When I call GET "/v1/attachments/${tokenDownloadId}/download-url?disposition=attachment"
+    Then the response status should be 200
+    And set "tokenDownloadUrl" to the json response field "url"
+    And the response body field "url" should contain "disposition=attachment"
+    When I call GET "${tokenDownloadUrl}" expecting binary without authentication
+    Then the response status should be 200
+    And the response header "Content-Disposition" should contain "attachment"
+    And the response header "Content-Disposition" should contain "filename="
+
+  Scenario: Signed token download with invalid disposition returns 400
+    When I upload a file "token-invalid-disposition.txt" with content type "text/plain" and content "Invalid Token Disposition"
+    Then the response status should be 201
+    And set "tokenInvalidDispositionId" to the json response field "id"
+    When I call GET "/v1/attachments/${tokenInvalidDispositionId}/download-url"
+    Then the response status should be 200
+    And set "tokenInvalidDispositionUrl" to the json response field "url"
+    When I call GET "${tokenInvalidDispositionUrl}?disposition=invalid"
+    Then the response status should be 400
 
   @direct-stream-only
   Scenario: Signed token download returns 304 for matching ETag

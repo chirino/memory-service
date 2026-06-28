@@ -1079,6 +1079,11 @@ export class AttachmentsService {
    * Access control is the same as `GET /v1/attachments/{id}`.
    * @param data The data for the request.
    * @param data.id Attachment identifier (UUID format).
+   * @param data.disposition Controls the Content-Disposition header on the returned download URL.
+   * Use `inline` to display the attachment in the browser (e.g., images, PDFs),
+   * or `attachment` to force download. If not specified, the
+   * Content-Disposition header is not set, allowing the browser to use its
+   * default behavior based on content type.
    * @returns AttachmentDownloadUrlResponse Signed download URL.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -1094,6 +1099,9 @@ export class AttachmentsService {
       url: "/v1/attachments/{id}/download-url",
       path: {
         id: data.id,
+      },
+      query: {
+        disposition: data.disposition,
       },
       errors: {
         403: "Error response",
@@ -1112,6 +1120,10 @@ export class AttachmentsService {
    * @param data The data for the request.
    * @param data.token Signed download token.
    * @param data.filename Filename for the download (used in Content-Disposition).
+   * @param data.disposition Controls the Content-Disposition header. Use `inline` to display the attachment
+   * in the browser (e.g., images, PDFs), or `attachment` to force download.
+   * If not specified, the Content-Disposition header is not set, allowing the browser
+   * to use its default behavior based on content type.
    * @returns binary Attachment binary content.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -1128,6 +1140,9 @@ export class AttachmentsService {
       path: {
         token: data.token,
         filename: data.filename,
+      },
+      query: {
+        disposition: data.disposition,
       },
       errors: {
         403: "Invalid or expired token.",

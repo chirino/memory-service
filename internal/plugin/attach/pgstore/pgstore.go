@@ -254,6 +254,6 @@ func (s *PgAttachmentStore) Delete(ctx context.Context, storageKey string) error
 	return s.db.WithContext(ctx).Exec("SELECT lo_unlink(?)", storageKey).Error
 }
 
-func (s *PgAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration) (*url.URL, error) {
+func (s *PgAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration, _ *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("signed URLs not supported for postgres attachment store")
 }
