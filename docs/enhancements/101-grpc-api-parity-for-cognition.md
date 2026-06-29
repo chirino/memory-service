@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 101: gRPC API Parity for Cognition
 
 > **Status**: Implemented.
+> 
+> **Implementation Note**: Service-principal memory writes (PutMemory/UpdateMemory) were implemented in `AdminMemoriesService` rather than extending `MemoriesService` with `RequestActor`. Both gRPC and REST admin memory APIs now support `on_behalf_of_user_id` for writing memories scoped to user namespaces without requiring user JWT authentication.
 
 ## Summary
 

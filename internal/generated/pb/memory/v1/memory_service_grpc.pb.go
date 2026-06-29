@@ -2025,6 +2025,8 @@ const (
 	AdminMemoriesService_GetMemoryUsage_FullMethodName       = "/memory.v1.AdminMemoriesService/GetMemoryUsage"
 	AdminMemoriesService_ListTopMemoryUsage_FullMethodName   = "/memory.v1.AdminMemoriesService/ListTopMemoryUsage"
 	AdminMemoriesService_GetMemoryIndexStatus_FullMethodName = "/memory.v1.AdminMemoriesService/GetMemoryIndexStatus"
+	AdminMemoriesService_PutMemory_FullMethodName            = "/memory.v1.AdminMemoriesService/PutMemory"
+	AdminMemoriesService_UpdateMemory_FullMethodName         = "/memory.v1.AdminMemoriesService/UpdateMemory"
 )
 
 // AdminMemoriesServiceClient is the client API for AdminMemoriesService service.
@@ -2039,6 +2041,8 @@ type AdminMemoriesServiceClient interface {
 	GetMemoryUsage(ctx context.Context, in *AdminGetMemoryUsageRequest, opts ...grpc.CallOption) (*MemoryUsage, error)
 	ListTopMemoryUsage(ctx context.Context, in *AdminListTopMemoryUsageRequest, opts ...grpc.CallOption) (*ListTopMemoryUsageResponse, error)
 	GetMemoryIndexStatus(ctx context.Context, in *AdminGetMemoryIndexStatusRequest, opts ...grpc.CallOption) (*MemoryIndexStatusResponse, error)
+	PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error)
+	UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type adminMemoriesServiceClient struct {
@@ -2129,6 +2133,26 @@ func (c *adminMemoriesServiceClient) GetMemoryIndexStatus(ctx context.Context, i
 	return out, nil
 }
 
+func (c *adminMemoriesServiceClient) PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(MemoryWriteResult)
+	err := c.cc.Invoke(ctx, AdminMemoriesService_PutMemory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminMemoriesServiceClient) UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, AdminMemoriesService_UpdateMemory_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminMemoriesServiceServer is the server API for AdminMemoriesService service.
 // All implementations must embed UnimplementedAdminMemoriesServiceServer
 // for forward compatibility.
@@ -2141,6 +2165,8 @@ type AdminMemoriesServiceServer interface {
 	GetMemoryUsage(context.Context, *AdminGetMemoryUsageRequest) (*MemoryUsage, error)
 	ListTopMemoryUsage(context.Context, *AdminListTopMemoryUsageRequest) (*ListTopMemoryUsageResponse, error)
 	GetMemoryIndexStatus(context.Context, *AdminGetMemoryIndexStatusRequest) (*MemoryIndexStatusResponse, error)
+	PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error)
+	UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedAdminMemoriesServiceServer()
 }
 
@@ -2174,6 +2200,12 @@ func (UnimplementedAdminMemoriesServiceServer) ListTopMemoryUsage(context.Contex
 }
 func (UnimplementedAdminMemoriesServiceServer) GetMemoryIndexStatus(context.Context, *AdminGetMemoryIndexStatusRequest) (*MemoryIndexStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMemoryIndexStatus not implemented")
+}
+func (UnimplementedAdminMemoriesServiceServer) PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error) {
+	return nil, status.Error(codes.Unimplemented, "method PutMemory not implemented")
+}
+func (UnimplementedAdminMemoriesServiceServer) UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method UpdateMemory not implemented")
 }
 func (UnimplementedAdminMemoriesServiceServer) mustEmbedUnimplementedAdminMemoriesServiceServer() {}
 func (UnimplementedAdminMemoriesServiceServer) testEmbeddedByValue()                              {}
@@ -2340,6 +2372,42 @@ func _AdminMemoriesService_GetMemoryIndexStatus_Handler(srv interface{}, ctx con
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminMemoriesService_PutMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(PutMemoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminMemoriesServiceServer).PutMemory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminMemoriesService_PutMemory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminMemoriesServiceServer).PutMemory(ctx, req.(*PutMemoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminMemoriesService_UpdateMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(UpdateMemoryRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminMemoriesServiceServer).UpdateMemory(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminMemoriesService_UpdateMemory_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminMemoriesServiceServer).UpdateMemory(ctx, req.(*UpdateMemoryRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminMemoriesService_ServiceDesc is the grpc.ServiceDesc for AdminMemoriesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2378,6 +2446,14 @@ var AdminMemoriesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "GetMemoryIndexStatus",
 			Handler:    _AdminMemoriesService_GetMemoryIndexStatus_Handler,
+		},
+		{
+			MethodName: "PutMemory",
+			Handler:    _AdminMemoriesService_PutMemory_Handler,
+		},
+		{
+			MethodName: "UpdateMemory",
+			Handler:    _AdminMemoriesService_UpdateMemory_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

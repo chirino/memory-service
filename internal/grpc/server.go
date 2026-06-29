@@ -2804,6 +2804,159 @@ func (s *AdminMemoriesServer) GetMemoryIndexStatus(ctx context.Context, req *pb.
 	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
 }
 
+func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest) (*pb.MemoryWriteResult, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	if err := s.requireAdminAccess(ctx, ""); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
+		return nil, err
+	}
+	if req.GetValue() == nil {
+		return nil, status.Error(codes.InvalidArgument, "value is required")
+	}
+	if req.GetTtlSeconds() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "ttl_seconds must be >= 0")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" || len(key) > 1024 {
+		return nil, status.Error(codes.InvalidArgument, "key must be non-empty and at most 1024 bytes")
+	}
+
+	value := req.GetValue().AsMap()
+	index := req.GetIndex()
+	if index == nil {
+		index = map[string]string{}
+	}
+
+	// Build policy context from actor's on_behalf_of_user_id if provided
+	actor := req.GetActor()
+	userID := ""
+	if actor != nil {
+		userID = strings.TrimSpace(actor.GetOnBehalfOfUserId())
+	}
+
+	pc := episodic.PolicyContext{
+		UserID:   userID,
+		ClientID: getClientID(ctx),
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
+
+	policyAttrs := map[string]interface{}{}
+	if s.Policy != nil {
+		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, value, index, pc)
+		if err != nil {
+			return nil, episodicInternalError("policy evaluation error", err)
+		}
+		if !decision.Allow {
+			if decision.Reason != "" {
+				return nil, status.Error(codes.PermissionDenied, decision.Reason)
+			}
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, index, pc)
+		if err != nil {
+			return nil, episodicInternalError("attribute extraction error", err)
+		}
+		policyAttrs = extracted
+	}
+
+	result, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryWriteResult, error) {
+		return s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
+			Namespace:        namespace,
+			Key:              key,
+			Value:            value,
+			Index:            index,
+			TTLSeconds:       int(req.GetTtlSeconds()),
+			PolicyAttributes: policyAttrs,
+			ExpectedRevision: req.ExpectedRevision,
+		})
+	})
+	if err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
+		return nil, episodicInternalError("failed to store memory", err)
+	}
+	resp, err := memoryWriteResultToProto(result)
+	if err != nil {
+		return nil, episodicInternalError("failed to encode memory write response", err)
+	}
+	return resp, nil
+}
+
+func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryRequest) (*emptypb.Empty, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	if err := s.requireAdminAccess(ctx, ""); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
+		return nil, err
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	// Build policy context from actor's on_behalf_of_user_id if provided
+	actor := req.GetActor()
+	userID := ""
+	if actor != nil {
+		userID = strings.TrimSpace(actor.GetOnBehalfOfUserId())
+	}
+
+	pc := episodic.PolicyContext{
+		UserID:   userID,
+		ClientID: getClientID(ctx),
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
+
+	if s.Policy != nil {
+		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, nil, nil, pc)
+		if err != nil {
+			return nil, episodicInternalError("policy evaluation error", err)
+		}
+		if !decision.Allow {
+			if decision.Reason != "" {
+				return nil, status.Error(codes.PermissionDenied, decision.Reason)
+			}
+			return nil, status.Error(codes.PermissionDenied, "access denied")
+		}
+	}
+
+	if req.Archived == nil || !req.GetArchived() {
+		return nil, status.Error(codes.InvalidArgument, "archived must be true")
+	}
+
+	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
+	}); err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
+		return nil, episodicInternalError("failed to archive memory", err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
 func (s *AdminMemoriesServer) requireReadAccess(ctx context.Context, justification string) error {
 	id, err := requireGRPCIdentity(ctx)
 	if err != nil {

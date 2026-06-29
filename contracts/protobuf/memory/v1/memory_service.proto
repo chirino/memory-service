@@ -930,6 +930,8 @@ service AdminMemoriesService {
   rpc GetMemoryUsage(AdminGetMemoryUsageRequest) returns (MemoryUsage);
   rpc ListTopMemoryUsage(AdminListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
   rpc GetMemoryIndexStatus(AdminGetMemoryIndexStatusRequest) returns (MemoryIndexStatusResponse);
+  rpc PutMemory(PutMemoryRequest) returns (MemoryWriteResult);
+  rpc UpdateMemory(UpdateMemoryRequest) returns (google.protobuf.Empty);
 }
 
 service ResponseRecorderService {

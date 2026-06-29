@@ -206,6 +206,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	register(http.MethodGet, "/v1/events", userEventsWrapper.SubscribeEvents)
 
 	register(http.MethodGet, "/admin/v1/memories", adminWrapper.AdminListMemories)
+	register(http.MethodPut, "/admin/v1/memories", adminWrapper.AdminPutMemory)
+	register(http.MethodPatch, "/admin/v1/memories", adminWrapper.AdminUpdateMemory)
 	register(http.MethodPost, "/admin/v1/memories/search", adminWrapper.AdminSearchMemories)
 	register(http.MethodGet, "/admin/v1/memories/:id", adminWrapper.AdminGetMemory)
 	register(http.MethodGet, "/admin/v1/memory-index/status", adminWrapper.AdminGetMemoryIndexStatus)
@@ -480,6 +482,18 @@ func (p *proxyAdminServer) AdminListTopMemoryUsage(c *gin.Context, _ generatedad
 		return
 	}
 	routememories.HandleAdminListTopMemoryUsage(c, p.episodicStore, p.cfg)
+}
+func (p *proxyAdminServer) AdminPutMemory(c *gin.Context) {
+	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
+		return
+	}
+	routememories.HandleAdminPutMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
+}
+func (p *proxyAdminServer) AdminUpdateMemory(c *gin.Context, _ generatedadmin.AdminUpdateMemoryParams) {
+	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
+		return
+	}
+	routememories.HandleAdminUpdateMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
 }
 func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, _ openapi_types.UUID) {
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {

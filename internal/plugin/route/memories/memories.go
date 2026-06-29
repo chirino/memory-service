@@ -1453,3 +1453,171 @@ func persistPolicyBundle(dir string, bundle episodic.PolicyBundle) error {
 	}
 	return nil
 }
+
+// HandleAdminPutMemory handles PUT /admin/v1/memories for admin clients
+func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+	var req generatedapi.PutMemoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	index := map[string]string(nil)
+	if req.Index != nil {
+		index = *req.Index
+	}
+	if index == nil {
+		index = map[string]string{}
+	}
+	ttlSeconds := 0
+	if req.TtlSeconds != nil {
+		ttlSeconds = *req.TtlSeconds
+	}
+
+	if err := validateNamespace(req.Namespace, cfg.EpisodicMaxDepth); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Key == "" || len(req.Key) > 1024 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key must be non-empty and at most 1024 bytes"})
+		return
+	}
+	if req.Value == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "value is required"})
+		return
+	}
+
+	// Admin policy context - build from authenticated client + admin role
+	id := security.GetIdentity(c)
+	pc := episodic.PolicyContext{
+		UserID:   "",  // No user for admin-only client
+		ClientID: id.ClientID,
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
+
+	// OPA authz check.
+	if policy != nil {
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "write", req.Namespace, req.Key, req.Value, index, pc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
+			return
+		}
+		if !decision.Allow {
+			resp := gin.H{"error": "access denied"}
+			if decision.Reason != "" {
+				resp["reason"] = decision.Reason
+			}
+			c.JSON(http.StatusForbidden, resp)
+			return
+		}
+
+		// OPA attribute extraction.
+		extracted, err := policy.ExtractAttributes(c.Request.Context(), req.Namespace, req.Key, req.Value, index, pc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "attribute extraction error"})
+			return
+		}
+		if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+			result, err := store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+				Namespace:        req.Namespace,
+				Key:              req.Key,
+				Value:            req.Value,
+				Index:            index,
+				TTLSeconds:       ttlSeconds,
+				PolicyAttributes: extracted,
+			})
+			if err != nil {
+				return err
+			}
+			c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
+			return nil
+		}); err != nil {
+			handleError(c, err)
+		}
+		return
+	}
+
+	// No OPA: store without policy attributes.
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		result, err := store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+			Namespace:  req.Namespace,
+			Key:        req.Key,
+			Value:      req.Value,
+			Index:      index,
+			TTLSeconds: ttlSeconds,
+		})
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+// HandleAdminUpdateMemory handles PATCH /admin/v1/memories for admin clients
+func HandleAdminUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+	params := generatedapi.UpdateMemoryParams{
+		Ns:  c.QueryArray("ns"),
+		Key: c.Query("key"),
+	}
+	if len(params.Ns) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace is required"})
+		return
+	}
+	if params.Key == "" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "key is required"})
+		return
+	}
+	if err := validateNamespace(params.Ns, cfg.EpisodicMaxDepth); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+
+	var req generatedapi.UpdateMemoryRequest
+	if err := c.ShouldBindJSON(&req); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if req.Archived == nil || !*req.Archived {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "archived must be true"})
+		return
+	}
+
+	// Admin policy context
+	id := security.GetIdentity(c)
+	pc := episodic.PolicyContext{
+		UserID:   "",
+		ClientID: id.ClientID,
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
+
+	// OPA authz check.
+	if policy != nil {
+		decision, err := policy.EvaluateAuthz(c.Request.Context(), "update", params.Ns, params.Key, nil, nil, pc)
+		if err != nil {
+			c.JSON(http.StatusInternalServerError, gin.H{"error": "policy evaluation error"})
+			return
+		}
+		if !decision.Allow {
+			resp := gin.H{"error": "access denied"}
+			if decision.Reason != "" {
+				resp["reason"] = decision.Reason
+			}
+			c.JSON(http.StatusForbidden, resp)
+			return
+		}
+	}
+
+	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
+		return store.ArchiveMemory(ctx, params.Ns, params.Key, nil)
+	}); err != nil {
+		handleError(c, err)
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
