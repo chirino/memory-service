@@ -483,7 +483,7 @@ func (p *proxyAdminServer) AdminListTopMemoryUsage(c *gin.Context, _ generatedad
 	}
 	routememories.HandleAdminListTopMemoryUsage(c, p.episodicStore, p.cfg)
 }
-func (p *proxyAdminServer) AdminPutMemory(c *gin.Context) {
+func (p *proxyAdminServer) AdminPutMemory(c *gin.Context, _ generatedadmin.AdminPutMemoryParams) {
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}

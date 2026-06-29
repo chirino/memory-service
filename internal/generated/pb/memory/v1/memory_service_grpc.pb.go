@@ -2041,8 +2041,8 @@ type AdminMemoriesServiceClient interface {
 	GetMemoryUsage(ctx context.Context, in *AdminGetMemoryUsageRequest, opts ...grpc.CallOption) (*MemoryUsage, error)
 	ListTopMemoryUsage(ctx context.Context, in *AdminListTopMemoryUsageRequest, opts ...grpc.CallOption) (*ListTopMemoryUsageResponse, error)
 	GetMemoryIndexStatus(ctx context.Context, in *AdminGetMemoryIndexStatusRequest, opts ...grpc.CallOption) (*MemoryIndexStatusResponse, error)
-	PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error)
-	UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	PutMemory(ctx context.Context, in *AdminPutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error)
+	UpdateMemory(ctx context.Context, in *AdminUpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type adminMemoriesServiceClient struct {
@@ -2133,7 +2133,7 @@ func (c *adminMemoriesServiceClient) GetMemoryIndexStatus(ctx context.Context, i
 	return out, nil
 }
 
-func (c *adminMemoriesServiceClient) PutMemory(ctx context.Context, in *PutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error) {
+func (c *adminMemoriesServiceClient) PutMemory(ctx context.Context, in *AdminPutMemoryRequest, opts ...grpc.CallOption) (*MemoryWriteResult, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(MemoryWriteResult)
 	err := c.cc.Invoke(ctx, AdminMemoriesService_PutMemory_FullMethodName, in, out, cOpts...)
@@ -2143,7 +2143,7 @@ func (c *adminMemoriesServiceClient) PutMemory(ctx context.Context, in *PutMemor
 	return out, nil
 }
 
-func (c *adminMemoriesServiceClient) UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+func (c *adminMemoriesServiceClient) UpdateMemory(ctx context.Context, in *AdminUpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(emptypb.Empty)
 	err := c.cc.Invoke(ctx, AdminMemoriesService_UpdateMemory_FullMethodName, in, out, cOpts...)
@@ -2165,8 +2165,8 @@ type AdminMemoriesServiceServer interface {
 	GetMemoryUsage(context.Context, *AdminGetMemoryUsageRequest) (*MemoryUsage, error)
 	ListTopMemoryUsage(context.Context, *AdminListTopMemoryUsageRequest) (*ListTopMemoryUsageResponse, error)
 	GetMemoryIndexStatus(context.Context, *AdminGetMemoryIndexStatusRequest) (*MemoryIndexStatusResponse, error)
-	PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error)
-	UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error)
+	PutMemory(context.Context, *AdminPutMemoryRequest) (*MemoryWriteResult, error)
+	UpdateMemory(context.Context, *AdminUpdateMemoryRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedAdminMemoriesServiceServer()
 }
 
@@ -2201,10 +2201,10 @@ func (UnimplementedAdminMemoriesServiceServer) ListTopMemoryUsage(context.Contex
 func (UnimplementedAdminMemoriesServiceServer) GetMemoryIndexStatus(context.Context, *AdminGetMemoryIndexStatusRequest) (*MemoryIndexStatusResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetMemoryIndexStatus not implemented")
 }
-func (UnimplementedAdminMemoriesServiceServer) PutMemory(context.Context, *PutMemoryRequest) (*MemoryWriteResult, error) {
+func (UnimplementedAdminMemoriesServiceServer) PutMemory(context.Context, *AdminPutMemoryRequest) (*MemoryWriteResult, error) {
 	return nil, status.Error(codes.Unimplemented, "method PutMemory not implemented")
 }
-func (UnimplementedAdminMemoriesServiceServer) UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error) {
+func (UnimplementedAdminMemoriesServiceServer) UpdateMemory(context.Context, *AdminUpdateMemoryRequest) (*emptypb.Empty, error) {
 	return nil, status.Error(codes.Unimplemented, "method UpdateMemory not implemented")
 }
 func (UnimplementedAdminMemoriesServiceServer) mustEmbedUnimplementedAdminMemoriesServiceServer() {}
@@ -2373,7 +2373,7 @@ func _AdminMemoriesService_GetMemoryIndexStatus_Handler(srv interface{}, ctx con
 }
 
 func _AdminMemoriesService_PutMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(PutMemoryRequest)
+	in := new(AdminPutMemoryRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -2385,13 +2385,13 @@ func _AdminMemoriesService_PutMemory_Handler(srv interface{}, ctx context.Contex
 		FullMethod: AdminMemoriesService_PutMemory_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminMemoriesServiceServer).PutMemory(ctx, req.(*PutMemoryRequest))
+		return srv.(AdminMemoriesServiceServer).PutMemory(ctx, req.(*AdminPutMemoryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }
 
 func _AdminMemoriesService_UpdateMemory_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
-	in := new(UpdateMemoryRequest)
+	in := new(AdminUpdateMemoryRequest)
 	if err := dec(in); err != nil {
 		return nil, err
 	}
@@ -2403,7 +2403,7 @@ func _AdminMemoriesService_UpdateMemory_Handler(srv interface{}, ctx context.Con
 		FullMethod: AdminMemoriesService_UpdateMemory_FullMethodName,
 	}
 	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
-		return srv.(AdminMemoriesServiceServer).UpdateMemory(ctx, req.(*UpdateMemoryRequest))
+		return srv.(AdminMemoriesServiceServer).UpdateMemory(ctx, req.(*AdminUpdateMemoryRequest))
 	}
 	return interceptor(ctx, in, info, handler)
 }

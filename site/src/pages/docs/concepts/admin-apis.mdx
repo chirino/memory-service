@@ -119,6 +119,8 @@ Episodic memory admin routes use `/admin/v1/...` instead of `/v1/admin/...`. Rea
 | Endpoint                                                                    | Role             | Purpose                                          |
 | --------------------------------------------------------------------------- | ---------------- | ------------------------------------------------ |
 | `GET /admin/v1/memories`                                                    | admin or auditor | List latest memory rows across users             |
+| `PUT /admin/v1/memories`                                                    | admin            | Upsert a memory in any namespace                 |
+| `PATCH /admin/v1/memories`                                                  | admin            | Archive a memory by namespace and key            |
 | `GET /admin/v1/memories/{id}`                                               | admin or auditor | Read a retained memory row by UUID               |
 | `POST /admin/v1/memories/search`                                            | admin or auditor | Search memories across users or as a target user |
 | `GET /admin/v1/memory-namespaces`                                           | admin or auditor | Browse memory namespace trees                    |

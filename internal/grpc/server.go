@@ -2804,11 +2804,11 @@ func (s *AdminMemoriesServer) GetMemoryIndexStatus(ctx context.Context, req *pb.
 	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
 }
 
-func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest) (*pb.MemoryWriteResult, error) {
+func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMemoryRequest) (*pb.MemoryWriteResult, error) {
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if err := s.requireAdminAccess(ctx, ""); err != nil {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
 		return nil, err
 	}
 	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
@@ -2836,34 +2836,12 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRe
 		index = map[string]string{}
 	}
 
-	// Build policy context from actor's on_behalf_of_user_id if provided
-	actor := req.GetActor()
-	userID := ""
-	if actor != nil {
-		userID = strings.TrimSpace(actor.GetOnBehalfOfUserId())
-	}
-
-	pc := episodic.PolicyContext{
-		UserID:   userID,
-		ClientID: getClientID(ctx),
-		JWTClaims: map[string]interface{}{
-			"roles": []string{security.RoleAdmin},
-		},
-	}
-
 	policyAttrs := map[string]interface{}{}
 	if s.Policy != nil {
-		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, value, index, pc)
-		if err != nil {
-			return nil, episodicInternalError("policy evaluation error", err)
-		}
-		if !decision.Allow {
-			if decision.Reason != "" {
-				return nil, status.Error(codes.PermissionDenied, decision.Reason)
-			}
-			return nil, status.Error(codes.PermissionDenied, "access denied")
-		}
-		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, index, pc)
+		// Admin memory writes are authorized by admin role/scope/justification
+		// above. Do not run user OPA authz here; only run attribute extraction
+		// with a neutral admin context for indexing/search.
+		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, index, adminMemoryPolicyContext(ctx))
 		if err != nil {
 			return nil, episodicInternalError("attribute extraction error", err)
 		}
@@ -2894,11 +2872,11 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRe
 	return resp, nil
 }
 
-func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryRequest) (*emptypb.Empty, error) {
+func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.AdminUpdateMemoryRequest) (*emptypb.Empty, error) {
 	if s.Store == nil {
 		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
 	}
-	if err := s.requireAdminAccess(ctx, ""); err != nil {
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
 		return nil, err
 	}
 	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
@@ -2914,38 +2892,13 @@ func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMe
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
 
-	// Build policy context from actor's on_behalf_of_user_id if provided
-	actor := req.GetActor()
-	userID := ""
-	if actor != nil {
-		userID = strings.TrimSpace(actor.GetOnBehalfOfUserId())
-	}
-
-	pc := episodic.PolicyContext{
-		UserID:   userID,
-		ClientID: getClientID(ctx),
-		JWTClaims: map[string]interface{}{
-			"roles": []string{security.RoleAdmin},
-		},
-	}
-
-	if s.Policy != nil {
-		decision, err := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, nil, nil, pc)
-		if err != nil {
-			return nil, episodicInternalError("policy evaluation error", err)
-		}
-		if !decision.Allow {
-			if decision.Reason != "" {
-				return nil, status.Error(codes.PermissionDenied, decision.Reason)
-			}
-			return nil, status.Error(codes.PermissionDenied, "access denied")
-		}
-	}
-
 	if req.Archived == nil || !req.GetArchived() {
 		return nil, status.Error(codes.InvalidArgument, "archived must be true")
 	}
 
+	// Admin memory updates are authorized by admin role/scope/justification
+	// above. They intentionally bypass user OPA authz because archive is an
+	// administrative operation across namespaces.
 	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
 		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
 	}); err != nil {
@@ -2955,6 +2908,16 @@ func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMe
 		return nil, episodicInternalError("failed to archive memory", err)
 	}
 	return &emptypb.Empty{}, nil
+}
+
+func adminMemoryPolicyContext(ctx context.Context) episodic.PolicyContext {
+	return episodic.PolicyContext{
+		UserID:   "",
+		ClientID: getClientID(ctx),
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
 }
 
 func (s *AdminMemoriesServer) requireReadAccess(ctx context.Context, justification string) error {

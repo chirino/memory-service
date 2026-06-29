@@ -204,6 +204,10 @@ export type PutMemoryRequest = {
   index?: {
     [key: string]: string;
   };
+  /**
+   * Optional optimistic concurrency revision expected for the active memory.
+   */
+  expected_revision?: number;
 };
 
 export type MemoryWriteResult = {
@@ -215,6 +219,7 @@ export type MemoryWriteResult = {
   };
   createdAt?: string;
   expiresAt?: string | null;
+  revision?: number;
 };
 
 export type MemoryItem = {
@@ -242,6 +247,10 @@ export type UpdateMemoryRequest = {
    * Set to `true` to archive the active memory item.
    */
   archived?: boolean;
+  /**
+   * Optional optimistic concurrency revision expected for the active memory.
+   */
+  expected_revision?: number;
 };
 
 export type MemoryUsage = {

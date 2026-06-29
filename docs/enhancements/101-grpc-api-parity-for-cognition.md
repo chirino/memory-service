@@ -5,12 +5,12 @@ status: implemented
 # Enhancement 101: gRPC API Parity for Cognition
 
 > **Status**: Implemented.
-> 
-> **Implementation Note**: Service-principal memory writes (PutMemory/UpdateMemory) were implemented in `AdminMemoriesService` rather than extending `MemoriesService` with `RequestActor`. Both gRPC and REST admin memory APIs now support `on_behalf_of_user_id` for writing memories scoped to user namespaces without requiring user JWT authentication.
+>
+> **Implementation Note**: Service-principal memory writes (PutMemory/UpdateMemory) are exposed through `AdminMemoriesService` and admin REST memory APIs. Admin memory writes are authorized by admin role/scope/justification, bypass memory OPA authz, and still run OPA attribute extraction with a neutral admin context.
 
 ## Summary
 
-Add the gRPC API parity needed for external cognition processors to use Memory Service without HTTP or SSE dependencies. The gRPC surface must match the behavior of the REST counterparts for existing event replay, worker checkpoint, archive, and TTL-backed indexed memory behavior. It also adds the missing generic gRPC substrate pieces cognition needs for conditional memory updates and service-principal on-behalf-of authorization. Memory-search parity is handled by [100](100-enhanced-memory-search.md).
+Add the gRPC API parity needed for external cognition processors to use Memory Service without HTTP or SSE dependencies. The gRPC surface must match the behavior of the REST counterparts for existing event replay, worker checkpoint, archive, and TTL-backed indexed memory behavior. It also adds the missing generic gRPC substrate pieces cognition needs for conditional memory updates, user-facing actor policy context, and namespace-scoped admin memory writes. Memory-search parity is handled by [100](100-enhanced-memory-search.md).
 
 ## Motivation
 
@@ -21,7 +21,7 @@ Add the gRPC API parity needed for external cognition processors to use Memory S
 - [100](100-enhanced-memory-search.md) owns memory-search parity, including gRPC cursor/filter/order behavior
 - cognition consolidation needs revision-aware compare-and-set semantics
 - memory archive filters, TTL writes, indexing, and safe attributes must behave the same through gRPC as through REST
-- a service principal must be able to write scoped cognition memories on behalf of conversation owners without leaking cross-user access
+- a service principal must be able to write scoped cognition memories under admin authorization without leaking cross-user access
 
 The goal is not to add cognition-specific admin/debug APIs. The goal is to make the generic substrate gRPC APIs complete enough that cognition can stay outside the Go server and still use the same governed behavior as REST clients.
 
@@ -155,9 +155,9 @@ All gRPC memory APIs must match REST archive behavior:
 - `UpdateMemory(archived=true)` archives the memory item instead of hard-deleting it
 - TTL expiration and eviction behavior must not be confused with archive state
 
-### Service Principal and On-Behalf-Of Scope
+### User-Facing Actor Scope
 
-Add explicit gRPC request context for service-principal writes that need to operate under a user-owned namespace. The server still enforces the same episodic-memory policy used by REST.
+User-facing gRPC memory requests can carry explicit actor context when a deployment needs to evaluate normal memory OPA policy under an effective user.
 
 ```protobuf
 message RequestActor {
@@ -167,7 +167,9 @@ message RequestActor {
 
 Memory write, update, get, search, and namespace-list requests may carry `RequestActor` where needed. Search-specific behavior is finalized in [100](100-enhanced-memory-search.md); if [100](100-enhanced-memory-search.md) adds `order` and `after_cursor`, `SearchMemoriesRequest.actor` should use field `9`. `GetMemoryRequest.actor` should use field `5`, and `ListMemoryNamespacesRequest.actor` should use field `5`.
 
-Normal user callers omit `actor`. Service principals can set `on_behalf_of_user_id` to evaluate the request using that user as the effective policy user; namespace policy must still allow the resulting effective user within authorized prefixes such as `["user", <sub>, "cognition.v1", ...]`.
+Normal user callers omit `actor`. A caller using the user-facing `MemoriesService` can set `on_behalf_of_user_id` to evaluate the request using that user as the effective policy user; namespace policy must still allow the resulting effective user within authorized prefixes such as `["user", <sub>, "cognition.v1", ...]`.
+
+Admin memory write/update APIs do not use `RequestActor`: they are admin operations, bypass memory OPA authz, and run attribute extraction with a neutral admin context.
 
 Actor handling should keep policy input simple:
 
@@ -238,12 +240,11 @@ Feature: gRPC parity for cognition processors
     When GetMemory is called over gRPC with archived EXCLUDE
     Then the archived memory is not returned
 
-  Scenario: Service principal writes only authorized cognition namespaces
-    Given the cognition service principal can write ["user","alice","cognition.v1"]
-    When it writes ["user","alice","cognition.v1","facts"] on behalf of "alice" over gRPC
+  Scenario: Admin service principal writes cognition namespaces
+    Given the cognition service principal has admin memory write authorization
+    When it writes ["user","alice","cognition.v1","facts"] over the admin gRPC API
     Then the write succeeds
-    When it writes ["user","alice","private"] on behalf of "alice" over gRPC
-    Then the gRPC status should be PERMISSION_DENIED
+    And OPA attribute extraction runs with a neutral admin context
 
   Scenario: TTL-backed gRPC memories are indexed before expiry
     Given a memory is written over gRPC with ttl_seconds 3600 and index text "deployment cache"
@@ -258,7 +259,8 @@ Feature: gRPC parity for cognition processors
 - Memory-search parity tests live in [100](100-enhanced-memory-search.md).
 - Focused store-level tests verify revision increments and conditional write/archive conflicts on SQLite; Go build coverage verifies the PostgreSQL and Mongo implementations compile against the shared interface.
 - Existing event-stream coverage continues to verify user scope, `kinds`, `after_cursor`, and reconnect behavior; admin scope and `conversation_ids` are implemented in the shared gRPC event handler path.
-- Policy implementation evaluates authorization against a single effective `user_id`; `on_behalf_of_user_id` is not passed through to OPA as a separate input.
+- User-facing policy implementation evaluates authorization against a single effective `user_id`; `on_behalf_of_user_id` is not passed through to OPA as a separate input.
+- Admin memory write APIs bypass memory OPA authorization and still run OPA attribute extraction with a neutral admin context.
 - Existing TTL/index behavior is preserved through the same gRPC `PutMemory` store path.
 
 ## Tasks
@@ -269,7 +271,7 @@ Feature: gRPC parity for cognition processors
 - [x] Implement gRPC admin checkpoint service backed by the existing admin checkpoint store.
 - [x] Add revision fields to episodic memory store models and expose conditional write/update behavior through gRPC.
 - [x] Apply REST-equivalent memory archive semantics to gRPC memory get/list/update paths; search behavior is owned by [100](100-enhanced-memory-search.md).
-- [x] Extend gRPC episodic memory requests with `RequestActor`; policy input remains the effective `user_id`, authenticated client ID, and roles.
+- [x] Extend user-facing gRPC episodic memory requests with `RequestActor`; policy input remains the effective `user_id`, authenticated client ID, and roles. Admin memory write requests use admin-specific messages with justification instead of actor context.
 - [x] Verify gRPC TTL-backed memory writes continue through the existing put/index/get paths and expose write/get metadata consistently with REST.
 - [x] Add focused store-level coverage for revision increments and conditional write/archive conflicts.
 - [x] Update [099](099-quarkus-cognition-processor.md) to depend on these gRPC substrate APIs for its Memory Service integration.
@@ -287,7 +289,7 @@ Feature: gRPC parity for cognition processors
 | `python/` | Regenerated Python gRPC stubs if protobuf artifacts are impacted |
 | `internal/grpc/` and `internal/service/eventstream/` | gRPC handlers and shared replay helpers for events, checkpoints, memories, and write/get/list parity |
 | `internal/plugin/store/*` | Store support for memory revisions, conditional writes, archive filters, checkpoints, TTL/index parity |
-| `internal/episodic/` | Policy and request-context handling for service-principal on-behalf-of memory access |
+| `internal/episodic/` | Policy and request-context handling for user-facing actor context plus neutral admin memory attribute extraction |
 | `internal/bdd/testdata/features/` | gRPC parity BDD scenarios |
 | `internal/FACTS.md` | Record implementation gotchas discovered while adding gRPC parity |
 
@@ -323,5 +325,6 @@ python3 -m compileall python/langchain/memory_service_langchain/grpc > python-co
 ## Security Considerations
 
 - Admin event scope requires admin or auditor authorization, matching REST admin event reads; checkpoints require admin authorization or an explicitly equivalent service-principal policy.
-- `on_behalf_of_user_id` must never let a service principal broaden access beyond configured namespace policies.
+- `on_behalf_of_user_id` is limited to user-facing memory APIs and must never let a caller broaden access beyond configured namespace policies.
+- Admin memory write APIs must require admin authorization and justification when configured because they intentionally bypass memory OPA authorization.
 - gRPC safe attributes must match REST policy extraction and must not include encrypted memory values, raw evidence text, internal client metadata, provider prompts, or provider cache keys.

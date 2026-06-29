@@ -1909,6 +1909,16 @@ class AdminMemoriesServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminGetMemoryIndexStatusRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
                 _registered_method=True)
+        self.PutMemory = channel.unary_unary(
+                '/memory.v1.AdminMemoriesService/PutMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminPutMemoryRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.FromString,
+                _registered_method=True)
+        self.UpdateMemory = channel.unary_unary(
+                '/memory.v1.AdminMemoriesService/UpdateMemory',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateMemoryRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class AdminMemoriesServiceServicer(object):
@@ -1962,6 +1972,18 @@ class AdminMemoriesServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def PutMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def UpdateMemory(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AdminMemoriesServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -2004,6 +2026,16 @@ def add_AdminMemoriesServiceServicer_to_server(servicer, server):
                     servicer.GetMemoryIndexStatus,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminGetMemoryIndexStatusRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.SerializeToString,
+            ),
+            'PutMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.PutMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminPutMemoryRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.SerializeToString,
+            ),
+            'UpdateMemory': grpc.unary_unary_rpc_method_handler(
+                    servicer.UpdateMemory,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminUpdateMemoryRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2222,6 +2254,60 @@ class AdminMemoriesService(object):
             '/memory.v1.AdminMemoriesService/GetMemoryIndexStatus',
             memory_dot_v1_dot_memory__service__pb2.AdminGetMemoryIndexStatusRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.MemoryIndexStatusResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def PutMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminMemoriesService/PutMemory',
+            memory_dot_v1_dot_memory__service__pb2.AdminPutMemoryRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.MemoryWriteResult.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def UpdateMemory(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminMemoriesService/UpdateMemory',
+            memory_dot_v1_dot_memory__service__pb2.AdminUpdateMemoryRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

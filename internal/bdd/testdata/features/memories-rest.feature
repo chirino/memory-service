@@ -62,6 +62,19 @@ Feature: Episodic Memory REST API
     }
     """
 
+  Scenario: Put memory rejects negative TTL
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "prefs"],
+      "key": "negative-ttl",
+      "value": { "color": "dark" },
+      "ttl_seconds": -1
+    }
+    """
+    Then the response status should be 400
+    And the response body should contain "ttl_seconds must be"
+
   Scenario: Get a non-existent memory returns 404
     When I call GET "/v1/memories?ns=user&ns=alice&key=does-not-exist"
     Then the response status should be 404

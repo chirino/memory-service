@@ -123,8 +123,14 @@ paths:
     put:
       tags: [Admin]
       summary: Upsert a memory item (admin)
-      description: Allows admins to write memories on behalf of users using on_behalf_of_user_id. Requires admin role.
+      description: Allows admins to write memories across namespaces. Requires admin role.
       operationId: adminPutMemory
+      parameters:
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
       requestBody:
         required: true
         content:
@@ -146,7 +152,7 @@ paths:
       tags: [Admin]
       summary: Update a memory item (admin)
       description: |-
-        Allows admins to update memories on behalf of users using on_behalf_of_user_id.
+        Allows admins to update memories across namespaces.
         Currently supports archiving the active memory item by setting `archived` to `true`.
         Requires admin role.
       operationId: adminUpdateMemory
@@ -170,6 +176,11 @@ paths:
         - name: key
           in: query
           required: true
+          schema:
+            type: string
+        - name: justification
+          in: query
+          required: false
           schema:
             type: string
       responses:
@@ -2610,6 +2621,10 @@ components:
           type: object
           additionalProperties:
             type: string
+        expected_revision:
+          type: integer
+          format: int64
+          description: Optional optimistic concurrency revision expected for the active memory.
 
     MemoryWriteResult:
       type: object
@@ -2633,6 +2648,9 @@ components:
           type: string
           format: date-time
           nullable: true
+        revision:
+          type: integer
+          format: int64
 
     UpdateMemoryRequest:
       type: object
@@ -2640,3 +2658,7 @@ components:
         archived:
           type: boolean
           description: Set to `true` to archive the active memory item.
+        expected_revision:
+          type: integer
+          format: int64
+          description: Optional optimistic concurrency revision expected for the active memory.

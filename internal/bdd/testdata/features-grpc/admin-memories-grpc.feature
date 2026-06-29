@@ -1,12 +1,12 @@
 Feature: Admin Memory gRPC API
-  As a service principal (cognition processor)
-  I want to write memories on behalf of users via AdminMemoriesService
-  So that I can store derived cognition memories without user JWT authentication
+  As an administrator
+  I want to write memories across namespaces via AdminMemoriesService
+  So that I can store namespace-scoped cognition memories through admin authorization
 
   Background:
-    Given I am authenticated with API key as admin client "cognition_processor"
+    Given I am authenticated as admin user "alice"
 
-  Scenario: Admin can write memory on behalf of a user
+  Scenario: Admin can write memory in a user namespace
     When I send gRPC request "AdminMemoriesService/PutMemory" with body:
     """
     namespace: "user"
@@ -24,9 +24,7 @@ Feature: Admin Memory gRPC API
         value { number_value: 0.95 }
       }
     }
-    actor {
-      on_behalf_of_user_id: "alice"
-    }
+    justification: "BDD admin memory write"
     """
     Then the gRPC response should not have an error
     And set "memoryId" to the gRPC response field "id"
@@ -35,8 +33,9 @@ Feature: Admin Memory gRPC API
     And the gRPC response field "namespace[2]" should be "cognition.v1"
     And the gRPC response field "namespace[3]" should be "facts"
     And the gRPC response field "key" should be "fact-001"
+    And the gRPC response field "revision" should not be null
 
-  Scenario: Admin can search memories on behalf of a user
+  Scenario: Admin can search memories with user-scoped policy filtering
     Given I send gRPC request "AdminMemoriesService/PutMemory" with body:
     """
     namespace: "user"
@@ -50,9 +49,7 @@ Feature: Admin Memory gRPC API
         value { string_value: "ui" }
       }
     }
-    actor {
-      on_behalf_of_user_id: "bob"
-    }
+    justification: "BDD admin memory setup"
     """
     When I send gRPC request "AdminMemoriesService/SearchMemories" with body:
     """
@@ -67,7 +64,7 @@ Feature: Admin Memory gRPC API
     And the gRPC response field "items[0].namespace[1]" should be "bob"
     And the gRPC response field "items[0].value.category" should be "ui"
 
-  Scenario: Admin can update (archive) memory on behalf of a user
+  Scenario: Admin can update (archive) memory in a user namespace
     Given I send gRPC request "AdminMemoriesService/PutMemory" with body:
     """
     namespace: "user"
@@ -81,9 +78,7 @@ Feature: Admin Memory gRPC API
         value { string_value: "temporary fact" }
       }
     }
-    actor {
-      on_behalf_of_user_id: "charlie"
-    }
+    justification: "BDD admin memory setup"
     """
     When I send gRPC request "AdminMemoriesService/UpdateMemory" with body:
     """
@@ -93,13 +88,64 @@ Feature: Admin Memory gRPC API
     namespace: "facts"
     key: "fact-temp"
     archived: true
-    actor {
-      on_behalf_of_user_id: "charlie"
-    }
+    justification: "BDD admin memory archive"
     """
     Then the gRPC response should not have an error
 
-  Scenario: Admin write without on_behalf_of_user_id should work for admin-owned namespaces
+  Scenario: Admin gRPC put detects stale expected revision
+    Given I send gRPC request "AdminMemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "cognition.v1"
+    namespace: "facts"
+    key: "cas-grpc"
+    value {
+      fields {
+        key: "content"
+        value { string_value: "first value" }
+      }
+    }
+    justification: "BDD admin memory CAS setup"
+    """
+    And the gRPC response should not have an error
+    And set "grpcAdminRevision" to the gRPC response field "revision"
+    And I send gRPC request "AdminMemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "cognition.v1"
+    namespace: "facts"
+    key: "cas-grpc"
+    value {
+      fields {
+        key: "content"
+        value { string_value: "second value" }
+      }
+    }
+    expected_revision: ${grpcAdminRevision}
+    justification: "BDD admin memory CAS update"
+    """
+    And the gRPC response should not have an error
+    When I send gRPC request "AdminMemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "cognition.v1"
+    namespace: "facts"
+    key: "cas-grpc"
+    value {
+      fields {
+        key: "content"
+        value { string_value: "stale value" }
+      }
+    }
+    expected_revision: ${grpcAdminRevision}
+    justification: "BDD admin memory stale CAS"
+    """
+    Then the gRPC response should have status "ABORTED"
+
+  Scenario: Admin write should work for admin-owned namespaces
     When I send gRPC request "AdminMemoriesService/PutMemory" with body:
     """
     namespace: "system"
@@ -111,6 +157,7 @@ Feature: Admin Memory gRPC API
         value { number_value: 42 }
       }
     }
+    justification: "BDD admin system memory"
     """
     Then the gRPC response should not have an error
     And the gRPC response field "namespace[0]" should be "system"
@@ -131,12 +178,10 @@ Feature: Admin Memory gRPC API
       }
     }
     ttl_seconds: 3600
-    actor {
-      on_behalf_of_user_id: "dave"
-    }
+    justification: "BDD admin memory TTL"
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "expires_at" should not be empty
+    And the gRPC response field "expiresAt" should not be null
 
   Scenario: Admin write with index fields via AdminMemoriesService
     When I send gRPC request "AdminMemoriesService/PutMemory" with body:
@@ -160,8 +205,70 @@ Feature: Admin Memory gRPC API
       key: "priority"
       value: "high"
     }
-    actor {
-      on_behalf_of_user_id: "eve"
-    }
+    justification: "BDD admin memory index"
     """
     Then the gRPC response should not have an error
+
+  Scenario: Admin gRPC put runs attribute extraction with neutral admin context
+    Given I call PUT "/admin/v1/memory-policies" with body:
+    """
+    {
+      "authz": "package memories.authz\nimport future.keywords.if\ndefault decision = {\"allow\": true}",
+      "attributes": "package memories.attributes\nimport future.keywords.if\ndefault attributes = {}\nattributes = {\"admin_user_id\": input.context.user_id, \"admin_role\": input.context.jwt_claims.roles[0]} if { count(input.context.jwt_claims.roles) > 0 }",
+      "filter": "package memories.filter\nimport future.keywords.if\nnamespace_prefix := input.namespace_prefix\nattribute_filter := {}"
+    }
+    """
+    And the response status should be 204
+    When I send gRPC request "AdminMemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "frank"
+    namespace: "cognition.v1"
+    namespace: "facts"
+    key: "neutral-context-grpc"
+    value {
+      fields {
+        key: "content"
+        value { string_value: "uses neutral admin context" }
+      }
+    }
+    justification: "BDD admin memory neutral context"
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "AdminMemoriesService/SearchMemories" with body:
+    """
+    namespace_prefix: "user"
+    namespace_prefix: "frank"
+    namespace_prefix: "cognition.v1"
+    namespace_prefix: "facts"
+    filter {
+      fields {
+        key: "admin_user_id"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024eq"
+              value { string_value: "" }
+            }
+          }
+        }
+      }
+      fields {
+        key: "admin_role"
+        value {
+          struct_value {
+            fields {
+              key: "\u0024eq"
+              value { string_value: "admin" }
+            }
+          }
+        }
+      }
+    }
+    limit: 10
+    justification: "BDD admin memory neutral search"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "items[0].key" should be "neutral-context-grpc"
+    And the gRPC response field "items[0].attributes.admin_user_id" should be ""
+    And the gRPC response field "items[0].attributes.admin_role" should be "admin"

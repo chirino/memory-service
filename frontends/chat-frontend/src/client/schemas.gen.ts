@@ -491,6 +491,11 @@ export const $PutMemoryRequest = {
         type: "string",
       },
     },
+    expected_revision: {
+      type: "integer",
+      format: "int64",
+      description: "Optional optimistic concurrency revision expected for the active memory.",
+    },
   },
 } as const;
 
@@ -522,6 +527,10 @@ export const $MemoryWriteResult = {
       type: "string",
       format: "date-time",
       nullable: true,
+    },
+    revision: {
+      type: "integer",
+      format: "int64",
     },
   },
 } as const;
@@ -580,6 +589,11 @@ export const $UpdateMemoryRequest = {
     archived: {
       type: "boolean",
       description: "Set to `true` to archive the active memory item.",
+    },
+    expected_revision: {
+      type: "integer",
+      format: "int64",
+      description: "Optional optimistic concurrency revision expected for the active memory.",
     },
   },
 } as const;
