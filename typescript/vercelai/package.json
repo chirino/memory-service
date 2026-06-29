@@ -21,12 +21,12 @@
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
   "dependencies": {
-    "undici": "^7.28.0"
+    "undici": "^8.5.0"
   },
   "peerDependencies": {
     "@grpc/grpc-js": "^1.14.0",
     "@grpc/proto-loader": "^0.8.0",
-    "ai": "^5.0.0"
+    "ai": "^6.0.208"
   },
   "peerDependenciesMeta": {
     "@grpc/grpc-js": {
@@ -37,9 +37,9 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^22.13.0",
-    "ai": "^5.0.0",
-    "prettier": "^3.8.1",
-    "typescript": "^5.8.2"
+    "@types/node": "^26.0.0",
+    "ai": "^6.0.208",
+    "prettier": "^3.8.4",
+    "typescript": "^6.0.3"
   }
 }
