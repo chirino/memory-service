@@ -120,6 +120,78 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+    put:
+      tags: [Admin]
+      summary: Upsert a memory item (admin)
+      description: Allows admins to write memories across namespaces. Requires admin role.
+      operationId: adminPutMemory
+      parameters:
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PutMemoryRequest'
+      responses:
+        '200':
+          description: Memory stored.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryWriteResult'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
+    patch:
+      tags: [Admin]
+      summary: Update a memory item (admin)
+      description: |-
+        Allows admins to update memories across namespaces.
+        Currently supports archiving the active memory item by setting `archived` to `true`.
+        Requires admin role.
+      operationId: adminUpdateMemory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateMemoryRequest'
+      parameters:
+        - name: ns
+          in: query
+          required: true
+          description: Namespace segments. Repeat once per segment.
+          schema:
+            type: array
+            items:
+              type: string
+          style: form
+          explode: true
+        - name: key
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: justification
+          in: query
+          required: false
+          schema:
+            type: string
+      responses:
+        '204':
+          description: Memory updated.
+        '404':
+          $ref: '#/components/responses/NotFound'
+        default:
+          $ref: '#/components/responses/Error'
+      security:
+        - BearerAuth: []
 
   /admin/v1/memories/search:
     post:
@@ -2523,3 +2595,70 @@ components:
         expiresIn:
           type: integer
           description: URL validity duration in seconds.
+
+    PutMemoryRequest:
+      type: object
+      required:
+        - namespace
+        - key
+        - value
+      properties:
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+          minLength: 1
+          maxLength: 1024
+        value:
+          type: object
+          additionalProperties: true
+        ttl_seconds:
+          type: integer
+          minimum: 0
+        index:
+          type: object
+          additionalProperties:
+            type: string
+        expected_revision:
+          type: integer
+          format: int64
+          description: Optional optimistic concurrency revision expected for the active memory.
+
+    MemoryWriteResult:
+      type: object
+      properties:
+        id:
+          type: string
+          format: uuid
+        namespace:
+          type: array
+          items:
+            type: string
+        key:
+          type: string
+        attributes:
+          type: object
+          additionalProperties: true
+        createdAt:
+          type: string
+          format: date-time
+        expiresAt:
+          type: string
+          format: date-time
+          nullable: true
+        revision:
+          type: integer
+          format: int64
+
+    UpdateMemoryRequest:
+      type: object
+      properties:
+        archived:
+          type: boolean
+          description: Set to `true` to archive the active memory item.
+        expected_revision:
+          type: integer
+          format: int64
+          description: Optional optimistic concurrency revision expected for the active memory.

@@ -566,6 +566,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 	case "AdminMemoriesService":
 		client := pb.NewAdminMemoriesServiceClient(conn)
 		switch method {
+		case "PutMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminPutMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.PutMemory(ctx, req.(*pb.AdminPutMemoryRequest))
+				})
 		case "ListMemories":
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminListMemoriesRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
@@ -605,6 +610,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminGetMemoryIndexStatusRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.GetMemoryIndexStatus(ctx, req.(*pb.AdminGetMemoryIndexStatusRequest))
+				})
+		case "UpdateMemory":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminUpdateMemoryRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.UpdateMemory(ctx, req.(*pb.AdminUpdateMemoryRequest))
 				})
 		}
 

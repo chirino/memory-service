@@ -79,6 +79,7 @@ func TestFeatures(t *testing.T) {
 		"sse-events-rest.feature":        true,
 		"sse-events-replay-rest.feature": true,
 	})
+	featureFiles = filterFeatureBase(featureFiles, authModeFeatureFiles)
 	featureFiles = filterSerialFeatures(featureFiles, false)
 	require.NotEmpty(t, featureFiles, "No feature files found in %s", featuresDir)
 

@@ -885,6 +885,7 @@ type MemoryWriteResult struct {
 	Id         *openapi_types.UUID     `json:"id,omitempty"`
 	Key        *string                 `json:"key,omitempty"`
 	Namespace  *[]string               `json:"namespace,omitempty"`
+	Revision   *int64                  `json:"revision,omitempty"`
 }
 
 // OwnershipTransfer Represents a pending ownership transfer request.
@@ -912,11 +913,13 @@ type OwnershipTransfer struct {
 
 // PutMemoryRequest defines model for PutMemoryRequest.
 type PutMemoryRequest struct {
-	Index      *map[string]string     `json:"index,omitempty"`
-	Key        string                 `json:"key"`
-	Namespace  []string               `json:"namespace"`
-	TtlSeconds *int                   `json:"ttl_seconds,omitempty"`
-	Value      map[string]interface{} `json:"value"`
+	// ExpectedRevision Optional optimistic concurrency revision expected for the active memory.
+	ExpectedRevision *int64                 `json:"expected_revision,omitempty"`
+	Index            *map[string]string     `json:"index,omitempty"`
+	Key              string                 `json:"key"`
+	Namespace        []string               `json:"namespace"`
+	TtlSeconds       *int                   `json:"ttl_seconds,omitempty"`
+	Value            map[string]interface{} `json:"value"`
 }
 
 // SearchConversationsRequest defines model for SearchConversationsRequest.
@@ -1077,6 +1080,9 @@ type UpdateConversationRequest struct {
 type UpdateMemoryRequest struct {
 	// Archived Set to `true` to archive the active memory item.
 	Archived *bool `json:"archived,omitempty"`
+
+	// ExpectedRevision Optional optimistic concurrency revision expected for the active memory.
+	ExpectedRevision *int64 `json:"expected_revision,omitempty"`
 }
 
 // Error defines model for Error.

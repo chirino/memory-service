@@ -711,6 +711,24 @@ message AdminGetMemoryRequest {
   optional string justification = 3;
 }
 
+message AdminPutMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  google.protobuf.Struct value = 3;
+  int32 ttl_seconds = 4;
+  map<string, string> index = 5;
+  optional int64 expected_revision = 6;
+  optional string justification = 7;
+}
+
+message AdminUpdateMemoryRequest {
+  repeated string namespace = 1;
+  string key = 2;
+  optional bool archived = 3;
+  optional int64 expected_revision = 4;
+  optional string justification = 5;
+}
+
 message AdminDeleteMemoryRequest {
   bytes id = 1;
   optional string justification = 2;
@@ -930,6 +948,8 @@ service AdminMemoriesService {
   rpc GetMemoryUsage(AdminGetMemoryUsageRequest) returns (MemoryUsage);
   rpc ListTopMemoryUsage(AdminListTopMemoryUsageRequest) returns (ListTopMemoryUsageResponse);
   rpc GetMemoryIndexStatus(AdminGetMemoryIndexStatusRequest) returns (MemoryIndexStatusResponse);
+  rpc PutMemory(AdminPutMemoryRequest) returns (MemoryWriteResult);
+  rpc UpdateMemory(AdminUpdateMemoryRequest) returns (google.protobuf.Empty);
 }
 
 service ResponseRecorderService {

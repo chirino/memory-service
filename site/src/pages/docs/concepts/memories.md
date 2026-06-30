@@ -66,13 +66,15 @@ Response:
   "key": "python_tip",
   "attributes": { "namespace": "user", "sub": "alice" },
   "created_at": "2026-01-01T00:00:00Z",
-  "expires_at": "2026-01-02T00:00:00Z"
+  "expires_at": "2026-01-02T00:00:00Z",
+  "revision": 1
 }
 ```
 
 The `value` is not echoed back in the response — only the write confirmation is returned.
 
 Calling `PUT` with an existing `(namespace, key)` pair upserts the memory, replacing the previous value.
+For optimistic concurrency, include `expected_revision` on `PUT` or `PATCH`; the request fails with `409 Conflict` if the active memory revision no longer matches. Each successful write or archive update increments the revision.
 
 ### Reading a Memory
 
@@ -446,14 +448,16 @@ See the [Admin APIs](/docs/concepts/admin-apis/) for policy management endpoints
 
 ## Admin Memory Exploration
 
-Admin and auditor users can inspect episodic memories through a dedicated admin surface. These endpoints are separate from `/v1/memories`; they do not rely on user-facing OPA policy injection unless an admin explicitly searches as a target user.
+Admin and auditor users can inspect episodic memories through a dedicated admin surface. Admin users can also write or archive namespace-scoped memories through this surface. These endpoints are separate from `/v1/memories`; they do not rely on user-facing OPA policy injection unless an admin explicitly searches as a target user.
 
-| Method | Endpoint                      | Role             | Purpose                                                                               |
-| ------ | ----------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
-| `GET`  | `/admin/v1/memories`          | admin or auditor | List latest memory rows across users with filters and cursor pagination               |
-| `GET`  | `/admin/v1/memories/{id}`     | admin or auditor | Read a retained memory row by UUID without incrementing usage counters                |
-| `POST` | `/admin/v1/memories/search`   | admin or auditor | Search across users by namespace prefix, safe attributes, and optional semantic query |
-| `GET`  | `/admin/v1/memory-namespaces` | admin or auditor | Browse memory namespace trees across users                                            |
+| Method  | Endpoint                      | Role             | Purpose                                                                               |
+| ------- | ----------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
+| `GET`   | `/admin/v1/memories`          | admin or auditor | List latest memory rows across users with filters and cursor pagination               |
+| `PUT`   | `/admin/v1/memories`          | admin            | Upsert a memory in any namespace                                                      |
+| `PATCH` | `/admin/v1/memories`          | admin            | Archive an active memory by namespace and key                                         |
+| `GET`   | `/admin/v1/memories/{id}`     | admin or auditor | Read a retained memory row by UUID without incrementing usage counters                |
+| `POST`  | `/admin/v1/memories/search`   | admin or auditor | Search across users by namespace prefix, safe attributes, and optional semantic query |
+| `GET`   | `/admin/v1/memory-namespaces` | admin or auditor | Browse memory namespace trees across users                                            |
 
 Admin list and namespace query parameters use camelCase query names, for example:
 
@@ -479,6 +483,32 @@ curl -X POST http://localhost:8080/admin/v1/memories/search \
 ```
 
 When `as_user_id` is omitted, admin search is admin-wide and caller filters narrow that result set. When `as_user_id` is set, the server applies the same memory search policy that the target user would receive from public `POST /v1/memories/search`.
+
+Admin writes use the same memory body shape as public `PUT /v1/memories` and may include `expected_revision` for compare-and-swap updates. Admin archive uses repeated `ns` query parameters plus `key`, with `{"archived": true}` in the request body:
+
+```bash
+curl -X PUT "http://localhost:8080/admin/v1/memories?justification=cognition%20processor%20write" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{
+    "namespace": ["user", "alice", "cognition.v1", "facts"],
+    "key": "preference-theme",
+    "value": {"content": "Alice prefers light theme"},
+    "index": {"content": "Alice prefers light theme"}
+  }'
+```
+
+```bash
+curl -X PATCH "http://localhost:8080/admin/v1/memories?ns=user&ns=alice&ns=cognition.v1&ns=facts&key=preference-theme&justification=cognition%20cleanup" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{
+    "archived": true,
+    "expected_revision": 2
+  }'
+```
+
+Admin memory writes are authorized by admin role, OIDC scope when configured, and optional justification enforcement. They intentionally bypass user-facing memory OPA authorization because they are administrative namespace operations; OPA attribute extraction still runs with a neutral admin context so indexing and search metadata stay consistent. Admin write requests do not carry `on_behalf_of_user_id`.
 
 The old operational memory admin routes are split away from `/admin/v1/memories/...`:
 

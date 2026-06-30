@@ -2804,6 +2804,122 @@ func (s *AdminMemoriesServer) GetMemoryIndexStatus(ctx context.Context, req *pb.
 	return &pb.MemoryIndexStatusResponse{Pending: count}, nil
 }
 
+func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMemoryRequest) (*pb.MemoryWriteResult, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
+		return nil, err
+	}
+	if req.GetValue() == nil {
+		return nil, status.Error(codes.InvalidArgument, "value is required")
+	}
+	if req.GetTtlSeconds() < 0 {
+		return nil, status.Error(codes.InvalidArgument, "ttl_seconds must be >= 0")
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" || len(key) > 1024 {
+		return nil, status.Error(codes.InvalidArgument, "key must be non-empty and at most 1024 bytes")
+	}
+
+	value := req.GetValue().AsMap()
+	index := req.GetIndex()
+	if index == nil {
+		index = map[string]string{}
+	}
+
+	policyAttrs := map[string]interface{}{}
+	if s.Policy != nil {
+		// Admin memory writes are authorized by admin role/scope/justification
+		// above. Do not run user OPA authz here; only run attribute extraction
+		// with a neutral admin context for indexing/search.
+		extracted, err := s.Policy.ExtractAttributes(ctx, namespace, key, value, index, adminMemoryPolicyContext(ctx))
+		if err != nil {
+			return nil, episodicInternalError("attribute extraction error", err)
+		}
+		policyAttrs = extracted
+	}
+
+	result, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryWriteResult, error) {
+		return s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
+			Namespace:        namespace,
+			Key:              key,
+			Value:            value,
+			Index:            index,
+			TTLSeconds:       int(req.GetTtlSeconds()),
+			PolicyAttributes: policyAttrs,
+			ExpectedRevision: req.ExpectedRevision,
+		})
+	})
+	if err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
+		return nil, episodicInternalError("failed to store memory", err)
+	}
+	resp, err := memoryWriteResultToProto(result)
+	if err != nil {
+		return nil, episodicInternalError("failed to encode memory write response", err)
+	}
+	return resp, nil
+}
+
+func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.AdminUpdateMemoryRequest) (*emptypb.Empty, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	if err := s.requireAdminAccess(ctx, req.GetJustification()); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminMemoriesWrite); err != nil {
+		return nil, err
+	}
+
+	namespace := req.GetNamespace()
+	if err := validateMemoryNamespace(namespace, s.maxDepth()); err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	key := req.GetKey()
+	if key == "" {
+		return nil, status.Error(codes.InvalidArgument, "key is required")
+	}
+
+	if req.Archived == nil || !req.GetArchived() {
+		return nil, status.Error(codes.InvalidArgument, "archived must be true")
+	}
+
+	// Admin memory updates are authorized by admin role/scope/justification
+	// above. They intentionally bypass user OPA authz because archive is an
+	// administrative operation across namespaces.
+	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
+		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
+	}); err != nil {
+		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
+			return nil, status.Error(codes.Aborted, "memory revision conflict")
+		}
+		return nil, episodicInternalError("failed to archive memory", err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func adminMemoryPolicyContext(ctx context.Context) episodic.PolicyContext {
+	return episodic.PolicyContext{
+		UserID:   "",
+		ClientID: getClientID(ctx),
+		JWTClaims: map[string]interface{}{
+			"roles": []string{security.RoleAdmin},
+		},
+	}
+}
+
 func (s *AdminMemoriesServer) requireReadAccess(ctx context.Context, justification string) error {
 	id, err := requireGRPCIdentity(ctx)
 	if err != nil {
