@@ -10,19 +10,19 @@
     "astro": "astro"
   },
   "dependencies": {
-    "@astrojs/mdx": "^4.3.0",
-    "astro": "^5.7.10",
-    "html-to-text": "^9.0.5",
+    "@astrojs/mdx": "^7.0.0",
+    "astro": "^7.0.0",
+    "html-to-text": "^10.0.0",
     "prismjs": "^1.30.0",
     "unist-util-visit": "^5.0.0"
   },
   "devDependencies": {
-    "@tailwindcss/postcss": "^4.1.4",
-    "@tailwindcss/typography": "^0.5.16",
-    "@tailwindcss/vite": "^4.1.4",
+    "@tailwindcss/postcss": "^4.3.1",
+    "@tailwindcss/typography": "^0.5.20",
+    "@tailwindcss/vite": "^4.3.1",
     "postcss": "^8.5.15",
-    "prettier": "^3.8.1",
+    "prettier": "^3.8.4",
     "prettier-plugin-astro": "^0.14.1",
-    "tailwindcss": "^4.1.4"
+    "tailwindcss": "^4.3.1"
   }
 }
