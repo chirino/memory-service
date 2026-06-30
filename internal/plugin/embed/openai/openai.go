@@ -117,8 +117,11 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]fl
 		return nil, fmt.Errorf("openai embed: parse response: %w", err)
 	}
 
+	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
+		return nil, fmt.Errorf("openai embed: authentication failed with status %d", resp.StatusCode)
+	}
 	if result.Error != nil {
-		return nil, fmt.Errorf("openai embed error: %s", result.Error.Message)
+		return nil, fmt.Errorf("openai embed error: %s", redactAPIKey(result.Error.Message, e.apiKey))
 	}
 	if len(result.Data) != len(texts) {
 		return nil, fmt.Errorf("openai embed: expected %d embeddings, got %d", len(texts), len(result.Data))
@@ -137,4 +140,11 @@ func ptrIfPositive(v int) *int {
 		return nil
 	}
 	return &v
+}
+
+func redactAPIKey(msg, apiKey string) string {
+	if apiKey == "" {
+		return msg
+	}
+	return strings.ReplaceAll(msg, apiKey, "[REDACTED_OPENAI_API_KEY]")
 }
