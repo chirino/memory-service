@@ -118,7 +118,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.3
+    image: quay.io/keycloak/keycloak:26.6.4
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -363,7 +363,7 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.5.1.882
+    image: clickhouse/clickhouse-server:26.6.1.1193
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
