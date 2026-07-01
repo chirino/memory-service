@@ -51,12 +51,53 @@ This will start:
 - **MinIO** for S3-compatible object storage (used by the memory service for attachments)
 - **Prometheus** for metrics collection
 - **Grafana** for metrics dashboards
-- **Langfuse** for turn-trace observability, fed by the Memory Service turn-traces processor
+
+## Optional Services
+
+### Langfuse Observability
+
+Enable turn-trace observability and LLM monitoring with Langfuse:
+
+```bash
+docker compose --profile langfuse up -d
+```
 
 Langfuse is available at `http://localhost:3002` with:
 
 - Email: `memory-service@example.com`
 - Password: `memory-service`
+
+### Cognition Processor
+
+Enable intelligent memory extraction and organization using LLMs:
+
+```bash
+docker compose --profile cognition up -d
+```
+
+The cognition processor extracts structured memories (facts, preferences, topics) from conversations. Configure it by adding these variables to your `.env` file:
+
+| Variable                    | Description                            | Default                     |
+| --------------------------- | -------------------------------------- | --------------------------- |
+| `COGNITION_OPENAI_API_KEY`  | API key for the LLM endpoint           | _(required)_                |
+| `COGNITION_OPENAI_BASE_URL` | OpenAI-compatible LLM endpoint         | `https://api.openai.com/v1` |
+| `COGNITION_OPENAI_MODEL`    | Model name for extraction/verification | `llama3.2`                  |
+
+**Minimum configuration** (using defaults):
+
+```bash
+COGNITION_OPENAI_API_KEY=your-api-key-here
+```
+
+**Custom endpoint and model**:
+
+```bash
+COGNITION_OPENAI_API_KEY=your-api-key-here
+COGNITION_OPENAI_BASE_URL=https://api.openai.com/v1
+COGNITION_OPENAI_MODEL=gpt-4o
+```
+
+Learn more about the cognition layer in the [Memory Cognition](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) documentation.
 
 ### 4. Access the Demo Chat App
 
