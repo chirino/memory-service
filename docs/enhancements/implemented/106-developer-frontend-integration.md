@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 106: Developer Frontend Integration
 
-> **Status**: Proposed
+> **Status**: Implemented. The Go service can serve the developer frontend under `/developer`, expose `/developer/config.json`, package built assets in the container image, and document the runtime flags. Focused route unit tests exist; BDD coverage remains a follow-up gap.
 
 ## Summary
 
@@ -302,21 +302,22 @@ For the container image, add a frontend builder stage and copy `dist` into the r
 
 ### Phase 1: `/developer/*` Route Integration
 
-- [ ] Add config fields and defaults.
-- [ ] Add serve flags and env var bindings.
-- [ ] Create `internal/plugin/route/developer/developer.go`.
-- [ ] Register `/developer` routes from `BuildServer`.
-- [ ] Implement `/developer/config.json`.
-- [ ] Serve `index.html`, static assets, and extensionless SPA fallback.
-- [ ] Keep static/config routes unauthenticated so the OIDC login flow can start.
-- [ ] Add tests for route enablement, disabled 404s, config JSON, static file serving, SPA fallback, missing asset 404, and path traversal rejection.
+- [x] Add config fields and defaults.
+- [x] Add serve flags and env var bindings.
+- [x] Create `internal/plugin/route/developer/developer.go`.
+- [x] Register `/developer` routes from `BuildServer`.
+- [x] Implement `/developer/config.json`.
+- [x] Serve `index.html`, static assets, and extensionless SPA fallback.
+- [x] Keep static/config routes unauthenticated so the OIDC login flow can start.
+- [x] Add focused unit tests for config JSON, static file serving, SPA fallback, missing asset 404, startup validation, and path handling.
+- [ ] Add BDD coverage for enabled/disabled route behavior and static/config serving.
 
 ### Phase 2: Build And Packaging Wiring
 
-- [ ] Add `dev:developer-frontend` task.
-- [ ] Update Dockerfile to build and copy `frontends/developer/dist`.
-- [ ] Optionally set `MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED=true` in local compose/dev examples, but keep it explicit.
-- [ ] Document OIDC client registration and the integrated URL.
+- [x] Add `dev:developer-frontend` task for frontend development.
+- [x] Update Dockerfile to build and copy `frontends/developer/dist`.
+- [x] Set `MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED=true` in local compose/dev examples while keeping the feature explicit in normal configuration.
+- [x] Document OIDC client registration and the integrated URL.
 
 ## Testing Strategy
 
@@ -378,7 +379,7 @@ Feature: Developer Frontend Integration
 
 ### Unit Tests
 
-- `configHandler` returns the flat config shape expected by `frontends/developer/src/lib/config.ts`.
+- `configHandler` returns the nested config shape expected by `frontends/developer/src/lib/config.ts`.
 - base URL derivation trims trailing slashes and appends `/developer/` exactly once.
 - asset path resolution rejects traversal attempts.
 - extensionless missing paths fall back to `index.html`.
