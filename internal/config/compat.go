@@ -18,6 +18,7 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	}
 
 	var err error
+	applyStringEnv("MEMORY_SERVICE_MODE", &c.Mode)
 	if err = applyBoolEnv("MEMORY_SERVICE_DB_MIGRATE_AT_START", &c.DatastoreMigrateAtStart); err != nil {
 		return err
 	}
