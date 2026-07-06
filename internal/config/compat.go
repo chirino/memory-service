@@ -56,6 +56,9 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	if err = applyBoolEnv("MEMORY_SERVICE_SEARCH_FULLTEXT_ENABLED", &c.SearchFulltextEnabled); err != nil {
 		return err
 	}
+	if err = applyBoolEnv("MEMORY_SERVICE_SEARCH_HYBRID_ENABLED", &c.SearchHybridEnabled); err != nil {
+		return err
+	}
 
 	if raw := strings.TrimSpace(os.Getenv("MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE")); raw != "" {
 		size, parseErr := ParseMemorySize(raw)

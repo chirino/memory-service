@@ -643,6 +643,10 @@ func (e *sqliteEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID 
 
 // SearchMemoryVectors performs ANN search via pgvector (raw SQL).
 // This is a fallback; the indexer service calls the vector store directly for ANN.
+func (e *sqliteEpisodicStore) FulltextSearchMemories(ctx context.Context, namespacePrefix string, query string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+	return nil, nil
+}
+
 func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if e.qdrant != nil {
 		return e.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)

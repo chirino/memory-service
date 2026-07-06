@@ -666,6 +666,57 @@ func (e *postgresEpisodicStore) SearchMemoryVectors(ctx context.Context, namespa
 	return out, nil
 }
 
+func (e *postgresEpisodicStore) FulltextSearchMemories(ctx context.Context, namespacePrefix string, query string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+	prefixQuery := toPrefixTsQuery(query)
+	if prefixQuery == "" || limit <= 0 {
+		return nil, nil
+	}
+
+	var args []interface{}
+	args = append(args, prefixQuery, prefixQuery)
+
+	namespaceWhere := ""
+	if namespacePrefix != "" {
+		namespaceWhere = " AND (m.namespace = ? OR m.namespace LIKE ?)"
+		args = append(args, namespacePrefix, episodic.NamespacePrefixPattern(namespacePrefix))
+	}
+
+	filterWhere := ""
+	if !filter.Empty() {
+		clause, filterArgs := buildSQLFilter(filter)
+		if clause != "" {
+			clause = strings.ReplaceAll(clause, "policy_attributes", "m.policy_attributes")
+			filterWhere = " AND " + clause
+			args = append(args, filterArgs...)
+		}
+	}
+	args = append(args, limit)
+
+	sql := `
+		SELECT m.id AS memory_id, ts_rank(m.indexed_content_tsv, to_tsquery('english', ?)) AS score
+		FROM memories m
+		WHERE m.indexed_content_tsv @@ to_tsquery('english', ?)
+		  AND ` + postgresMemoryArchiveWhere("m", archived) + namespaceWhere + filterWhere + `
+		ORDER BY score DESC
+		LIMIT ?`
+
+	rows, err := e.db.WithContext(ctx).Raw(sql, args...).Rows()
+	if err != nil {
+		return nil, fmt.Errorf("fulltext search memories: %w", err)
+	}
+	defer rows.Close()
+
+	var out []registryepisodic.MemoryVectorSearch
+	for rows.Next() {
+		var item registryepisodic.MemoryVectorSearch
+		if err := rows.Scan(&item.MemoryID, &item.Score); err != nil {
+			return nil, fmt.Errorf("scan fulltext results: %w", err)
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
 // GetMemoriesByIDs retrieves active memories by UUID.
 func (e *postgresEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
 	if len(ids) == 0 {

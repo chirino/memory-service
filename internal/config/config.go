@@ -135,6 +135,7 @@ type Config struct {
 	// Search feature toggles.
 	SearchSemanticEnabled bool
 	SearchFulltextEnabled bool
+	SearchHybridEnabled   bool
 
 	// OIDC
 	OIDCIssuer                   string
@@ -298,6 +299,7 @@ func DefaultConfig() Config {
 		OpenAIBaseURL:                         "https://api.openai.com/v1",
 		SearchSemanticEnabled:                 true,
 		SearchFulltextEnabled:                 true,
+		SearchHybridEnabled:                   true,
 		Listener: ListenerConfig{
 			Port:              8080,
 			EnablePlainText:   true,

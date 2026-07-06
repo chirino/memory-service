@@ -389,6 +389,37 @@ ALTER TABLE memories
     ADD COLUMN IF NOT EXISTS indexed_content JSONB NOT NULL DEFAULT '{}'::JSONB,
     ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;
 
+-- Fulltext search support: concatenate all JSONB string values into a single text.
+CREATE OR REPLACE FUNCTION jsonb_values_text(obj JSONB) RETURNS TEXT
+LANGUAGE sql IMMUTABLE STRICT PARALLEL SAFE AS $$
+    SELECT COALESCE(string_agg(value, ' '), '')
+    FROM jsonb_each_text(obj)
+$$;
+
+ALTER TABLE memories
+    ADD COLUMN IF NOT EXISTS indexed_content_tsv tsvector
+    GENERATED ALWAYS AS (to_tsvector('english', jsonb_values_text(indexed_content))) STORED;
+
+CREATE INDEX IF NOT EXISTS idx_memories_indexed_content_fts
+    ON memories USING GIN (indexed_content_tsv);
+
+------------------------------------------------------------
+-- Memory Vectors (pgvector)
+------------------------------------------------------------
+CREATE EXTENSION IF NOT EXISTS vector;
+
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id    UUID NOT NULL REFERENCES memories(id) ON DELETE CASCADE,
+    field_name   TEXT NOT NULL,
+    namespace    TEXT NOT NULL,
+    policy_attributes JSONB DEFAULT '{}'::JSONB,
+    embedding    vector,
+    PRIMARY KEY (memory_id, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_vectors_namespace
+    ON memory_vectors (namespace);
+
 ------------------------------------------------------------
 -- Episodic Memory Usage Stats
 ------------------------------------------------------------

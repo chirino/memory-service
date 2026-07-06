@@ -230,6 +230,51 @@ tasks:
       - docker compose stop memory-service >/dev/null 2>&1 || true
       - air -root . -c deploy/dev/air.toml
 
+  dev:memory-service-infinispan:
+    desc: Run the memory-service with Infinispan (cache + vector) and local embeddings. No Redis, no Qdrant, no OpenAI.
+    env:
+      MEMORY_SERVICE_PORT: 8082
+      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
+      MEMORY_SERVICE_MODE: testing
+      # ── Datastore ──────────────────────────────────────────────
+      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
+      # ── Cache (Infinispan) ────────────────────────────────────
+      MEMORY_SERVICE_CACHE_KIND: infinispan
+      MEMORY_SERVICE_INFINISPAN_HOST: localhost:11222
+      MEMORY_SERVICE_INFINISPAN_USERNAME: admin
+      MEMORY_SERVICE_INFINISPAN_PASSWORD: password
+      # ── Event outbox ──────────────────────────────────────────
+      MEMORY_SERVICE_OUTBOX_ENABLED: "true"
+      # ── Authentication & authorization ─────────────────────────
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor
+      MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent,cognition_processor
+      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      MEMORY_SERVICE_API_KEYS_ADMIN: admin-api-key-1
+      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
+      MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
+      # ── CORS ───────────────────────────────────────────────────
+      MEMORY_SERVICE_CORS_ENABLED: "true"
+      MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
+      # ── Encryption ─────────────────────────────────────────────
+      MEMORY_SERVICE_ENCRYPTION_KIND: dek
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
+      # ── Vector search (Infinispan) ─────────────────────────────
+      MEMORY_SERVICE_VECTOR_KIND: infinispan
+      MEMORY_SERVICE_VECTOR_INFINISPAN_URL: http://localhost:11222
+      MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME: admin
+      MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD: password
+      MEMORY_SERVICE_VECTOR_MIGRATE_AT_START: "true"
+      # ── Embeddings (local) ─────────────────────────────────────
+      MEMORY_SERVICE_EMBEDDING_KIND: local
+    cmds:
+      - docker compose up -d postgres infinispan
+      - docker compose stop memory-service >/dev/null 2>&1 || true
+      - echo "Waiting for Infinispan to be ready..."
+      - until curl -sf http://localhost:11222/rest/v3/container/health/status > /dev/null 2>&1; do sleep 1; done
+      - echo "Infinispan is ready."
+      - air -root . -c deploy/dev/air.toml
+
   dev:turn-traces-processor:
     desc: Run the turn-traces processor in dev mode.
     env:

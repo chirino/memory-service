@@ -546,6 +546,10 @@ type EpisodicStore interface {
 	// optionally filtered by policy_attributes. Returns memory IDs ranked by score.
 	SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter AttributeFilter, limit int, archived ArchiveFilter) ([]MemoryVectorSearch, error)
 
+	// FulltextSearchMemories performs fulltext search over indexed_content within the namespace prefix.
+	// Returns memory IDs ranked by ts_rank score. Returns nil, nil if fulltext is not supported.
+	FulltextSearchMemories(ctx context.Context, namespacePrefix string, query string, filter AttributeFilter, limit int, archived ArchiveFilter) ([]MemoryVectorSearch, error)
+
 	// GetMemoriesByIDs retrieves current memories by UUID, decrypting values and filtering by archive state.
 	GetMemoriesByIDs(ctx context.Context, ids []uuid.UUID, archived ArchiveFilter) ([]MemoryItem, error)
 

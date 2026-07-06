@@ -346,7 +346,7 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 			return
 		}
 		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
-			items, err := semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived)
+			items, err := semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived, cfg.SearchHybridEnabled)
 			if err != nil {
 				return err
 			}
@@ -844,7 +844,7 @@ func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicSt
 				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
 				return nil
 			}
-			items, err = semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived)
+			items, err = semanticSearch(c, store, embedder, effectivePrefix, normalizedFilter, query, limit, archived, cfg.SearchHybridEnabled)
 		} else {
 			items, err = store.AdminSearchMemories(ctx, registryepisodic.AdminMemorySearchQuery{
 				NamespacePrefix: effectivePrefix,
@@ -1345,7 +1345,7 @@ func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.Epis
 	}
 }
 
-func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter registryepisodic.AttributeFilter, query string, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryItem, error) {
+func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedder registryembed.Embedder, namespacePrefix []string, filter registryepisodic.AttributeFilter, query string, limit int, archived registryepisodic.ArchiveFilter, hybridEnabled bool) ([]registryepisodic.MemoryItem, error) {
 	embeddings, err := embedder.EmbedTexts(c.Request.Context(), []string{query})
 	if err != nil {
 		return nil, fmt.Errorf("embed query: %w", err)
@@ -1362,29 +1362,35 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 			return nil, err
 		}
 	}
+
 	vectorResults, err := store.SearchMemoryVectors(c.Request.Context(), nsEncoded, embeddings[0], filter, limit, archived)
 	if err != nil {
 		return nil, fmt.Errorf("search memory vectors: %w", err)
 	}
-	if len(vectorResults) == 0 {
-		return nil, nil
-	}
 
-	scoreByID := make(map[uuid.UUID]float64, len(vectorResults))
-	orderedIDs := make([]uuid.UUID, 0, len(vectorResults))
-	for _, vr := range vectorResults {
-		if prev, exists := scoreByID[vr.MemoryID]; !exists {
-			scoreByID[vr.MemoryID] = vr.Score
-			orderedIDs = append(orderedIDs, vr.MemoryID)
-		} else if vr.Score > prev {
-			scoreByID[vr.MemoryID] = vr.Score
+	var mergedIDs []uuid.UUID
+	var mergedScores map[uuid.UUID]float64
+
+	if hybridEnabled {
+		ftsResults, _ := store.FulltextSearchMemories(c.Request.Context(), nsEncoded, query, filter, limit, archived)
+		mergedIDs, mergedScores = hybridMergeRRF(vectorResults, ftsResults, limit)
+	} else {
+		mergedScores = make(map[uuid.UUID]float64, len(vectorResults))
+		for _, vr := range vectorResults {
+			if _, exists := mergedScores[vr.MemoryID]; !exists {
+				mergedIDs = append(mergedIDs, vr.MemoryID)
+			}
+			if vr.Score > mergedScores[vr.MemoryID] {
+				mergedScores[vr.MemoryID] = vr.Score
+			}
 		}
 	}
-	if len(orderedIDs) == 0 {
+
+	if len(mergedIDs) == 0 {
 		return nil, nil
 	}
 
-	items, err := store.GetMemoriesByIDs(c.Request.Context(), orderedIDs, archived)
+	items, err := store.GetMemoriesByIDs(c.Request.Context(), mergedIDs, archived)
 	if err != nil {
 		return nil, fmt.Errorf("get memories by ids: %w", err)
 	}
@@ -1394,13 +1400,13 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 		itemByID[item.ID] = item
 	}
 
-	results := make([]registryepisodic.MemoryItem, 0, len(orderedIDs))
-	for _, id := range orderedIDs {
+	results := make([]registryepisodic.MemoryItem, 0, len(mergedIDs))
+	for _, id := range mergedIDs {
 		item, ok := itemByID[id]
 		if !ok {
 			continue
 		}
-		score := scoreByID[id]
+		score := mergedScores[id]
 		item.Score = &score
 		results = append(results, item)
 	}
@@ -1412,6 +1418,33 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 		results = results[:limit]
 	}
 	return results, nil
+}
+
+// hybridMergeRRF merges vector and fulltext search results using Reciprocal Rank Fusion.
+// RRF score = 1/(k + rank_vector) + 1/(k + rank_fts), with k=60.
+// Returns deduplicated IDs sorted by fused score descending, truncated to limit.
+func hybridMergeRRF(vectorResults, ftsResults []registryepisodic.MemoryVectorSearch, limit int) ([]uuid.UUID, map[uuid.UUID]float64) {
+	const k = 60.0
+	scores := make(map[uuid.UUID]float64)
+
+	for rank, vr := range vectorResults {
+		scores[vr.MemoryID] += 1.0 / (k + float64(rank+1))
+	}
+	for rank, fr := range ftsResults {
+		scores[fr.MemoryID] += 1.0 / (k + float64(rank+1))
+	}
+
+	ids := make([]uuid.UUID, 0, len(scores))
+	for id := range scores {
+		ids = append(ids, id)
+	}
+	sort.Slice(ids, func(i, j int) bool {
+		return scores[ids[i]] > scores[ids[j]]
+	})
+	if len(ids) > limit {
+		ids = ids[:limit]
+	}
+	return ids, scores
 }
 
 func queryInt(c *gin.Context, key string, def int) int {

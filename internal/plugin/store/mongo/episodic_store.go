@@ -784,6 +784,10 @@ func (s *mongoEpisodicStore) DeleteMemoryVectors(ctx context.Context, memoryID u
 }
 
 // SearchMemoryVectors searches memory_vectors using in-memory cosine scoring.
+func (s *mongoEpisodicStore) FulltextSearchMemories(ctx context.Context, namespacePrefix string, query string, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
+	return nil, nil
+}
+
 func (s *mongoEpisodicStore) SearchMemoryVectors(ctx context.Context, namespacePrefix string, embedding []float32, filter registryepisodic.AttributeFilter, limit int, archived registryepisodic.ArchiveFilter) ([]registryepisodic.MemoryVectorSearch, error) {
 	if s.qdrant != nil {
 		return s.qdrant.SearchMemoryVectors(ctx, namespacePrefix, embedding, filter, limit, archived)
