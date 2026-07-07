@@ -77,11 +77,11 @@ docker compose --profile cognition up -d
 
 The cognition processor extracts structured memories (facts, preferences, topics) from conversations. Configure it by adding these variables to your `.env` file:
 
-| Variable                    | Description                            | Default                     |
-| --------------------------- | -------------------------------------- | --------------------------- |
-| `COGNITION_OPENAI_API_KEY`  | API key for the LLM endpoint           | _(required)_                |
-| `COGNITION_OPENAI_BASE_URL` | OpenAI-compatible LLM endpoint         | `https://api.openai.com/v1` |
-| `COGNITION_OPENAI_MODEL`    | Model name for extraction/verification | `llama3.2`                  |
+| Variable                      | Description                            | Default                     |
+| ----------------------------- | -------------------------------------- | --------------------------- |
+| `COGNITION_OPENAI_API_KEY`    | API key for the LLM endpoint           | _(required)_                |
+| `COGNITION_OPENAI_BASE_URL`   | OpenAI-compatible LLM endpoint         | `https://api.openai.com/v1` |
+| `COGNITION_OPENAI_MODEL_NAME` | Model name for extraction/verification | `gpt-4o`                    |
 
 **Minimum configuration** (using defaults):
 
@@ -94,7 +94,7 @@ COGNITION_OPENAI_API_KEY=your-api-key-here
 ```bash
 COGNITION_OPENAI_API_KEY=your-api-key-here
 COGNITION_OPENAI_BASE_URL=https://api.openai.com/v1
-COGNITION_OPENAI_MODEL=gpt-4o
+COGNITION_OPENAI_MODEL_NAME=gpt-4o
 ```
 
 Learn more about the cognition layer in the [Memory Cognition](https://github.com/chirino/memory-service/blob/main/docs/memory-cognition.md) documentation.
