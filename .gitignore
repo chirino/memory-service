@@ -47,6 +47,7 @@ __pycache__/
 # Local environment
 .env
 .envrc
+.private
 
 # Plugin directory
 /.quarkus/cli/plugins/
