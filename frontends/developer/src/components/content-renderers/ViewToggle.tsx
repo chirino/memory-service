@@ -1,6 +1,5 @@
 import { cn } from "@/lib/utils";
-
-type ViewMode = "rendered" | "raw";
+import type { ViewMode } from "./useContentViewMode";
 
 interface ViewToggleProps {
   mode: ViewMode;
