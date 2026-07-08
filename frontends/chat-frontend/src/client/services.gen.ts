@@ -49,7 +49,7 @@ export class ConversationsService {
    * - `roots`: include only top-level conversations not started from another conversation.
    * - `children`: include only conversations started from another conversation.
    * - `all`: include both root and child conversations.
-   * @param data.afterCursor Cursor for pagination; returns items after this conversation id (UUID format).
+   * @param data.afterCursor Cursor for pagination; returns items after this conversation id.
    * @param data.limit Maximum number of conversations to return.
    * @param data.query Optional text query for basic title/metadata search.
    * @param data.archived Controls whether archived conversations are excluded, included, or returned exclusively.
@@ -102,7 +102,7 @@ export class ConversationsService {
    * Get a conversation
    * Retrieve a conversation the user has access to, including archived conversations.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @returns Conversation The conversation.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -130,7 +130,7 @@ export class ConversationsService {
    * Updates conversation properties.
    * Requires writer or higher access on the conversation.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.requestBody
    * @returns Conversation The updated conversation.
    * @returns ErrorResponse Error response
@@ -169,7 +169,7 @@ export class ConversationsService {
    * shown directly to end users. Context entries are scoped to the
    * calling client id derived from the API key.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.afterCursor Cursor for pagination; returns entries after this entry id (UUID format).
    * @param data.upToEntryId Upper-bound entry id (UUID format). When set, only entries at or
    * before this entry in the caller-visible conversation order are
@@ -227,7 +227,7 @@ export class ConversationsService {
    * based on authentication (for example, API keys or tokens) and
    * stores the entry with the appropriate internal role and visibility.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns Entry The created entry.
@@ -268,7 +268,7 @@ export class ConversationsService {
    * The entry must target the `context` channel. Context sync is scoped to the
    * calling client id (from the API key). Requires a valid agent API key.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.requestBody
    * @returns SyncEntryResponse Result of the sync operation.
    * @returns ErrorResponse Error response
@@ -303,8 +303,8 @@ export class ConversationsService {
    * This is intended for UIs that want to fetch all fork points once per conversation
    * and then decide how to render branch navigation (e.g., which is the oldest fork).
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
-   * @param data.afterCursor Cursor for pagination; returns items after this conversation id (UUID format).
+   * @param data.conversationId Conversation identifier.
+   * @param data.afterCursor Cursor for pagination; returns items after this conversation id.
    * @param data.limit Maximum number of forks to return.
    * @returns unknown Forked conversations related to this conversation's root.
    * @returns ErrorResponse Error response
@@ -366,7 +366,7 @@ export class ConversationsService {
    * Requests cancellation of an in-progress response stream for the conversation.
    * Requires WRITER access and an authenticated user session.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @returns unknown Cancel request accepted.
    * @returns ErrorResponse Error response
    * @throws ApiError
@@ -556,7 +556,7 @@ export class SharingService {
    * Lists all users that have access to the conversation and their access levels.
    * Any conversation member (owner, manager, writer, or reader) can list memberships.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.afterCursor Cursor for pagination; returns items after this user id.
    * @param data.limit Maximum number of memberships to return.
    * @returns unknown Memberships for the conversation.
@@ -589,7 +589,7 @@ export class SharingService {
    * Share conversation with another user
    * Grants another user access to the conversation with the specified access level.
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.requestBody
    * @returns ErrorResponse Error response
    * @returns ConversationMembership Created membership.
@@ -618,7 +618,7 @@ export class SharingService {
   /**
    * Update a member's access level
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.userId
    * @param data.requestBody
    * @returns ConversationMembership Updated membership.
@@ -649,7 +649,7 @@ export class SharingService {
   /**
    * Remove a member from the conversation
    * @param data The data for the request.
-   * @param data.conversationId Conversation identifier (UUID format).
+   * @param data.conversationId Conversation identifier.
    * @param data.userId
    * @returns ErrorResponse Error response
    * @returns void Membership removed.

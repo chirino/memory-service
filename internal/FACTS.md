@@ -2,6 +2,7 @@
 
 **Conversation channel naming**: The canonical agent-state conversation channel is `context` (OpenAPI string / gRPC enum `CONTEXT`); `/v1/memories` remains the separate episodic memory API surface.
 **Conversation context API boundary**: Per-conversation `context` sync/list behavior lives under `/v1/conversations/:conversationId/entries` and `/entries/sync` plus the corresponding store methods in `internal/plugin/route/entries` and `MemoryStore`; `internal/plugin/route/memories` is only for the separate episodic `/v1/memories` APIs.
+**Conversation ID type rule**: Conversation IDs are arbitrary non-empty strings across REST, gRPC, stores, caches, and vector payloads. Example apps may still generate UUID-shaped conversation IDs, but code must not parse/validate conversation IDs as UUIDs. Conversation group IDs remain `uuid.UUID`.
 
 **Go cache plugin architecture**: The Go service selects cache backends through `internal/registry/cache` and currently injects a `MemoryEntriesCache` into store loaders before datastore initialization. `cfg.CacheType` is shared by both the memory-entries cache plugins (`internal/plugin/cache/*`) and the response-recording locator-store selection in `internal/resumer/locator_store.go`, so new cache kinds usually need both an entries-cache implementation and locator-store behavior.
 
@@ -31,7 +32,6 @@
 **MSEH v2 stream nonce layout**: AES-CTR attachment streams use a 16-byte nonce whose leading bytes encode a stable key ID derived from the DEK. This lets `dek`, `vault`, and `kms` choose the correct rotated key before streaming decryption.
 **Search wrapper-native migration**: `/v1/conversations/search`, `/v1/conversations/index`, and `/v1/conversations/unindexed` are bound through generated wrappers and handled directly via exported search route helpers (`internal/plugin/route/search/search.go`).
 **Wrapper auth middleware gotcha**: Wrapper-native endpoints must run auth (and for memories, client-id) as wrapper middlewares in `internal/cmd/serve/wrapper_routes.go`; otherwise role checks can fail even when tokens are valid.
-**Entries invalid-id parity**: Legacy `GET /v1/conversations/:conversationId/entries` returns `404 {"code":"not_found","error":"conversation not found"}` when `conversationId` is not a UUID. Wrapper binding emits 400 by default, so wrapper error handling must map this specific case back to legacy 404.
 **Unix-socket listener validation**: Listener selection conflicts must use explicit flag/env detection (`cmd.IsSet(...)`), not non-zero resolved port values, otherwise the default port `8080` falsely conflicts with `--unix-socket`. When a Unix-socket parent directory is missing, the serve layer creates it as `0700`; if it already exists and is group/world accessible, startup must fail fast instead of chmod-ing it.
 
 **TLS self-signed certificate opt-in**: Omitting `MEMORY_SERVICE_TLS_CERT_FILE` and `MEMORY_SERVICE_TLS_KEY_FILE` only generates an ephemeral self-signed certificate when `MEMORY_SERVICE_TLS_SELF_SIGNED=true` / `--tls-self-signed` is set. Dev launch surfaces that enable TLS without cert files must set this explicitly.

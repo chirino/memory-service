@@ -45,7 +45,7 @@ Add explicit fork metadata columns to the `conversations` table:
   - The message id immediately before the forked message in the parent path.
   - This must reference a HISTORY message in the `forked_at_conversation_id` path.
   - `NULL` when the fork happens at the first HISTORY message.
-- `forked_at_conversation_id` (UUID, nullable)
+- `forked_at_conversation_id` (string, nullable)
   - The conversation id of the messages pointed to by `forked_at_conversation_id`. If `forked_at_conversation_id` is NULL then it should be the initial conversation in the group.
   - Enables multi-level lineage and avoids extra joins for tree traversal.
 

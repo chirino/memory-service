@@ -37,7 +37,7 @@ func TestSQLiteVectorStoreRoundTrip(t *testing.T) {
 	}
 
 	groupID := uuid.New()
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	entryA := uuid.New()
 	entryB := uuid.New()
 
@@ -79,7 +79,7 @@ func TestDisabledSQLiteVectorStoreNoOps(t *testing.T) {
 	require.Empty(t, results)
 	require.NoError(t, store.Upsert(context.Background(), []registryvector.UpsertRequest{{
 		ConversationGroupID: uuid.New(),
-		ConversationID:      uuid.New(),
+		ConversationID:      string("thread:customer-42"),
 		EntryID:             uuid.New(),
 		Embedding:           []float32{1, 0},
 		ModelName:           "test",

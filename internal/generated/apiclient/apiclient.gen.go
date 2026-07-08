@@ -575,7 +575,7 @@ type ChildConversationSummary struct {
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the child conversation.
-	Id                 *openapi_types.UUID `json:"id,omitempty"`
+	Id                 *string             `json:"id,omitempty"`
 	LastMessagePreview *string             `json:"lastMessagePreview,omitempty"`
 	OwnerUserId        *string             `json:"ownerUserId,omitempty"`
 	StartedByEntryId   *openapi_types.UUID `json:"startedByEntryId,omitempty"`
@@ -596,18 +596,18 @@ type Conversation struct {
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// ForkedAtConversationId Conversation ID from which this conversation was forked.
-	ForkedAtConversationId *openapi_types.UUID `json:"forkedAtConversationId,omitempty"`
+	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
 	// ForkedAtEntryId First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
 
 	// Id Unique identifier for the conversation.
-	Id                 *openapi_types.UUID `json:"id,omitempty"`
-	LastMessagePreview *string             `json:"lastMessagePreview,omitempty"`
-	OwnerUserId        *string             `json:"ownerUserId,omitempty"`
+	Id                 *string `json:"id,omitempty"`
+	LastMessagePreview *string `json:"lastMessagePreview,omitempty"`
+	OwnerUserId        *string `json:"ownerUserId,omitempty"`
 
 	// StartedByConversationId Parent conversation that started this child conversation.
-	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId,omitempty"`
+	StartedByConversationId *string `json:"startedByConversationId,omitempty"`
 
 	// StartedByEntryId Parent entry that started this child conversation.
 	StartedByEntryId *openapi_types.UUID `json:"startedByEntryId,omitempty"`
@@ -618,11 +618,11 @@ type Conversation struct {
 // ConversationForkSummary Summary of a forked conversation originating at a given entry.
 type ConversationForkSummary struct {
 	// ConversationId Unique identifier for the forked conversation.
-	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
-	CreatedAt      *time.Time          `json:"createdAt,omitempty"`
+	ConversationId *string    `json:"conversationId,omitempty"`
+	CreatedAt      *time.Time `json:"createdAt,omitempty"`
 
 	// ForkedAtConversationId Conversation ID where the fork occurred.
-	ForkedAtConversationId *openapi_types.UUID `json:"forkedAtConversationId,omitempty"`
+	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
 	// ForkedAtEntryId First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
@@ -635,9 +635,9 @@ type ConversationMembership struct {
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
 
 	// ConversationId Unique identifier for the conversation.
-	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
-	CreatedAt      *time.Time          `json:"createdAt,omitempty"`
-	UserId         *string             `json:"userId,omitempty"`
+	ConversationId *string    `json:"conversationId,omitempty"`
+	CreatedAt      *time.Time `json:"createdAt,omitempty"`
+	UserId         *string    `json:"userId,omitempty"`
 }
 
 // ConversationSummary defines model for ConversationSummary.
@@ -650,10 +650,10 @@ type ConversationSummary struct {
 	CreatedAt *time.Time `json:"createdAt,omitempty"`
 
 	// Id Unique identifier for the conversation.
-	Id                      *openapi_types.UUID `json:"id,omitempty"`
+	Id                      *string             `json:"id,omitempty"`
 	LastMessagePreview      *string             `json:"lastMessagePreview,omitempty"`
 	OwnerUserId             *string             `json:"ownerUserId,omitempty"`
-	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId,omitempty"`
+	StartedByConversationId *string             `json:"startedByConversationId,omitempty"`
 	StartedByEntryId        *openapi_types.UUID `json:"startedByEntryId,omitempty"`
 	Title                   *string             `json:"title,omitempty"`
 	UpdatedAt               *time.Time          `json:"updatedAt,omitempty"`
@@ -664,8 +664,8 @@ type CreateConversationRequest struct {
 	// AgentId Optional logical agent to associate with the new conversation.
 	AgentId *string `json:"agentId,omitempty"`
 
-	// Id Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
-	Id       *openapi_types.UUID     `json:"id,omitempty"`
+	// Id Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
+	Id       *string                 `json:"id,omitempty"`
 	Metadata *map[string]interface{} `json:"metadata,omitempty"`
 	Title    *string                 `json:"title,omitempty"`
 }
@@ -706,7 +706,7 @@ type CreateEntryRequest struct {
 	ContentType string `json:"contentType"`
 
 	// ForkedAtConversationId If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.
-	ForkedAtConversationId *openapi_types.UUID `json:"forkedAtConversationId,omitempty"`
+	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
 	// ForkedAtEntryId Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
@@ -717,7 +717,7 @@ type CreateEntryRequest struct {
 	IndexedContent *string `json:"indexedContent,omitempty"`
 
 	// StartedByConversationId If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.
-	StartedByConversationId *openapi_types.UUID `json:"startedByConversationId,omitempty"`
+	StartedByConversationId *string `json:"startedByConversationId,omitempty"`
 
 	// StartedByEntryId Optional parent entry that caused this child conversation to be started.
 	StartedByEntryId *openapi_types.UUID `json:"startedByEntryId,omitempty"`
@@ -743,7 +743,7 @@ type CreateFromUrlRequest struct {
 // CreateOwnershipTransferRequest defines model for CreateOwnershipTransferRequest.
 type CreateOwnershipTransferRequest struct {
 	// ConversationId The conversation to transfer ownership of.
-	ConversationId openapi_types.UUID `json:"conversationId"`
+	ConversationId string `json:"conversationId"`
 
 	// NewOwnerUserId User ID of the proposed new owner. Must be an existing member.
 	NewOwnerUserId string `json:"newOwnerUserId"`
@@ -786,8 +786,8 @@ type Entry struct {
 	ContentType string `json:"contentType"`
 
 	// ConversationId Unique identifier for the conversation this entry belongs to.
-	ConversationId openapi_types.UUID `json:"conversationId"`
-	CreatedAt      time.Time          `json:"createdAt"`
+	ConversationId string    `json:"conversationId"`
+	CreatedAt      time.Time `json:"createdAt"`
 
 	// Epoch Logical context epoch this entry belongs to.
 	// For history entries this is typically null. For context entries,
@@ -821,7 +821,7 @@ type IndexConversationsResponse struct {
 // IndexEntryRequest defines model for IndexEntryRequest.
 type IndexEntryRequest struct {
 	// ConversationId The conversation containing the entry.
-	ConversationId openapi_types.UUID `json:"conversationId"`
+	ConversationId string `json:"conversationId"`
 
 	// EntryId The entry ID to index.
 	EntryId openapi_types.UUID `json:"entryId"`
@@ -893,7 +893,7 @@ type MemoryWriteResult struct {
 // are hard deleted from the database.
 type OwnershipTransfer struct {
 	// ConversationId The conversation being transferred.
-	ConversationId openapi_types.UUID `json:"conversationId"`
+	ConversationId string `json:"conversationId"`
 
 	// ConversationTitle Title of the conversation (for display purposes).
 	ConversationTitle *string `json:"conversationTitle,omitempty"`
@@ -999,7 +999,7 @@ type SearchMemoriesResponse struct {
 // SearchResult defines model for SearchResult.
 type SearchResult struct {
 	// ConversationId Unique identifier of the conversation containing this entry.
-	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
+	ConversationId *string `json:"conversationId,omitempty"`
 
 	// ConversationTitle Title of the conversation containing this entry.
 	ConversationTitle *string `json:"conversationTitle,omitempty"`
@@ -1065,8 +1065,8 @@ type UnindexedEntriesResponse struct {
 
 // UnindexedEntry defines model for UnindexedEntry.
 type UnindexedEntry struct {
-	ConversationId *openapi_types.UUID `json:"conversationId,omitempty"`
-	Entry          *Entry              `json:"entry,omitempty"`
+	ConversationId *string `json:"conversationId,omitempty"`
+	Entry          *Entry  `json:"entry,omitempty"`
 }
 
 // UpdateConversationRequest defines model for UpdateConversationRequest.
@@ -1190,8 +1190,8 @@ type ListConversationsParams struct {
 	// - `all`: include both root and child conversations.
 	Ancestry *ListConversationsParamsAncestry `form:"ancestry,omitempty" json:"ancestry,omitempty"`
 
-	// AfterCursor Cursor for pagination; returns items after this conversation id (UUID format).
-	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	// AfterCursor Cursor for pagination; returns items after this conversation id.
+	AfterCursor *string `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
 
 	// Limit Maximum number of conversations to return.
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1226,8 +1226,8 @@ type ListUnindexedEntriesParams struct {
 
 // ListConversationChildrenParams defines parameters for ListConversationChildren.
 type ListConversationChildrenParams struct {
-	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
-	Limit       *int                `form:"limit,omitempty" json:"limit,omitempty"`
+	AfterCursor *string `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	Limit       *int    `form:"limit,omitempty" json:"limit,omitempty"`
 }
 
 // ListConversationEntriesParams defines parameters for ListConversationEntries.
@@ -1266,8 +1266,8 @@ type ListConversationEntriesParamsForks string
 
 // ListConversationForksParams defines parameters for ListConversationForks.
 type ListConversationForksParams struct {
-	// AfterCursor Cursor for pagination; returns items after this conversation id (UUID format).
-	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+	// AfterCursor Cursor for pagination; returns items after this conversation id.
+	AfterCursor *string `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
 
 	// Limit Maximum number of forks to return.
 	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
@@ -1610,50 +1610,50 @@ type ClientInterface interface {
 	ListUnindexedEntries(ctx context.Context, params *ListUnindexedEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetConversation request
-	GetConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	GetConversation(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateConversationWithBody request with any body
-	UpdateConversationWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateConversationWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateConversation(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateConversation(ctx context.Context, conversationId string, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationChildren request
-	ListConversationChildren(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListConversationChildren(ctx context.Context, conversationId string, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationEntries request
-	ListConversationEntries(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListConversationEntries(ctx context.Context, conversationId string, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// AppendConversationEntryWithBody request with any body
-	AppendConversationEntryWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AppendConversationEntryWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	AppendConversationEntry(ctx context.Context, conversationId openapi_types.UUID, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	AppendConversationEntry(ctx context.Context, conversationId string, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SyncConversationContextWithBody request with any body
-	SyncConversationContextWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SyncConversationContextWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	SyncConversationContext(ctx context.Context, conversationId openapi_types.UUID, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	SyncConversationContext(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationForks request
-	ListConversationForks(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListConversationForks(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationMemberships request
-	ListConversationMemberships(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListConversationMemberships(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ShareConversationWithBody request with any body
-	ShareConversationWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ShareConversationWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	ShareConversation(ctx context.Context, conversationId openapi_types.UUID, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ShareConversation(ctx context.Context, conversationId string, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteConversationMembership request
-	DeleteConversationMembership(ctx context.Context, conversationId openapi_types.UUID, userId string, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteConversationMembership(ctx context.Context, conversationId string, userId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// UpdateConversationMembershipWithBody request with any body
-	UpdateConversationMembershipWithBody(ctx context.Context, conversationId openapi_types.UUID, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateConversationMembershipWithBody(ctx context.Context, conversationId string, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
-	UpdateConversationMembership(ctx context.Context, conversationId openapi_types.UUID, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
+	UpdateConversationMembership(ctx context.Context, conversationId string, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// DeleteConversationResponse request
-	DeleteConversationResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
+	DeleteConversationResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// SubscribeEvents request
 	SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -1892,7 +1892,7 @@ func (c *Client) ListUnindexedEntries(ctx context.Context, params *ListUnindexed
 	return c.Client.Do(req)
 }
 
-func (c *Client) GetConversation(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) GetConversation(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetConversationRequest(c.Server, conversationId)
 	if err != nil {
 		return nil, err
@@ -1904,7 +1904,7 @@ func (c *Client) GetConversation(ctx context.Context, conversationId openapi_typ
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateConversationWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) UpdateConversationWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateConversationRequestWithBody(c.Server, conversationId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -1916,7 +1916,7 @@ func (c *Client) UpdateConversationWithBody(ctx context.Context, conversationId 
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateConversation(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) UpdateConversation(ctx context.Context, conversationId string, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateConversationRequest(c.Server, conversationId, body)
 	if err != nil {
 		return nil, err
@@ -1928,7 +1928,7 @@ func (c *Client) UpdateConversation(ctx context.Context, conversationId openapi_
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListConversationChildren(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListConversationChildren(ctx context.Context, conversationId string, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListConversationChildrenRequest(c.Server, conversationId, params)
 	if err != nil {
 		return nil, err
@@ -1940,7 +1940,7 @@ func (c *Client) ListConversationChildren(ctx context.Context, conversationId op
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListConversationEntries(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListConversationEntries(ctx context.Context, conversationId string, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListConversationEntriesRequest(c.Server, conversationId, params)
 	if err != nil {
 		return nil, err
@@ -1952,7 +1952,7 @@ func (c *Client) ListConversationEntries(ctx context.Context, conversationId ope
 	return c.Client.Do(req)
 }
 
-func (c *Client) AppendConversationEntryWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) AppendConversationEntryWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAppendConversationEntryRequestWithBody(c.Server, conversationId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -1964,7 +1964,7 @@ func (c *Client) AppendConversationEntryWithBody(ctx context.Context, conversati
 	return c.Client.Do(req)
 }
 
-func (c *Client) AppendConversationEntry(ctx context.Context, conversationId openapi_types.UUID, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) AppendConversationEntry(ctx context.Context, conversationId string, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewAppendConversationEntryRequest(c.Server, conversationId, body)
 	if err != nil {
 		return nil, err
@@ -1976,7 +1976,7 @@ func (c *Client) AppendConversationEntry(ctx context.Context, conversationId ope
 	return c.Client.Do(req)
 }
 
-func (c *Client) SyncConversationContextWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SyncConversationContextWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSyncConversationContextRequestWithBody(c.Server, conversationId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -1988,7 +1988,7 @@ func (c *Client) SyncConversationContextWithBody(ctx context.Context, conversati
 	return c.Client.Do(req)
 }
 
-func (c *Client) SyncConversationContext(ctx context.Context, conversationId openapi_types.UUID, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) SyncConversationContext(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewSyncConversationContextRequest(c.Server, conversationId, body)
 	if err != nil {
 		return nil, err
@@ -2000,7 +2000,7 @@ func (c *Client) SyncConversationContext(ctx context.Context, conversationId ope
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListConversationForks(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListConversationForks(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListConversationForksRequest(c.Server, conversationId, params)
 	if err != nil {
 		return nil, err
@@ -2012,7 +2012,7 @@ func (c *Client) ListConversationForks(ctx context.Context, conversationId opena
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListConversationMemberships(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ListConversationMemberships(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewListConversationMembershipsRequest(c.Server, conversationId, params)
 	if err != nil {
 		return nil, err
@@ -2024,7 +2024,7 @@ func (c *Client) ListConversationMemberships(ctx context.Context, conversationId
 	return c.Client.Do(req)
 }
 
-func (c *Client) ShareConversationWithBody(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ShareConversationWithBody(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewShareConversationRequestWithBody(c.Server, conversationId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -2036,7 +2036,7 @@ func (c *Client) ShareConversationWithBody(ctx context.Context, conversationId o
 	return c.Client.Do(req)
 }
 
-func (c *Client) ShareConversation(ctx context.Context, conversationId openapi_types.UUID, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) ShareConversation(ctx context.Context, conversationId string, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewShareConversationRequest(c.Server, conversationId, body)
 	if err != nil {
 		return nil, err
@@ -2048,7 +2048,7 @@ func (c *Client) ShareConversation(ctx context.Context, conversationId openapi_t
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteConversationMembership(ctx context.Context, conversationId openapi_types.UUID, userId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) DeleteConversationMembership(ctx context.Context, conversationId string, userId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteConversationMembershipRequest(c.Server, conversationId, userId)
 	if err != nil {
 		return nil, err
@@ -2060,7 +2060,7 @@ func (c *Client) DeleteConversationMembership(ctx context.Context, conversationI
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateConversationMembershipWithBody(ctx context.Context, conversationId openapi_types.UUID, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) UpdateConversationMembershipWithBody(ctx context.Context, conversationId string, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateConversationMembershipRequestWithBody(c.Server, conversationId, userId, contentType, body)
 	if err != nil {
 		return nil, err
@@ -2072,7 +2072,7 @@ func (c *Client) UpdateConversationMembershipWithBody(ctx context.Context, conve
 	return c.Client.Do(req)
 }
 
-func (c *Client) UpdateConversationMembership(ctx context.Context, conversationId openapi_types.UUID, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) UpdateConversationMembership(ctx context.Context, conversationId string, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewUpdateConversationMembershipRequest(c.Server, conversationId, userId, body)
 	if err != nil {
 		return nil, err
@@ -2084,7 +2084,7 @@ func (c *Client) UpdateConversationMembership(ctx context.Context, conversationI
 	return c.Client.Do(req)
 }
 
-func (c *Client) DeleteConversationResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+func (c *Client) DeleteConversationResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewDeleteConversationResponseRequest(c.Server, conversationId)
 	if err != nil {
 		return nil, err
@@ -2786,7 +2786,7 @@ func NewListConversationsRequest(server string, params *ListConversationsParams)
 
 		if params.AfterCursor != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3033,12 +3033,12 @@ func NewListUnindexedEntriesRequest(server string, params *ListUnindexedEntriesP
 }
 
 // NewGetConversationRequest generates requests for GetConversation
-func NewGetConversationRequest(server string, conversationId openapi_types.UUID) (*http.Request, error) {
+func NewGetConversationRequest(server string, conversationId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3067,7 +3067,7 @@ func NewGetConversationRequest(server string, conversationId openapi_types.UUID)
 }
 
 // NewUpdateConversationRequest calls the generic UpdateConversation builder with application/json body
-func NewUpdateConversationRequest(server string, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody) (*http.Request, error) {
+func NewUpdateConversationRequest(server string, conversationId string, body UpdateConversationJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -3078,12 +3078,12 @@ func NewUpdateConversationRequest(server string, conversationId openapi_types.UU
 }
 
 // NewUpdateConversationRequestWithBody generates requests for UpdateConversation with any type of body
-func NewUpdateConversationRequestWithBody(server string, conversationId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+func NewUpdateConversationRequestWithBody(server string, conversationId string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3114,12 +3114,12 @@ func NewUpdateConversationRequestWithBody(server string, conversationId openapi_
 }
 
 // NewListConversationChildrenRequest generates requests for ListConversationChildren
-func NewListConversationChildrenRequest(server string, conversationId openapi_types.UUID, params *ListConversationChildrenParams) (*http.Request, error) {
+func NewListConversationChildrenRequest(server string, conversationId string, params *ListConversationChildrenParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3150,7 +3150,7 @@ func NewListConversationChildrenRequest(server string, conversationId openapi_ty
 
 		if params.AfterCursor != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3187,12 +3187,12 @@ func NewListConversationChildrenRequest(server string, conversationId openapi_ty
 }
 
 // NewListConversationEntriesRequest generates requests for ListConversationEntries
-func NewListConversationEntriesRequest(server string, conversationId openapi_types.UUID, params *ListConversationEntriesParams) (*http.Request, error) {
+func NewListConversationEntriesRequest(server string, conversationId string, params *ListConversationEntriesParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3308,7 +3308,7 @@ func NewListConversationEntriesRequest(server string, conversationId openapi_typ
 }
 
 // NewAppendConversationEntryRequest calls the generic AppendConversationEntry builder with application/json body
-func NewAppendConversationEntryRequest(server string, conversationId openapi_types.UUID, body AppendConversationEntryJSONRequestBody) (*http.Request, error) {
+func NewAppendConversationEntryRequest(server string, conversationId string, body AppendConversationEntryJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -3319,12 +3319,12 @@ func NewAppendConversationEntryRequest(server string, conversationId openapi_typ
 }
 
 // NewAppendConversationEntryRequestWithBody generates requests for AppendConversationEntry with any type of body
-func NewAppendConversationEntryRequestWithBody(server string, conversationId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+func NewAppendConversationEntryRequestWithBody(server string, conversationId string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3355,7 +3355,7 @@ func NewAppendConversationEntryRequestWithBody(server string, conversationId ope
 }
 
 // NewSyncConversationContextRequest calls the generic SyncConversationContext builder with application/json body
-func NewSyncConversationContextRequest(server string, conversationId openapi_types.UUID, body SyncConversationContextJSONRequestBody) (*http.Request, error) {
+func NewSyncConversationContextRequest(server string, conversationId string, body SyncConversationContextJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -3366,12 +3366,12 @@ func NewSyncConversationContextRequest(server string, conversationId openapi_typ
 }
 
 // NewSyncConversationContextRequestWithBody generates requests for SyncConversationContext with any type of body
-func NewSyncConversationContextRequestWithBody(server string, conversationId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+func NewSyncConversationContextRequestWithBody(server string, conversationId string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3402,12 +3402,12 @@ func NewSyncConversationContextRequestWithBody(server string, conversationId ope
 }
 
 // NewListConversationForksRequest generates requests for ListConversationForks
-func NewListConversationForksRequest(server string, conversationId openapi_types.UUID, params *ListConversationForksParams) (*http.Request, error) {
+func NewListConversationForksRequest(server string, conversationId string, params *ListConversationForksParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3438,7 +3438,7 @@ func NewListConversationForksRequest(server string, conversationId openapi_types
 
 		if params.AfterCursor != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -3475,12 +3475,12 @@ func NewListConversationForksRequest(server string, conversationId openapi_types
 }
 
 // NewListConversationMembershipsRequest generates requests for ListConversationMemberships
-func NewListConversationMembershipsRequest(server string, conversationId openapi_types.UUID, params *ListConversationMembershipsParams) (*http.Request, error) {
+func NewListConversationMembershipsRequest(server string, conversationId string, params *ListConversationMembershipsParams) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3548,7 +3548,7 @@ func NewListConversationMembershipsRequest(server string, conversationId openapi
 }
 
 // NewShareConversationRequest calls the generic ShareConversation builder with application/json body
-func NewShareConversationRequest(server string, conversationId openapi_types.UUID, body ShareConversationJSONRequestBody) (*http.Request, error) {
+func NewShareConversationRequest(server string, conversationId string, body ShareConversationJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -3559,12 +3559,12 @@ func NewShareConversationRequest(server string, conversationId openapi_types.UUI
 }
 
 // NewShareConversationRequestWithBody generates requests for ShareConversation with any type of body
-func NewShareConversationRequestWithBody(server string, conversationId openapi_types.UUID, contentType string, body io.Reader) (*http.Request, error) {
+func NewShareConversationRequestWithBody(server string, conversationId string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3595,12 +3595,12 @@ func NewShareConversationRequestWithBody(server string, conversationId openapi_t
 }
 
 // NewDeleteConversationMembershipRequest generates requests for DeleteConversationMembership
-func NewDeleteConversationMembershipRequest(server string, conversationId openapi_types.UUID, userId string) (*http.Request, error) {
+func NewDeleteConversationMembershipRequest(server string, conversationId string, userId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3636,7 +3636,7 @@ func NewDeleteConversationMembershipRequest(server string, conversationId openap
 }
 
 // NewUpdateConversationMembershipRequest calls the generic UpdateConversationMembership builder with application/json body
-func NewUpdateConversationMembershipRequest(server string, conversationId openapi_types.UUID, userId string, body UpdateConversationMembershipJSONRequestBody) (*http.Request, error) {
+func NewUpdateConversationMembershipRequest(server string, conversationId string, userId string, body UpdateConversationMembershipJSONRequestBody) (*http.Request, error) {
 	var bodyReader io.Reader
 	buf, err := json.Marshal(body)
 	if err != nil {
@@ -3647,12 +3647,12 @@ func NewUpdateConversationMembershipRequest(server string, conversationId openap
 }
 
 // NewUpdateConversationMembershipRequestWithBody generates requests for UpdateConversationMembership with any type of body
-func NewUpdateConversationMembershipRequestWithBody(server string, conversationId openapi_types.UUID, userId string, contentType string, body io.Reader) (*http.Request, error) {
+func NewUpdateConversationMembershipRequestWithBody(server string, conversationId string, userId string, contentType string, body io.Reader) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -3690,12 +3690,12 @@ func NewUpdateConversationMembershipRequestWithBody(server string, conversationI
 }
 
 // NewDeleteConversationResponseRequest generates requests for DeleteConversationResponse
-func NewDeleteConversationResponseRequest(server string, conversationId openapi_types.UUID) (*http.Request, error) {
+func NewDeleteConversationResponseRequest(server string, conversationId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
 
-	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "conversationId", conversationId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: ""})
 	if err != nil {
 		return nil, err
 	}
@@ -4590,50 +4590,50 @@ type ClientWithResponsesInterface interface {
 	ListUnindexedEntriesWithResponse(ctx context.Context, params *ListUnindexedEntriesParams, reqEditors ...RequestEditorFn) (*ListUnindexedEntriesResp, error)
 
 	// GetConversationWithResponse request
-	GetConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetConversationResp, error)
+	GetConversationWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*GetConversationResp, error)
 
 	// UpdateConversationWithBodyWithResponse request with any body
-	UpdateConversationWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error)
+	UpdateConversationWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error)
 
-	UpdateConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error)
+	UpdateConversationWithResponse(ctx context.Context, conversationId string, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error)
 
 	// ListConversationChildrenWithResponse request
-	ListConversationChildrenWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error)
+	ListConversationChildrenWithResponse(ctx context.Context, conversationId string, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error)
 
 	// ListConversationEntriesWithResponse request
-	ListConversationEntriesWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*ListConversationEntriesResp, error)
+	ListConversationEntriesWithResponse(ctx context.Context, conversationId string, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*ListConversationEntriesResp, error)
 
 	// AppendConversationEntryWithBodyWithResponse request with any body
-	AppendConversationEntryWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error)
+	AppendConversationEntryWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error)
 
-	AppendConversationEntryWithResponse(ctx context.Context, conversationId openapi_types.UUID, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error)
+	AppendConversationEntryWithResponse(ctx context.Context, conversationId string, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error)
 
 	// SyncConversationContextWithBodyWithResponse request with any body
-	SyncConversationContextWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error)
+	SyncConversationContextWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error)
 
-	SyncConversationContextWithResponse(ctx context.Context, conversationId openapi_types.UUID, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error)
+	SyncConversationContextWithResponse(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error)
 
 	// ListConversationForksWithResponse request
-	ListConversationForksWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error)
+	ListConversationForksWithResponse(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error)
 
 	// ListConversationMembershipsWithResponse request
-	ListConversationMembershipsWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*ListConversationMembershipsResp, error)
+	ListConversationMembershipsWithResponse(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*ListConversationMembershipsResp, error)
 
 	// ShareConversationWithBodyWithResponse request with any body
-	ShareConversationWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ShareConversationResp, error)
+	ShareConversationWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ShareConversationResp, error)
 
-	ShareConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*ShareConversationResp, error)
+	ShareConversationWithResponse(ctx context.Context, conversationId string, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*ShareConversationResp, error)
 
 	// DeleteConversationMembershipWithResponse request
-	DeleteConversationMembershipWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, reqEditors ...RequestEditorFn) (*DeleteConversationMembershipResp, error)
+	DeleteConversationMembershipWithResponse(ctx context.Context, conversationId string, userId string, reqEditors ...RequestEditorFn) (*DeleteConversationMembershipResp, error)
 
 	// UpdateConversationMembershipWithBodyWithResponse request with any body
-	UpdateConversationMembershipWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error)
+	UpdateConversationMembershipWithBodyWithResponse(ctx context.Context, conversationId string, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error)
 
-	UpdateConversationMembershipWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error)
+	UpdateConversationMembershipWithResponse(ctx context.Context, conversationId string, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error)
 
 	// DeleteConversationResponseWithResponse request
-	DeleteConversationResponseWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteConversationResponseResp, error)
+	DeleteConversationResponseWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*DeleteConversationResponseResp, error)
 
 	// SubscribeEventsWithResponse request
 	SubscribeEventsWithResponse(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*SubscribeEventsResp, error)
@@ -5988,7 +5988,7 @@ func (c *ClientWithResponses) ListUnindexedEntriesWithResponse(ctx context.Conte
 }
 
 // GetConversationWithResponse request returning *GetConversationResp
-func (c *ClientWithResponses) GetConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetConversationResp, error) {
+func (c *ClientWithResponses) GetConversationWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*GetConversationResp, error) {
 	rsp, err := c.GetConversation(ctx, conversationId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -5997,7 +5997,7 @@ func (c *ClientWithResponses) GetConversationWithResponse(ctx context.Context, c
 }
 
 // UpdateConversationWithBodyWithResponse request with arbitrary body returning *UpdateConversationResp
-func (c *ClientWithResponses) UpdateConversationWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error) {
+func (c *ClientWithResponses) UpdateConversationWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error) {
 	rsp, err := c.UpdateConversationWithBody(ctx, conversationId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6005,7 +6005,7 @@ func (c *ClientWithResponses) UpdateConversationWithBodyWithResponse(ctx context
 	return ParseUpdateConversationResp(rsp)
 }
 
-func (c *ClientWithResponses) UpdateConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error) {
+func (c *ClientWithResponses) UpdateConversationWithResponse(ctx context.Context, conversationId string, body UpdateConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationResp, error) {
 	rsp, err := c.UpdateConversation(ctx, conversationId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6014,7 +6014,7 @@ func (c *ClientWithResponses) UpdateConversationWithResponse(ctx context.Context
 }
 
 // ListConversationChildrenWithResponse request returning *ListConversationChildrenResp
-func (c *ClientWithResponses) ListConversationChildrenWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error) {
+func (c *ClientWithResponses) ListConversationChildrenWithResponse(ctx context.Context, conversationId string, params *ListConversationChildrenParams, reqEditors ...RequestEditorFn) (*ListConversationChildrenResp, error) {
 	rsp, err := c.ListConversationChildren(ctx, conversationId, params, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6023,7 +6023,7 @@ func (c *ClientWithResponses) ListConversationChildrenWithResponse(ctx context.C
 }
 
 // ListConversationEntriesWithResponse request returning *ListConversationEntriesResp
-func (c *ClientWithResponses) ListConversationEntriesWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*ListConversationEntriesResp, error) {
+func (c *ClientWithResponses) ListConversationEntriesWithResponse(ctx context.Context, conversationId string, params *ListConversationEntriesParams, reqEditors ...RequestEditorFn) (*ListConversationEntriesResp, error) {
 	rsp, err := c.ListConversationEntries(ctx, conversationId, params, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6032,7 +6032,7 @@ func (c *ClientWithResponses) ListConversationEntriesWithResponse(ctx context.Co
 }
 
 // AppendConversationEntryWithBodyWithResponse request with arbitrary body returning *AppendConversationEntryResp
-func (c *ClientWithResponses) AppendConversationEntryWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error) {
+func (c *ClientWithResponses) AppendConversationEntryWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error) {
 	rsp, err := c.AppendConversationEntryWithBody(ctx, conversationId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6040,7 +6040,7 @@ func (c *ClientWithResponses) AppendConversationEntryWithBodyWithResponse(ctx co
 	return ParseAppendConversationEntryResp(rsp)
 }
 
-func (c *ClientWithResponses) AppendConversationEntryWithResponse(ctx context.Context, conversationId openapi_types.UUID, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error) {
+func (c *ClientWithResponses) AppendConversationEntryWithResponse(ctx context.Context, conversationId string, body AppendConversationEntryJSONRequestBody, reqEditors ...RequestEditorFn) (*AppendConversationEntryResp, error) {
 	rsp, err := c.AppendConversationEntry(ctx, conversationId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6049,7 +6049,7 @@ func (c *ClientWithResponses) AppendConversationEntryWithResponse(ctx context.Co
 }
 
 // SyncConversationContextWithBodyWithResponse request with arbitrary body returning *SyncConversationContextResp
-func (c *ClientWithResponses) SyncConversationContextWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error) {
+func (c *ClientWithResponses) SyncConversationContextWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error) {
 	rsp, err := c.SyncConversationContextWithBody(ctx, conversationId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6057,7 +6057,7 @@ func (c *ClientWithResponses) SyncConversationContextWithBodyWithResponse(ctx co
 	return ParseSyncConversationContextResp(rsp)
 }
 
-func (c *ClientWithResponses) SyncConversationContextWithResponse(ctx context.Context, conversationId openapi_types.UUID, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error) {
+func (c *ClientWithResponses) SyncConversationContextWithResponse(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error) {
 	rsp, err := c.SyncConversationContext(ctx, conversationId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6066,7 +6066,7 @@ func (c *ClientWithResponses) SyncConversationContextWithResponse(ctx context.Co
 }
 
 // ListConversationForksWithResponse request returning *ListConversationForksResp
-func (c *ClientWithResponses) ListConversationForksWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error) {
+func (c *ClientWithResponses) ListConversationForksWithResponse(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error) {
 	rsp, err := c.ListConversationForks(ctx, conversationId, params, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6075,7 +6075,7 @@ func (c *ClientWithResponses) ListConversationForksWithResponse(ctx context.Cont
 }
 
 // ListConversationMembershipsWithResponse request returning *ListConversationMembershipsResp
-func (c *ClientWithResponses) ListConversationMembershipsWithResponse(ctx context.Context, conversationId openapi_types.UUID, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*ListConversationMembershipsResp, error) {
+func (c *ClientWithResponses) ListConversationMembershipsWithResponse(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*ListConversationMembershipsResp, error) {
 	rsp, err := c.ListConversationMemberships(ctx, conversationId, params, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6084,7 +6084,7 @@ func (c *ClientWithResponses) ListConversationMembershipsWithResponse(ctx contex
 }
 
 // ShareConversationWithBodyWithResponse request with arbitrary body returning *ShareConversationResp
-func (c *ClientWithResponses) ShareConversationWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ShareConversationResp, error) {
+func (c *ClientWithResponses) ShareConversationWithBodyWithResponse(ctx context.Context, conversationId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*ShareConversationResp, error) {
 	rsp, err := c.ShareConversationWithBody(ctx, conversationId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6092,7 +6092,7 @@ func (c *ClientWithResponses) ShareConversationWithBodyWithResponse(ctx context.
 	return ParseShareConversationResp(rsp)
 }
 
-func (c *ClientWithResponses) ShareConversationWithResponse(ctx context.Context, conversationId openapi_types.UUID, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*ShareConversationResp, error) {
+func (c *ClientWithResponses) ShareConversationWithResponse(ctx context.Context, conversationId string, body ShareConversationJSONRequestBody, reqEditors ...RequestEditorFn) (*ShareConversationResp, error) {
 	rsp, err := c.ShareConversation(ctx, conversationId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6101,7 +6101,7 @@ func (c *ClientWithResponses) ShareConversationWithResponse(ctx context.Context,
 }
 
 // DeleteConversationMembershipWithResponse request returning *DeleteConversationMembershipResp
-func (c *ClientWithResponses) DeleteConversationMembershipWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, reqEditors ...RequestEditorFn) (*DeleteConversationMembershipResp, error) {
+func (c *ClientWithResponses) DeleteConversationMembershipWithResponse(ctx context.Context, conversationId string, userId string, reqEditors ...RequestEditorFn) (*DeleteConversationMembershipResp, error) {
 	rsp, err := c.DeleteConversationMembership(ctx, conversationId, userId, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6110,7 +6110,7 @@ func (c *ClientWithResponses) DeleteConversationMembershipWithResponse(ctx conte
 }
 
 // UpdateConversationMembershipWithBodyWithResponse request with arbitrary body returning *UpdateConversationMembershipResp
-func (c *ClientWithResponses) UpdateConversationMembershipWithBodyWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error) {
+func (c *ClientWithResponses) UpdateConversationMembershipWithBodyWithResponse(ctx context.Context, conversationId string, userId string, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error) {
 	rsp, err := c.UpdateConversationMembershipWithBody(ctx, conversationId, userId, contentType, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6118,7 +6118,7 @@ func (c *ClientWithResponses) UpdateConversationMembershipWithBodyWithResponse(c
 	return ParseUpdateConversationMembershipResp(rsp)
 }
 
-func (c *ClientWithResponses) UpdateConversationMembershipWithResponse(ctx context.Context, conversationId openapi_types.UUID, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error) {
+func (c *ClientWithResponses) UpdateConversationMembershipWithResponse(ctx context.Context, conversationId string, userId string, body UpdateConversationMembershipJSONRequestBody, reqEditors ...RequestEditorFn) (*UpdateConversationMembershipResp, error) {
 	rsp, err := c.UpdateConversationMembership(ctx, conversationId, userId, body, reqEditors...)
 	if err != nil {
 		return nil, err
@@ -6127,7 +6127,7 @@ func (c *ClientWithResponses) UpdateConversationMembershipWithResponse(ctx conte
 }
 
 // DeleteConversationResponseWithResponse request returning *DeleteConversationResponseResp
-func (c *ClientWithResponses) DeleteConversationResponseWithResponse(ctx context.Context, conversationId openapi_types.UUID, reqEditors ...RequestEditorFn) (*DeleteConversationResponseResp, error) {
+func (c *ClientWithResponses) DeleteConversationResponseWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*DeleteConversationResponseResp, error) {
 	rsp, err := c.DeleteConversationResponse(ctx, conversationId, reqEditors...)
 	if err != nil {
 		return nil, err

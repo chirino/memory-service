@@ -479,6 +479,45 @@ export type AdminDownloadUrlResponse = {
   expiresIn?: number;
 };
 
+export type PutMemoryRequest = {
+  namespace: Array<string>;
+  key: string;
+  value: {
+    [key: string]: unknown;
+  };
+  ttl_seconds?: number;
+  index?: {
+    [key: string]: string;
+  };
+  /**
+   * Optional optimistic concurrency revision expected for the active memory.
+   */
+  expected_revision?: number;
+};
+
+export type MemoryWriteResult = {
+  id?: string;
+  namespace?: Array<string>;
+  key?: string;
+  attributes?: {
+    [key: string]: unknown;
+  };
+  createdAt?: string;
+  expiresAt?: string;
+  revision?: number;
+};
+
+export type UpdateMemoryRequest = {
+  /**
+   * Set to `true` to archive the active memory item.
+   */
+  archived?: boolean;
+  /**
+   * Optional optimistic concurrency revision expected for the active memory.
+   */
+  expected_revision?: number;
+};
+
 /**
  * Start of time range (ISO 8601 timestamp). Defaults to 1 hour ago.
  */
@@ -559,6 +598,69 @@ export type AdminListMemoriesResponses = {
 };
 
 export type AdminListMemoriesResponse2 = AdminListMemoriesResponses[keyof AdminListMemoriesResponses];
+
+export type AdminUpdateMemoryData = {
+  body: UpdateMemoryRequest;
+  path?: never;
+  query: {
+    /**
+     * Namespace segments. Repeat once per segment.
+     */
+    ns: Array<string>;
+    key: string;
+    justification?: string;
+  };
+  url: "/admin/v1/memories";
+};
+
+export type AdminUpdateMemoryErrors = {
+  /**
+   * Resource not found
+   */
+  404: ErrorResponse;
+  /**
+   * Error response
+   */
+  default: ErrorResponse;
+};
+
+export type AdminUpdateMemoryError = AdminUpdateMemoryErrors[keyof AdminUpdateMemoryErrors];
+
+export type AdminUpdateMemoryResponses = {
+  /**
+   * Memory updated.
+   */
+  204: void;
+};
+
+export type AdminUpdateMemoryResponse = AdminUpdateMemoryResponses[keyof AdminUpdateMemoryResponses];
+
+export type AdminPutMemoryData = {
+  body: PutMemoryRequest;
+  path?: never;
+  query?: {
+    justification?: string;
+  };
+  url: "/admin/v1/memories";
+};
+
+export type AdminPutMemoryErrors = {
+  /**
+   * Error response
+   */
+  default: ErrorResponse;
+};
+
+export type AdminPutMemoryError = AdminPutMemoryErrors[keyof AdminPutMemoryErrors];
+
+export type AdminPutMemoryResponses = {
+  /**
+   * Memory stored.
+   */
+  200: MemoryWriteResult;
+};
+
+export type AdminPutMemoryResponse = AdminPutMemoryResponses[keyof AdminPutMemoryResponses];
 
 export type AdminSearchMemoriesData = {
   body: AdminSearchMemoriesRequest;
@@ -976,7 +1078,7 @@ export type AdminGetConversationData = {
   body?: never;
   path: {
     /**
-     * Conversation identifier (UUID format).
+     * Conversation identifier.
      */
     id: string;
   };
@@ -1015,7 +1117,7 @@ export type AdminUpdateConversationData = {
   body?: AdminUpdateConversationRequest;
   path: {
     /**
-     * Conversation identifier (UUID format).
+     * Conversation identifier.
      */
     id: string;
   };
@@ -1049,7 +1151,7 @@ export type AdminGetEntriesData = {
   body?: never;
   path: {
     /**
-     * Conversation identifier (UUID format).
+     * Conversation identifier.
      */
     id: string;
   };
@@ -1112,7 +1214,7 @@ export type AdminGetMembershipsData = {
   body?: never;
   path: {
     /**
-     * Conversation identifier (UUID format).
+     * Conversation identifier.
      */
     id: string;
   };
@@ -1162,13 +1264,13 @@ export type AdminListForksData = {
   body?: never;
   path: {
     /**
-     * Conversation identifier (UUID format).
+     * Conversation identifier.
      */
     id: string;
   };
   query?: {
     /**
-     * Cursor for pagination; returns items after this conversation id (UUID format).
+     * Cursor for pagination; returns items after this conversation id.
      */
     afterCursor?: string;
     /**

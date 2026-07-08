@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/generated/apiclient"
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 )
 
@@ -114,6 +113,9 @@ func (s *mcpServer) handleSaveSessionNotes(ctx context.Context, request mcp.Call
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to create conversation: %s", convResp.Status())), nil
 	}
 	conv := convResp.JSON201
+	if conv.Id == nil || *conv.Id == "" {
+		return mcp.NewToolResultError("Failed to create conversation: response did not include an id"), nil
+	}
 
 	// Build entry content
 	var content strings.Builder
@@ -139,7 +141,7 @@ func (s *mcpServer) handleSaveSessionNotes(ctx context.Context, request mcp.Call
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to save notes: %v", err)), nil
 	}
 
-	return mcp.NewToolResultText(fmt.Sprintf("Session notes saved.\nConversation ID: %s\nTitle: %s", conv.Id, sessionTitle)), nil
+	return mcp.NewToolResultText(fmt.Sprintf("Session notes saved.\nConversation ID: %s\nTitle: %s", *conv.Id, sessionTitle)), nil
 }
 
 func (s *mcpServer) handleSearchSessions(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
@@ -176,7 +178,7 @@ func (s *mcpServer) handleSearchSessions(ctx context.Context, request mcp.CallTo
 		}
 		out.WriteString(fmt.Sprintf("### %d. %s\n", i+1, convTitle))
 		if r.ConversationId != nil {
-			out.WriteString(fmt.Sprintf("- Conversation ID: `%s`\n", r.ConversationId))
+			out.WriteString(fmt.Sprintf("- Conversation ID: `%s`\n", *r.ConversationId))
 		}
 		if r.Score != nil {
 			out.WriteString(fmt.Sprintf("- Score: %.2f\n", *r.Score))
@@ -231,7 +233,11 @@ func (s *mcpServer) handleListSessions(ctx context.Context, request mcp.CallTool
 			updatedAt = c.UpdatedAt.Format(time.RFC3339)
 		}
 		out.WriteString(fmt.Sprintf("%d. **%s**%s\n", i+1, title, preview))
-		out.WriteString(fmt.Sprintf("   ID: `%s` | Updated: %s\n\n", c.Id, updatedAt))
+		id := ""
+		if c.Id != nil {
+			id = *c.Id
+		}
+		out.WriteString(fmt.Sprintf("   ID: `%s` | Updated: %s\n\n", id, updatedAt))
 	}
 
 	return mcp.NewToolResultText(out.String()), nil
@@ -239,10 +245,9 @@ func (s *mcpServer) handleListSessions(ctx context.Context, request mcp.CallTool
 
 func (s *mcpServer) handleGetSession(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	convID := request.GetArguments()["conversation_id"].(string)
-	convUUID := uuid.MustParse(convID)
 
 	// Get conversation metadata
-	convResp, err := s.client.GetConversationWithResponse(ctx, convUUID)
+	convResp, err := s.client.GetConversationWithResponse(ctx, convID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("Failed to get conversation: %v", err)), nil
 	}
@@ -253,7 +258,7 @@ func (s *mcpServer) handleGetSession(ctx context.Context, request mcp.CallToolRe
 
 	// Get entries
 	entryLimit := 100
-	entriesResp, err := s.client.ListConversationEntriesWithResponse(ctx, convUUID, &apiclient.ListConversationEntriesParams{
+	entriesResp, err := s.client.ListConversationEntriesWithResponse(ctx, convID, &apiclient.ListConversationEntriesParams{
 		Limit: &entryLimit,
 	})
 	if err != nil {
@@ -296,7 +301,6 @@ func (s *mcpServer) handleGetSession(ctx context.Context, request mcp.CallToolRe
 func (s *mcpServer) handleAppendNote(ctx context.Context, request mcp.CallToolRequest) (*mcp.CallToolResult, error) {
 	convID := request.GetArguments()["conversation_id"].(string)
 	notes := request.GetArguments()["notes"].(string)
-	convUUID := uuid.MustParse(convID)
 
 	entryContent := []interface{}{
 		map[string]any{
@@ -306,7 +310,7 @@ func (s *mcpServer) handleAppendNote(ctx context.Context, request mcp.CallToolRe
 	}
 
 	contentType := "history"
-	_, err := s.client.AppendConversationEntryWithResponse(ctx, convUUID, apiclient.AppendConversationEntryJSONRequestBody{
+	_, err := s.client.AppendConversationEntryWithResponse(ctx, convID, apiclient.AppendConversationEntryJSONRequestBody{
 		ContentType: contentType,
 		Content:     entryContent,
 	})

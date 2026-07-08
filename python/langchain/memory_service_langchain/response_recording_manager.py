@@ -8,7 +8,6 @@ import logging
 import os
 import threading
 from typing import Any, AsyncIterator, Callable
-import uuid
 
 import grpc
 
@@ -422,17 +421,7 @@ class MemoryServiceResponseRecordingManager:
         if not conversation_ids:
             return []
 
-        id_bytes: list[bytes] = []
-        for conversation_id in conversation_ids:
-            try:
-                id_bytes.append(self._uuid_to_bytes(conversation_id))
-            except ValueError:
-                continue
-
-        if not id_bytes:
-            return []
-
-        request = memory_service_pb2.CheckRecordingsRequest(conversation_ids=id_bytes)
+        request = memory_service_pb2.CheckRecordingsRequest(conversation_ids=conversation_ids)
         channel = grpc.insecure_channel(self._grpc_target)
         try:
             stub = memory_service_pb2_grpc.ResponseRecorderServiceStub(channel)
@@ -452,11 +441,7 @@ class MemoryServiceResponseRecordingManager:
         finally:
             channel.close()
 
-        active: list[str] = []
-        for raw_id in response.conversation_ids:
-            parsed = self._uuid_from_bytes(raw_id)
-            if parsed:
-                active.append(parsed)
+        active: list[str] = list(response.conversation_ids)
         LOG.debug(
             "response recorder check target=%s requested=%d active=%d",
             self._grpc_target,
@@ -466,7 +451,6 @@ class MemoryServiceResponseRecordingManager:
         return active
 
     def _replay_grpc(self, conversation_id: str) -> AsyncIterator[str]:
-        conversation_id_bytes = self._uuid_to_bytes(conversation_id)
         metadata = self._metadata()
 
         async def source() -> AsyncIterator[str]:
@@ -486,7 +470,7 @@ class MemoryServiceResponseRecordingManager:
                 try:
                     stub = memory_service_pb2_grpc.ResponseRecorderServiceStub(channel)
                     replay_request = memory_service_pb2.ReplayRequest(
-                        conversation_id=conversation_id_bytes
+                        conversation_id=conversation_id
                     )
                     if self._grpc_replay_timeout_seconds is None:
                         stream = stub.Replay(
@@ -598,12 +582,7 @@ class MemoryServiceResponseRecordingManager:
             producer_task.cancel()
 
     def _cancel_grpc(self, conversation_id: str) -> None:
-        try:
-            conversation_id_bytes = self._uuid_to_bytes(conversation_id)
-        except ValueError:
-            return
-
-        request = memory_service_pb2.CancelRecordRequest(conversation_id=conversation_id_bytes)
+        request = memory_service_pb2.CancelRecordRequest(conversation_id=conversation_id)
         metadata = self._metadata()
         target = self._grpc_target
         redirects_remaining = self._grpc_max_redirects
@@ -664,17 +643,6 @@ class MemoryServiceResponseRecordingManager:
         if self._api_key:
             headers.append(("x-api-key", self._api_key))
         return tuple(headers)
-
-    @staticmethod
-    def _uuid_to_bytes(conversation_id: str) -> bytes:
-        return uuid.UUID(conversation_id).bytes
-
-    @staticmethod
-    def _uuid_from_bytes(value: bytes) -> str | None:
-        try:
-            return str(uuid.UUID(bytes=bytes(value)))
-        except ValueError:
-            return None
 
     @staticmethod
     def _validate_redirect_target(address: str) -> str:

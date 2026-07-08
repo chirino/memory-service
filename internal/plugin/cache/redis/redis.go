@@ -9,7 +9,6 @@ import (
 	"time"
 
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
-	"github.com/google/uuid"
 	goredis "github.com/redis/go-redis/v9"
 )
 
@@ -52,15 +51,15 @@ type redisEntriesCache struct {
 	ttl    time.Duration
 }
 
-func entriesKey(convID uuid.UUID, clientID string) string {
-	return fmt.Sprintf("mem-entries:%s:%s", convID.String(), clientID)
+func entriesKey(convID string, clientID string) string {
+	return fmt.Sprintf("mem-entries:%s:%s", string(convID), clientID)
 }
 
 func (c *redisEntriesCache) Available() bool {
 	return true
 }
 
-func (c *redisEntriesCache) Get(ctx context.Context, conversationID uuid.UUID, clientID string) (*registrycache.CachedMemoryEntries, error) {
+func (c *redisEntriesCache) Get(ctx context.Context, conversationID string, clientID string) (*registrycache.CachedMemoryEntries, error) {
 	data, err := c.client.Get(ctx, entriesKey(conversationID, clientID)).Bytes()
 	if err == goredis.Nil {
 		return nil, nil
@@ -75,7 +74,7 @@ func (c *redisEntriesCache) Get(ctx context.Context, conversationID uuid.UUID, c
 	return &cached, nil
 }
 
-func (c *redisEntriesCache) Set(ctx context.Context, conversationID uuid.UUID, clientID string, entries registrycache.CachedMemoryEntries, ttl time.Duration) error {
+func (c *redisEntriesCache) Set(ctx context.Context, conversationID string, clientID string, entries registrycache.CachedMemoryEntries, ttl time.Duration) error {
 	data, err := json.Marshal(entries)
 	if err != nil {
 		return err
@@ -86,7 +85,7 @@ func (c *redisEntriesCache) Set(ctx context.Context, conversationID uuid.UUID, c
 	return c.client.Set(ctx, entriesKey(conversationID, clientID), data, ttl).Err()
 }
 
-func (c *redisEntriesCache) Remove(ctx context.Context, conversationID uuid.UUID, clientID string) error {
+func (c *redisEntriesCache) Remove(ctx context.Context, conversationID string, clientID string) error {
 	return c.client.Del(ctx, entriesKey(conversationID, clientID)).Err()
 }
 

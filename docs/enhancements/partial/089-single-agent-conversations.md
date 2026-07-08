@@ -51,7 +51,7 @@ Add these nullable conversation fields:
 |------|------|---------|
 | `agentId` | string | Optional logical agent label for this conversation |
 | `clientId` | string | Authenticated app/system client identity associated with this conversation |
-| `startedByConversationId` | uuid | Parent conversation that started this child conversation |
+| `startedByConversationId` | string | Parent conversation that started this child conversation |
 | `startedByEntryId` | uuid | Parent entry that triggered creation of this child conversation |
 
 Semantics:

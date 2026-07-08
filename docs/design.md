@@ -46,6 +46,8 @@ The HTTP API is defined in `openapi.yml` (OpenAPI 3.1) for the main API and `ope
 
 ### Conversations API
 
+Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-shaped strings, but callers may supply framework-native IDs such as `thread:customer-42` anywhere a `conversationId` appears.
+
 #### List Conversations
 
 - `GET /v1/conversations`

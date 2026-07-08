@@ -188,6 +188,13 @@ func uuidPtrString(id *uuid.UUID) string {
 	return id.String()
 }
 
+func conversationIDPtrString(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return string(*id)
+}
+
 func (s *SQLiteStore) encrypt(plaintext []byte) ([]byte, error) {
 	if s.enc == nil || plaintext == nil {
 		return plaintext, nil
@@ -213,22 +220,16 @@ func (s *SQLiteStore) decryptString(data []byte) string {
 
 // --- Conversations ---
 
-func (s *SQLiteStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	groupID := uuid.New()
-	// For root (non-forked) conversations, use the same UUID for conversation and group
-	// to match Java parity (features reference conversationGroupId in SQL against conversations.id).
-	convID := groupID
-	if forkedAtConversationID != nil {
-		convID = uuid.New()
-	}
+func (s *SQLiteStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	convID := string(uuid.NewString())
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *SQLiteStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID, startedByConversationID *uuid.UUID, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	db := s.writeDBFor(ctx, "sqlite store create conversation")
 	groupID := uuid.New()
 	now := time.Now()
@@ -248,7 +249,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 	if forkedAtConversationID != nil {
 		var sourceConv model.Conversation
 		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
-			return nil, &NotFoundError{Resource: "conversation", ID: forkedAtConversationID.String()}
+			return nil, &NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
 		}
 		// Verify user has access
 		if _, err := s.requireAccess(ctx, userID, sourceConv.ConversationGroupID, model.AccessLevelReader); err != nil {
@@ -269,7 +270,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 			return nil, findResult.Error
 		}
 		if findResult.RowsAffected == 0 {
-			return nil, &NotFoundError{Resource: "conversation", ID: startedByConversationID.String()}
+			return nil, &NotFoundError{Resource: "conversation", ID: string(*startedByConversationID)}
 		}
 		if _, err := s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 			return nil, err
@@ -283,15 +284,15 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 				return nil, &ValidationError{Field: "startedByEntryId", Message: "startedByEntryId must be visible in the parent conversation ancestry"}
 			}
 		}
-		actualGroupID = convID
+		actualGroupID = groupID
 		ownerUserID = parentConv.OwnerUserID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := db.Create(&group).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createStartedGroup", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
-				"startedByConversationID", uuidPtrString(startedByConversationID),
+				"startedByConversationID", conversationIDPtrString(startedByConversationID),
 				"startedByEntryID", uuidPtrString(startedByEntryID),
 			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
@@ -300,20 +301,18 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
 		}
 	} else {
-		// New root conversation — create a group; for non-forked, use convID as groupID for Java parity
-		actualGroupID = convID
+		actualGroupID = groupID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := db.Create(&group).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createGroup", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
-				"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+				"forkedAtConversationID", conversationIDPtrString(forkedAtConversationID),
 				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
-		_ = groupID // unused for root conversations when convID is specified
 	}
 
 	encTitle, err := s.encrypt([]byte(title))
@@ -339,9 +338,9 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 	if err := db.Create(&conv).Error; err != nil {
 		logDuplicateKey("createConversationWithID:createConversation", err,
 			"userID", userID,
-			"conversationID", convID.String(),
+			"conversationID", string(convID),
 			"conversationGroupID", actualGroupID.String(),
-			"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+			"forkedAtConversationID", conversationIDPtrString(forkedAtConversationID),
 			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 		)
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
@@ -365,7 +364,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		if err := db.Create(&membershipsToCopy).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createMemberships", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
 			)
 			return nil, fmt.Errorf("failed to create memberships: %w", err)
@@ -453,14 +452,14 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 	tx = tx.Order("c.created_at DESC").Limit(queryLimit)
 
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -509,16 +508,16 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
-func (s *SQLiteStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) GetConversation(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationDetail, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	access, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader)
 	if err != nil {
@@ -546,11 +545,11 @@ func (s *SQLiteStore) GetConversation(ctx context.Context, userID string, conver
 	}, nil
 }
 
-func (s *SQLiteStore) UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
 	db := s.writeDBFor(ctx, "sqlite store update conversation")
 	var conv model.Conversation
 	if err := db.Where("id = ? AND archived_at IS NULL", conversationID).First(&conv).Error; err != nil {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
@@ -573,11 +572,11 @@ func (s *SQLiteStore) UpdateConversation(ctx context.Context, userID string, con
 	return s.GetConversation(ctx, userID, conversationID)
 }
 
-func (s *SQLiteStore) ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+func (s *SQLiteStore) ArchiveConversation(ctx context.Context, userID string, conversationID string) error {
 	db := s.writeDBFor(ctx, "sqlite store archive conversation")
 	var conv model.Conversation
 	if err := db.Where("id = ? AND archived_at IS NULL", conversationID).First(&conv).Error; err != nil {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -604,7 +603,7 @@ func (s *SQLiteStore) ArchiveConversation(ctx context.Context, userID string, co
 	})
 }
 
-func (s *SQLiteStore) UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+func (s *SQLiteStore) UnarchiveConversation(ctx context.Context, userID string, conversationID string) error {
 	db := s.writeDBFor(ctx, "sqlite store unarchive conversation")
 	var conv model.Conversation
 	result := db.Where("id = ? AND archived_at IS NOT NULL", conversationID).Limit(1).Find(&conv)
@@ -612,7 +611,7 @@ func (s *SQLiteStore) UnarchiveConversation(ctx context.Context, userID string, 
 		return result.Error
 	}
 	if result.RowsAffected == 0 {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -639,7 +638,7 @@ func (s *SQLiteStore) UnarchiveConversation(ctx context.Context, userID string, 
 
 // --- Memberships ---
 
-func (s *SQLiteStore) ListMemberships(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
+func (s *SQLiteStore) ListMemberships(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
 	if err != nil {
 		return nil, nil, err
@@ -668,7 +667,7 @@ func (s *SQLiteStore) ListMemberships(ctx context.Context, userID string, conver
 	return memberships, cursor, nil
 }
 
-func (s *SQLiteStore) ShareConversation(ctx context.Context, userID string, conversationID uuid.UUID, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
+func (s *SQLiteStore) ShareConversation(ctx context.Context, userID string, conversationID string, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
 		return nil, err
@@ -693,7 +692,7 @@ func (s *SQLiteStore) ShareConversation(ctx context.Context, userID string, conv
 	return &membership, nil
 }
 
-func (s *SQLiteStore) UpdateMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
+func (s *SQLiteStore) UpdateMembership(ctx context.Context, userID string, conversationID string, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
 		return nil, err
@@ -727,7 +726,7 @@ func (s *SQLiteStore) UpdateMembership(ctx context.Context, userID string, conve
 	return &m, nil
 }
 
-func (s *SQLiteStore) DeleteMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string) error {
+func (s *SQLiteStore) DeleteMembership(ctx context.Context, userID string, conversationID string, memberUserID string) error {
 	db := s.writeDBFor(ctx, "sqlite store delete membership")
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
@@ -762,14 +761,14 @@ func (s *SQLiteStore) GetGroupMemberUserIDs(ctx context.Context, conversationGro
 
 // --- Forks ---
 
-func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
@@ -808,20 +807,20 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 
 	var cursor *string
 	if hasMore && len(forks) > 0 {
-		c := forks[len(forks)-1].ID.String()
+		c := string(forks[len(forks)-1].ID)
 		cursor = &c
 	}
 	return forks, cursor, nil
 }
 
-func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
@@ -905,19 +904,19 @@ func (s *SQLiteStore) GetTransfer(ctx context.Context, userID string, transferID
 }
 
 // resolveConversationID finds the primary (non-deleted) conversation ID for a group.
-func (s *SQLiteStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) uuid.UUID {
+func (s *SQLiteStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) string {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("conversation_group_id = ? AND archived_at IS NULL", groupID).First(&conv).Error; err != nil {
-		return uuid.Nil
+		return ""
 	}
 	return conv.ID
 }
 
-func (s *SQLiteStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*registrystore.OwnershipTransferDto, error) {
+func (s *SQLiteStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID string, toUserID string) (*registrystore.OwnershipTransferDto, error) {
 	db := s.writeDBFor(ctx, "sqlite store create ownership transfer")
 	var conv model.Conversation
 	if err := db.Where("id = ? AND archived_at IS NULL", conversationID).First(&conv).Error; err != nil {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return nil, err
@@ -1032,14 +1031,14 @@ func (s *SQLiteStore) DeleteTransfer(ctx context.Context, userID string, transfe
 
 // --- Entries ---
 
-func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, err
@@ -1180,7 +1179,7 @@ func (s *SQLiteStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) 
 	return &entry, nil
 }
 
-func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
+func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	db := s.writeDBFor(ctx, "sqlite store append entries")
 	var conv model.Conversation
 	convResult := db.Where("id = ? AND archived_at IS NULL", conversationID).Limit(1).Find(&conv)
@@ -1190,9 +1189,9 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 	if convResult.RowsAffected == 0 {
 		// Auto-create conversation if it doesn't exist (Java parity).
 		// Check first entry for fork metadata.
-		var forkedAtConvID *uuid.UUID
+		var forkedAtConvID *string
 		var forkedAtEntryID *uuid.UUID
-		var startedByConversationID *uuid.UUID
+		var startedByConversationID *string
 		var startedByEntryID *uuid.UUID
 		if len(entries) > 0 {
 			forkedAtConvID = entries[0].ForkedAtConversationID
@@ -1215,13 +1214,13 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 			}
 			log.Warn("append auto-create race detected",
 				"userID", userID,
-				"conversationID", conversationID.String(),
+				"conversationID", string(conversationID),
 				"sqliteCode", sqliteErr.Code,
 				"sqliteExtendedCode", sqliteErr.ExtendedCode,
 				"detail", sqliteErr.Error(),
-				"forkedAtConversationID", uuidPtrString(forkedAtConvID),
+				"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
 				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
-				"startedByConversationID", uuidPtrString(startedByConversationID),
+				"startedByConversationID", conversationIDPtrString(startedByConversationID),
 				"startedByEntryID", uuidPtrString(startedByEntryID),
 			)
 			loaded := false
@@ -1370,7 +1369,7 @@ func deriveTitleFromContent(content string) string {
 	return ""
 }
 
-func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
+func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, conversationID string, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
 	db := s.writeDBFor(ctx, "sqlite store sync agent entry")
 	incomingContent := parseContentArray(entry.Content)
 
@@ -1499,7 +1498,7 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
-func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID uuid.UUID, agentID *string) (model.Conversation, error) {
+func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (model.Conversation, error) {
 	db := s.writeDBFor(ctx, "sqlite store auto create conversation")
 	now := time.Now()
 	groupID := uuid.New()
@@ -1511,7 +1510,7 @@ func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string,
 	if err := db.Create(&group).Error; err != nil {
 		logDuplicateKey("autoCreateConversation:createGroup", err,
 			"userID", userID,
-			"conversationID", conversationID.String(),
+			"conversationID", string(conversationID),
 			"conversationGroupID", groupID.String(),
 		)
 		return model.Conversation{}, fmt.Errorf("failed to create conversation group: %w", err)
@@ -1531,7 +1530,7 @@ func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string,
 		_ = db.Delete(&group).Error
 		logDuplicateKey("autoCreateConversation:createConversation", err,
 			"userID", userID,
-			"conversationID", conversationID.String(),
+			"conversationID", string(conversationID),
 			"conversationGroupID", groupID.String(),
 		)
 		if _, ok := sqliteUniqueViolation(err); ok {
@@ -1658,7 +1657,7 @@ func (s *SQLiteStore) FetchSearchResultDetails(ctx context.Context, userID strin
 	}
 	type row struct {
 		EntryID           uuid.UUID `gorm:"column:entry_id"`
-		ConversationID    uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID    string    `gorm:"column:conversation_id"`
 		ConversationTitle []byte    `gorm:"column:conversation_title"`
 		IndexedContent    string    `gorm:"column:indexed_content"`
 	}
@@ -1778,7 +1777,7 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 	`
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
-		ConversationID      uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID      string    `gorm:"column:conversation_id"`
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
 		ConversationTitle   []byte    `gorm:"column:conversation_title"`
 		Score               float64   `gorm:"column:score"`
@@ -1790,7 +1789,7 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 	}
 
 	results := make([]registrystore.SearchResult, 0, len(rows))
-	seenConversation := map[uuid.UUID]struct{}{}
+	seenConversation := map[string]struct{}{}
 	for _, r := range rows {
 		if groupByConversation {
 			if _, exists := seenConversation[r.ConversationID]; exists {
@@ -1839,7 +1838,7 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 	const selectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
 
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -1847,8 +1846,8 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -1936,16 +1935,16 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
-func (s *SQLiteStore) AdminGetConversation(ctx context.Context, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) AdminGetConversation(ctx context.Context, conversationID string) (*registrystore.ConversationDetail, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
@@ -1968,11 +1967,11 @@ func (s *SQLiteStore) AdminGetConversation(ctx context.Context, conversationID u
 	}, nil
 }
 
-func (s *SQLiteStore) AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
+func (s *SQLiteStore) AdminSetConversationArchived(ctx context.Context, conversationID string, archived bool) error {
 	db := s.writeDBFor(ctx, "sqlite store admin set conversation archived")
 	var conv model.Conversation
 	if err := db.Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if archived {
 		now := time.Now()
@@ -1992,10 +1991,10 @@ func (s *SQLiteStore) AdminSetConversationArchived(ctx context.Context, conversa
 	return nil
 }
 
-func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
+func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	limit := query.Limit
@@ -2048,10 +2047,10 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID uuid.U
 	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
 }
 
-func (s *SQLiteStore) AdminListMemberships(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
+func (s *SQLiteStore) AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	tx := s.dbFor(ctx).Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC")
@@ -2077,10 +2076,10 @@ func (s *SQLiteStore) AdminListMemberships(ctx context.Context, conversationID u
 	return memberships, cursor, nil
 }
 
-func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	tx := s.dbFor(ctx).
@@ -2116,20 +2115,20 @@ func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID uuid.UU
 
 	var cursor *string
 	if hasMore && len(forks) > 0 {
-		c := forks[len(forks)-1].ID.String()
+		c := string(forks[len(forks)-1].ID)
 		cursor = &c
 	}
 	return forks, cursor, nil
 }
 
-func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	var conv model.Conversation
 	findResult := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if findResult.Error != nil {
 		return nil, nil, findResult.Error
 	}
 	if findResult.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	return s.listChildConversationsForBase(ctx,
 		s.dbFor(ctx).
@@ -2170,7 +2169,7 @@ func (s *SQLiteStore) AdminSearchEntries(ctx context.Context, query registrystor
 
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
-		ConversationID      uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID      string    `gorm:"column:conversation_id"`
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
 		ConversationTitle   []byte    `gorm:"column:conversation_title"`
 		Score               float64   `gorm:"column:score"`
@@ -2342,7 +2341,7 @@ func (s *SQLiteStore) LoadDeletedConversationGroups(ctx context.Context, groupID
 
 	type conversationRow struct {
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
-		ID                  uuid.UUID `gorm:"column:id"`
+		ID                  string    `gorm:"column:id"`
 	}
 	var conversations []conversationRow
 	if err := s.dbFor(ctx).
@@ -2563,7 +2562,7 @@ func (s *SQLiteStore) startedConversationGroupIDsForDelete(ctx context.Context, 
 
 func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gorm.DB, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -2571,8 +2570,8 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -2613,14 +2612,14 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 	}
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
 type forkAncestor struct {
-	ConversationID uuid.UUID
+	ConversationID string
 	StopAtEntryID  *uuid.UUID
 }
 
@@ -2714,7 +2713,7 @@ func (s *SQLiteStore) buildAncestryStack(ctx context.Context, target model.Conve
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
 	}
 
-	byID := make(map[uuid.UUID]model.Conversation, len(conversations))
+	byID := make(map[string]model.Conversation, len(conversations))
 	for _, conv := range conversations {
 		byID[conv.ID] = conv
 	}
@@ -3058,11 +3057,11 @@ func isPrefixContent(existing, incoming []any) bool {
 
 // --- Attachments ---
 
-func (s *SQLiteStore) CreateAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachment model.Attachment) (*model.Attachment, error) {
+func (s *SQLiteStore) CreateAttachment(ctx context.Context, userID string, conversationID string, attachment model.Attachment) (*model.Attachment, error) {
 	db := s.writeDBFor(ctx, "sqlite store create attachment")
 	// conversationID is optional; when not provided, create an unlinked attachment
 	// owned by the uploader.
-	if conversationID != uuid.Nil {
+	if conversationID != "" {
 		if _, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelWriter); err != nil {
 			return nil, err
 		}
@@ -3129,10 +3128,10 @@ func (s *SQLiteStore) UpdateAttachment(ctx context.Context, userID string, attac
 	return &attachment, nil
 }
 
-func (s *SQLiteStore) ListAttachments(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
+func (s *SQLiteStore) ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
 	tx := s.dbFor(ctx).Where("archived_at IS NULL")
 
-	if conversationID == uuid.Nil {
+	if conversationID == "" {
 		// Contract path does not include conversation id; list caller-owned unlinked attachments.
 		tx = tx.Where("user_id = ? AND entry_id IS NULL", userID)
 	} else {
@@ -3168,7 +3167,7 @@ func (s *SQLiteStore) ListAttachments(ctx context.Context, userID string, conver
 	return attachments, cursor, nil
 }
 
-func (s *SQLiteStore) GetAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) (*model.Attachment, error) {
+func (s *SQLiteStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var attachment model.Attachment
 	if err := s.dbFor(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
 		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
@@ -3183,7 +3182,7 @@ func (s *SQLiteStore) GetAttachment(ctx context.Context, userID string, conversa
 	}
 
 	tx := s.dbFor(ctx).Where("id = ?", *attachment.EntryID)
-	if conversationID != uuid.Nil {
+	if conversationID != "" {
 		tx = tx.Where("conversation_id = ?", conversationID)
 	}
 	var entries []model.Entry
@@ -3217,7 +3216,7 @@ func (s *SQLiteStore) GetAttachment(ctx context.Context, userID string, conversa
 	return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 }
 
-func (s *SQLiteStore) DeleteAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) error {
+func (s *SQLiteStore) DeleteAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) error {
 	db := s.writeDBFor(ctx, "sqlite store delete attachment")
 	attachment, err := s.GetAttachment(ctx, userID, conversationID, attachmentID)
 	if err != nil {
@@ -3242,10 +3241,10 @@ func (s *SQLiteStore) DeleteAttachment(ctx context.Context, userID string, conve
 	return nil
 }
 
-func (s *SQLiteStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (uuid.UUID, error) {
+func (s *SQLiteStore) getGroupID(ctx context.Context, userID string, conversationID string, minLevel model.AccessLevel) (uuid.UUID, error) {
 	var conv model.Conversation
 	if err := s.dbFor(ctx).Where("id = ? AND archived_at IS NULL", conversationID).First(&conv).Error; err != nil {
-		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, minLevel); err != nil {
 		return uuid.Nil, err

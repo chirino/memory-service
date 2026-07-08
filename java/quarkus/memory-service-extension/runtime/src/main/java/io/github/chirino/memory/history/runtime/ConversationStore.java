@@ -114,13 +114,13 @@ public class ConversationStore {
             request.setAgentId(agentId);
         }
         if (forkedAtConversationId != null) {
-            request.setForkedAtConversationId(UUID.fromString(forkedAtConversationId));
+            request.setForkedAtConversationId(forkedAtConversationId);
         }
         if (forkedAtEntryId != null) {
             request.setForkedAtEntryId(UUID.fromString(forkedAtEntryId));
         }
         if (startedByConversationId != null) {
-            request.setStartedByConversationId(UUID.fromString(startedByConversationId));
+            request.setStartedByConversationId(startedByConversationId);
         }
         if (startedByEntryId != null) {
             request.setStartedByEntryId(UUID.fromString(startedByEntryId));
@@ -300,7 +300,7 @@ public class ConversationStore {
 
     public Conversation getConversation(String conversationId, String bearerToken) {
         try {
-            return conversationsApi(bearerToken).getConversation(UUID.fromString(conversationId));
+            return conversationsApi(bearerToken).getConversation(conversationId);
         } catch (WebApplicationException e) {
             if (e.getResponse() != null
                     && e.getResponse().getStatus() == Response.Status.NOT_FOUND.getStatusCode()) {
@@ -312,8 +312,7 @@ public class ConversationStore {
 
     private void callAppend(String conversationId, CreateEntryRequest request, String bearerToken) {
         try {
-            conversationsApi(bearerToken)
-                    .appendConversationEntry(UUID.fromString(conversationId), request);
+            conversationsApi(bearerToken).appendConversationEntry(conversationId, request);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
             LOG.warnf(

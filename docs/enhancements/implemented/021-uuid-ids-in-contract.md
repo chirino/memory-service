@@ -5,6 +5,8 @@ status: implemented
 # UUID IDs in API Contracts
 
 > **Status**: Implemented.
+>
+> **Superseded note:** Conversation IDs no longer follow this UUID contract. Current REST, gRPC, stores, caches, and vector payloads treat conversation IDs as arbitrary non-empty strings; entry IDs, memory IDs, attachment IDs, transfer IDs, task IDs, and internal conversation group IDs remain UUIDs.
 
 ## Overview
 

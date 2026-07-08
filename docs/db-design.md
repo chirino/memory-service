@@ -14,13 +14,13 @@ erDiagram
     }
 
     conversations {
-        UUID id PK
+        TEXT id PK
         BYTEA title
         TEXT owner_user_id
         JSONB metadata
         UUID conversation_group_id FK
         UUID forked_at_entry_id
-        UUID forked_at_conversation_id FK
+        TEXT forked_at_conversation_id FK
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
         TIMESTAMPTZ vectorized_at
@@ -36,7 +36,7 @@ erDiagram
 
     entries {
         UUID id PK
-        UUID conversation_id FK
+        TEXT conversation_id FK
         UUID conversation_group_id FK
         TEXT user_id
         TEXT client_id
@@ -85,7 +85,7 @@ erDiagram
 
     entry_embeddings {
         UUID entry_id PK, FK
-        UUID conversation_id FK
+        TEXT conversation_id FK
         UUID conversation_group_id FK
         VECTOR embedding
         TIMESTAMPTZ created_at
@@ -118,6 +118,7 @@ group as the original, so all members retain access to the entire fork tree.
 Stores conversation metadata. Titles are stored as `BYTEA` to support encryption at rest.
 The `metadata` column is a free-form `JSONB` field for agent-defined tags and properties.
 
+- `id` is the public conversation identifier and is an arbitrary non-empty string.
 - `conversation_group_id` links to the owning group.
 - `forked_at_conversation_id` and `forked_at_entry_id` record the fork point when a conversation is created by forking.
 - `vectorized_at` tracks when entries were last sent for vector embedding.

@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -140,20 +141,21 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	}
 	clientID := security.GetClientID(c)
 
-	var convID *uuid.UUID
+	var convID *string
 	if req.ID != nil {
-		id, err := uuid.Parse(*req.ID)
-		if err != nil {
+		id := string(strings.TrimSpace(*req.ID))
+		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid id"})
 			return
 		}
 		convID = &id
 	}
 
-	var forkConvID, forkEntryID *uuid.UUID
+	var forkConvID *string
+	var forkEntryID *uuid.UUID
 	if req.ForkedAtConversationId != nil {
-		id, err := uuid.Parse(*req.ForkedAtConversationId)
-		if err != nil {
+		id := string(strings.TrimSpace(*req.ForkedAtConversationId))
+		if id == "" {
 			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid forkedAtConversationId"})
 			return
 		}
@@ -224,8 +226,8 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 
 func getConversation(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -244,8 +246,8 @@ func getConversation(c *gin.Context, store registrystore.MemoryStore) {
 
 func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -369,8 +371,8 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 
 func listForks(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -392,8 +394,8 @@ func listForks(c *gin.Context, store registrystore.MemoryStore) {
 
 func listChildConversations(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -414,26 +416,26 @@ func listChildConversations(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 type childConversationSummaryResponse struct {
-	ID                      uuid.UUID         `json:"id"`
+	ID                      string            `json:"id"`
 	Title                   string            `json:"title"`
 	OwnerUserID             string            `json:"ownerUserId"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
 	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
-	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByConversationID *string           `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 }
 
 type conversationSummaryResponse struct {
-	ID                      uuid.UUID         `json:"id"`
+	ID                      string            `json:"id"`
 	Title                   string            `json:"title"`
 	OwnerUserID             string            `json:"ownerUserId"`
 	AgentID                 *string           `json:"agentId,omitempty"`
 	Metadata                map[string]any    `json:"metadata"`
 	ForkedAtEntryID         *uuid.UUID        `json:"forkedAtEntryId,omitempty"`
-	ForkedAtConversationID  *uuid.UUID        `json:"forkedAtConversationId,omitempty"`
-	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	ForkedAtConversationID  *string           `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *string           `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
@@ -499,8 +501,8 @@ func toChildConversationSummaries(items []registrystore.ConversationSummary) []c
 
 func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *internalresumer.Store, resumerEnabled bool) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -518,7 +520,7 @@ func cancelResponse(c *gin.Context, store registrystore.MemoryStore, resumer *in
 			c.JSON(http.StatusConflict, gin.H{"error": "response recording disabled"})
 			return nil
 		}
-		if _, err := resumer.RequestCancelWithAddress(ctx, convID.String(), ""); err != nil {
+		if _, err := resumer.RequestCancelWithAddress(ctx, convID, ""); err != nil {
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "internal server error"})
 			return nil
 		}

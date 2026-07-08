@@ -72,9 +72,12 @@ import type {
   AdminPutCheckpointData,
   AdminPutCheckpointErrors,
   AdminPutCheckpointResponses,
+  AdminPutMemoryData,
+  AdminPutMemoryErrors,
   AdminPutMemoryPoliciesData,
   AdminPutMemoryPoliciesErrors,
   AdminPutMemoryPoliciesResponses,
+  AdminPutMemoryResponses,
   AdminSearchConversationsData,
   AdminSearchConversationsErrors,
   AdminSearchConversationsResponses,
@@ -90,6 +93,9 @@ import type {
   AdminUpdateConversationData,
   AdminUpdateConversationErrors,
   AdminUpdateConversationResponses,
+  AdminUpdateMemoryData,
+  AdminUpdateMemoryErrors,
+  AdminUpdateMemoryResponses,
   GetCacheHitRateData,
   GetCacheHitRateErrors,
   GetCacheHitRateResponses,
@@ -154,6 +160,44 @@ export const adminListMemories = <ThrowOnError extends boolean = false>(
     security: [{ scheme: "bearer", type: "http" }],
     url: "/admin/v1/memories",
     ...options,
+  });
+
+/**
+ * Update a memory item (admin)
+ *
+ * Allows admins to update memories across namespaces.
+ * Currently supports archiving the active memory item by setting `archived` to `true`.
+ * Requires admin role.
+ */
+export const adminUpdateMemory = <ThrowOnError extends boolean = false>(
+  options: Options<AdminUpdateMemoryData, ThrowOnError>,
+) =>
+  (options.client ?? client).patch<AdminUpdateMemoryResponses, AdminUpdateMemoryErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/admin/v1/memories",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
+  });
+
+/**
+ * Upsert a memory item (admin)
+ *
+ * Allows admins to write memories across namespaces. Requires admin role.
+ */
+export const adminPutMemory = <ThrowOnError extends boolean = false>(
+  options: Options<AdminPutMemoryData, ThrowOnError>,
+) =>
+  (options.client ?? client).put<AdminPutMemoryResponses, AdminPutMemoryErrors, ThrowOnError>({
+    security: [{ scheme: "bearer", type: "http" }],
+    url: "/admin/v1/memories",
+    ...options,
+    headers: {
+      "Content-Type": "application/json",
+      ...options.headers,
+    },
   });
 
 /**

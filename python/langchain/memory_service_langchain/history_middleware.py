@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import logging
 from typing import Any, Callable
+from urllib.parse import quote
 
 import httpx
 from langchain.agents.middleware import AgentMiddleware
@@ -21,6 +22,9 @@ from .transport import (
     resolve_unix_socket,
 )
 
+
+def _quote_path(value: str) -> str:
+    return quote(value, safe="")
 
 LOG = logging.getLogger(__name__)
 
@@ -188,7 +192,7 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                 )
             ) as client:
                 response = client.post(
-                    f"/v1/conversations/{conversation_id}/entries",
+                    f"/v1/conversations/{_quote_path(conversation_id)}/entries",
                     json=payload,
                     headers=self._headers(conversation_id),
                 )
@@ -199,13 +203,13 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
                         headers=self._headers(conversation_id),
                     )
                     response = client.post(
-                        f"/v1/conversations/{conversation_id}/entries",
+                        f"/v1/conversations/{_quote_path(conversation_id)}/entries",
                         json=payload,
                         headers=self._headers(conversation_id),
                     )
                 if self._is_duplicate_conversation_error(response):
                     response = client.post(
-                        f"/v1/conversations/{conversation_id}/entries",
+                        f"/v1/conversations/{_quote_path(conversation_id)}/entries",
                         json=payload,
                         headers=self._headers(conversation_id),
                     )

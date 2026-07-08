@@ -10,7 +10,6 @@ import (
 	"github.com/chirino/memory-service/internal/cmd/serve"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/generated/apiclient"
-	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -178,7 +177,7 @@ func runSessionToolContract(t *testing.T, setup func(*testing.T) *mcpServer, inc
 		indexedContent := "Searchable content about deployment"
 		contentType := "history"
 		_, err := s.client.AppendConversationEntryWithResponse(context.Background(),
-			uuid.MustParse(convID),
+			convID,
 			apiclient.AppendConversationEntryJSONRequestBody{
 				ContentType:    contentType,
 				IndexedContent: &indexedContent,

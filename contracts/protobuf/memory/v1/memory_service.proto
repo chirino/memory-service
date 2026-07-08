@@ -77,22 +77,22 @@ enum Channel {
 }
 
 message ConversationSummary {
-  // Unique identifier (UUID as 16-byte big-endian binary)
-  bytes id = 1;
+  // Conversation identifier
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
   string updated_at = 5;
   string last_message_preview = 6;
   AccessLevel access_level = 7;
-  bytes started_by_conversation_id = 8;
+  string started_by_conversation_id = 8;
   bytes started_by_entry_id = 9;
   bool archived = 10;
 }
 
 message ChildConversationSummary {
-  // Unique identifier (UUID as 16-byte big-endian binary)
-  bytes id = 1;
+  // Conversation identifier
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
@@ -104,8 +104,8 @@ message ChildConversationSummary {
 }
 
 message Conversation {
-  // Unique identifier (UUID as 16-byte big-endian binary)
-  bytes id = 1;
+  // Conversation identifier
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
@@ -116,16 +116,16 @@ message Conversation {
   // First parent entry excluded by this fork (empty if root or blank-slate fork)
   bytes forked_at_entry_id = 9;
   // Conversation ID from which this was forked (empty if root)
-  bytes forked_at_conversation_id = 10;
-  bytes started_by_conversation_id = 11;
+  string forked_at_conversation_id = 10;
+  string started_by_conversation_id = 11;
   bytes started_by_entry_id = 12;
   string agent_id = 13;
   bool archived = 14;
 }
 
 message ConversationMembership {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   string user_id = 2;
   AccessLevel access_level = 3;
   string created_at = 4;
@@ -133,13 +133,13 @@ message ConversationMembership {
 }
 
 message ConversationForkSummary {
-  // Forked conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Forked conversation identifier
+  string conversation_id = 1;
   reserved 2; // conversation_group_id removed
   // First parent entry excluded by this fork
   bytes forked_at_entry_id = 3;
   // Conversation ID from which this was forked
-  bytes forked_at_conversation_id = 4;
+  string forked_at_conversation_id = 4;
   string title = 5;
   string created_at = 6;
 }
@@ -167,20 +167,20 @@ message ListConversationsResponse {
 }
 
 message GetConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
 }
 
 message UpdateConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   optional string title = 2;
   optional bool archived = 3;
 }
 
 message ListForksRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   PageRequest page = 2;
 }
 
@@ -190,7 +190,7 @@ message ListForksResponse {
 }
 
 message ListChildConversationsRequest {
-  bytes conversation_id = 1;
+  string conversation_id = 1;
   PageRequest page = 2;
 }
 
@@ -220,16 +220,16 @@ message CreateEntryRequest {
   // it as a fork of forked_at_conversation_id. Optionally provide
   // forked_at_entry_id to fork at a specific point. When unset, all source
   // entries are excluded and the new entry become the first entry in the fork.
-  optional bytes forked_at_conversation_id = 7;  // UUID as 16-byte big-endian
+  optional string forked_at_conversation_id = 7;
   optional bytes forked_at_entry_id = 8;          // UUID as 16-byte big-endian
   optional string agent_id = 9;
-  optional bytes started_by_conversation_id = 10;
+  optional string started_by_conversation_id = 10;
   optional bytes started_by_entry_id = 11;
 }
 
 message SyncEntriesRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   // Single entry containing all messages in the agent's context.
   // The content array holds all messages; comparison is done against
   // the flattened content of existing entries in the latest epoch.
@@ -245,14 +245,14 @@ message SyncEntriesResponse {
 }
 
 message AppendEntryRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   CreateEntryRequest entry = 2;
 }
 
 message ListEntriesRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   Channel channel = 2;
   string epoch_filter = 3;
   PageRequest page = 4;
@@ -270,8 +270,8 @@ message ListEntriesResponse {
 }
 
 message AdminListEntriesRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   Channel channel = 2;
   string epoch_filter = 3;
   PageRequest page = 4;
@@ -283,8 +283,8 @@ message AdminListEntriesRequest {
 }
 
 message AdminGetConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 2;
 }
@@ -321,8 +321,8 @@ message AdminListConversationsResponse {
 }
 
 message AdminUpdateConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   // Set archive state (true = archive, false = restore)
   optional bool archived = 2;
   // Optional: admin justification, logged for admin access.
@@ -330,16 +330,16 @@ message AdminUpdateConversationRequest {
 }
 
 message AdminListMembershipsRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   PageRequest page = 2;
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 3;
 }
 
 message AdminListForksRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   PageRequest page = 2;
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 3;
@@ -351,8 +351,8 @@ message AdminListForksResponse {
 }
 
 message AdminListChildConversationsRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   PageRequest page = 2;
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 3;
@@ -364,14 +364,14 @@ message AdminListChildConversationsResponse {
 }
 
 message AdminConversationSummary {
-  bytes id = 1;
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
   string updated_at = 5;
   string last_message_preview = 6;
   AccessLevel access_level = 7;
-  bytes started_by_conversation_id = 8;
+  string started_by_conversation_id = 8;
   bytes started_by_entry_id = 9;
   bool archived = 10;
   string client_id = 11;
@@ -379,7 +379,7 @@ message AdminConversationSummary {
 }
 
 message AdminChildConversationSummary {
-  bytes id = 1;
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
@@ -388,35 +388,35 @@ message AdminChildConversationSummary {
   AccessLevel access_level = 7;
   bytes started_by_entry_id = 8;
   bool archived = 9;
-  bytes started_by_conversation_id = 10;
+  string started_by_conversation_id = 10;
   string client_id = 11;
   optional string agent_id = 12;
 }
 
 message AdminConversation {
-  bytes id = 1;
+  string id = 1;
   string title = 2;
   string owner_user_id = 3;
   string created_at = 4;
   string updated_at = 5;
   string last_message_preview = 6;
   AccessLevel access_level = 7;
-  bytes started_by_conversation_id = 8;
+  string started_by_conversation_id = 8;
   bytes started_by_entry_id = 9;
   bool archived = 10;
   string client_id = 11;
   optional string agent_id = 12;
   google.protobuf.Struct metadata = 13;
   bytes forked_at_entry_id = 14;
-  bytes forked_at_conversation_id = 15;
+  string forked_at_conversation_id = 15;
   bool has_response_in_progress = 16;
 }
 
 message Entry {
   // Unique identifier (UUID as 16-byte big-endian binary)
   bytes id = 1;
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 2;
+  // Conversation identifier
+  string conversation_id = 2;
   string user_id = 3;
   Channel channel = 4;
   int64 epoch = 5;
@@ -435,8 +435,8 @@ message Entry {
 }
 
 message ListMembershipsRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   PageRequest page = 2;
 }
 
@@ -446,22 +446,22 @@ message ListMembershipsResponse {
 }
 
 message ShareConversationRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   string user_id = 2;
   AccessLevel access_level = 3;
 }
 
 message UpdateMembershipRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   string member_user_id = 2;
   AccessLevel access_level = 3;
 }
 
 message DeleteMembershipRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   string member_user_id = 2;
 }
 
@@ -469,8 +469,8 @@ message DeleteMembershipRequest {
 message OwnershipTransfer {
   // Transfer identifier (UUID as 16-byte big-endian binary)
   bytes id = 1;
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 2;
+  // Conversation identifier
+  string conversation_id = 2;
   string conversation_title = 3;
   string from_user_id = 4;
   string to_user_id = 5;
@@ -499,8 +499,8 @@ message GetOwnershipTransferRequest {
 }
 
 message CreateOwnershipTransferRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   string new_owner_user_id = 2;
 }
 
@@ -530,8 +530,8 @@ message SearchEntriesResponse {
 }
 
 message SearchResult {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   // Title of the conversation containing this entry
   string conversation_title = 2;
   // Entry identifier (UUID as 16-byte big-endian binary). Always present for deep-linking.
@@ -548,8 +548,8 @@ message IndexConversationsRequest {
 }
 
 message IndexEntryRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   // Entry identifier (UUID as 16-byte big-endian binary)
   bytes entry_id = 2;
   // The searchable text for this entry
@@ -574,8 +574,8 @@ message ListUnindexedEntriesResponse {
 }
 
 message UnindexedEntry {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
   Entry entry = 2;
 }
 
@@ -977,8 +977,8 @@ enum RecordStatus {
 }
 
 message RecordRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary, required in first message)
-  bytes conversation_id = 1;
+  // Conversation identifier (required in first message)
+  string conversation_id = 1;
   string content = 2;          // Content chunk
   bool complete = 3;           // Set to true in final message
 }
@@ -989,8 +989,8 @@ message RecordResponse {
 }
 
 message ReplayRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
 }
 
 message ReplayResponse {
@@ -999,8 +999,8 @@ message ReplayResponse {
 }
 
 message CancelRecordRequest {
-  // Conversation identifier (UUID as 16-byte big-endian binary)
-  bytes conversation_id = 1;
+  // Conversation identifier
+  string conversation_id = 1;
 }
 
 message CancelRecordResponse {
@@ -1013,13 +1013,13 @@ message IsEnabledResponse {
 }
 
 message CheckRecordingsRequest {
-  // Conversation identifiers (UUID as 16-byte big-endian binary each)
-  repeated bytes conversation_ids = 1;
+  // Conversation identifiers
+  repeated string conversation_ids = 1;
 }
 
 message CheckRecordingsResponse {
-  // Conversation IDs with active recordings (UUID as 16-byte big-endian binary each)
-  repeated bytes conversation_ids = 1;
+  // Conversation IDs with active recordings
+  repeated string conversation_ids = 1;
 }
 
 service AttachmentsService {
@@ -1119,7 +1119,7 @@ message AdminCheckpoint {
 
 message SubscribeEventsRequest {
   // Optional: subscribe to specific conversation IDs only.
-  repeated bytes conversation_ids = 1;
+  repeated string conversation_ids = 1;
   // Optional: filter by event kinds (conversation, entry, response, membership).
   repeated string kinds = 2;
   // Optional: durable replay cursor. Omit for tail-only mode.

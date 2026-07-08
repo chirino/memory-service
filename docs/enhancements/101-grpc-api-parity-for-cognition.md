@@ -33,7 +33,7 @@ The goal is not to add cognition-specific admin/debug APIs. The goal is to make 
 
 ```protobuf
 message SubscribeEventsRequest {
-  repeated bytes conversation_ids = 1;
+  repeated string conversation_ids = 1;
   repeated string kinds = 2;
   optional string after_cursor = 3;
   optional string detail = 4; // "summary" or "full"

@@ -72,7 +72,7 @@ rpc Record(stream RecordRequest) returns (RecordResponse);
 
 | Field             | Type     | Description                                                                |
 | ----------------- | -------- | -------------------------------------------------------------------------- |
-| `conversation_id` | `bytes`  | UUID (16-byte big-endian). Required in the **first** message only.         |
+| `conversation_id` | `string` | Conversation identifier. Required in the **first** message only.           |
 | `content`         | `string` | The token content.                                                         |
 | `complete`        | `bool`   | Set to `true` in the **final** message to signal the response is finished. |
 
@@ -104,9 +104,9 @@ rpc Replay(ReplayRequest) returns (stream ReplayResponse);
 
 **Request:**
 
-| Field             | Type    | Description                |
-| ----------------- | ------- | -------------------------- |
-| `conversation_id` | `bytes` | UUID (16-byte big-endian). |
+| Field             | Type     | Description              |
+| ----------------- | -------- | ------------------------ |
+| `conversation_id` | `string` | Conversation identifier. |
 
 **Response stream:**
 
@@ -129,9 +129,9 @@ rpc Cancel(CancelRecordRequest) returns (CancelRecordResponse);
 
 **Request:**
 
-| Field             | Type    | Description                |
-| ----------------- | ------- | -------------------------- |
-| `conversation_id` | `bytes` | UUID (16-byte big-endian). |
+| Field             | Type     | Description              |
+| ----------------- | -------- | ------------------------ |
+| `conversation_id` | `string` | Conversation identifier. |
 
 **Response:**
 
@@ -155,15 +155,15 @@ rpc CheckRecordings(CheckRecordingsRequest)
 
 **Request:**
 
-| Field              | Type             | Description             |
-| ------------------ | ---------------- | ----------------------- |
-| `conversation_ids` | `repeated bytes` | List of UUIDs to check. |
+| Field              | Type              | Description                                |
+| ------------------ | ----------------- | ------------------------------------------ |
+| `conversation_ids` | `repeated string` | List of conversation identifiers to check. |
 
 **Response:**
 
-| Field              | Type             | Description                                              |
-| ------------------ | ---------------- | -------------------------------------------------------- |
-| `conversation_ids` | `repeated bytes` | Subset of the input IDs that have responses in progress. |
+| Field              | Type              | Description                                              |
+| ------------------ | ----------------- | -------------------------------------------------------- |
+| `conversation_ids` | `repeated string` | Subset of the input IDs that have responses in progress. |
 
 This is useful for frontends that need to show a "response in progress" indicator when a user opens a conversation list. The agent app can batch-check multiple conversations in a single call.
 

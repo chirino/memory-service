@@ -17,7 +17,7 @@ type EntryEventFilter struct {
 	roles        map[string]struct{}
 }
 
-type EntryDetailLoader func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error)
+type EntryDetailLoader func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error)
 
 func NewEntryEventFilter(channels, contentTypes, roles []string) EntryEventFilter {
 	filter := EntryEventFilter{
@@ -73,7 +73,7 @@ func (f EntryEventFilter) Matches(ctx context.Context, event registryeventbus.Ev
 }
 
 type EntryEventMetadata struct {
-	ConversationID uuid.UUID
+	ConversationID string
 	EntryID        uuid.UUID
 	Channel        string
 	ContentType    string
@@ -158,7 +158,7 @@ func entryMetadataFromEvent(event registryeventbus.Event) (EntryEventMetadata, b
 	channel, _ := data["entry_channel"].(string)
 	contentType, _ := data["entry_content_type"].(string)
 	role, _ := data["entry_role"].(string)
-	conversationID, _ := decodeEventUUID(data["conversation"])
+	conversationID, _ := decodeEventString(data["conversation"])
 	entryID, _ := decodeEventUUID(data["entry"])
 	if strings.TrimSpace(channel) == "" || strings.TrimSpace(contentType) == "" {
 		return EntryEventMetadata{}, false
@@ -177,7 +177,7 @@ func loadEntryForEvent(ctx context.Context, event registryeventbus.Event, load E
 	if !ok {
 		return nil, nil
 	}
-	conversationID, ok := decodeEventUUID(data["conversation"])
+	conversationID, ok := decodeEventString(data["conversation"])
 	if !ok {
 		return nil, nil
 	}
@@ -232,5 +232,15 @@ func decodeEventUUID(raw any) (uuid.UUID, bool) {
 		return id, err == nil
 	default:
 		return uuid.Nil, false
+	}
+}
+
+func decodeEventString(raw any) (string, bool) {
+	switch v := raw.(type) {
+	case string:
+		value := strings.TrimSpace(v)
+		return string(value), value != ""
+	default:
+		return "", false
 	}
 }

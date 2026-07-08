@@ -52,8 +52,8 @@ func HandleSyncMemory(c *gin.Context, store registrystore.MemoryStore, eventBus 
 
 func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -122,8 +122,8 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 
 func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -139,9 +139,9 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		Role                    *string         `json:"role,omitempty"`
 		UserID                  *string         `json:"userId,omitempty"`
 		AgentID                 *string         `json:"agentId,omitempty"`
-		ForkedAtConversationID  *uuid.UUID      `json:"forkedAtConversationId,omitempty"`
+		ForkedAtConversationID  *string         `json:"forkedAtConversationId,omitempty"`
 		ForkedAtEntryID         *uuid.UUID      `json:"forkedAtEntryId,omitempty"`
-		StartedByConversationID *uuid.UUID      `json:"startedByConversationId,omitempty"`
+		StartedByConversationID *string         `json:"startedByConversationId,omitempty"`
 		StartedByEntryID        *uuid.UUID      `json:"startedByEntryId,omitempty"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -476,7 +476,7 @@ func validateHistoryEntry(entry registrystore.CreateEntryRequest, _ int) error {
 // validates access, and creates new attachment records for cross-references.
 // Returns modified content (or nil if unchanged),
 // the list of attachment IDs to link, and any error.
-func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore, userID string, convID uuid.UUID, content json.RawMessage) (json.RawMessage, []uuid.UUID, error) {
+func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore, userID string, convID string, content json.RawMessage) (json.RawMessage, []uuid.UUID, error) {
 	var contentArr []map[string]any
 	if err := json.Unmarshal(content, &contentArr); err != nil {
 		return nil, nil, nil // Not a JSON array, nothing to resolve
@@ -510,7 +510,7 @@ func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore,
 			}
 
 			// Look up the attachment. First try as user (for unlinked attachments they own).
-			attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachmentID)
+			attachment, err := store.GetAttachment(ctx, userID, "", attachmentID)
 			if err != nil {
 				// Could be deleted or forbidden
 				var notFound *registrystore.NotFoundError
@@ -547,7 +547,7 @@ func resolveAttachmentRefs(ctx context.Context, store registrystore.MemoryStore,
 				}
 
 				// Same group — create a new attachment record sharing the same storage key.
-				newAttachment, err := store.CreateAttachment(ctx, userID, uuid.Nil, model.Attachment{
+				newAttachment, err := store.CreateAttachment(ctx, userID, "", model.Attachment{
 					StorageKey:  attachment.StorageKey,
 					Filename:    attachment.Filename,
 					ContentType: attachment.ContentType,
@@ -610,8 +610,8 @@ func handleAttachmentError(c *gin.Context, err error) {
 
 func syncMemory(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}

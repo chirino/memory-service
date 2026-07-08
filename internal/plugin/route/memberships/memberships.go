@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -19,13 +20,13 @@ import (
 )
 
 type membershipResponse struct {
-	ConversationID uuid.UUID         `json:"conversationId"`
+	ConversationID string            `json:"conversationId"`
 	UserID         string            `json:"userId"`
 	AccessLevel    model.AccessLevel `json:"accessLevel"`
 	CreatedAt      time.Time         `json:"createdAt"`
 }
 
-func toMembershipResponse(conversationID uuid.UUID, membership model.ConversationMembership) membershipResponse {
+func toMembershipResponse(conversationID string, membership model.ConversationMembership) membershipResponse {
 	return membershipResponse{
 		ConversationID: conversationID,
 		UserID:         membership.UserID,
@@ -74,8 +75,8 @@ func HandleDeleteMembership(c *gin.Context, store registrystore.MemoryStore, eve
 
 func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -101,8 +102,8 @@ func listMemberships(c *gin.Context, store registrystore.MemoryStore) {
 
 func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -161,8 +162,8 @@ func shareConversation(c *gin.Context, store registrystore.MemoryStore, eventBus
 
 func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}
@@ -221,8 +222,8 @@ func updateMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 
 func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	userID := security.GetUserID(c)
-	convID, err := uuid.Parse(c.Param("conversationId"))
-	if err != nil {
+	convID := strings.TrimSpace(c.Param("conversationId"))
+	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
 		return
 	}

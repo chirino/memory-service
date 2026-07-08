@@ -12,7 +12,6 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -512,12 +511,12 @@ class SubAgentTaskManagerTest {
                     conversationId,
                     ignored ->
                             new Conversation()
-                                    .id(UUID.fromString(conversationId))
+                                    .id(conversationId)
                                     .agentId(agentId)
                                     .startedByConversationId(
                                             startedByConversationId == null
                                                     ? null
-                                                    : UUID.fromString(startedByConversationId)));
+                                                    : startedByConversationId));
         }
 
         @Override

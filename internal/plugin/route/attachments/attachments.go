@@ -116,7 +116,7 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 		}
 		sourceURL := req.SourceURL
 		if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-			attachment, err := store.CreateAttachment(ctx, userID, uuid.Nil, model.Attachment{
+			attachment, err := store.CreateAttachment(ctx, userID, "", model.Attachment{
 				Filename:    filename,
 				ContentType: fileContentType,
 				SourceURL:   &sourceURL,
@@ -161,7 +161,7 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 	expiresAt := time.Now().Add(expiresIn)
 
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		attachment, err := store.CreateAttachment(ctx, userID, uuid.Nil, model.Attachment{
+		attachment, err := store.CreateAttachment(ctx, userID, "", model.Attachment{
 			Filename:    &header.Filename,
 			ContentType: fileContentType,
 			Size:        &result.Size,
@@ -194,7 +194,7 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		attachment, err := store.GetAttachment(ctx, userID, "", attachID)
 		if err != nil {
 			return err
 		}
@@ -239,7 +239,7 @@ func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachSto
 	}
 
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		attachment, err := store.GetAttachment(ctx, userID, "", attachID)
 		if err != nil {
 			return err
 		}
@@ -251,7 +251,7 @@ func deleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachSto
 			}
 		}
 
-		if err := store.DeleteAttachment(ctx, userID, uuid.Nil, attachID); err != nil {
+		if err := store.DeleteAttachment(ctx, userID, "", attachID); err != nil {
 			return err
 		}
 		c.Status(http.StatusNoContent)
@@ -274,7 +274,7 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		attachment, err := store.GetAttachment(ctx, userID, uuid.Nil, attachID)
+		attachment, err := store.GetAttachment(ctx, userID, "", attachID)
 		if err != nil {
 			return err
 		}

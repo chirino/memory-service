@@ -76,7 +76,7 @@ func (ConversationGroup) TableName() string { return "conversation_groups" }
 
 // Conversation represents a single conversation within a group.
 type Conversation struct {
-	ID                      uuid.UUID              `json:"id"                                gorm:"primaryKey;type:uuid"`
+	ID                      string                 `json:"id"                                gorm:"primaryKey;type:text"`
 	Title                   []byte                 `json:"-"                                 gorm:"type:bytea"` // encrypted
 	OwnerUserID             string                 `json:"ownerUserId"                       gorm:"not null"`
 	ClientID                string                 `json:"-"                                 gorm:"not null"`
@@ -85,8 +85,8 @@ type Conversation struct {
 	ConversationGroupID     uuid.UUID              `json:"-"                                 gorm:"not null;type:uuid"`
 	ConversationGroup       *ConversationGroup     `json:"-"                                 gorm:"foreignKey:ConversationGroupID"`
 	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"         gorm:"type:uuid"`
-	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"  gorm:"type:uuid"`
-	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty" gorm:"type:uuid"`
+	ForkedAtConversationID  *string                `json:"forkedAtConversationId,omitempty"  gorm:"type:text"`
+	StartedByConversationID *string                `json:"startedByConversationId,omitempty" gorm:"type:text"`
 	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"        gorm:"type:uuid"`
 	CreatedAt               time.Time              `json:"createdAt"                         gorm:"not null;default:now()"`
 	UpdatedAt               time.Time              `json:"updatedAt"                         gorm:"not null;default:now()"`
@@ -109,7 +109,7 @@ func (ConversationMembership) TableName() string { return "conversation_membersh
 // Entry represents a message or context entry in a conversation.
 type Entry struct {
 	ID                  uuid.UUID  `json:"id"                       gorm:"primaryKey;type:uuid"`
-	ConversationID      uuid.UUID  `json:"conversationId"           gorm:"not null;type:uuid"`
+	ConversationID      string     `json:"conversationId"           gorm:"not null;type:text"`
 	ConversationGroupID uuid.UUID  `json:"-"                        gorm:"primaryKey;type:uuid"`
 	UserID              *string    `json:"userId,omitempty"`
 	ClientID            *string    `json:"clientId,omitempty"`

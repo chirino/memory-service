@@ -80,7 +80,7 @@ Create small endpoint-specific options objects rather than one generic map. Endp
 
 ```java
 public record ListConversationEntriesOptions(
-    UUID conversationId,
+    String conversationId,
     UUID afterCursor,
     UUID upToEntryId,
     Integer limit,
@@ -88,7 +88,7 @@ public record ListConversationEntriesOptions(
     String epoch,
     String forks) {
 
-    public static Builder builder(UUID conversationId) {
+    public static Builder builder(String conversationId) {
         return new Builder(conversationId);
     }
 

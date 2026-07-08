@@ -138,10 +138,7 @@ func (s *Store) Search(ctx context.Context, embedding []float32, conversationGro
 		if err != nil {
 			return nil, err
 		}
-		conversationUUID, err := uuid.Parse(conversationID)
-		if err != nil {
-			return nil, err
-		}
+		conversationUUID := string(conversationID)
 		results = append(results, registryvector.VectorSearchResult{
 			EntryID:        entryUUID,
 			ConversationID: conversationUUID,
@@ -169,7 +166,7 @@ func (s *Store) Upsert(ctx context.Context, entries []registryvector.UpsertReque
 					conversation_group_id = excluded.conversation_group_id,
 					embedding = excluded.embedding,
 					model = excluded.model
-			`, entry.EntryID.String(), entry.ConversationID.String(), entry.ConversationGroupID.String(), vectorBlob, entry.ModelName).Error; err != nil {
+			`, entry.EntryID.String(), string(entry.ConversationID), entry.ConversationGroupID.String(), vectorBlob, entry.ModelName).Error; err != nil {
 				return err
 			}
 		}

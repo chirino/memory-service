@@ -17,7 +17,7 @@ enum RecordStatus {
 }
 
 message RecordRequest {
-  bytes conversation_id = 1;
+  string conversation_id = 1;
   string content = 2;
   bool complete = 3;
 }
@@ -28,7 +28,7 @@ message RecordResponse {
 }
 
 message ReplayRequest {
-  bytes conversation_id = 1;
+  string conversation_id = 1;
 }
 
 message ReplayResponse {
@@ -37,7 +37,7 @@ message ReplayResponse {
 }
 
 message CancelRecordRequest {
-  bytes conversation_id = 1;
+  string conversation_id = 1;
 }
 
 message CancelRecordResponse {
@@ -46,9 +46,9 @@ message CancelRecordResponse {
 }
 
 message CheckRecordingsRequest {
-  repeated bytes conversation_ids = 1;
+  repeated string conversation_ids = 1;
 }
 
 message CheckRecordingsResponse {
-  repeated bytes conversation_ids = 1;
+  repeated string conversation_ids = 1;
 }
