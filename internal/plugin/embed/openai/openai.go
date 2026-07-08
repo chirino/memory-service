@@ -39,17 +39,28 @@ func load(ctx context.Context) (registryembed.Embedder, error) {
 	if cfg == nil || cfg.OpenAIAPIKey == "" {
 		return nil, fmt.Errorf("openai embedder: MEMORY_SERVICE_OPENAI_API_KEY is required")
 	}
-	dim := cfg.OpenAIDimensions
-	if dim <= 0 && strings.EqualFold(cfg.OpenAIModelName, "text-embedding-3-small") {
-		dim = 1536
-	}
-	return &OpenAIEmbedder{
+
+	embedder := &OpenAIEmbedder{
 		apiKey:     cfg.OpenAIAPIKey,
 		model:      cfg.OpenAIModelName,
 		baseURL:    strings.TrimRight(cfg.OpenAIBaseURL, "/"),
 		dimensions: cfg.OpenAIDimensions,
-		defaultDim: dim,
-	}, nil
+		defaultDim: cfg.OpenAIDimensions,
+	}
+
+	// If dimensions not configured, auto-detect by doing a test embedding
+	if cfg.OpenAIDimensions <= 0 {
+		embeddings, err := embedder.EmbedTexts(ctx, []string{"test"})
+		if err != nil {
+			// If auto-detect fails, fall back to a common default (1536)
+			// This allows the service to start even when the embedding API is unreachable
+			embedder.defaultDim = 1536
+		} else if len(embeddings) > 0 && len(embeddings[0]) > 0 {
+			embedder.defaultDim = len(embeddings[0])
+		}
+	}
+
+	return embedder, nil
 }
 
 type OpenAIEmbedder struct {

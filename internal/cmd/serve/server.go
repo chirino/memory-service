@@ -83,6 +83,28 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	security.InitMetrics(metricsLabels)
 
+	// Initialize embedder early so vector store migrations can use the detected dimension
+	var embedder registryembed.Embedder
+	if cfg.SearchSemanticEnabled && cfg.EmbedType != "" && cfg.EmbedType != "none" {
+		embedLoader, err := registryembed.Select(cfg.EmbedType)
+		if err != nil {
+			log.Warn("Embedder not available", "err", err)
+		} else {
+			embedder, err = embedLoader(ctx)
+			if err != nil {
+				log.Warn("Failed to initialize embedder", "err", err)
+			} else if embedder != nil {
+				// Update config with detected dimension for vector store initialization
+				if cfg.OpenAIDimensions <= 0 {
+					cfg.OpenAIDimensions = embedder.Dimension()
+					log.Info("Auto-detected embedding dimension", "dimension", cfg.OpenAIDimensions)
+					// Update the context with the modified config so migrations see the detected dimension
+					ctx = config.WithContext(ctx, cfg)
+				}
+			}
+		}
+	}
+
 	// Run migrations
 	if err := registrymigrate.RunAll(ctx); err != nil {
 		return nil, fmt.Errorf("migrations failed: %w", err)
@@ -201,22 +223,11 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		}
 	}
 
-	// Initialize embedder and vector store (optional, for semantic search)
-	var embedder registryembed.Embedder
+	// Initialize vector store (optional, for semantic search)
+	// Note: embedder was already initialized earlier before migrations
 	var vectorStore registryvector.VectorStore
 	if cfg.VectorType == "sqlite" && cfg.DatastoreType != "sqlite" {
 		return nil, fmt.Errorf("vector-kind=%q requires db-kind=sqlite", cfg.VectorType)
-	}
-	if cfg.SearchSemanticEnabled && cfg.EmbedType != "" && cfg.EmbedType != "none" {
-		embedLoader, err := registryembed.Select(cfg.EmbedType)
-		if err != nil {
-			log.Warn("Embedder not available", "err", err)
-		} else {
-			embedder, err = embedLoader(ctx)
-			if err != nil {
-				log.Warn("Failed to initialize embedder", "err", err)
-			}
-		}
 	}
 	if cfg.SearchSemanticEnabled && cfg.VectorType != "" && cfg.VectorType != "none" {
 		if embedder == nil {

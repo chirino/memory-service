@@ -265,8 +265,10 @@ func effectiveEmbeddingDimension(cfg *config.Config) uint64 {
 		return 1536
 	}
 	if cfg.OpenAIDimensions > 0 {
+		log.Info("Qdrant using explicit dimension", "dimension", cfg.OpenAIDimensions)
 		return uint64(cfg.OpenAIDimensions)
 	}
+	log.Info("Qdrant using default dimension", "embedType", cfg.EmbedType, "defaultDim", 1536)
 	switch strings.ToLower(strings.TrimSpace(cfg.EmbedType)) {
 	case "local":
 		return 384
