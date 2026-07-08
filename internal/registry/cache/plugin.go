@@ -7,7 +7,6 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
-	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
 )
 
@@ -34,9 +33,9 @@ type CachedMemoryEntries struct {
 // MemoryEntriesCache caches context entries for sync operations.
 type MemoryEntriesCache interface {
 	Available() bool
-	Get(ctx context.Context, conversationID uuid.UUID, clientID string) (*CachedMemoryEntries, error)
-	Set(ctx context.Context, conversationID uuid.UUID, clientID string, entries CachedMemoryEntries, ttl time.Duration) error
-	Remove(ctx context.Context, conversationID uuid.UUID, clientID string) error
+	Get(ctx context.Context, conversationID string, clientID string) (*CachedMemoryEntries, error)
+	Set(ctx context.Context, conversationID string, clientID string, entries CachedMemoryEntries, ttl time.Duration) error
+	Remove(ctx context.Context, conversationID string, clientID string) error
 }
 
 // Loader creates a cache from config.

@@ -166,8 +166,8 @@ func (s *QdrantStore) Search(ctx context.Context, embedding []float32, conversat
 			}
 		}
 		if v, ok := payload["conversation_id"]; ok {
-			if id, err := uuid.Parse(v.GetStringValue()); err == nil {
-				r.ConversationID = id
+			if value := strings.TrimSpace(v.GetStringValue()); value != "" {
+				r.ConversationID = string(value)
 			}
 		}
 		results = append(results, r)
@@ -187,7 +187,7 @@ func (s *QdrantStore) Upsert(ctx context.Context, entries []registryvector.Upser
 			},
 			Payload: map[string]*pb.Value{
 				"entry_id":              {Kind: &pb.Value_StringValue{StringValue: e.EntryID.String()}},
-				"conversation_id":       {Kind: &pb.Value_StringValue{StringValue: e.ConversationID.String()}},
+				"conversation_id":       {Kind: &pb.Value_StringValue{StringValue: string(e.ConversationID)}},
 				"conversation_group_id": {Kind: &pb.Value_StringValue{StringValue: e.ConversationGroupID.String()}},
 				"model":                 {Kind: &pb.Value_StringValue{StringValue: e.ModelName}},
 			},

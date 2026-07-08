@@ -590,15 +590,15 @@ func (x *PageInfo) GetNextPageToken() string {
 
 type ConversationSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier (UUID as 16-byte big-endian binary)
-	Id                      []byte      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Conversation identifier
+	Id                      string      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title                   string      `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId             string      `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt               string      `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt               string      `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	LastMessagePreview      string      `protobuf:"bytes,6,opt,name=last_message_preview,json=lastMessagePreview,proto3" json:"last_message_preview,omitempty"`
 	AccessLevel             AccessLevel `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
-	StartedByConversationId []byte      `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
+	StartedByConversationId string      `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte      `protobuf:"bytes,9,opt,name=started_by_entry_id,json=startedByEntryId,proto3" json:"started_by_entry_id,omitempty"`
 	Archived                bool        `protobuf:"varint,10,opt,name=archived,proto3" json:"archived,omitempty"`
 	unknownFields           protoimpl.UnknownFields
@@ -635,11 +635,11 @@ func (*ConversationSummary) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{2}
 }
 
-func (x *ConversationSummary) GetId() []byte {
+func (x *ConversationSummary) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *ConversationSummary) GetTitle() string {
@@ -684,11 +684,11 @@ func (x *ConversationSummary) GetAccessLevel() AccessLevel {
 	return AccessLevel_ACCESS_LEVEL_UNSPECIFIED
 }
 
-func (x *ConversationSummary) GetStartedByConversationId() []byte {
+func (x *ConversationSummary) GetStartedByConversationId() string {
 	if x != nil {
 		return x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ConversationSummary) GetStartedByEntryId() []byte {
@@ -707,8 +707,8 @@ func (x *ConversationSummary) GetArchived() bool {
 
 type ChildConversationSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier (UUID as 16-byte big-endian binary)
-	Id                 []byte      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Conversation identifier
+	Id                 string      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title              string      `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId        string      `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt          string      `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -751,11 +751,11 @@ func (*ChildConversationSummary) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{3}
 }
 
-func (x *ChildConversationSummary) GetId() []byte {
+func (x *ChildConversationSummary) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *ChildConversationSummary) GetTitle() string {
@@ -816,8 +816,8 @@ func (x *ChildConversationSummary) GetArchived() bool {
 
 type Conversation struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Unique identifier (UUID as 16-byte big-endian binary)
-	Id                 []byte      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	// Conversation identifier
+	Id                 string      `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title              string      `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId        string      `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt          string      `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -827,8 +827,8 @@ type Conversation struct {
 	// First parent entry excluded by this fork (empty if root or blank-slate fork)
 	ForkedAtEntryId []byte `protobuf:"bytes,9,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked (empty if root)
-	ForkedAtConversationId  []byte `protobuf:"bytes,10,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
-	StartedByConversationId []byte `protobuf:"bytes,11,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
+	ForkedAtConversationId  string `protobuf:"bytes,10,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
+	StartedByConversationId string `protobuf:"bytes,11,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte `protobuf:"bytes,12,opt,name=started_by_entry_id,json=startedByEntryId,proto3" json:"started_by_entry_id,omitempty"`
 	AgentId                 string `protobuf:"bytes,13,opt,name=agent_id,json=agentId,proto3" json:"agent_id,omitempty"`
 	Archived                bool   `protobuf:"varint,14,opt,name=archived,proto3" json:"archived,omitempty"`
@@ -866,11 +866,11 @@ func (*Conversation) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{4}
 }
 
-func (x *Conversation) GetId() []byte {
+func (x *Conversation) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *Conversation) GetTitle() string {
@@ -922,18 +922,18 @@ func (x *Conversation) GetForkedAtEntryId() []byte {
 	return nil
 }
 
-func (x *Conversation) GetForkedAtConversationId() []byte {
+func (x *Conversation) GetForkedAtConversationId() string {
 	if x != nil {
 		return x.ForkedAtConversationId
 	}
-	return nil
+	return ""
 }
 
-func (x *Conversation) GetStartedByConversationId() []byte {
+func (x *Conversation) GetStartedByConversationId() string {
 	if x != nil {
 		return x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *Conversation) GetStartedByEntryId() []byte {
@@ -959,8 +959,8 @@ func (x *Conversation) GetArchived() bool {
 
 type ConversationMembership struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	UserId         string      `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	AccessLevel    AccessLevel `protobuf:"varint,3,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
 	CreatedAt      string      `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -998,11 +998,11 @@ func (*ConversationMembership) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{5}
 }
 
-func (x *ConversationMembership) GetConversationId() []byte {
+func (x *ConversationMembership) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ConversationMembership) GetUserId() string {
@@ -1028,12 +1028,12 @@ func (x *ConversationMembership) GetCreatedAt() string {
 
 type ConversationForkSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Forked conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Forked conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// First parent entry excluded by this fork
 	ForkedAtEntryId []byte `protobuf:"bytes,3,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked
-	ForkedAtConversationId []byte `protobuf:"bytes,4,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
+	ForkedAtConversationId string `protobuf:"bytes,4,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
 	Title                  string `protobuf:"bytes,5,opt,name=title,proto3" json:"title,omitempty"`
 	CreatedAt              string `protobuf:"bytes,6,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	unknownFields          protoimpl.UnknownFields
@@ -1070,11 +1070,11 @@ func (*ConversationForkSummary) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{6}
 }
 
-func (x *ConversationForkSummary) GetConversationId() []byte {
+func (x *ConversationForkSummary) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ConversationForkSummary) GetForkedAtEntryId() []byte {
@@ -1084,11 +1084,11 @@ func (x *ConversationForkSummary) GetForkedAtEntryId() []byte {
 	return nil
 }
 
-func (x *ConversationForkSummary) GetForkedAtConversationId() []byte {
+func (x *ConversationForkSummary) GetForkedAtConversationId() string {
 	if x != nil {
 		return x.ForkedAtConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ConversationForkSummary) GetTitle() string {
@@ -1298,8 +1298,8 @@ func (x *ListConversationsResponse) GetPageInfo() *PageInfo {
 
 type GetConversationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -1334,17 +1334,17 @@ func (*GetConversationRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{10}
 }
 
-func (x *GetConversationRequest) GetConversationId() []byte {
+func (x *GetConversationRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 type UpdateConversationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte  `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string  `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Title          *string `protobuf:"bytes,2,opt,name=title,proto3,oneof" json:"title,omitempty"`
 	Archived       *bool   `protobuf:"varint,3,opt,name=archived,proto3,oneof" json:"archived,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -1381,11 +1381,11 @@ func (*UpdateConversationRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{11}
 }
 
-func (x *UpdateConversationRequest) GetConversationId() []byte {
+func (x *UpdateConversationRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *UpdateConversationRequest) GetTitle() string {
@@ -1404,8 +1404,8 @@ func (x *UpdateConversationRequest) GetArchived() bool {
 
 type ListForksRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1441,11 +1441,11 @@ func (*ListForksRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{12}
 }
 
-func (x *ListForksRequest) GetConversationId() []byte {
+func (x *ListForksRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ListForksRequest) GetPage() *PageRequest {
@@ -1509,7 +1509,7 @@ func (x *ListForksResponse) GetPageInfo() *PageInfo {
 
 type ListChildConversationsRequest struct {
 	state          protoimpl.MessageState `protogen:"open.v1"`
-	ConversationId []byte                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	ConversationId string                 `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest           `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1545,11 +1545,11 @@ func (*ListChildConversationsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{14}
 }
 
-func (x *ListChildConversationsRequest) GetConversationId() []byte {
+func (x *ListChildConversationsRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ListChildConversationsRequest) GetPage() *PageRequest {
@@ -1633,10 +1633,10 @@ type CreateEntryRequest struct {
 	// it as a fork of forked_at_conversation_id. Optionally provide
 	// forked_at_entry_id to fork at a specific point. When unset, all source
 	// entries are excluded and the new entry become the first entry in the fork.
-	ForkedAtConversationId  []byte  `protobuf:"bytes,7,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3,oneof" json:"forked_at_conversation_id,omitempty"` // UUID as 16-byte big-endian
-	ForkedAtEntryId         []byte  `protobuf:"bytes,8,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3,oneof" json:"forked_at_entry_id,omitempty"`                      // UUID as 16-byte big-endian
+	ForkedAtConversationId  *string `protobuf:"bytes,7,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3,oneof" json:"forked_at_conversation_id,omitempty"`
+	ForkedAtEntryId         []byte  `protobuf:"bytes,8,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3,oneof" json:"forked_at_entry_id,omitempty"` // UUID as 16-byte big-endian
 	AgentId                 *string `protobuf:"bytes,9,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
-	StartedByConversationId []byte  `protobuf:"bytes,10,opt,name=started_by_conversation_id,json=startedByConversationId,proto3,oneof" json:"started_by_conversation_id,omitempty"`
+	StartedByConversationId *string `protobuf:"bytes,10,opt,name=started_by_conversation_id,json=startedByConversationId,proto3,oneof" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte  `protobuf:"bytes,11,opt,name=started_by_entry_id,json=startedByEntryId,proto3,oneof" json:"started_by_entry_id,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
@@ -1707,11 +1707,11 @@ func (x *CreateEntryRequest) GetIndexedContent() string {
 	return ""
 }
 
-func (x *CreateEntryRequest) GetForkedAtConversationId() []byte {
-	if x != nil {
-		return x.ForkedAtConversationId
+func (x *CreateEntryRequest) GetForkedAtConversationId() string {
+	if x != nil && x.ForkedAtConversationId != nil {
+		return *x.ForkedAtConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *CreateEntryRequest) GetForkedAtEntryId() []byte {
@@ -1728,11 +1728,11 @@ func (x *CreateEntryRequest) GetAgentId() string {
 	return ""
 }
 
-func (x *CreateEntryRequest) GetStartedByConversationId() []byte {
-	if x != nil {
-		return x.StartedByConversationId
+func (x *CreateEntryRequest) GetStartedByConversationId() string {
+	if x != nil && x.StartedByConversationId != nil {
+		return *x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *CreateEntryRequest) GetStartedByEntryId() []byte {
@@ -1744,8 +1744,8 @@ func (x *CreateEntryRequest) GetStartedByEntryId() []byte {
 
 type SyncEntriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Single entry containing all messages in the agent's context.
 	// The content array holds all messages; comparison is done against
 	// the flattened content of existing entries in the latest epoch.
@@ -1784,11 +1784,11 @@ func (*SyncEntriesRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{17}
 }
 
-func (x *SyncEntriesRequest) GetConversationId() []byte {
+func (x *SyncEntriesRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *SyncEntriesRequest) GetEntry() *CreateEntryRequest {
@@ -1869,8 +1869,8 @@ func (x *SyncEntriesResponse) GetEntry() *Entry {
 
 type AppendEntryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte              `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string              `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Entry          *CreateEntryRequest `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -1906,11 +1906,11 @@ func (*AppendEntryRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{19}
 }
 
-func (x *AppendEntryRequest) GetConversationId() []byte {
+func (x *AppendEntryRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AppendEntryRequest) GetEntry() *CreateEntryRequest {
@@ -1922,8 +1922,8 @@ func (x *AppendEntryRequest) GetEntry() *CreateEntryRequest {
 
 type ListEntriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Channel        Channel      `protobuf:"varint,2,opt,name=channel,proto3,enum=memory.v1.Channel" json:"channel,omitempty"`
 	EpochFilter    string       `protobuf:"bytes,3,opt,name=epoch_filter,json=epochFilter,proto3" json:"epoch_filter,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
@@ -1967,11 +1967,11 @@ func (*ListEntriesRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{20}
 }
 
-func (x *ListEntriesRequest) GetConversationId() []byte {
+func (x *ListEntriesRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ListEntriesRequest) GetChannel() Channel {
@@ -2063,8 +2063,8 @@ func (x *ListEntriesResponse) GetPageInfo() *PageInfo {
 
 type AdminListEntriesRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Channel        Channel      `protobuf:"varint,2,opt,name=channel,proto3,enum=memory.v1.Channel" json:"channel,omitempty"`
 	EpochFilter    string       `protobuf:"bytes,3,opt,name=epoch_filter,json=epochFilter,proto3" json:"epoch_filter,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,4,opt,name=page,proto3" json:"page,omitempty"`
@@ -2107,11 +2107,11 @@ func (*AdminListEntriesRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{22}
 }
 
-func (x *AdminListEntriesRequest) GetConversationId() []byte {
+func (x *AdminListEntriesRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminListEntriesRequest) GetChannel() Channel {
@@ -2151,8 +2151,8 @@ func (x *AdminListEntriesRequest) GetUpToEntryId() []byte {
 
 type AdminGetConversationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Optional: admin/auditor justification, logged for admin access.
 	Justification *string `protobuf:"bytes,2,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2189,11 +2189,11 @@ func (*AdminGetConversationRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{23}
 }
 
-func (x *AdminGetConversationRequest) GetConversationId() []byte {
+func (x *AdminGetConversationRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminGetConversationRequest) GetJustification() string {
@@ -2418,8 +2418,8 @@ func (x *AdminListConversationsResponse) GetPageInfo() *PageInfo {
 
 type AdminUpdateConversationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Set archive state (true = archive, false = restore)
 	Archived *bool `protobuf:"varint,2,opt,name=archived,proto3,oneof" json:"archived,omitempty"`
 	// Optional: admin justification, logged for admin access.
@@ -2458,11 +2458,11 @@ func (*AdminUpdateConversationRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{27}
 }
 
-func (x *AdminUpdateConversationRequest) GetConversationId() []byte {
+func (x *AdminUpdateConversationRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminUpdateConversationRequest) GetArchived() bool {
@@ -2481,8 +2481,8 @@ func (x *AdminUpdateConversationRequest) GetJustification() string {
 
 type AdminListMembershipsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Optional: admin/auditor justification, logged for admin access.
 	Justification *string `protobuf:"bytes,3,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
@@ -2520,11 +2520,11 @@ func (*AdminListMembershipsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{28}
 }
 
-func (x *AdminListMembershipsRequest) GetConversationId() []byte {
+func (x *AdminListMembershipsRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminListMembershipsRequest) GetPage() *PageRequest {
@@ -2543,8 +2543,8 @@ func (x *AdminListMembershipsRequest) GetJustification() string {
 
 type AdminListForksRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Optional: admin/auditor justification, logged for admin access.
 	Justification *string `protobuf:"bytes,3,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
@@ -2582,11 +2582,11 @@ func (*AdminListForksRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{29}
 }
 
-func (x *AdminListForksRequest) GetConversationId() []byte {
+func (x *AdminListForksRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminListForksRequest) GetPage() *PageRequest {
@@ -2657,8 +2657,8 @@ func (x *AdminListForksResponse) GetPageInfo() *PageInfo {
 
 type AdminListChildConversationsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	// Optional: admin/auditor justification, logged for admin access.
 	Justification *string `protobuf:"bytes,3,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
@@ -2696,11 +2696,11 @@ func (*AdminListChildConversationsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{31}
 }
 
-func (x *AdminListChildConversationsRequest) GetConversationId() []byte {
+func (x *AdminListChildConversationsRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminListChildConversationsRequest) GetPage() *PageRequest {
@@ -2771,14 +2771,14 @@ func (x *AdminListChildConversationsResponse) GetPageInfo() *PageInfo {
 
 type AdminConversationSummary struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Id                      []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title                   string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId             string                 `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt               string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt               string                 `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	LastMessagePreview      string                 `protobuf:"bytes,6,opt,name=last_message_preview,json=lastMessagePreview,proto3" json:"last_message_preview,omitempty"`
 	AccessLevel             AccessLevel            `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
-	StartedByConversationId []byte                 `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
+	StartedByConversationId string                 `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte                 `protobuf:"bytes,9,opt,name=started_by_entry_id,json=startedByEntryId,proto3" json:"started_by_entry_id,omitempty"`
 	Archived                bool                   `protobuf:"varint,10,opt,name=archived,proto3" json:"archived,omitempty"`
 	ClientId                string                 `protobuf:"bytes,11,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
@@ -2817,11 +2817,11 @@ func (*AdminConversationSummary) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{33}
 }
 
-func (x *AdminConversationSummary) GetId() []byte {
+func (x *AdminConversationSummary) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminConversationSummary) GetTitle() string {
@@ -2866,11 +2866,11 @@ func (x *AdminConversationSummary) GetAccessLevel() AccessLevel {
 	return AccessLevel_ACCESS_LEVEL_UNSPECIFIED
 }
 
-func (x *AdminConversationSummary) GetStartedByConversationId() []byte {
+func (x *AdminConversationSummary) GetStartedByConversationId() string {
 	if x != nil {
 		return x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminConversationSummary) GetStartedByEntryId() []byte {
@@ -2903,7 +2903,7 @@ func (x *AdminConversationSummary) GetAgentId() string {
 
 type AdminChildConversationSummary struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Id                      []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title                   string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId             string                 `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt               string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
@@ -2912,7 +2912,7 @@ type AdminChildConversationSummary struct {
 	AccessLevel             AccessLevel            `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
 	StartedByEntryId        []byte                 `protobuf:"bytes,8,opt,name=started_by_entry_id,json=startedByEntryId,proto3" json:"started_by_entry_id,omitempty"`
 	Archived                bool                   `protobuf:"varint,9,opt,name=archived,proto3" json:"archived,omitempty"`
-	StartedByConversationId []byte                 `protobuf:"bytes,10,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
+	StartedByConversationId string                 `protobuf:"bytes,10,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
 	ClientId                string                 `protobuf:"bytes,11,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	AgentId                 *string                `protobuf:"bytes,12,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
 	unknownFields           protoimpl.UnknownFields
@@ -2949,11 +2949,11 @@ func (*AdminChildConversationSummary) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{34}
 }
 
-func (x *AdminChildConversationSummary) GetId() []byte {
+func (x *AdminChildConversationSummary) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminChildConversationSummary) GetTitle() string {
@@ -3012,11 +3012,11 @@ func (x *AdminChildConversationSummary) GetArchived() bool {
 	return false
 }
 
-func (x *AdminChildConversationSummary) GetStartedByConversationId() []byte {
+func (x *AdminChildConversationSummary) GetStartedByConversationId() string {
 	if x != nil {
 		return x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminChildConversationSummary) GetClientId() string {
@@ -3035,21 +3035,21 @@ func (x *AdminChildConversationSummary) GetAgentId() string {
 
 type AdminConversation struct {
 	state                   protoimpl.MessageState `protogen:"open.v1"`
-	Id                      []byte                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
+	Id                      string                 `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
 	Title                   string                 `protobuf:"bytes,2,opt,name=title,proto3" json:"title,omitempty"`
 	OwnerUserId             string                 `protobuf:"bytes,3,opt,name=owner_user_id,json=ownerUserId,proto3" json:"owner_user_id,omitempty"`
 	CreatedAt               string                 `protobuf:"bytes,4,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
 	UpdatedAt               string                 `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	LastMessagePreview      string                 `protobuf:"bytes,6,opt,name=last_message_preview,json=lastMessagePreview,proto3" json:"last_message_preview,omitempty"`
 	AccessLevel             AccessLevel            `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
-	StartedByConversationId []byte                 `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
+	StartedByConversationId string                 `protobuf:"bytes,8,opt,name=started_by_conversation_id,json=startedByConversationId,proto3" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte                 `protobuf:"bytes,9,opt,name=started_by_entry_id,json=startedByEntryId,proto3" json:"started_by_entry_id,omitempty"`
 	Archived                bool                   `protobuf:"varint,10,opt,name=archived,proto3" json:"archived,omitempty"`
 	ClientId                string                 `protobuf:"bytes,11,opt,name=client_id,json=clientId,proto3" json:"client_id,omitempty"`
 	AgentId                 *string                `protobuf:"bytes,12,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
 	Metadata                *structpb.Struct       `protobuf:"bytes,13,opt,name=metadata,proto3" json:"metadata,omitempty"`
 	ForkedAtEntryId         []byte                 `protobuf:"bytes,14,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
-	ForkedAtConversationId  []byte                 `protobuf:"bytes,15,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
+	ForkedAtConversationId  string                 `protobuf:"bytes,15,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
 	HasResponseInProgress   bool                   `protobuf:"varint,16,opt,name=has_response_in_progress,json=hasResponseInProgress,proto3" json:"has_response_in_progress,omitempty"`
 	unknownFields           protoimpl.UnknownFields
 	sizeCache               protoimpl.SizeCache
@@ -3085,11 +3085,11 @@ func (*AdminConversation) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{35}
 }
 
-func (x *AdminConversation) GetId() []byte {
+func (x *AdminConversation) GetId() string {
 	if x != nil {
 		return x.Id
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminConversation) GetTitle() string {
@@ -3134,11 +3134,11 @@ func (x *AdminConversation) GetAccessLevel() AccessLevel {
 	return AccessLevel_ACCESS_LEVEL_UNSPECIFIED
 }
 
-func (x *AdminConversation) GetStartedByConversationId() []byte {
+func (x *AdminConversation) GetStartedByConversationId() string {
 	if x != nil {
 		return x.StartedByConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminConversation) GetStartedByEntryId() []byte {
@@ -3183,11 +3183,11 @@ func (x *AdminConversation) GetForkedAtEntryId() []byte {
 	return nil
 }
 
-func (x *AdminConversation) GetForkedAtConversationId() []byte {
+func (x *AdminConversation) GetForkedAtConversationId() string {
 	if x != nil {
 		return x.ForkedAtConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *AdminConversation) GetHasResponseInProgress() bool {
@@ -3201,8 +3201,8 @@ type Entry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Unique identifier (UUID as 16-byte big-endian binary)
 	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte  `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string  `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	UserId         string  `protobuf:"bytes,3,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	Channel        Channel `protobuf:"varint,4,opt,name=channel,proto3,enum=memory.v1.Channel" json:"channel,omitempty"`
 	Epoch          int64   `protobuf:"varint,5,opt,name=epoch,proto3" json:"epoch,omitempty"`
@@ -3260,11 +3260,11 @@ func (x *Entry) GetId() []byte {
 	return nil
 }
 
-func (x *Entry) GetConversationId() []byte {
+func (x *Entry) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *Entry) GetUserId() string {
@@ -3311,8 +3311,8 @@ func (x *Entry) GetCreatedAt() string {
 
 type ListMembershipsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -3348,11 +3348,11 @@ func (*ListMembershipsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{37}
 }
 
-func (x *ListMembershipsRequest) GetConversationId() []byte {
+func (x *ListMembershipsRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ListMembershipsRequest) GetPage() *PageRequest {
@@ -3416,8 +3416,8 @@ func (x *ListMembershipsResponse) GetPageInfo() *PageInfo {
 
 type ShareConversationRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	UserId         string      `protobuf:"bytes,2,opt,name=user_id,json=userId,proto3" json:"user_id,omitempty"`
 	AccessLevel    AccessLevel `protobuf:"varint,3,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -3454,11 +3454,11 @@ func (*ShareConversationRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{39}
 }
 
-func (x *ShareConversationRequest) GetConversationId() []byte {
+func (x *ShareConversationRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *ShareConversationRequest) GetUserId() string {
@@ -3477,8 +3477,8 @@ func (x *ShareConversationRequest) GetAccessLevel() AccessLevel {
 
 type UpdateMembershipRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string      `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	MemberUserId   string      `protobuf:"bytes,2,opt,name=member_user_id,json=memberUserId,proto3" json:"member_user_id,omitempty"`
 	AccessLevel    AccessLevel `protobuf:"varint,3,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
 	unknownFields  protoimpl.UnknownFields
@@ -3515,11 +3515,11 @@ func (*UpdateMembershipRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{40}
 }
 
-func (x *UpdateMembershipRequest) GetConversationId() []byte {
+func (x *UpdateMembershipRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *UpdateMembershipRequest) GetMemberUserId() string {
@@ -3538,8 +3538,8 @@ func (x *UpdateMembershipRequest) GetAccessLevel() AccessLevel {
 
 type DeleteMembershipRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	MemberUserId   string `protobuf:"bytes,2,opt,name=member_user_id,json=memberUserId,proto3" json:"member_user_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -3575,11 +3575,11 @@ func (*DeleteMembershipRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{41}
 }
 
-func (x *DeleteMembershipRequest) GetConversationId() []byte {
+func (x *DeleteMembershipRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *DeleteMembershipRequest) GetMemberUserId() string {
@@ -3594,8 +3594,8 @@ type OwnershipTransfer struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Transfer identifier (UUID as 16-byte big-endian binary)
 	Id []byte `protobuf:"bytes,1,opt,name=id,proto3" json:"id,omitempty"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId    []byte `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId    string `protobuf:"bytes,2,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	ConversationTitle string `protobuf:"bytes,3,opt,name=conversation_title,json=conversationTitle,proto3" json:"conversation_title,omitempty"`
 	FromUserId        string `protobuf:"bytes,4,opt,name=from_user_id,json=fromUserId,proto3" json:"from_user_id,omitempty"`
 	ToUserId          string `protobuf:"bytes,5,opt,name=to_user_id,json=toUserId,proto3" json:"to_user_id,omitempty"`
@@ -3641,11 +3641,11 @@ func (x *OwnershipTransfer) GetId() []byte {
 	return nil
 }
 
-func (x *OwnershipTransfer) GetConversationId() []byte {
+func (x *OwnershipTransfer) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *OwnershipTransfer) GetConversationTitle() string {
@@ -3827,8 +3827,8 @@ func (x *GetOwnershipTransferRequest) GetTransferId() []byte {
 
 type CreateOwnershipTransferRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	NewOwnerUserId string `protobuf:"bytes,2,opt,name=new_owner_user_id,json=newOwnerUserId,proto3" json:"new_owner_user_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -3864,11 +3864,11 @@ func (*CreateOwnershipTransferRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{46}
 }
 
-func (x *CreateOwnershipTransferRequest) GetConversationId() []byte {
+func (x *CreateOwnershipTransferRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *CreateOwnershipTransferRequest) GetNewOwnerUserId() string {
@@ -4093,8 +4093,8 @@ func (x *SearchEntriesResponse) GetNextCursor() string {
 
 type SearchResult struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Title of the conversation containing this entry
 	ConversationTitle string `protobuf:"bytes,2,opt,name=conversation_title,json=conversationTitle,proto3" json:"conversation_title,omitempty"`
 	// Entry identifier (UUID as 16-byte big-endian binary). Always present for deep-linking.
@@ -4137,11 +4137,11 @@ func (*SearchResult) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{51}
 }
 
-func (x *SearchResult) GetConversationId() []byte {
+func (x *SearchResult) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *SearchResult) GetConversationTitle() string {
@@ -4226,8 +4226,8 @@ func (x *IndexConversationsRequest) GetEntries() []*IndexEntryRequest {
 
 type IndexEntryRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Entry identifier (UUID as 16-byte big-endian binary)
 	EntryId []byte `protobuf:"bytes,2,opt,name=entry_id,json=entryId,proto3" json:"entry_id,omitempty"`
 	// The searchable text for this entry
@@ -4266,11 +4266,11 @@ func (*IndexEntryRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{53}
 }
 
-func (x *IndexEntryRequest) GetConversationId() []byte {
+func (x *IndexEntryRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *IndexEntryRequest) GetEntryId() []byte {
@@ -4440,8 +4440,8 @@ func (x *ListUnindexedEntriesResponse) GetCursor() string {
 
 type UnindexedEntry struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Entry          *Entry `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
@@ -4477,11 +4477,11 @@ func (*UnindexedEntry) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{57}
 }
 
-func (x *UnindexedEntry) GetConversationId() []byte {
+func (x *UnindexedEntry) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *UnindexedEntry) GetEntry() *Entry {
@@ -6964,8 +6964,8 @@ func (x *CapabilitiesResponse) GetSecurity() *CapabilitiesSecurity {
 
 type RecordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary, required in first message)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier (required in first message)
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	Content        string `protobuf:"bytes,2,opt,name=content,proto3" json:"content,omitempty"`    // Content chunk
 	Complete       bool   `protobuf:"varint,3,opt,name=complete,proto3" json:"complete,omitempty"` // Set to true in final message
 	unknownFields  protoimpl.UnknownFields
@@ -7002,11 +7002,11 @@ func (*RecordRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{93}
 }
 
-func (x *RecordRequest) GetConversationId() []byte {
+func (x *RecordRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 func (x *RecordRequest) GetContent() string {
@@ -7077,8 +7077,8 @@ func (x *RecordResponse) GetErrorMessage() string {
 
 type ReplayRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -7113,11 +7113,11 @@ func (*ReplayRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{95}
 }
 
-func (x *ReplayRequest) GetConversationId() []byte {
+func (x *ReplayRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 type ReplayResponse struct {
@@ -7174,8 +7174,8 @@ func (x *ReplayResponse) GetRedirectAddress() string {
 
 type CancelRecordRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifier (UUID as 16-byte big-endian binary)
-	ConversationId []byte `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
+	// Conversation identifier
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	unknownFields  protoimpl.UnknownFields
 	sizeCache      protoimpl.SizeCache
 }
@@ -7210,11 +7210,11 @@ func (*CancelRecordRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{97}
 }
 
-func (x *CancelRecordRequest) GetConversationId() []byte {
+func (x *CancelRecordRequest) GetConversationId() string {
 	if x != nil {
 		return x.ConversationId
 	}
-	return nil
+	return ""
 }
 
 type CancelRecordResponse struct {
@@ -7315,8 +7315,8 @@ func (x *IsEnabledResponse) GetEnabled() bool {
 
 type CheckRecordingsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation identifiers (UUID as 16-byte big-endian binary each)
-	ConversationIds [][]byte `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
+	// Conversation identifiers
+	ConversationIds []string `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -7351,7 +7351,7 @@ func (*CheckRecordingsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{100}
 }
 
-func (x *CheckRecordingsRequest) GetConversationIds() [][]byte {
+func (x *CheckRecordingsRequest) GetConversationIds() []string {
 	if x != nil {
 		return x.ConversationIds
 	}
@@ -7360,8 +7360,8 @@ func (x *CheckRecordingsRequest) GetConversationIds() [][]byte {
 
 type CheckRecordingsResponse struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
-	// Conversation IDs with active recordings (UUID as 16-byte big-endian binary each)
-	ConversationIds [][]byte `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
+	// Conversation IDs with active recordings
+	ConversationIds []string `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
 	unknownFields   protoimpl.UnknownFields
 	sizeCache       protoimpl.SizeCache
 }
@@ -7396,7 +7396,7 @@ func (*CheckRecordingsResponse) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{101}
 }
 
-func (x *CheckRecordingsResponse) GetConversationIds() [][]byte {
+func (x *CheckRecordingsResponse) GetConversationIds() []string {
 	if x != nil {
 		return x.ConversationIds
 	}
@@ -8087,7 +8087,7 @@ func (x *AdminCheckpoint) GetUpdatedAt() *timestamppb.Timestamp {
 type SubscribeEventsRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Optional: subscribe to specific conversation IDs only.
-	ConversationIds [][]byte `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
+	ConversationIds []string `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
 	// Optional: filter by event kinds (conversation, entry, response, membership).
 	Kinds []string `protobuf:"bytes,2,rep,name=kinds,proto3" json:"kinds,omitempty"`
 	// Optional: durable replay cursor. Omit for tail-only mode.
@@ -8138,7 +8138,7 @@ func (*SubscribeEventsRequest) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{112}
 }
 
-func (x *SubscribeEventsRequest) GetConversationIds() [][]byte {
+func (x *SubscribeEventsRequest) GetConversationIds() []string {
 	if x != nil {
 		return x.ConversationIds
 	}
@@ -8285,7 +8285,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\bPageInfo\x12&\n" +
 	"\x0fnext_page_token\x18\x01 \x01(\tR\rnextPageToken\"\x92\x03\n" +
 	"\x13ConversationSummary\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8294,12 +8294,12 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x120\n" +
 	"\x14last_message_preview\x18\x06 \x01(\tR\x12lastMessagePreview\x129\n" +
 	"\faccess_level\x18\a \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\x12;\n" +
-	"\x1astarted_by_conversation_id\x18\b \x01(\fR\x17startedByConversationId\x12-\n" +
+	"\x1astarted_by_conversation_id\x18\b \x01(\tR\x17startedByConversationId\x12-\n" +
 	"\x13started_by_entry_id\x18\t \x01(\fR\x10startedByEntryId\x12\x1a\n" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\"\xda\x02\n" +
 	"\x18ChildConversationSummary\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8311,7 +8311,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x13started_by_entry_id\x18\b \x01(\fR\x10startedByEntryId\x12\x1a\n" +
 	"\barchived\x18\t \x01(\bR\barchived\"\x94\x04\n" +
 	"\fConversation\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8322,21 +8322,21 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\faccess_level\x18\a \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\x12+\n" +
 	"\x12forked_at_entry_id\x18\t \x01(\fR\x0fforkedAtEntryId\x129\n" +
 	"\x19forked_at_conversation_id\x18\n" +
-	" \x01(\fR\x16forkedAtConversationId\x12;\n" +
-	"\x1astarted_by_conversation_id\x18\v \x01(\fR\x17startedByConversationId\x12-\n" +
+	" \x01(\tR\x16forkedAtConversationId\x12;\n" +
+	"\x1astarted_by_conversation_id\x18\v \x01(\tR\x17startedByConversationId\x12-\n" +
 	"\x13started_by_entry_id\x18\f \x01(\fR\x10startedByEntryId\x12\x19\n" +
 	"\bagent_id\x18\r \x01(\tR\aagentId\x12\x1a\n" +
 	"\barchived\x18\x0e \x01(\bR\barchivedJ\x04\b\b\x10\t\"\xba\x01\n" +
 	"\x16ConversationMembership\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x17\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x129\n" +
 	"\faccess_level\x18\x03 \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x04 \x01(\tR\tcreatedAtJ\x04\b\x05\x10\x06\"\xe5\x01\n" +
 	"\x17ConversationForkSummary\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12+\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12+\n" +
 	"\x12forked_at_entry_id\x18\x03 \x01(\fR\x0fforkedAtEntryId\x129\n" +
-	"\x19forked_at_conversation_id\x18\x04 \x01(\fR\x16forkedAtConversationId\x12\x14\n" +
+	"\x19forked_at_conversation_id\x18\x04 \x01(\tR\x16forkedAtConversationId\x12\x14\n" +
 	"\x05title\x18\x05 \x01(\tR\x05title\x12\x1d\n" +
 	"\n" +
 	"created_at\x18\x06 \x01(\tR\tcreatedAtJ\x04\b\x02\x10\x03\"\x93\x01\n" +
@@ -8355,21 +8355,21 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\rconversations\x18\x01 \x03(\v2\x1e.memory.v1.ConversationSummaryR\rconversations\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"A\n" +
 	"\x16GetConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\"\x97\x01\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"\x97\x01\n" +
 	"\x19UpdateConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x19\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\x05title\x18\x02 \x01(\tH\x00R\x05title\x88\x01\x01\x12\x1f\n" +
 	"\barchived\x18\x03 \x01(\bH\x01R\barchived\x88\x01\x01B\b\n" +
 	"\x06_titleB\v\n" +
 	"\t_archived\"g\n" +
 	"\x10ListForksRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\"\x7f\n" +
 	"\x11ListForksResponse\x128\n" +
 	"\x05forks\x18\x01 \x03(\v2\".memory.v1.ConversationForkSummaryR\x05forks\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"t\n" +
 	"\x1dListChildConversationsRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\"\x9d\x01\n" +
 	"\x1eListChildConversationsResponse\x12I\n" +
 	"\rconversations\x18\x01 \x03(\v2#.memory.v1.ChildConversationSummaryR\rconversations\x120\n" +
@@ -8380,11 +8380,11 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\fcontent_type\x18\x04 \x01(\tR\vcontentType\x120\n" +
 	"\acontent\x18\x05 \x03(\v2\x16.google.protobuf.ValueR\acontent\x12,\n" +
 	"\x0findexed_content\x18\x06 \x01(\tH\x00R\x0eindexedContent\x88\x01\x01\x12>\n" +
-	"\x19forked_at_conversation_id\x18\a \x01(\fH\x01R\x16forkedAtConversationId\x88\x01\x01\x120\n" +
+	"\x19forked_at_conversation_id\x18\a \x01(\tH\x01R\x16forkedAtConversationId\x88\x01\x01\x120\n" +
 	"\x12forked_at_entry_id\x18\b \x01(\fH\x02R\x0fforkedAtEntryId\x88\x01\x01\x12\x1e\n" +
 	"\bagent_id\x18\t \x01(\tH\x03R\aagentId\x88\x01\x01\x12@\n" +
 	"\x1astarted_by_conversation_id\x18\n" +
-	" \x01(\fH\x04R\x17startedByConversationId\x88\x01\x01\x122\n" +
+	" \x01(\tH\x04R\x17startedByConversationId\x88\x01\x01\x122\n" +
 	"\x13started_by_entry_id\x18\v \x01(\fH\x05R\x10startedByEntryId\x88\x01\x01B\x12\n" +
 	"\x10_indexed_contentB\x1c\n" +
 	"\x1a_forked_at_conversation_idB\x15\n" +
@@ -8393,7 +8393,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x1b_started_by_conversation_idB\x16\n" +
 	"\x14_started_by_entry_idJ\x04\b\x03\x10\x04\"r\n" +
 	"\x12SyncEntriesRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x123\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
 	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\xb3\x01\n" +
 	"\x13SyncEntriesResponse\x12\x19\n" +
 	"\x05epoch\x18\x01 \x01(\x03H\x00R\x05epoch\x88\x01\x01\x12\x13\n" +
@@ -8403,10 +8403,10 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x06_epochB\b\n" +
 	"\x06_entry\"r\n" +
 	"\x12AppendEntryRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x123\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
 	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\x8d\x02\n" +
 	"\x12ListEntriesRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12,\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
 	"\fepoch_filter\x18\x03 \x01(\tR\vepochFilter\x12*\n" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
@@ -8417,7 +8417,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\aentries\x18\x01 \x03(\v2\x10.memory.v1.EntryR\aentries\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\x92\x02\n" +
 	"\x17AdminListEntriesRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12,\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
 	"\fepoch_filter\x18\x03 \x01(\tR\vepochFilter\x12*\n" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
@@ -8425,7 +8425,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01B\x11\n" +
 	"\x0f_up_to_entry_id\"\x83\x01\n" +
 	"\x1bAdminGetConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12)\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
 	"\rjustification\x18\x02 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
 	"\x0e_justification\"n\n" +
 	"\x14AdminGetEntryRequest\x12\x19\n" +
@@ -8453,18 +8453,18 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\rconversations\x18\x01 \x03(\v2#.memory.v1.AdminConversationSummaryR\rconversations\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xb4\x01\n" +
 	"\x1eAdminUpdateConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x1f\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x1f\n" +
 	"\barchived\x18\x02 \x01(\bH\x00R\barchived\x88\x01\x01\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x01R\rjustification\x88\x01\x01B\v\n" +
 	"\t_archivedB\x10\n" +
 	"\x0e_justification\"\xaf\x01\n" +
 	"\x1bAdminListMembershipsRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
 	"\x0e_justification\"\xa9\x01\n" +
 	"\x15AdminListForksRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
 	"\x0e_justification\"\x84\x01\n" +
@@ -8472,7 +8472,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x05forks\x18\x01 \x03(\v2\".memory.v1.ConversationForkSummaryR\x05forks\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xb6\x01\n" +
 	"\"AdminListChildConversationsRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
 	"\x0e_justification\"\x9d\x01\n" +
@@ -8480,7 +8480,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\bchildren\x18\x01 \x03(\v2(.memory.v1.AdminChildConversationSummaryR\bchildren\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xe1\x03\n" +
 	"\x18AdminConversationSummary\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8489,7 +8489,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x120\n" +
 	"\x14last_message_preview\x18\x06 \x01(\tR\x12lastMessagePreview\x129\n" +
 	"\faccess_level\x18\a \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\x12;\n" +
-	"\x1astarted_by_conversation_id\x18\b \x01(\fR\x17startedByConversationId\x12-\n" +
+	"\x1astarted_by_conversation_id\x18\b \x01(\tR\x17startedByConversationId\x12-\n" +
 	"\x13started_by_entry_id\x18\t \x01(\fR\x10startedByEntryId\x12\x1a\n" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\x12\x1b\n" +
@@ -8497,7 +8497,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\bagent_id\x18\f \x01(\tH\x00R\aagentId\x88\x01\x01B\v\n" +
 	"\t_agent_id\"\xe6\x03\n" +
 	"\x1dAdminChildConversationSummary\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8509,12 +8509,12 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x13started_by_entry_id\x18\b \x01(\fR\x10startedByEntryId\x12\x1a\n" +
 	"\barchived\x18\t \x01(\bR\barchived\x12;\n" +
 	"\x1astarted_by_conversation_id\x18\n" +
-	" \x01(\fR\x17startedByConversationId\x12\x1b\n" +
+	" \x01(\tR\x17startedByConversationId\x12\x1b\n" +
 	"\tclient_id\x18\v \x01(\tR\bclientId\x12\x1e\n" +
 	"\bagent_id\x18\f \x01(\tH\x00R\aagentId\x88\x01\x01B\v\n" +
 	"\t_agent_id\"\xb0\x05\n" +
 	"\x11AdminConversation\x12\x0e\n" +
-	"\x02id\x18\x01 \x01(\fR\x02id\x12\x14\n" +
+	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
 	"\rowner_user_id\x18\x03 \x01(\tR\vownerUserId\x12\x1d\n" +
 	"\n" +
@@ -8523,7 +8523,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"updated_at\x18\x05 \x01(\tR\tupdatedAt\x120\n" +
 	"\x14last_message_preview\x18\x06 \x01(\tR\x12lastMessagePreview\x129\n" +
 	"\faccess_level\x18\a \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\x12;\n" +
-	"\x1astarted_by_conversation_id\x18\b \x01(\fR\x17startedByConversationId\x12-\n" +
+	"\x1astarted_by_conversation_id\x18\b \x01(\tR\x17startedByConversationId\x12-\n" +
 	"\x13started_by_entry_id\x18\t \x01(\fR\x10startedByEntryId\x12\x1a\n" +
 	"\barchived\x18\n" +
 	" \x01(\bR\barchived\x12\x1b\n" +
@@ -8531,12 +8531,12 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\bagent_id\x18\f \x01(\tH\x00R\aagentId\x88\x01\x01\x123\n" +
 	"\bmetadata\x18\r \x01(\v2\x17.google.protobuf.StructR\bmetadata\x12+\n" +
 	"\x12forked_at_entry_id\x18\x0e \x01(\fR\x0fforkedAtEntryId\x129\n" +
-	"\x19forked_at_conversation_id\x18\x0f \x01(\fR\x16forkedAtConversationId\x127\n" +
+	"\x19forked_at_conversation_id\x18\x0f \x01(\tR\x16forkedAtConversationId\x127\n" +
 	"\x18has_response_in_progress\x18\x10 \x01(\bR\x15hasResponseInProgressB\v\n" +
 	"\t_agent_id\"\x91\x02\n" +
 	"\x05Entry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12'\n" +
-	"\x0fconversation_id\x18\x02 \x01(\fR\x0econversationId\x12\x17\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\auser_id\x18\x03 \x01(\tR\x06userId\x12,\n" +
 	"\achannel\x18\x04 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12\x14\n" +
 	"\x05epoch\x18\x05 \x01(\x03R\x05epoch\x12!\n" +
@@ -8545,25 +8545,25 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\n" +
 	"created_at\x18\b \x01(\tR\tcreatedAt\"m\n" +
 	"\x16ListMembershipsRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12*\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\"\x90\x01\n" +
 	"\x17ListMembershipsResponse\x12C\n" +
 	"\vmemberships\x18\x01 \x03(\v2!.memory.v1.ConversationMembershipR\vmemberships\x120\n" +
 	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\x97\x01\n" +
 	"\x18ShareConversationRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x17\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x17\n" +
 	"\auser_id\x18\x02 \x01(\tR\x06userId\x129\n" +
 	"\faccess_level\x18\x03 \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\"\xa3\x01\n" +
 	"\x17UpdateMembershipRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12$\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12$\n" +
 	"\x0emember_user_id\x18\x02 \x01(\tR\fmemberUserId\x129\n" +
 	"\faccess_level\x18\x03 \x01(\x0e2\x16.memory.v1.AccessLevelR\vaccessLevel\"h\n" +
 	"\x17DeleteMembershipRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12$\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12$\n" +
 	"\x0emember_user_id\x18\x02 \x01(\tR\fmemberUserId\"\xda\x01\n" +
 	"\x11OwnershipTransfer\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12'\n" +
-	"\x0fconversation_id\x18\x02 \x01(\fR\x0econversationId\x12-\n" +
+	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12-\n" +
 	"\x12conversation_title\x18\x03 \x01(\tR\x11conversationTitle\x12 \n" +
 	"\ffrom_user_id\x18\x04 \x01(\tR\n" +
 	"fromUserId\x12\x1c\n" +
@@ -8581,7 +8581,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\vtransfer_id\x18\x01 \x01(\fR\n" +
 	"transferId\"t\n" +
 	"\x1eCreateOwnershipTransferRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12)\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
 	"\x11new_owner_user_id\x18\x02 \x01(\tR\x0enewOwnerUserId\"A\n" +
 	"\x1eAcceptOwnershipTransferRequest\x12\x1f\n" +
 	"\vtransfer_id\x18\x01 \x01(\fR\n" +
@@ -8600,7 +8600,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\vnext_cursor\x18\x02 \x01(\tR\n" +
 	"nextCursor\"\xdf\x01\n" +
 	"\fSearchResult\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12-\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12-\n" +
 	"\x12conversation_title\x18\x02 \x01(\tR\x11conversationTitle\x12\x19\n" +
 	"\bentry_id\x18\x03 \x01(\fR\aentryId\x12\x14\n" +
 	"\x05score\x18\x04 \x01(\x02R\x05score\x12\x1e\n" +
@@ -8611,7 +8611,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x19IndexConversationsRequest\x126\n" +
 	"\aentries\x18\x01 \x03(\v2\x1c.memory.v1.IndexEntryRequestR\aentries\"\x80\x01\n" +
 	"\x11IndexEntryRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x19\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x19\n" +
 	"\bentry_id\x18\x02 \x01(\fR\aentryId\x12'\n" +
 	"\x0findexed_content\x18\x03 \x01(\tR\x0eindexedContent\"6\n" +
 	"\x1aIndexConversationsResponse\x12\x18\n" +
@@ -8625,7 +8625,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x06cursor\x18\x02 \x01(\tH\x00R\x06cursor\x88\x01\x01B\t\n" +
 	"\a_cursor\"a\n" +
 	"\x0eUnindexedEntry\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12&\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12&\n" +
 	"\x05entry\x18\x02 \x01(\v2\x10.memory.v1.EntryR\x05entry\"\x90\x03\n" +
 	"\x10PutMemoryRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x03(\tR\tnamespace\x12\x10\n" +
@@ -8894,28 +8894,28 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x04auth\x18\x04 \x01(\v2\x1b.memory.v1.CapabilitiesAuthR\x04auth\x12;\n" +
 	"\bsecurity\x18\x05 \x01(\v2\x1f.memory.v1.CapabilitiesSecurityR\bsecurity\"n\n" +
 	"\rRecordRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\x12\x18\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12\x18\n" +
 	"\acontent\x18\x02 \x01(\tR\acontent\x12\x1a\n" +
 	"\bcomplete\x18\x03 \x01(\bR\bcomplete\"f\n" +
 	"\x0eRecordResponse\x12/\n" +
 	"\x06status\x18\x01 \x01(\x0e2\x17.memory.v1.RecordStatusR\x06status\x12#\n" +
 	"\rerror_message\x18\x02 \x01(\tR\ferrorMessage\"8\n" +
 	"\rReplayRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\"U\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"U\n" +
 	"\x0eReplayResponse\x12\x18\n" +
 	"\acontent\x18\x01 \x01(\tR\acontent\x12)\n" +
 	"\x10redirect_address\x18\x02 \x01(\tR\x0fredirectAddress\">\n" +
 	"\x13CancelRecordRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\fR\x0econversationId\"]\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\"]\n" +
 	"\x14CancelRecordResponse\x12\x1a\n" +
 	"\baccepted\x18\x01 \x01(\bR\baccepted\x12)\n" +
 	"\x10redirect_address\x18\x02 \x01(\tR\x0fredirectAddress\"-\n" +
 	"\x11IsEnabledResponse\x12\x18\n" +
 	"\aenabled\x18\x01 \x01(\bR\aenabled\"C\n" +
 	"\x16CheckRecordingsRequest\x12)\n" +
-	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\"D\n" +
+	"\x10conversation_ids\x18\x01 \x03(\tR\x0fconversationIds\"D\n" +
 	"\x17CheckRecordingsResponse\x12)\n" +
-	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\"u\n" +
+	"\x10conversation_ids\x18\x01 \x03(\tR\x0fconversationIds\"u\n" +
 	"\x17UploadAttachmentRequest\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.memory.v1.UploadMetadataH\x00R\bmetadata\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\t\n" +
@@ -8966,7 +8966,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\n" +
 	"updated_at\x18\x04 \x01(\v2\x1a.google.protobuf.TimestampR\tupdatedAt\"\xab\x03\n" +
 	"\x16SubscribeEventsRequest\x12)\n" +
-	"\x10conversation_ids\x18\x01 \x03(\fR\x0fconversationIds\x12\x14\n" +
+	"\x10conversation_ids\x18\x01 \x03(\tR\x0fconversationIds\x12\x14\n" +
 	"\x05kinds\x18\x02 \x03(\tR\x05kinds\x12&\n" +
 	"\fafter_cursor\x18\x03 \x01(\tH\x00R\vafterCursor\x88\x01\x01\x12\x1b\n" +
 	"\x06detail\x18\x04 \x01(\tH\x01R\x06detail\x88\x01\x01\x120\n" +

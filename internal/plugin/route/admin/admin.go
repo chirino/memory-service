@@ -343,13 +343,14 @@ func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		conv, err := store.AdminGetConversation(ctx, id)
+		conv, err := store.AdminGetConversation(ctx, conversationID)
 		if err != nil {
 			return err
 		}
@@ -361,11 +362,12 @@ func adminGetConversation(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 	var req struct {
 		Archived *bool `json:"archived"`
 	}
@@ -379,15 +381,15 @@ func adminUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
 	}
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		if *req.Archived {
-			if err := store.AdminSetConversationArchived(ctx, id, true); err != nil {
+			if err := store.AdminSetConversationArchived(ctx, conversationID, true); err != nil {
 				return err
 			}
 		} else {
-			if err := store.AdminSetConversationArchived(ctx, id, false); err != nil {
+			if err := store.AdminSetConversationArchived(ctx, conversationID, false); err != nil {
 				return err
 			}
 		}
-		conv, err := store.AdminGetConversation(ctx, id)
+		conv, err := store.AdminGetConversation(ctx, conversationID)
 		if err != nil {
 			return err
 		}
@@ -399,11 +401,12 @@ func adminUpdateConversation(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 
 	forks := strings.ToLower(strings.TrimSpace(c.DefaultQuery("forks", "none")))
 	switch forks {
@@ -433,7 +436,7 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		result, err := store.AdminGetEntries(ctx, id, query)
+		result, err := store.AdminGetEntries(ctx, conversationID, query)
 		if err != nil {
 			return err
 		}
@@ -464,22 +467,23 @@ func adminGetEntry(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		memberships, cursor, err := store.AdminListMemberships(ctx, id, afterCursor, limit)
+		memberships, cursor, err := store.AdminListMemberships(ctx, conversationID, afterCursor, limit)
 		if err != nil {
 			return err
 		}
 		// Wrap memberships to include conversationId (parity with Java AdminResource)
 		type membershipResponse struct {
-			ConversationID uuid.UUID         `json:"conversationId"`
+			ConversationID string            `json:"conversationId"`
 			UserID         string            `json:"userId"`
 			AccessLevel    model.AccessLevel `json:"accessLevel"`
 			CreatedAt      time.Time         `json:"createdAt"`
@@ -487,7 +491,7 @@ func adminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
 		wrapped := make([]membershipResponse, len(memberships))
 		for i, m := range memberships {
 			wrapped[i] = membershipResponse{
-				ConversationID: id,
+				ConversationID: conversationID,
 				UserID:         m.UserID,
 				AccessLevel:    m.AccessLevel,
 				CreatedAt:      m.CreatedAt,
@@ -501,16 +505,17 @@ func adminGetMemberships(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		forks, cursor, err := store.AdminListForks(ctx, id, afterCursor, limit)
+		forks, cursor, err := store.AdminListForks(ctx, conversationID, afterCursor, limit)
 		if err != nil {
 			return err
 		}
@@ -522,16 +527,17 @@ func adminListForks(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func adminListChildConversations(c *gin.Context, store registrystore.MemoryStore) {
-	id, err := uuid.Parse(c.Param("id"))
-	if err != nil {
+	id := strings.TrimSpace(c.Param("id"))
+	if id == "" {
 		c.JSON(http.StatusNotFound, gin.H{"error": "conversation not found"})
 		return
 	}
+	conversationID := string(id)
 	afterCursor := queryPtr(c, "afterCursor")
 	limit := queryInt(c, "limit", 20)
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		children, cursor, err := store.AdminListChildConversations(ctx, id, afterCursor, limit)
+		children, cursor, err := store.AdminListChildConversations(ctx, conversationID, afterCursor, limit)
 		if err != nil {
 			return err
 		}
@@ -543,7 +549,7 @@ func adminListChildConversations(c *gin.Context, store registrystore.MemoryStore
 }
 
 type adminChildConversationSummaryResponse struct {
-	ID                      uuid.UUID         `json:"id"`
+	ID                      string            `json:"id"`
 	Title                   string            `json:"title"`
 	OwnerUserID             string            `json:"ownerUserId"`
 	ClientID                string            `json:"clientId,omitempty"`
@@ -552,7 +558,7 @@ type adminChildConversationSummaryResponse struct {
 	UpdatedAt               time.Time         `json:"updatedAt"`
 	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
-	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByConversationID *string           `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 }
 
@@ -577,7 +583,7 @@ func toAdminChildConversationSummaries(items []registrystore.ConversationSummary
 }
 
 type adminConversationSummaryResponse struct {
-	ID                      uuid.UUID         `json:"id"`
+	ID                      string            `json:"id"`
 	Title                   string            `json:"title"`
 	OwnerUserID             string            `json:"ownerUserId"`
 	ClientID                string            `json:"clientId,omitempty"`
@@ -586,7 +592,7 @@ type adminConversationSummaryResponse struct {
 	UpdatedAt               time.Time         `json:"updatedAt"`
 	Archived                bool              `json:"archived"`
 	AccessLevel             model.AccessLevel `json:"accessLevel"`
-	StartedByConversationID *uuid.UUID        `json:"startedByConversationId,omitempty"`
+	StartedByConversationID *string           `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID        `json:"startedByEntryId,omitempty"`
 }
 
@@ -611,7 +617,7 @@ func toAdminConversationSummaries(items []registrystore.ConversationSummary) []a
 }
 
 type adminConversationResponse struct {
-	ID                      uuid.UUID              `json:"id"`
+	ID                      string                 `json:"id"`
 	Title                   string                 `json:"title"`
 	OwnerUserID             string                 `json:"ownerUserId"`
 	ClientID                string                 `json:"clientId,omitempty"`
@@ -622,8 +628,8 @@ type adminConversationResponse struct {
 	Archived                bool                   `json:"archived"`
 	AccessLevel             model.AccessLevel      `json:"accessLevel"`
 	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
-	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"`
-	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty"`
+	ForkedAtConversationID  *string                `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *string                `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"`
 	HasResponseInProgress   bool                   `json:"hasResponseInProgress,omitempty"`
 }

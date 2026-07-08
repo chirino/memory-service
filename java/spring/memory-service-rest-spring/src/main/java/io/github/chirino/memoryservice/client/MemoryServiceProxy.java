@@ -134,13 +134,12 @@ public class MemoryServiceProxy {
         return execute(
                 api ->
                         api.listConversationsWithHttpInfo(
-                                mode, "all", toUuid(afterCursor), limit, query, archived),
+                                mode, "all", afterCursor, limit, query, archived),
                 HttpStatus.OK);
     }
 
     public ResponseEntity<?> getConversation(String conversationId) {
-        return execute(
-                api -> api.getConversationWithHttpInfo(toUuid(conversationId)), HttpStatus.OK);
+        return execute(api -> api.getConversationWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
     public ResponseEntity<?> updateConversation(String conversationId, String body) {
@@ -148,7 +147,7 @@ public class MemoryServiceProxy {
             UpdateConversationRequest request =
                     OBJECT_MAPPER.readValue(body, UpdateConversationRequest.class);
             return execute(
-                    api -> api.updateConversationWithHttpInfo(toUuid(conversationId), request),
+                    api -> api.updateConversationWithHttpInfo(conversationId, request),
                     HttpStatus.OK);
         } catch (Exception e) {
             LOG.error("Error parsing update conversation request body", e);
@@ -161,8 +160,7 @@ public class MemoryServiceProxy {
         UpdateConversationRequest request = new UpdateConversationRequest();
         request.setArchived(Boolean.TRUE);
         return execute(
-                api -> api.updateConversationWithHttpInfo(toUuid(conversationId), request),
-                HttpStatus.OK);
+                api -> api.updateConversationWithHttpInfo(conversationId, request), HttpStatus.OK);
     }
 
     public ResponseEntity<?> listConversationEntries(
@@ -175,7 +173,7 @@ public class MemoryServiceProxy {
         return execute(
                 api ->
                         api.listConversationEntriesWithHttpInfo(
-                                toUuid(conversationId),
+                                conversationId,
                                 toUuid(afterCursor),
                                 null,
                                 limit,
@@ -188,9 +186,7 @@ public class MemoryServiceProxy {
     public ResponseEntity<?> listConversationForks(
             String conversationId, String afterCursor, Integer limit) {
         return execute(
-                api ->
-                        api.listConversationForksWithHttpInfo(
-                                toUuid(conversationId), toUuid(afterCursor), limit),
+                api -> api.listConversationForksWithHttpInfo(conversationId, afterCursor, limit),
                 HttpStatus.OK);
     }
 
@@ -199,7 +195,7 @@ public class MemoryServiceProxy {
             ShareConversationRequest request =
                     OBJECT_MAPPER.readValue(body, ShareConversationRequest.class);
             return executeSharingApi(
-                    api -> api.shareConversationWithHttpInfo(toUuid(conversationId), request),
+                    api -> api.shareConversationWithHttpInfo(conversationId, request),
                     HttpStatus.CREATED);
         } catch (Exception e) {
             LOG.error("Error parsing share request body", e);
@@ -210,8 +206,7 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> cancelResponse(String conversationId) {
         return execute(
-                api -> api.deleteConversationResponseWithHttpInfo(toUuid(conversationId)),
-                HttpStatus.OK);
+                api -> api.deleteConversationResponseWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
     public ResponseEntity<?> listConversationMemberships(
@@ -219,7 +214,7 @@ public class MemoryServiceProxy {
         return executeSharingApi(
                 api ->
                         api.listConversationMembershipsWithHttpInfo(
-                                toUuid(conversationId), afterCursor, limit),
+                                conversationId, afterCursor, limit),
                 HttpStatus.OK);
     }
 
@@ -231,7 +226,7 @@ public class MemoryServiceProxy {
             return executeSharingApi(
                     api ->
                             api.updateConversationMembershipWithHttpInfo(
-                                    toUuid(conversationId), userId, request),
+                                    conversationId, userId, request),
                     HttpStatus.OK);
         } catch (Exception e) {
             LOG.error("Error parsing update membership request body", e);
@@ -242,7 +237,7 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> deleteConversationMembership(String conversationId, String userId) {
         return executeSharingApiVoid(
-                api -> api.deleteConversationMembershipWithHttpInfo(toUuid(conversationId), userId),
+                api -> api.deleteConversationMembershipWithHttpInfo(conversationId, userId),
                 HttpStatus.NO_CONTENT);
     }
 

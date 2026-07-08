@@ -204,7 +204,7 @@ ResponseRecorderServiceGrpc.ResponseRecorderServiceStub recorder =
     stubs.responseRecorderService();
 
 ReplayRequest request = ReplayRequest.newBuilder()
-    .setConversationId(UuidHelper.toBytes(conversationId))
+    .setConversationId(conversationId)
     .build();
 
 // Convert gRPC stream to Reactor Flux

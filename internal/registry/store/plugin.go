@@ -26,7 +26,7 @@ type PagedEntries struct {
 // SearchResult represents a single search result.
 type SearchResult struct {
 	EntryID           uuid.UUID    `json:"entryId"`
-	ConversationID    uuid.UUID    `json:"conversationId"`
+	ConversationID    string       `json:"conversationId"`
 	ConversationTitle *string      `json:"conversationTitle,omitempty"`
 	Score             float64      `json:"score"`
 	Kind              string       `json:"kind,omitempty"`
@@ -42,7 +42,7 @@ type SearchResults struct {
 
 // ConversationSummary is a lightweight conversation representation for lists.
 type ConversationSummary struct {
-	ID                      uuid.UUID              `json:"id"`
+	ID                      string                 `json:"id"`
 	Title                   string                 `json:"title"`
 	OwnerUserID             string                 `json:"ownerUserId"`
 	ClientID                string                 `json:"-"`
@@ -50,8 +50,8 @@ type ConversationSummary struct {
 	Metadata                map[string]interface{} `json:"metadata"`
 	ConversationGroupID     uuid.UUID              `json:"-"`
 	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"`
-	ForkedAtConversationID  *uuid.UUID             `json:"forkedAtConversationId,omitempty"`
-	StartedByConversationID *uuid.UUID             `json:"startedByConversationId,omitempty"`
+	ForkedAtConversationID  *string                `json:"forkedAtConversationId,omitempty"`
+	StartedByConversationID *string                `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"`
 	CreatedAt               time.Time              `json:"createdAt"`
 	UpdatedAt               time.Time              `json:"updatedAt"`
@@ -61,10 +61,10 @@ type ConversationSummary struct {
 
 // ConversationForkSummary represents a fork in a list.
 type ConversationForkSummary struct {
-	ID                     uuid.UUID  `json:"conversationId"`
+	ID                     string     `json:"conversationId"`
 	Title                  string     `json:"title"`
 	ForkedAtEntryID        *uuid.UUID `json:"forkedAtEntryId,omitempty"`
-	ForkedAtConversationID *uuid.UUID `json:"forkedAtConversationId,omitempty"`
+	ForkedAtConversationID *string    `json:"forkedAtConversationId,omitempty"`
 	CreatedAt              time.Time  `json:"createdAt"`
 }
 
@@ -213,7 +213,7 @@ type AdminCheckpointStore interface {
 
 type DeletedConversationGroup struct {
 	ConversationGroupID uuid.UUID
-	ConversationIDs     []uuid.UUID
+	ConversationIDs     []string
 	MemberUserIDs       []string
 }
 
@@ -234,7 +234,7 @@ type AttachmentUpdate struct {
 type OwnershipTransferDto struct {
 	ID                  uuid.UUID `json:"id"`
 	ConversationGroupID uuid.UUID `json:"-"`
-	ConversationID      uuid.UUID `json:"conversationId"`
+	ConversationID      string    `json:"conversationId"`
 	FromUserID          string    `json:"fromUserId"`
 	ToUserID            string    `json:"toUserId"`
 	CreatedAt           time.Time `json:"createdAt"`
@@ -248,39 +248,39 @@ type MemoryStore interface {
 	InWriteTx(ctx context.Context, fn func(context.Context) error) error
 
 	// Conversations
-	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
+	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.
-	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
+	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived ArchiveFilter) ([]ConversationSummary, *string, error)
-	GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*ConversationDetail, error)
-	UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*ConversationDetail, error)
-	ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error
-	UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error
+	GetConversation(ctx context.Context, userID string, conversationID string) (*ConversationDetail, error)
+	UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadata map[string]interface{}) (*ConversationDetail, error)
+	ArchiveConversation(ctx context.Context, userID string, conversationID string) error
+	UnarchiveConversation(ctx context.Context, userID string, conversationID string) error
 
 	// Memberships
-	ListMemberships(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
-	ShareConversation(ctx context.Context, userID string, conversationID uuid.UUID, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
-	UpdateMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
-	DeleteMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string) error
+	ListMemberships(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
+	ShareConversation(ctx context.Context, userID string, conversationID string, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
+	UpdateMembership(ctx context.Context, userID string, conversationID string, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error)
+	DeleteMembership(ctx context.Context, userID string, conversationID string, memberUserID string) error
 	// GetGroupMemberUserIDs returns all user IDs with membership (any access level) in the given conversation group.
 	GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error)
 
 	// Forks
-	ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
-	ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
+	ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
+	ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
 
 	// Ownership Transfers
 	ListPendingTransfers(ctx context.Context, userID string, role string, afterCursor *string, limit int) ([]OwnershipTransferDto, *string, error)
 	GetTransfer(ctx context.Context, userID string, transferID uuid.UUID) (*OwnershipTransferDto, error)
-	CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*OwnershipTransferDto, error)
+	CreateOwnershipTransfer(ctx context.Context, userID string, conversationID string, toUserID string) (*OwnershipTransferDto, error)
 	AcceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error
 	DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error
 
 	// Entries
-	GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
-	AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
+	GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
+	AppendEntries(ctx context.Context, userID string, conversationID string, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
-	SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)
+	SyncAgentEntry(ctx context.Context, userID string, conversationID string, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)
 
 	// Admin entry access
 	AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (*model.Entry, error)
@@ -298,23 +298,23 @@ type MemoryStore interface {
 
 	// Admin
 	AdminListConversations(ctx context.Context, query AdminConversationQuery) ([]ConversationSummary, *string, error)
-	AdminGetConversation(ctx context.Context, conversationID uuid.UUID) (*ConversationDetail, error)
-	AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error
-	AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query AdminMessageQuery) (*PagedEntries, error)
-	AdminListMemberships(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
-	AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
-	AdminListChildConversations(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
+	AdminGetConversation(ctx context.Context, conversationID string) (*ConversationDetail, error)
+	AdminSetConversationArchived(ctx context.Context, conversationID string, archived bool) error
+	AdminGetEntries(ctx context.Context, conversationID string, query AdminMessageQuery) (*PagedEntries, error)
+	AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
+	AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
+	AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
 	AdminSearchEntries(ctx context.Context, query AdminSearchQuery) (*SearchResults, error)
 	AdminListAttachments(ctx context.Context, query AdminAttachmentQuery) ([]AdminAttachment, *string, error)
 	AdminGetAttachment(ctx context.Context, attachmentID uuid.UUID) (*AdminAttachment, error)
 	AdminDeleteAttachment(ctx context.Context, attachmentID uuid.UUID) error
 
 	// Attachments
-	CreateAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachment model.Attachment) (*model.Attachment, error)
+	CreateAttachment(ctx context.Context, userID string, conversationID string, attachment model.Attachment) (*model.Attachment, error)
 	UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update AttachmentUpdate) (*model.Attachment, error)
-	ListAttachments(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.Attachment, *string, error)
-	GetAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) (*model.Attachment, error)
-	DeleteAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) error
+	ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error)
+	GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error)
+	DeleteAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) error
 
 	// Eviction
 	FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error)
@@ -341,9 +341,9 @@ type CreateEntryRequest struct {
 	Role                    *string         `json:"role,omitempty"`
 	UserID                  *string         `json:"userId,omitempty"`
 	AgentID                 *string         `json:"agentId,omitempty"`
-	ForkedAtConversationID  *uuid.UUID      `json:"forkedAtConversationId,omitempty"`
+	ForkedAtConversationID  *string         `json:"forkedAtConversationId,omitempty"`
 	ForkedAtEntryID         *uuid.UUID      `json:"forkedAtEntryId,omitempty"`
-	StartedByConversationID *uuid.UUID      `json:"startedByConversationId,omitempty"`
+	StartedByConversationID *string         `json:"startedByConversationId,omitempty"`
 	StartedByEntryID        *uuid.UUID      `json:"startedByEntryId,omitempty"`
 }
 
@@ -358,7 +358,7 @@ type SyncResult struct {
 // IndexEntryRequest is the input for indexing an entry.
 type IndexEntryRequest struct {
 	EntryID        uuid.UUID `json:"entryId"`
-	ConversationID uuid.UUID `json:"conversationId"`
+	ConversationID string    `json:"conversationId"`
 	IndexedContent string    `json:"indexedContent"`
 }
 

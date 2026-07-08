@@ -12,7 +12,7 @@ CREATE EXTENSION IF NOT EXISTS vector;
 -- Note: no FK to entries — PostgreSQL does not support FKs referencing partitioned tables.
 CREATE TABLE IF NOT EXISTS entry_embeddings (
     entry_id              UUID NOT NULL,
-    conversation_id       UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    conversation_id       TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     embedding             vector NOT NULL,
     model                 VARCHAR(128) NOT NULL,

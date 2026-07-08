@@ -38,9 +38,9 @@ Place the page under `site/src/pages/docs/<framework>/`.
   - After editing `app.py`, re-verify the line numbers; they shift frequently.
 - Wrap test scenarios in `<TestScenario checkpoint="python/examples/langgraph/doc-checkpoints/<NN>-<name>">` and each curl test in `<CurlTest steps={`...`}>`.
 
-### 3. Use Unique Conversation UUIDs
+### 3. Use Unique Conversation IDs
 
-**Every `<CurlTest>` that references a conversation ID must use a UUID that is unique across ALL tutorial pages.** Collisions cause 403 Forbidden errors when tests run concurrently. Generate fresh UUIDs with `uuidgen` or similar.
+**Every `<CurlTest>` that references a conversation ID must use a value that is unique across ALL tutorial pages.** Conversation IDs are arbitrary strings, but UUID-shaped values remain a convenient way to avoid collisions; generate fresh values with `uuidgen` or similar.
 
 ### 4. Add OpenAI Mock Fixtures
 

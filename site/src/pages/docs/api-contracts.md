@@ -36,13 +36,12 @@ The gRPC API provides:
 
 ## ID Formats
 
-All resource identifiers in the Memory Service API are UUIDs (Universally Unique Identifiers). This applies to:
+Most service-generated resource identifiers in the Memory Service API are UUIDs (Universally Unique Identifiers). This applies to:
 
-- Conversation IDs
 - Entry IDs
 - Fork reference IDs
 
-**Note:** User IDs and client IDs are external identifiers and do not follow UUID format.
+**Note:** Conversation IDs, user IDs, and client IDs are external identifiers and do not have to follow UUID format.
 
 ### REST API (JSON)
 
@@ -54,7 +53,7 @@ xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx
 
 Example: `"550e8400-e29b-41d4-a716-446655440000"`
 
-The OpenAPI specification uses `format: uuid` for these fields, which enables type-safe UUID handling in generated clients.
+The OpenAPI specification uses `format: uuid` for UUID fields, which enables type-safe UUID handling in generated clients. Conversation IDs are plain strings.
 
 ### gRPC API (Protocol Buffers)
 

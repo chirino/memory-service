@@ -19,7 +19,7 @@ func TestLoadAndRoundTrip(t *testing.T) {
 	cache, err := load(config.WithContext(context.Background(), &cfg))
 	require.NoError(t, err)
 
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	expected := sampleEntries()
 	err = cache.Set(context.Background(), conversationID, "agent-a", expected, 0)
 	require.NoError(t, err)
@@ -36,7 +36,7 @@ func TestTTLExpiry(t *testing.T) {
 	cache, err := load(config.WithContext(context.Background(), &cfg))
 	require.NoError(t, err)
 
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	err = cache.Set(context.Background(), conversationID, "agent-a", sampleEntries(), 50*time.Millisecond)
 	require.NoError(t, err)
 
@@ -53,7 +53,7 @@ func TestRemove(t *testing.T) {
 	cache, err := load(config.WithContext(context.Background(), &cfg))
 	require.NoError(t, err)
 
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	err = cache.Set(context.Background(), conversationID, "agent-a", sampleEntries(), 0)
 	require.NoError(t, err)
 	err = cache.Remove(context.Background(), conversationID, "agent-a")
@@ -70,7 +70,7 @@ func TestConcurrentAccess(t *testing.T) {
 	cache, err := load(config.WithContext(context.Background(), &cfg))
 	require.NoError(t, err)
 
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	var wg sync.WaitGroup
 	for i := 0; i < 16; i++ {
 		wg.Add(1)
@@ -93,7 +93,7 @@ func TestOversizedEntryIsSkipped(t *testing.T) {
 	cache, err := load(config.WithContext(context.Background(), &cfg))
 	require.NoError(t, err)
 
-	conversationID := uuid.New()
+	conversationID := string("thread:customer-42")
 	err = cache.Set(context.Background(), conversationID, "agent-a", registrycache.CachedMemoryEntries{
 		Entries: []model.Entry{{
 			ID:             uuid.New(),
@@ -116,7 +116,7 @@ func sampleEntries() registrycache.CachedMemoryEntries {
 		Epoch: &epoch,
 		Entries: []model.Entry{{
 			ID:             uuid.MustParse("11111111-1111-1111-1111-111111111111"),
-			ConversationID: uuid.MustParse("22222222-2222-2222-2222-222222222222"),
+			ConversationID: string("thread:customer-42"),
 			Channel:        model.ChannelContext,
 			ContentType:    "test.v1",
 			Content:        []byte(`[{"type":"text","text":"hello"}]`),

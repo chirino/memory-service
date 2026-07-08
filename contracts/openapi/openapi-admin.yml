@@ -14,11 +14,9 @@ tags:
   - name: System
     description: Health Endpoints
 paths:
-
   ############################################################
   # System
   ############################################################
-
   /v1/health:
     get:
       tags: [System]
@@ -37,7 +35,6 @@ paths:
                     example: ok
         default:
           $ref: '#/components/responses/Error'
-
   /admin/v1/memories:
     get:
       tags: [Admin]
@@ -192,7 +189,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memories/search:
     post:
       tags: [Admin]
@@ -216,7 +212,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-namespaces:
     get:
       tags: [Admin]
@@ -284,7 +279,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-policies:
     get:
       tags: [Admin]
@@ -320,7 +314,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memories/{id}:
     get:
       tags: [Admin]
@@ -377,7 +370,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/entries/{id}:
     get:
       tags: [Admin]
@@ -413,7 +405,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-index/status:
     get:
       tags: [Admin]
@@ -430,7 +421,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-index/trigger:
     post:
       tags: [Admin]
@@ -447,7 +437,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-usage:
     get:
       tags: [Admin]
@@ -482,7 +471,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /admin/v1/memory-usage/top:
     get:
       tags: [Admin]
@@ -525,7 +513,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations:
     get:
       tags: [Admin]
@@ -594,7 +581,6 @@ paths:
           description: Cursor for pagination (UUID format).
           schema:
             type: string
-            format: uuid
         - name: upToEntryId
           in: query
           required: false
@@ -640,7 +626,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/{id}:
     get:
       tags: [Admin]
@@ -653,10 +638,9 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: justification
           in: query
           required: false
@@ -688,10 +672,9 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       requestBody:
         required: false
         content:
@@ -711,7 +694,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/{id}/entries:
     get:
       tags: [Admin]
@@ -724,10 +706,9 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
@@ -794,7 +775,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/{id}/memberships:
     get:
       tags: [Admin]
@@ -806,10 +786,9 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
@@ -853,7 +832,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/{id}/forks:
     get:
       tags: [Admin]
@@ -870,17 +848,15 @@ paths:
         - name: id
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
-          description: Cursor for pagination; returns items after this conversation id (UUID format).
+          description: Cursor for pagination; returns items after this conversation id.
           schema:
             type: string
-            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -918,7 +894,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/{id}/children:
     get:
       tags: [Admin]
@@ -930,13 +905,11 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
           schema:
             type: string
-            format: uuid
         - name: limit
           in: query
           required: false
@@ -964,7 +937,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/conversations/search:
     post:
       tags: [Admin]
@@ -1005,7 +977,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/evict:
     post:
       tags: [Admin]
@@ -1067,7 +1038,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/events:
     get:
       tags: [Admin]
@@ -1142,7 +1112,6 @@ paths:
           description: Replay requested but outbox support is unavailable.
       security:
         - BearerAuth: []
-
   /v1/admin/checkpoints/{clientId}:
     get:
       tags: [Admin]
@@ -1210,11 +1179,9 @@ paths:
           description: Admin role required.
       security:
         - BearerAuth: []
-
   ############################################################
   # Admin Attachments
   ############################################################
-
   /v1/admin/attachments:
     get:
       tags: [Admin]
@@ -1286,7 +1253,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/attachments/{id}:
     get:
       tags: [Admin]
@@ -1353,7 +1319,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/attachments/{id}/content:
     get:
       tags: [Admin]
@@ -1414,7 +1379,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/attachments/{id}/download-url:
     get:
       tags: [Admin]
@@ -1462,11 +1426,9 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Admin Stats
   ############################################################
-
   /v1/admin/stats/request-rate:
     get:
       tags: [Admin Stats]
@@ -1505,7 +1467,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/error-rate:
     get:
       tags: [Admin Stats]
@@ -1544,7 +1505,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/latency-p95:
     get:
       tags: [Admin Stats]
@@ -1583,7 +1543,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/cache-hit-rate:
     get:
       tags: [Admin Stats]
@@ -1622,7 +1581,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/db-pool-utilization:
     get:
       tags: [Admin Stats]
@@ -1662,7 +1620,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/summary:
     get:
       tags: [Admin Stats]
@@ -1691,7 +1648,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/store-latency-p95:
     get:
       tags: [Admin Stats]
@@ -1735,7 +1691,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/admin/stats/store-throughput:
     get:
       tags: [Admin Stats]
@@ -1779,14 +1734,12 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   parameters:
     StatsStart:
       name: start
@@ -1812,7 +1765,6 @@ components:
       schema:
         type: string
         default: "60s"
-
   responses:
     Error:
       description: Error response
@@ -1826,7 +1778,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
-
   schemas:
     ErrorResponse:
       type: object
@@ -1838,7 +1789,6 @@ components:
         details:
           type: object
           additionalProperties: true
-
     AdminCheckpoint:
       type: object
       required: [clientId, contentType, value, updatedAt]
@@ -1852,7 +1802,6 @@ components:
         updatedAt:
           type: string
           format: date-time
-
     AdminCheckpointPutRequest:
       type: object
       required: [contentType, value]
@@ -1861,7 +1810,6 @@ components:
           type: string
         value:
           description: Processor-defined JSON payload to persist for this client checkpoint. Stored encrypted at rest.
-
     AdminMemoryItem:
       type: object
       properties:
@@ -1904,7 +1852,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/MemoryUsageResponse'
           nullable: true
-
     AdminListMemoriesResponse:
       type: object
       properties:
@@ -1915,7 +1862,6 @@ components:
         afterCursor:
           type: string
           nullable: true
-
     AdminSearchMemoriesRequest:
       type: object
       properties:
@@ -1945,7 +1891,6 @@ components:
           type: string
         as_user_id:
           type: string
-
     AdminSearchMemoriesResponse:
       type: object
       properties:
@@ -1953,7 +1898,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/AdminMemoryItem'
-
     AdminMemoryNamespace:
       type: object
       properties:
@@ -1961,7 +1905,6 @@ components:
           type: array
           items:
             type: string
-
     AdminListMemoryNamespacesResponse:
       type: object
       properties:
@@ -1972,7 +1915,6 @@ components:
         afterCursor:
           type: string
           nullable: true
-
     MemoryPolicyBundle:
       type: object
       required:
@@ -1989,7 +1931,6 @@ components:
         filter:
           type: string
           description: Rego source for `package memories.filter`.
-
     MemoryIndexStatusResponse:
       type: object
       properties:
@@ -1997,7 +1938,6 @@ components:
           type: integer
           format: int64
           description: Number of memories where `indexed_at` is null.
-
     MemoryIndexRunStats:
       type: object
       properties:
@@ -2015,7 +1955,6 @@ components:
           type: integer
         failures:
           type: integer
-
     MemoryIndexTriggerResponse:
       type: object
       properties:
@@ -2023,7 +1962,6 @@ components:
           type: boolean
         stats:
           $ref: '#/components/schemas/MemoryIndexRunStats'
-
     MemoryUsageResponse:
       type: object
       properties:
@@ -2033,7 +1971,6 @@ components:
         lastFetchedAt:
           type: string
           format: date-time
-
     TopMemoryUsageItem:
       type: object
       properties:
@@ -2045,7 +1982,6 @@ components:
           type: string
         usage:
           $ref: '#/components/schemas/MemoryUsageResponse'
-
     ListTopMemoryUsageResponse:
       type: object
       properties:
@@ -2053,7 +1989,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/TopMemoryUsageItem'
-
     AccessLevel:
       type: string
       description: Access level of a user for a conversation.
@@ -2062,13 +1997,11 @@ components:
         - manager
         - writer
         - reader
-
     AdminConversationSummary:
       type: object
       properties:
         id:
           type: string
-          format: uuid
           description: Unique identifier for the conversation.
         title:
           type: string
@@ -2097,19 +2030,16 @@ components:
           nullable: true
         startedByConversationId:
           type: string
-          format: uuid
           nullable: true
         startedByEntryId:
           type: string
           format: uuid
           nullable: true
-
     AdminChildConversationSummary:
       type: object
       properties:
         id:
           type: string
-          format: uuid
           description: Unique identifier for the child conversation.
         title:
           type: string
@@ -2134,7 +2064,6 @@ components:
           type: string
           format: uuid
           nullable: true
-
     AdminConversation:
       allOf:
         - $ref: '#/components/schemas/AdminConversationSummary'
@@ -2145,22 +2074,18 @@ components:
               format: uuid
               nullable: true
               description: >-
-                First parent entry excluded by this fork. Null for root
-                conversations and blank-slate forks that inherit no parent entries.
+                First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
             forkedAtConversationId:
               type: string
-              format: uuid
               nullable: true
               description: Conversation ID from which this conversation was forked.
             startedByConversationId:
               type: string
-              format: uuid
               nullable: true
             startedByEntryId:
               type: string
               format: uuid
               nullable: true
-
     AdminActionRequest:
       type: object
       properties:
@@ -2169,7 +2094,6 @@ components:
           description: Reason for the admin action (for audit log).
       example:
         justification: "User requested account cleanup per support ticket #1234"
-
     AdminUpdateConversationRequest:
       allOf:
         - $ref: '#/components/schemas/AdminActionRequest'
@@ -2178,14 +2102,12 @@ components:
             archived:
               type: boolean
               description: Set to `true` to archive or `false` to unarchive the conversation fork tree.
-
     Channel:
       type: string
       description: Logical channel of the entry within the conversation.
       enum:
         - history
         - context
-
     Entry:
       type: object
       required:
@@ -2202,7 +2124,6 @@ components:
           description: Unique identifier for the entry.
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the conversation this entry belongs to.
         userId:
           type: string
@@ -2224,13 +2145,11 @@ components:
         createdAt:
           type: string
           format: date-time
-
     ConversationMembership:
       type: object
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the conversation.
         userId:
           type: string
@@ -2239,25 +2158,21 @@ components:
         createdAt:
           type: string
           format: date-time
-
     ConversationForkSummary:
       type: object
       description: Summary of a forked conversation originating at a given entry.
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the forked conversation.
         forkedAtEntryId:
           type: string
           format: uuid
           nullable: true
           description: >-
-            First parent entry excluded by this fork. Null for blank-slate forks
-            that inherit no parent entries.
+            First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
         forkedAtConversationId:
           type: string
-          format: uuid
           nullable: true
           description: Conversation ID where the fork occurred.
         title:
@@ -2266,7 +2181,6 @@ components:
         createdAt:
           type: string
           format: date-time
-
     AdminSearchEntriesRequest:
       type: object
       required:
@@ -2301,13 +2215,11 @@ components:
           type: boolean
           default: true
           description: Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
-
     SearchResult:
       type: object
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier of the conversation containing this entry.
         conversationTitle:
           type: string
@@ -2326,7 +2238,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/Entry'
           description: The matched entry. Only included when includeEntry is true in the request.
-
     EvictRequest:
       type: object
       required:
@@ -2353,7 +2264,6 @@ components:
           type: string
           description: Reason for the eviction (for audit log).
           example: "Quarterly data cleanup per retention policy"
-
     EvictProgressEvent:
       type: object
       description: Progress event sent via SSE during eviction.
@@ -2364,7 +2274,6 @@ components:
           maximum: 100
           description: Percentage of eviction completed (0-100).
           example: 55
-
     EvictErrorEvent:
       type: object
       description: Error event sent via SSE if eviction fails.
@@ -2373,7 +2282,6 @@ components:
           type: string
           description: Error message describing what went wrong.
           example: "Database connection failed"
-
     TimeSeriesResponse:
       type: object
       description: Time series data returned by admin stats endpoints.
@@ -2395,7 +2303,6 @@ components:
           description: Time series data points.
           items:
             $ref: '#/components/schemas/TimeSeriesDataPoint'
-
     AdminStatsSummaryResponse:
       type: object
       required:
@@ -2417,7 +2324,6 @@ components:
           allOf:
             - $ref: '#/components/schemas/AdminOutboxStats'
           nullable: true
-
     AdminTotalStats:
       type: object
       required:
@@ -2428,7 +2334,6 @@ components:
           format: int64
           minimum: 0
           example: 185
-
     AdminArchivedTotalStats:
       type: object
       required:
@@ -2451,7 +2356,6 @@ components:
           nullable: true
           description: Oldest archive timestamp for that resource type.
           example: "2026-03-25T09:15:00Z"
-
     AdminConversationGroupStats:
       type: object
       required:
@@ -2474,7 +2378,6 @@ components:
           nullable: true
           description: Oldest `updatedAt` timestamp among archived conversations.
           example: "2026-03-25T10:15:00Z"
-
     AdminOutboxStats:
       type: object
       required:
@@ -2492,7 +2395,6 @@ components:
           nullable: true
           description: Oldest retained outbox event timestamp.
           example: "2026-03-25T10:15:00Z"
-
     TimeSeriesDataPoint:
       type: object
       description: A single data point in a time series.
@@ -2509,7 +2411,6 @@ components:
           format: double
           description: Value at this timestamp.
           example: 42.5
-
     MultiSeriesResponse:
       type: object
       description: Multi-series time series data for metrics grouped by a label (e.g., operation type).
@@ -2531,7 +2432,6 @@ components:
           description: Multiple time series, each with a label identifying the group.
           items:
             $ref: '#/components/schemas/LabeledTimeSeries'
-
     LabeledTimeSeries:
       type: object
       description: A labeled time series within a multi-series response.
@@ -2548,7 +2448,6 @@ components:
           description: Time series data points for this label.
           items:
             $ref: '#/components/schemas/TimeSeriesDataPoint'
-
     AdminAttachment:
       type: object
       properties:
@@ -2585,7 +2484,6 @@ components:
         refCount:
           type: integer
           description: Number of attachment records sharing the same storage blob.
-
     AdminDownloadUrlResponse:
       type: object
       properties:
@@ -2595,7 +2493,6 @@ components:
         expiresIn:
           type: integer
           description: URL validity duration in seconds.
-
     PutMemoryRequest:
       type: object
       required:
@@ -2625,7 +2522,6 @@ components:
           type: integer
           format: int64
           description: Optional optimistic concurrency revision expected for the active memory.
-
     MemoryWriteResult:
       type: object
       properties:
@@ -2651,7 +2547,6 @@ components:
         revision:
           type: integer
           format: int64
-
     UpdateMemoryRequest:
       type: object
       properties:

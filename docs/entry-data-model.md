@@ -16,9 +16,9 @@ erDiagram
         timestamp archivedAt
     }
     Conversation {
-        UUID id PK
+        string id PK
         UUID conversationGroupId FK
-        UUID forkedAtConversationId FK
+        string forkedAtConversationId FK
         UUID forkedAtEntryId FK
         string ownerUserId
         string clientId
@@ -30,7 +30,7 @@ erDiagram
     }
     Entry {
         UUID id PK
-        UUID conversationId FK
+        string conversationId FK
         UUID conversationGroupId FK
         string userId
         enum channel
@@ -46,7 +46,7 @@ erDiagram
 | Field | Type | Description |
 |-------|------|-------------|
 | `id` | UUID | Unique entry identifier |
-| `conversationId` | UUID | The conversation this entry belongs to |
+| `conversationId` | string | The conversation this entry belongs to |
 | `conversationGroupId` | UUID | The conversation group (for efficient fork queries) |
 | `userId` | string | Human user who created the entry (null for agent entries) |
 | `channel` | enum | Logical channel: `HISTORY` or `MEMORY` |
@@ -225,9 +225,9 @@ erDiagram
     Conversation ||--o| Conversation : "forked from"
 
     Conversation {
-        UUID id PK
+        string id PK
         UUID conversationGroupId FK
-        UUID forkedAtConversationId FK "parent conversation"
+        string forkedAtConversationId FK "parent conversation"
         UUID forkedAtEntryId FK "first excluded entry of parent"
     }
 ```

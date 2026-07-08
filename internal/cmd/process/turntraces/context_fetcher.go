@@ -24,10 +24,6 @@ func (f grpcAdminContextFetcher) FetchContextEntries(ctx context.Context, conver
 	if f.client == nil {
 		return nil, errors.New("admin entries client is required")
 	}
-	conversationBytes, err := uuidStringBytes(conversationID)
-	if err != nil {
-		return nil, fmt.Errorf("parse conversation ID: %w", err)
-	}
 	upToBytes, err := uuidStringBytes(upToEntryID)
 	if err != nil {
 		return nil, fmt.Errorf("parse upper-bound entry ID: %w", err)
@@ -37,7 +33,7 @@ func (f grpcAdminContextFetcher) FetchContextEntries(ctx context.Context, conver
 	pageToken := ""
 	for {
 		resp, err := f.client.ListEntries(authContext(ctx, f.auth), &pb.AdminListEntriesRequest{
-			ConversationId: conversationBytes,
+			ConversationId: conversationID,
 			Channel:        pb.Channel_CONTEXT,
 			EpochFilter:    "all",
 			UpToEntryId:    upToBytes,

@@ -39,7 +39,7 @@ Each search result now includes conversation metadata at the top level:
 
 | Field | Description |
 |-------|-------------|
-| `conversationId` | UUID of the conversation containing the matched entry |
+| `conversationId` | String ID of the conversation containing the matched entry |
 | `conversationTitle` | Decrypted title of the conversation |
 | `score` | Relevance score (currently 1.0 for keyword search) |
 | `highlights` | Highlighted matching text (reserved for future use) |
@@ -129,7 +129,7 @@ SearchConversationsRequest:
   properties:
     query: string
     topK: integer
-    conversationIds: array[uuid]
+    conversationIds: array[string]
     before: string (ISO 8601 datetime)
 
 SearchResult:
@@ -150,7 +150,7 @@ SearchConversationsRequest:
 
 SearchResult:
   properties:
-    conversationId: uuid
+    conversationId: string
     conversationTitle: string
     score: float
     highlights: string
@@ -208,7 +208,7 @@ message SearchEntriesRequest {
 }
 
 message SearchResult {
-  bytes conversation_id = 1;
+  string conversation_id = 1;
   string conversation_title = 2;
   float score = 3;
   string highlights = 4;

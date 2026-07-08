@@ -10,7 +10,6 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	"github.com/dgraph-io/ristretto/v2"
-	"github.com/google/uuid"
 )
 
 const defaultTTL = 10 * time.Minute
@@ -62,15 +61,15 @@ type entriesCache struct {
 	ttl   time.Duration
 }
 
-func cacheKey(conversationID uuid.UUID, clientID string) string {
-	return fmt.Sprintf("mem-entries:%s:%s", conversationID.String(), strings.TrimSpace(clientID))
+func cacheKey(conversationID string, clientID string) string {
+	return fmt.Sprintf("mem-entries:%s:%s", string(conversationID), strings.TrimSpace(clientID))
 }
 
 func (c *entriesCache) Available() bool {
 	return true
 }
 
-func (c *entriesCache) Get(_ context.Context, conversationID uuid.UUID, clientID string) (*registrycache.CachedMemoryEntries, error) {
+func (c *entriesCache) Get(_ context.Context, conversationID string, clientID string) (*registrycache.CachedMemoryEntries, error) {
 	key := cacheKey(conversationID, clientID)
 	data, ok := c.cache.Get(key)
 	if !ok || len(data) == 0 {
@@ -85,7 +84,7 @@ func (c *entriesCache) Get(_ context.Context, conversationID uuid.UUID, clientID
 	return &cached, nil
 }
 
-func (c *entriesCache) Set(_ context.Context, conversationID uuid.UUID, clientID string, entries registrycache.CachedMemoryEntries, ttl time.Duration) error {
+func (c *entriesCache) Set(_ context.Context, conversationID string, clientID string, entries registrycache.CachedMemoryEntries, ttl time.Duration) error {
 	data, err := json.Marshal(entries)
 	if err != nil {
 		return err
@@ -101,7 +100,7 @@ func (c *entriesCache) Set(_ context.Context, conversationID uuid.UUID, clientID
 	return nil
 }
 
-func (c *entriesCache) Remove(_ context.Context, conversationID uuid.UUID, clientID string) error {
+func (c *entriesCache) Remove(_ context.Context, conversationID string, clientID string) error {
 	c.cache.Del(cacheKey(conversationID, clientID))
 	c.cache.Wait()
 	return nil

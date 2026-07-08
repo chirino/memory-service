@@ -3,7 +3,6 @@ from __future__ import annotations
 import logging
 import queue
 import threading
-import uuid
 from collections.abc import Iterator, Sequence
 
 import grpc
@@ -50,7 +49,6 @@ class GrpcResponseRecorder(BaseResponseRecorder):
     ):
         self._target = target
         self._conversation_id = conversation_id
-        self._conversation_id_bytes = uuid.UUID(conversation_id).bytes
         self._metadata = tuple(metadata)
         self._timeout_seconds = timeout_seconds
         self._queue: queue.Queue[memory_service_pb2.RecordRequest | None] = queue.Queue()
@@ -67,7 +65,7 @@ class GrpcResponseRecorder(BaseResponseRecorder):
 
     def _iter_requests(self) -> Iterator[memory_service_pb2.RecordRequest]:
         self._registered.set()
-        yield memory_service_pb2.RecordRequest(conversation_id=self._conversation_id_bytes)
+        yield memory_service_pb2.RecordRequest(conversation_id=self._conversation_id)
         while True:
             item = self._queue.get()
             if item is None:

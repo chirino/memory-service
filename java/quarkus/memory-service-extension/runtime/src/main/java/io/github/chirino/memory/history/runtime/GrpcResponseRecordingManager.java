@@ -3,7 +3,6 @@ package io.github.chirino.memory.history.runtime;
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelRecordRequest;
 import io.github.chirino.memory.grpc.v1.CancelRecordResponse;
@@ -35,12 +34,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import java.net.UnixDomainSocketAddress;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Set;
-import java.util.UUID;
-import java.util.stream.Collectors;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 
@@ -55,27 +51,6 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
     private static final EventLoopGroup UDS_EVENT_LOOP_GROUP =
             new NioEventLoopGroup(
                     1, new DefaultThreadFactory("memory-service-quarkus-grpc-uds", true));
-
-    private static ByteString toByteString(String uuidStr) {
-        if (uuidStr == null || uuidStr.isBlank()) {
-            return ByteString.EMPTY;
-        }
-        UUID uuid = UUID.fromString(uuidStr);
-        ByteBuffer buffer = ByteBuffer.allocate(16);
-        buffer.putLong(uuid.getMostSignificantBits());
-        buffer.putLong(uuid.getLeastSignificantBits());
-        return ByteString.copyFrom(buffer.array());
-    }
-
-    private static String fromByteString(ByteString bytes) {
-        if (bytes == null || bytes.isEmpty()) {
-            return null;
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
-        long mostSig = buffer.getLong();
-        long leastSig = buffer.getLong();
-        return new UUID(mostSig, leastSig).toString();
-    }
 
     @Inject Instance<SecurityIdentityAssociation> securityIdentityAssociationInstance;
 
@@ -136,7 +111,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                 "Replay session starting for conversationId=%s against gRPC server %s",
                 conversationId, grpcTarget);
         ReplayRequest request =
-                ReplayRequest.newBuilder().setConversationId(toByteString(conversationId)).build();
+                ReplayRequest.newBuilder().setConversationId(conversationId).build();
 
         return replayWithRedirect(request, bearerToken, 1)
                 .onFailure()
@@ -190,9 +165,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
         }
         try {
             CancelRecordRequest request =
-                    CancelRecordRequest.newBuilder()
-                            .setConversationId(toByteString(conversationId))
-                            .build();
+                    CancelRecordRequest.newBuilder().setConversationId(conversationId).build();
             CancelRecordResponse response =
                     cancelWithRedirect(request, bearerToken, 1).await().indefinitely();
             if (!response.getAccepted()) {
@@ -210,17 +183,13 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
         }
 
         try {
-            List<ByteString> byteIds =
-                    conversationIds.stream()
-                            .map(GrpcResponseRecordingManager::toByteString)
-                            .collect(Collectors.toList());
             CheckRecordingsRequest request =
-                    CheckRecordingsRequest.newBuilder().addAllConversationIds(byteIds).build();
+                    CheckRecordingsRequest.newBuilder()
+                            .addAllConversationIds(conversationIds)
+                            .build();
             CheckRecordingsResponse response =
                     stub(bearerToken).checkRecordings(request).await().indefinitely();
-            return response.getConversationIdsList().stream()
-                    .map(GrpcResponseRecordingManager::fromByteString)
-                    .collect(Collectors.toList());
+            return response.getConversationIdsList();
         } catch (Exception e) {
             return handleCheckRecordingsFailure(e);
         }
@@ -460,7 +429,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
     private static final class GrpcResponseRecorder implements RecordingSession {
         private final MutinyResponseRecorderServiceGrpc.MutinyResponseRecorderServiceStub
                 recorderService;
-        private final ByteString conversationIdBytes;
+        private final String conversationIdValue;
         private final String conversationId;
         private final List<RecordRequest> pendingRequests = new ArrayList<>();
         private MultiEmitter<? super RecordRequest> emitter;
@@ -474,7 +443,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                 String conversationId) {
             this.recorderService = recorderService;
             this.conversationId = conversationId;
-            this.conversationIdBytes = toByteString(conversationId);
+            this.conversationIdValue = conversationId;
             LOG.debugf("Recording session starting for conversationId=%s", conversationId);
             startStream();
         }
@@ -488,7 +457,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             RecordRequest.Builder builder = RecordRequest.newBuilder().setContent(token);
 
             if (firstMessage) {
-                builder.setConversationId(conversationIdBytes);
+                builder.setConversationId(conversationIdValue);
                 firstMessage = false;
             }
 
@@ -504,7 +473,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
 
             RecordRequest.Builder builder = RecordRequest.newBuilder().setComplete(true);
             if (firstMessage) {
-                builder.setConversationId(conversationIdBytes);
+                builder.setConversationId(conversationIdValue);
                 firstMessage = false;
             }
             emit(builder.build());

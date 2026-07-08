@@ -25,7 +25,6 @@ import jakarta.ws.rs.WebApplicationException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
-import java.util.UUID;
 import org.jboss.logging.Logger;
 
 /**
@@ -63,7 +62,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             context =
                     conversationsApi(memoryId)
                             .listConversationEntries(
-                                    UUID.fromString(memoryId.toString()),
+                                    memoryId.toString(),
                                     null,
                                     null,
                                     50,
@@ -131,8 +130,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             return;
         }
         try {
-            conversationsApi(memoryId)
-                    .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
+            conversationsApi(memoryId).syncConversationContext(memoryId.toString(), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
             LOG.warnf(
@@ -160,8 +158,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         syncEntry.setContentType("LC4J");
         syncEntry.setContent(new ArrayList<>());
         try {
-            conversationsApi(memoryId)
-                    .syncConversationContext(UUID.fromString(memoryId.toString()), syncEntry);
+            conversationsApi(memoryId).syncConversationContext(memoryId.toString(), syncEntry);
         } catch (WebApplicationException e) {
             String body = readResponseBody(e);
             LOG.warnf(

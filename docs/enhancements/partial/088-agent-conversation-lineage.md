@@ -106,7 +106,6 @@ CreateEntryRequest:
   properties:
     startedByConversationId:
       type: string
-      format: uuid
     startedByEntryId:
       type: string
       format: uuid
@@ -115,7 +114,6 @@ Conversation:
   properties:
     startedByConversationId:
       type: string
-      format: uuid
       nullable: true
     startedByEntryId:
       type: string
@@ -361,7 +359,7 @@ Add nullable columns / fields:
 
 ```sql
 ALTER TABLE conversations
-    ADD COLUMN started_by_conversation_id UUID NULL REFERENCES conversations(id),
+    ADD COLUMN started_by_conversation_id TEXT NULL REFERENCES conversations(id),
     ADD COLUMN started_by_entry_id UUID NULL REFERENCES entries(id);
 
 CREATE INDEX idx_conversations_started_by_conversation_id

@@ -245,7 +245,7 @@ Response `200 OK`:
   "centroid_entries": [
     {
       "entry_id": "<uuid>",
-      "conversation_id": "<uuid>",
+      "conversation_id": "<conversation-id>",
       "content_preview": "We decided to containerize the Python service...",
       "distance": 0.12
     }

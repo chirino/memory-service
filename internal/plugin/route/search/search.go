@@ -546,7 +546,7 @@ func sortSearchResults(results []registrystore.SearchResult) {
 
 func groupResultsByConversation(results []registrystore.SearchResult) []registrystore.SearchResult {
 	best := make([]registrystore.SearchResult, 0, len(results))
-	seen := make(map[uuid.UUID]struct{}, len(results))
+	seen := make(map[string]struct{}, len(results))
 	for _, r := range results {
 		if _, ok := seen[r.ConversationID]; ok {
 			continue
@@ -631,7 +631,7 @@ func indexConversations(c *gin.Context, store registrystore.MemoryStore) {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "entryId is required"})
 				return nil
 			}
-			if entry.ConversationID == uuid.Nil {
+			if entry.ConversationID == "" {
 				c.JSON(http.StatusBadRequest, gin.H{"error": "conversationId is required"})
 				return nil
 			}

@@ -282,7 +282,7 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 		}
 	}
 	entryFilter := eventstream.EntryEventFilterFromQuery(c.Request.URL.Query())
-	entryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+	entryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
 		return readEntryDetail(ctx, store, userID, conversationID, entryID)
 	}
 
@@ -567,7 +567,7 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 
 	switch event.Kind {
 	case "conversation":
-		conversationID, ok := decodeUUIDField(data, "conversation")
+		conversationID, ok := decodeConversationIDField(data, "conversation")
 		if !ok {
 			return event, true
 		}
@@ -582,7 +582,7 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 		event.Data = json.RawMessage(raw)
 		return event, true
 	case "entry":
-		conversationID, ok := decodeUUIDField(data, "conversation")
+		conversationID, ok := decodeConversationIDField(data, "conversation")
 		if !ok {
 			return event, true
 		}
@@ -605,7 +605,7 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 	}
 }
 
-func readConversationDetail(ctx context.Context, store registrystore.MemoryStore, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
+func readConversationDetail(ctx context.Context, store registrystore.MemoryStore, userID string, conversationID string) (*registrystore.ConversationDetail, error) {
 	var conv *registrystore.ConversationDetail
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -615,7 +615,7 @@ func readConversationDetail(ctx context.Context, store registrystore.MemoryStore
 	return conv, err
 }
 
-func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userID string, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userID string, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -669,6 +669,22 @@ func decodeUUIDField(data map[string]any, field string) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+func decodeConversationIDField(data map[string]any, field string) (string, bool) {
+	raw, ok := data[field]
+	if !ok {
+		return "", false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", false
+	}
+	value = strings.TrimSpace(value)
+	if value == "" {
+		return "", false
+	}
+	return string(value), true
 }
 
 func loadUserReplayGroups(ctx context.Context, store registrystore.MemoryStore, userID string) (map[uuid.UUID]bool, error) {

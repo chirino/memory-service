@@ -149,6 +149,13 @@ func uuidPtrString(id *uuid.UUID) string {
 	return id.String()
 }
 
+func conversationIDPtrString(id *string) string {
+	if id == nil {
+		return ""
+	}
+	return string(*id)
+}
+
 func (s *PostgresStore) encrypt(plaintext []byte) ([]byte, error) {
 	if s.enc == nil || plaintext == nil {
 		return plaintext, nil
@@ -174,22 +181,16 @@ func (s *PostgresStore) decryptString(data []byte) string {
 
 // --- Conversations ---
 
-func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	groupID := uuid.New()
-	// For root (non-forked) conversations, use the same UUID for conversation and group
-	// to match Java parity (features reference conversationGroupId in SQL against conversations.id).
-	convID := groupID
-	if forkedAtConversationID != nil {
-		convID = uuid.New()
-	}
+func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+	convID := string(uuid.NewString())
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID uuid.UUID, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *uuid.UUID, forkedAtEntryID *uuid.UUID, startedByConversationID *uuid.UUID, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	db, err := s.writeDBFor(ctx, "create conversation")
 	if err != nil {
 		return nil, err
@@ -212,7 +213,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	if forkedAtConversationID != nil {
 		var sourceConv model.Conversation
 		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
-			return nil, &NotFoundError{Resource: "conversation", ID: forkedAtConversationID.String()}
+			return nil, &NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
 		}
 		// Verify user has access
 		if _, err := s.requireAccess(ctx, userID, sourceConv.ConversationGroupID, model.AccessLevelReader); err != nil {
@@ -233,7 +234,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			return nil, findResult.Error
 		}
 		if findResult.RowsAffected == 0 {
-			return nil, &NotFoundError{Resource: "conversation", ID: startedByConversationID.String()}
+			return nil, &NotFoundError{Resource: "conversation", ID: string(*startedByConversationID)}
 		}
 		if _, err := s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 			return nil, err
@@ -247,15 +248,15 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 				return nil, &ValidationError{Field: "startedByEntryId", Message: "startedByEntryId must be visible in the parent conversation ancestry"}
 			}
 		}
-		actualGroupID = convID
+		actualGroupID = groupID
 		ownerUserID = parentConv.OwnerUserID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&group).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createStartedGroup", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
-				"startedByConversationID", uuidPtrString(startedByConversationID),
+				"startedByConversationID", conversationIDPtrString(startedByConversationID),
 				"startedByEntryID", uuidPtrString(startedByEntryID),
 			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
@@ -264,20 +265,18 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
 		}
 	} else {
-		// New root conversation — create a group; for non-forked, use convID as groupID for Java parity
-		actualGroupID = convID
+		actualGroupID = groupID
 		group := model.ConversationGroup{ID: actualGroupID, CreatedAt: now}
 		if err := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&group).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createGroup", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
-				"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+				"forkedAtConversationID", conversationIDPtrString(forkedAtConversationID),
 				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
-		_ = groupID // unused for root conversations when convID is specified
 	}
 
 	encTitle, err := s.encrypt([]byte(title))
@@ -304,9 +303,9 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	if createResult.Error != nil {
 		logDuplicateKey("createConversationWithID:createConversation", createResult.Error,
 			"userID", userID,
-			"conversationID", convID.String(),
+			"conversationID", string(convID),
 			"conversationGroupID", actualGroupID.String(),
-			"forkedAtConversationID", uuidPtrString(forkedAtConversationID),
+			"forkedAtConversationID", conversationIDPtrString(forkedAtConversationID),
 			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 		)
 		return nil, fmt.Errorf("failed to create conversation: %w", createResult.Error)
@@ -358,7 +357,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		if err := db.Create(&membershipsToCopy).Error; err != nil {
 			logDuplicateKey("createConversationWithID:createMembership", err,
 				"userID", userID,
-				"conversationID", convID.String(),
+				"conversationID", string(convID),
 				"conversationGroupID", actualGroupID.String(),
 			)
 			return nil, fmt.Errorf("failed to create membership: %w", err)
@@ -446,7 +445,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 	tx = tx.Order("c.created_at DESC").Limit(queryLimit)
 
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -454,8 +453,8 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -504,19 +503,19 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
-func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationDetail, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	access, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader)
 	if err != nil {
@@ -544,13 +543,13 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 	}, nil
 }
 
-func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, conversationID uuid.UUID, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadata map[string]interface{}) (*registrystore.ConversationDetail, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
@@ -577,13 +576,13 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 	return s.GetConversation(ctx, userID, conversationID)
 }
 
-func (s *PostgresStore) ArchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+func (s *PostgresStore) ArchiveConversation(ctx context.Context, userID string, conversationID string) error {
 	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -610,13 +609,13 @@ func (s *PostgresStore) ArchiveConversation(ctx context.Context, userID string, 
 	})
 }
 
-func (s *PostgresStore) UnarchiveConversation(ctx context.Context, userID string, conversationID uuid.UUID) error {
+func (s *PostgresStore) UnarchiveConversation(ctx context.Context, userID string, conversationID string) error {
 	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NOT NULL", conversationID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -643,7 +642,7 @@ func (s *PostgresStore) UnarchiveConversation(ctx context.Context, userID string
 
 // --- Memberships ---
 
-func (s *PostgresStore) ListMemberships(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
+func (s *PostgresStore) ListMemberships(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
 	if err != nil {
 		return nil, nil, err
@@ -672,7 +671,7 @@ func (s *PostgresStore) ListMemberships(ctx context.Context, userID string, conv
 	return memberships, cursor, nil
 }
 
-func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, conversationID uuid.UUID, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
+func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, conversationID string, targetUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
 		return nil, err
@@ -701,7 +700,7 @@ func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, co
 	return &membership, nil
 }
 
-func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
+func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, conversationID string, memberUserID string, accessLevel model.AccessLevel) (*model.ConversationMembership, error) {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
 		return nil, err
@@ -738,7 +737,7 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 	return &m, nil
 }
 
-func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, conversationID uuid.UUID, memberUserID string) error {
+func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, conversationID string, memberUserID string) error {
 	groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelManager)
 	if err != nil {
 		return err
@@ -776,13 +775,13 @@ func (s *PostgresStore) GetGroupMemberUserIDs(ctx context.Context, conversationG
 
 // --- Forks ---
 
-func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !found {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
@@ -821,27 +820,27 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 
 	var cursor *string
 	if hasMore && len(forks) > 0 {
-		c := forks[len(forks)-1].ID.String()
+		c := string(forks[len(forks)-1].ID)
 		cursor = &c
 	}
 	return forks, cursor, nil
 }
 
-func (s *PostgresStore) ListChildConversations(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+func (s *PostgresStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	var conv model.Conversation
 	findResult := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if findResult.Error != nil {
 		return nil, nil, findResult.Error
 	}
 	if findResult.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
 	}
 
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -849,8 +848,8 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -895,7 +894,7 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 	}
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
@@ -969,21 +968,21 @@ func (s *PostgresStore) GetTransfer(ctx context.Context, userID string, transfer
 }
 
 // resolveConversationID finds the primary (non-deleted) conversation ID for a group.
-func (s *PostgresStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) uuid.UUID {
+func (s *PostgresStore) resolveConversationID(ctx context.Context, groupID uuid.UUID) string {
 	conv, found, _ := s.lookupConversation(ctx, "conversation_group_id = ? AND archived_at IS NULL", groupID)
 	if !found {
-		return uuid.Nil
+		return ""
 	}
 	return conv.ID
 }
 
-func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID uuid.UUID, toUserID string) (*registrystore.OwnershipTransferDto, error) {
+func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID string, conversationID string, toUserID string) (*registrystore.OwnershipTransferDto, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return nil, err
@@ -1096,14 +1095,14 @@ func (s *PostgresStore) DeleteTransfer(ctx context.Context, userID string, trans
 
 // --- Entries ---
 
-func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID uuid.UUID, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	result := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, err
@@ -1244,7 +1243,7 @@ func (s *PostgresStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID
 	return &entry, nil
 }
 
-func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conversationID uuid.UUID, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
+func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	db, err := s.writeDBFor(ctx, "append entries")
 	if err != nil {
 		return nil, err
@@ -1257,9 +1256,9 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 	if convResult.RowsAffected == 0 {
 		// Auto-create conversation if it doesn't exist (Java parity).
 		// Check first entry for fork metadata.
-		var forkedAtConvID *uuid.UUID
+		var forkedAtConvID *string
 		var forkedAtEntryID *uuid.UUID
-		var startedByConversationID *uuid.UUID
+		var startedByConversationID *string
 		var startedByEntryID *uuid.UUID
 		if len(entries) > 0 {
 			forkedAtConvID = entries[0].ForkedAtConversationID
@@ -1282,11 +1281,11 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			}
 			log.Warn("append auto-create race detected",
 				"userID", userID,
-				"conversationID", conversationID.String(),
+				"conversationID", string(conversationID),
 				"constraint", pgErr.ConstraintName,
 				"table", pgErr.TableName,
 				"detail", pgErr.Detail,
-				"forkedAtConversationID", uuidPtrString(forkedAtConvID),
+				"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
 				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 			)
 			loaded := false
@@ -1433,7 +1432,7 @@ func deriveTitleFromContent(content string) string {
 	return ""
 }
 
-func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conversationID uuid.UUID, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
+func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conversationID string, entry registrystore.CreateEntryRequest, clientID string, agentID *string) (*registrystore.SyncResult, error) {
 	db, err := s.writeDBFor(ctx, "sync agent entry")
 	if err != nil {
 		return nil, err
@@ -1564,7 +1563,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
-func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID uuid.UUID, agentID *string) (model.Conversation, error) {
+func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (model.Conversation, error) {
 	db, err := s.writeDBFor(ctx, "auto-create conversation")
 	if err != nil {
 		return model.Conversation{}, err
@@ -1579,7 +1578,7 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 	if err := db.Create(&group).Error; err != nil {
 		logDuplicateKey("autoCreateConversation:createGroup", err,
 			"userID", userID,
-			"conversationID", conversationID.String(),
+			"conversationID", string(conversationID),
 			"conversationGroupID", groupID.String(),
 		)
 		return model.Conversation{}, fmt.Errorf("failed to create conversation group: %w", err)
@@ -1599,7 +1598,7 @@ func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID strin
 		_ = db.Delete(&group).Error
 		logDuplicateKey("autoCreateConversation:createConversation", err,
 			"userID", userID,
-			"conversationID", conversationID.String(),
+			"conversationID", string(conversationID),
 			"conversationGroupID", groupID.String(),
 		)
 		if _, ok := pgUniqueViolation(err); ok {
@@ -1726,7 +1725,7 @@ func (s *PostgresStore) FetchSearchResultDetails(ctx context.Context, userID str
 	}
 	type row struct {
 		EntryID           uuid.UUID `gorm:"column:entry_id"`
-		ConversationID    uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID    string    `gorm:"column:conversation_id"`
 		ConversationTitle []byte    `gorm:"column:conversation_title"`
 		IndexedContent    string    `gorm:"column:indexed_content"`
 	}
@@ -1843,7 +1842,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 	`
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
-		ConversationID      uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID      string    `gorm:"column:conversation_id"`
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
 		ConversationTitle   []byte    `gorm:"column:conversation_title"`
 		Score               float64   `gorm:"column:score"`
@@ -1855,7 +1854,7 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 	}
 
 	results := make([]registrystore.SearchResult, 0, len(rows))
-	seenConversation := map[uuid.UUID]struct{}{}
+	seenConversation := map[string]struct{}{}
 	for _, r := range rows {
 		if groupByConversation {
 			if _, exists := seenConversation[r.ConversationID]; exists {
@@ -1904,7 +1903,7 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 	const selectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
 
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -1912,8 +1911,8 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -2001,19 +2000,19 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
-func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID string) (*registrystore.ConversationDetail, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
@@ -2036,13 +2035,13 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 	}, nil
 }
 
-func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conversationID uuid.UUID, archived bool) error {
+func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conversationID string, archived bool) error {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if archived {
 		now := time.Now()
@@ -2058,9 +2057,9 @@ func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conver
 	return nil
 }
 
-func (s *PostgresStore) AdminListChildConversations(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
+func (s *PostgresStore) AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
 	type row struct {
-		ID                      uuid.UUID              `gorm:"column:id"`
+		ID                      string                 `gorm:"column:id"`
 		Title                   []byte                 `gorm:"column:title"`
 		OwnerUserID             string                 `gorm:"column:owner_user_id"`
 		ClientID                string                 `gorm:"column:client_id"`
@@ -2068,8 +2067,8 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 		Metadata                map[string]interface{} `gorm:"column:metadata;serializer:json"`
 		ConversationGroupID     uuid.UUID              `gorm:"column:conversation_group_id"`
 		ForkedAtEntryID         *uuid.UUID             `gorm:"column:forked_at_entry_id"`
-		ForkedAtConversationID  *uuid.UUID             `gorm:"column:forked_at_conversation_id"`
-		StartedByConversationID *uuid.UUID             `gorm:"column:started_by_conversation_id"`
+		ForkedAtConversationID  *string                `gorm:"column:forked_at_conversation_id"`
+		StartedByConversationID *string                `gorm:"column:started_by_conversation_id"`
 		StartedByEntryID        *uuid.UUID             `gorm:"column:started_by_entry_id"`
 		CreatedAt               time.Time              `gorm:"column:created_at"`
 		UpdatedAt               time.Time              `gorm:"column:updated_at"`
@@ -2114,19 +2113,19 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 	}
 	var cursor *string
 	if hasMore && len(summaries) > 0 {
-		c := summaries[len(summaries)-1].ID.String()
+		c := string(summaries[len(summaries)-1].ID)
 		cursor = &c
 	}
 	return summaries, cursor, nil
 }
 
-func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID uuid.UUID, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
+func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID string, query registrystore.AdminMessageQuery) (*registrystore.PagedEntries, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	limit := query.Limit
@@ -2179,13 +2178,13 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID uuid
 	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
 }
 
-func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
+func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !found {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	tx := s.db.WithContext(ctx).Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC")
@@ -2211,13 +2210,13 @@ func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID
 	return memberships, cursor, nil
 }
 
-func (s *PostgresStore) AdminListForks(ctx context.Context, conversationID uuid.UUID, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *PostgresStore) AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ?", conversationID)
 	if err != nil {
 		return nil, nil, err
 	}
 	if !found {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	tx := s.db.WithContext(ctx).
@@ -2253,7 +2252,7 @@ func (s *PostgresStore) AdminListForks(ctx context.Context, conversationID uuid.
 
 	var cursor *string
 	if hasMore && len(forks) > 0 {
-		c := forks[len(forks)-1].ID.String()
+		c := string(forks[len(forks)-1].ID)
 		cursor = &c
 	}
 	return forks, cursor, nil
@@ -2286,7 +2285,7 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 
 	type searchRow struct {
 		EntryID             uuid.UUID `gorm:"column:entry_id"`
-		ConversationID      uuid.UUID `gorm:"column:conversation_id"`
+		ConversationID      string    `gorm:"column:conversation_id"`
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
 		ConversationTitle   []byte    `gorm:"column:conversation_title"`
 		Score               float64   `gorm:"column:score"`
@@ -2458,7 +2457,7 @@ func (s *PostgresStore) LoadDeletedConversationGroups(ctx context.Context, group
 
 	type conversationRow struct {
 		ConversationGroupID uuid.UUID `gorm:"column:conversation_group_id"`
-		ID                  uuid.UUID `gorm:"column:id"`
+		ID                  string    `gorm:"column:id"`
 	}
 	var conversations []conversationRow
 	if err := s.db.WithContext(ctx).
@@ -2639,7 +2638,7 @@ func valueOrEmpty(ptr *string) string {
 }
 
 type forkAncestor struct {
-	ConversationID uuid.UUID
+	ConversationID string
 	StopAtEntryID  *uuid.UUID
 }
 
@@ -2733,7 +2732,7 @@ func (s *PostgresStore) buildAncestryStack(ctx context.Context, target model.Con
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
 	}
 
-	byID := make(map[uuid.UUID]model.Conversation, len(conversations))
+	byID := make(map[string]model.Conversation, len(conversations))
 	for _, conv := range conversations {
 		byID[conv.ID] = conv
 	}
@@ -3077,10 +3076,10 @@ func isPrefixContent(existing, incoming []any) bool {
 
 // --- Attachments ---
 
-func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachment model.Attachment) (*model.Attachment, error) {
+func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, conversationID string, attachment model.Attachment) (*model.Attachment, error) {
 	// conversationID is optional; when not provided, create an unlinked attachment
 	// owned by the uploader.
-	if conversationID != uuid.Nil {
+	if conversationID != "" {
 		if _, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelWriter); err != nil {
 			return nil, err
 		}
@@ -3146,10 +3145,10 @@ func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, att
 	return &attachment, nil
 }
 
-func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conversationID uuid.UUID, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
+func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
 	tx := s.db.WithContext(ctx).Where("archived_at IS NULL")
 
-	if conversationID == uuid.Nil {
+	if conversationID == "" {
 		// Contract path does not include conversation id; list caller-owned unlinked attachments.
 		tx = tx.Where("user_id = ? AND entry_id IS NULL", userID)
 	} else {
@@ -3185,7 +3184,7 @@ func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conv
 	return attachments, cursor, nil
 }
 
-func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) (*model.Attachment, error) {
+func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var attachment model.Attachment
 	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
 		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
@@ -3200,7 +3199,7 @@ func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conver
 	}
 
 	tx := s.db.WithContext(ctx).Where("id = ?", *attachment.EntryID)
-	if conversationID != uuid.Nil {
+	if conversationID != "" {
 		tx = tx.Where("conversation_id = ?", conversationID)
 	}
 	var entries []model.Entry
@@ -3234,7 +3233,7 @@ func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conver
 	return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 }
 
-func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, conversationID uuid.UUID, attachmentID uuid.UUID) error {
+func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) error {
 	attachment, err := s.GetAttachment(ctx, userID, conversationID, attachmentID)
 	if err != nil {
 		return err
@@ -3269,13 +3268,13 @@ func (s *PostgresStore) lookupConversation(ctx context.Context, where string, ar
 	return conv, result.RowsAffected > 0, nil
 }
 
-func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversationID uuid.UUID, minLevel model.AccessLevel) (uuid.UUID, error) {
+func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversationID string, minLevel model.AccessLevel) (uuid.UUID, error) {
 	conv, found, err := s.lookupConversation(ctx, "id = ? AND archived_at IS NULL", conversationID)
 	if err != nil {
 		return uuid.Nil, err
 	}
 	if !found {
-		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: conversationID.String()}
+		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, minLevel); err != nil {
 		return uuid.Nil, err

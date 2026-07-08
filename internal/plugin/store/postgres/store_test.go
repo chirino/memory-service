@@ -15,7 +15,6 @@ import (
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
-	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -302,7 +301,7 @@ func TestSearchEntriesGroupByConversation(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, grouped.Data, 2)
 
-	seen := map[uuid.UUID]struct{}{}
+	seen := map[string]struct{}{}
 	for _, r := range grouped.Data {
 		seen[r.ConversationID] = struct{}{}
 	}

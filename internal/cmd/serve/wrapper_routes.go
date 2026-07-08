@@ -301,40 +301,40 @@ func (p *proxyAPIServer) SearchConversations(c *gin.Context) {
 func (p *proxyAPIServer) ListUnindexedEntries(c *gin.Context, _ generatedapi.ListUnindexedEntriesParams) {
 	routesearch.HandleListUnindexed(c, p.store)
 }
-func (p *proxyAPIServer) GetConversation(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) GetConversation(c *gin.Context, _ string) {
 	routeconversations.HandleGetConversation(c, p.store)
 }
-func (p *proxyAPIServer) UpdateConversation(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) UpdateConversation(c *gin.Context, _ string) {
 	routeconversations.HandleUpdateConversation(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationEntriesParams) {
+func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, _ string, _ generatedapi.ListConversationEntriesParams) {
 	routeentries.HandleListEntries(c, p.store)
 }
-func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ string) {
 	routeentries.HandleAppendEntry(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ string) {
 	routeentries.HandleSyncMemory(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
+func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ string, _ generatedapi.ListConversationForksParams) {
 	routeconversations.HandleListForks(c, p.store)
 }
-func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationChildrenParams) {
+func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ string, _ generatedapi.ListConversationChildrenParams) {
 	routeconversations.HandleListChildConversations(c, p.store)
 }
-func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationMembershipsParams) {
+func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ string, _ generatedapi.ListConversationMembershipsParams) {
 	routememberships.HandleListMemberships(c, p.store)
 }
-func (p *proxyAPIServer) ShareConversation(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) ShareConversation(c *gin.Context, _ string) {
 	routememberships.HandleShareConversation(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
+func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, _ string, _ string) {
 	routememberships.HandleDeleteMembership(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
+func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ string, _ string) {
 	routememberships.HandleUpdateMembership(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ string) {
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
 func (p *proxyAPIServer) UpdateMemory(c *gin.Context, _ generatedapi.UpdateMemoryParams) {
@@ -549,37 +549,37 @@ func (p *proxyAdminServer) AdminSearchConversations(c *gin.Context, _ generateda
 	}
 	routeadmin.HandleAdminSearchConversations(c, p.store)
 }
-func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, _ string) {
 	if !p.authorize(c, security.PermissionAdminConversationsWrite) {
 		return
 	}
 	routeadmin.HandleAdminUpdateConversation(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetConversationParams) {
+func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, _ string, _ generatedadmin.AdminGetConversationParams) {
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetConversation(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetEntriesParams) {
+func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, _ string, _ generatedadmin.AdminGetEntriesParams) {
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetEntries(c, p.store)
 }
-func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListForksParams) {
+func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ string, _ generatedadmin.AdminListForksParams) {
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListForks(c, p.store)
 }
-func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminListChildConversationsParams) {
+func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ string, _ generatedadmin.AdminListChildConversationsParams) {
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMembershipsParams) {
+func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ string, _ generatedadmin.AdminGetMembershipsParams) {
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}

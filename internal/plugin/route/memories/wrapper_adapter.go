@@ -60,40 +60,40 @@ func (a *apiServerAdapter) SearchConversations(c *gin.Context) {
 func (a *apiServerAdapter) ListUnindexedEntries(c *gin.Context, _ generatedapi.ListUnindexedEntriesParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) GetConversation(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) GetConversation(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) UpdateConversation(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) UpdateConversation(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ListConversationEntries(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationEntriesParams) {
+func (a *apiServerAdapter) ListConversationEntries(c *gin.Context, _ string, _ generatedapi.ListConversationEntriesParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) AppendConversationEntry(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) AppendConversationEntry(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) SyncConversationContext(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) SyncConversationContext(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationForksParams) {
+func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ string, _ generatedapi.ListConversationForksParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ListConversationChildren(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationChildrenParams) {
+func (a *apiServerAdapter) ListConversationChildren(c *gin.Context, _ string, _ generatedapi.ListConversationChildrenParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ListConversationMemberships(c *gin.Context, _ openapi_types.UUID, _ generatedapi.ListConversationMembershipsParams) {
+func (a *apiServerAdapter) ListConversationMemberships(c *gin.Context, _ string, _ generatedapi.ListConversationMembershipsParams) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ShareConversation(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) ShareConversation(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) DeleteConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
+func (a *apiServerAdapter) DeleteConversationMembership(c *gin.Context, _ string, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) UpdateConversationMembership(c *gin.Context, _ openapi_types.UUID, _ string) {
+func (a *apiServerAdapter) UpdateConversationMembership(c *gin.Context, _ string, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) DeleteConversationResponse(c *gin.Context, _ openapi_types.UUID) {
+func (a *apiServerAdapter) DeleteConversationResponse(c *gin.Context, _ string) {
 	notImplemented(c)
 }
 

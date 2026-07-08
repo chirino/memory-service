@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator
 from typing import Any, Callable
+from urllib.parse import quote
 
 import httpx
 from fastapi import Response
@@ -75,6 +76,10 @@ class MemoryServiceProxy:
     def _compact_params(params: dict[str, Any]) -> dict[str, Any]:
         return {k: v for k, v in params.items() if v is not None}
 
+    @staticmethod
+    def _path(value: str) -> str:
+        return quote(value, safe="")
+
     async def _request(
         self,
         method: str,
@@ -130,7 +135,7 @@ class MemoryServiceProxy:
         )
 
     async def get_conversation(self, conversation_id: str) -> httpx.Response:
-        return await self._request("GET", f"/v1/conversations/{conversation_id}")
+        return await self._request("GET", f"/v1/conversations/{self._path(conversation_id)}")
 
     async def create_conversation(self, payload: dict[str, Any]) -> httpx.Response:
         return await self._request(
@@ -154,14 +159,14 @@ class MemoryServiceProxy:
     async def update_conversation(self, conversation_id: str, payload: dict[str, Any]) -> httpx.Response:
         return await self._request(
             "PATCH",
-            f"/v1/conversations/{conversation_id}",
+            f"/v1/conversations/{self._path(conversation_id)}",
             json_body=payload,
         )
 
     async def delete_conversation(self, conversation_id: str) -> httpx.Response:
         return await self._request(
             "PATCH",
-            f"/v1/conversations/{conversation_id}",
+            f"/v1/conversations/{self._path(conversation_id)}",
             json_body={"archived": True},
         )
 
@@ -177,7 +182,7 @@ class MemoryServiceProxy:
     ) -> httpx.Response:
         return await self._request(
             "GET",
-            f"/v1/conversations/{conversation_id}/entries",
+            f"/v1/conversations/{self._path(conversation_id)}/entries",
             params=self._compact_params(
                 {
                     "afterCursor": after_cursor,
@@ -198,7 +203,7 @@ class MemoryServiceProxy:
     ) -> httpx.Response:
         return await self._request(
             "GET",
-            f"/v1/conversations/{conversation_id}/forks",
+            f"/v1/conversations/{self._path(conversation_id)}/forks",
             params=self._compact_params(
                 {
                     "afterCursor": after_cursor,
@@ -217,13 +222,13 @@ class MemoryServiceProxy:
     async def list_memberships(self, conversation_id: str) -> httpx.Response:
         return await self._request(
             "GET",
-            f"/v1/conversations/{conversation_id}/memberships",
+            f"/v1/conversations/{self._path(conversation_id)}/memberships",
         )
 
     async def create_membership(self, conversation_id: str, payload: dict[str, Any]) -> httpx.Response:
         return await self._request(
             "POST",
-            f"/v1/conversations/{conversation_id}/memberships",
+            f"/v1/conversations/{self._path(conversation_id)}/memberships",
             json_body=payload,
         )
 
@@ -235,14 +240,14 @@ class MemoryServiceProxy:
     ) -> httpx.Response:
         return await self._request(
             "PATCH",
-            f"/v1/conversations/{conversation_id}/memberships/{user_id}",
+            f"/v1/conversations/{self._path(conversation_id)}/memberships/{self._path(user_id)}",
             json_body=payload,
         )
 
     async def delete_membership(self, conversation_id: str, user_id: str) -> httpx.Response:
         return await self._request(
             "DELETE",
-            f"/v1/conversations/{conversation_id}/memberships/{user_id}",
+            f"/v1/conversations/{self._path(conversation_id)}/memberships/{self._path(user_id)}",
         )
 
     async def list_ownership_transfers(
@@ -292,7 +297,7 @@ class MemoryServiceProxy:
     async def cancel_response(self, conversation_id: str) -> httpx.Response:
         return await self._request(
             "DELETE",
-            f"/v1/conversations/{conversation_id}/response",
+            f"/v1/conversations/{self._path(conversation_id)}/response",
         )
 
     async def index_conversations(self, payload: list[dict[str, Any]]) -> httpx.Response:

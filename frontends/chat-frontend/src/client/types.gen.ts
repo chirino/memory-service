@@ -132,7 +132,7 @@ export type Conversation = ConversationSummary & {
 
 export type CreateConversationRequest = {
   /**
-   * Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
+   * Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
    */
   id?: string | null;
   title?: string | null;
@@ -739,7 +739,7 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns items after this conversation id (UUID format).
+         * Cursor for pagination; returns items after this conversation id.
          */
         afterCursor?: string | null;
         /**
@@ -798,7 +798,7 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
       };
@@ -816,7 +816,7 @@ export type $OpenApiTs = {
     patch: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         requestBody: UpdateConversationRequest;
@@ -847,7 +847,7 @@ export type $OpenApiTs = {
          */
         channel?: Channel;
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         /**
@@ -888,7 +888,7 @@ export type $OpenApiTs = {
     post: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         requestBody: CreateEntryRequest;
@@ -913,7 +913,7 @@ export type $OpenApiTs = {
     post: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         requestBody: CreateEntryRequest;
@@ -934,11 +934,11 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns items after this conversation id (UUID format).
+         * Cursor for pagination; returns items after this conversation id.
          */
         afterCursor?: string | null;
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         /**
@@ -977,7 +977,7 @@ export type $OpenApiTs = {
     delete: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
       };
@@ -1141,7 +1141,7 @@ export type $OpenApiTs = {
          */
         afterCursor?: string | null;
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         /**
@@ -1163,7 +1163,7 @@ export type $OpenApiTs = {
     post: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         requestBody: ShareConversationRequest;
@@ -1188,7 +1188,7 @@ export type $OpenApiTs = {
     patch: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         requestBody: {
@@ -1210,7 +1210,7 @@ export type $OpenApiTs = {
     delete: {
       req: {
         /**
-         * Conversation identifier (UUID format).
+         * Conversation identifier.
          */
         conversationId: string;
         userId: string;

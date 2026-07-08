@@ -26,11 +26,13 @@ import {
   adminListMemoryNamespaces,
   adminListTopMemoryUsage,
   adminPutCheckpoint,
+  adminPutMemory,
   adminPutMemoryPolicies,
   adminSearchConversations,
   adminSearchMemories,
   adminTriggerMemoryIndex,
   adminUpdateConversation,
+  adminUpdateMemory,
   getCacheHitRate,
   getDbPoolUtilization,
   getErrorRate,
@@ -109,9 +111,12 @@ import type {
   AdminPutCheckpointData,
   AdminPutCheckpointError,
   AdminPutCheckpointResponse,
+  AdminPutMemoryData,
+  AdminPutMemoryError,
   AdminPutMemoryPoliciesData,
   AdminPutMemoryPoliciesError,
   AdminPutMemoryPoliciesResponse,
+  AdminPutMemoryResponse,
   AdminSearchConversationsData,
   AdminSearchConversationsError,
   AdminSearchConversationsResponse,
@@ -124,6 +129,9 @@ import type {
   AdminUpdateConversationData,
   AdminUpdateConversationError,
   AdminUpdateConversationResponse,
+  AdminUpdateMemoryData,
+  AdminUpdateMemoryError,
+  AdminUpdateMemoryResponse,
   GetCacheHitRateData,
   GetCacheHitRateError,
   GetCacheHitRateResponse,
@@ -237,6 +245,58 @@ export const adminListMemoriesOptions = (options?: Options<AdminListMemoriesData
     },
     queryKey: adminListMemoriesQueryKey(options),
   });
+
+/**
+ * Update a memory item (admin)
+ *
+ * Allows admins to update memories across namespaces.
+ * Currently supports archiving the active memory item by setting `archived` to `true`.
+ * Requires admin role.
+ */
+export const adminUpdateMemoryMutation = (
+  options?: Partial<Options<AdminUpdateMemoryData>>,
+): UseMutationOptions<AdminUpdateMemoryResponse, AdminUpdateMemoryError, Options<AdminUpdateMemoryData>> => {
+  const mutationOptions: UseMutationOptions<
+    AdminUpdateMemoryResponse,
+    AdminUpdateMemoryError,
+    Options<AdminUpdateMemoryData>
+  > = {
+    mutationFn: async (fnOptions) => {
+      const { data } = await adminUpdateMemory({
+        ...options,
+        ...fnOptions,
+        throwOnError: true,
+      });
+      return data;
+    },
+  };
+  return mutationOptions;
+};
+
+/**
+ * Upsert a memory item (admin)
+ *
+ * Allows admins to write memories across namespaces. Requires admin role.
+ */
+export const adminPutMemoryMutation = (
+  options?: Partial<Options<AdminPutMemoryData>>,
+): UseMutationOptions<AdminPutMemoryResponse, AdminPutMemoryError, Options<AdminPutMemoryData>> => {
+  const mutationOptions: UseMutationOptions<
+    AdminPutMemoryResponse,
+    AdminPutMemoryError,
+    Options<AdminPutMemoryData>
+  > = {
+    mutationFn: async (fnOptions) => {
+      const { data } = await adminPutMemory({
+        ...options,
+        ...fnOptions,
+        throwOnError: true,
+      });
+      return data;
+    },
+  };
+  return mutationOptions;
+};
 
 /**
  * Search episodic memories across users

@@ -12,14 +12,14 @@ import (
 // VectorSearchResult represents a single vector search result.
 type VectorSearchResult struct {
 	EntryID        uuid.UUID `json:"entryId"`
-	ConversationID uuid.UUID `json:"conversationId"`
+	ConversationID string    `json:"conversationId"`
 	Score          float64   `json:"score"`
 }
 
 // UpsertRequest holds the data for a single vector upsert operation.
 type UpsertRequest struct {
 	ConversationGroupID uuid.UUID
-	ConversationID      uuid.UUID
+	ConversationID      string
 	EntryID             uuid.UUID
 	Embedding           []float32
 	ModelName           string

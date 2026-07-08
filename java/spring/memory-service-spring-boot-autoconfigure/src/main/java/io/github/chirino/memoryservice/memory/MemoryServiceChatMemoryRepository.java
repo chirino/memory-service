@@ -14,7 +14,6 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Objects;
-import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.ai.chat.memory.ChatMemoryRepository;
@@ -73,7 +72,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
             response =
                     conversationsApi()
                             .listConversationEntries(
-                                    UUID.fromString(conversationId),
+                                    conversationId,
                                     null,
                                     null,
                                     LIST_ENTRIES_LIMIT,
@@ -136,9 +135,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         }
 
         try {
-            conversationsApi()
-                    .syncConversationContext(UUID.fromString(conversationId), syncEntry)
-                    .block();
+            conversationsApi().syncConversationContext(conversationId, syncEntry).block();
             LOG.debug(
                     "Successfully synced {} messages for conversationId={}",
                     syncEntry.getContent().size(),
@@ -168,9 +165,7 @@ public class MemoryServiceChatMemoryRepository implements ChatMemoryRepository {
         syncEntry.setContent(new ArrayList<>());
 
         try {
-            conversationsApi()
-                    .syncConversationContext(UUID.fromString(conversationId), syncEntry)
-                    .block();
+            conversationsApi().syncConversationContext(conversationId, syncEntry).block();
             LOG.debug("Successfully cleared context for conversationId={}", conversationId);
         } catch (WebClientResponseException e) {
             LOG.warn(

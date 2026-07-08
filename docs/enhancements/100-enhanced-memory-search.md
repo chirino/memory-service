@@ -35,7 +35,7 @@ Example request:
   "namespace_prefix": ["user", "alice", "cognition.v1"],
   "query": "help me continue the deployment fix",
   "filter": {
-    "conversationIds": {"$in": ["uuid"]},
+    "conversationIds": {"$in": ["conversation-id"]},
     "memoryKind": ["preference", "procedure", "summary", "bridge", "topic"],
     "runtimeId": "quarkus-reference-v1"
   },
@@ -143,7 +143,7 @@ Example:
 {
   "memoryKind": {"$in": ["procedure", "summary", "bridge"]},
   "runtimeId": "quarkus-reference-v1",
-  "conversationIds": {"$in": ["uuid"]},
+  "conversationIds": {"$in": ["conversation-id"]},
   "confidence": {"$in": ["medium", "high"]},
   "freshness": {"$in": ["fresh", "stable"]}
 }

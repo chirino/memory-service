@@ -1180,10 +1180,6 @@ func (g *grpcSteps) iHaveStreamedTokensToTheConversation(tokensStr string) error
 	defer conn.Close()
 
 	convIDStr := fmt.Sprintf("%v", g.s.Variables["conversationId"])
-	convID, err := uuid.Parse(convIDStr)
-	if err != nil {
-		return fmt.Errorf("invalid conversationId: %w", err)
-	}
 
 	ctx := g.authCtx()
 	client := pb.NewResponseRecorderServiceClient(conn)
@@ -1199,7 +1195,7 @@ func (g *grpcSteps) iHaveStreamedTokensToTheConversation(tokensStr string) error
 			Complete: i == len(tokens)-1,
 		}
 		if i == 0 {
-			req.ConversationId = uuidToBytes(convID)
+			req.ConversationId = convIDStr
 		}
 		if err := stream.Send(req); err != nil {
 			return err
@@ -1224,11 +1220,6 @@ func (g *grpcSteps) startBackgroundStream(tokensStr string, delayMs, keepOpenMs 
 	}
 
 	convIDStr := fmt.Sprintf("%v", g.s.Variables["conversationId"])
-	convID, err := uuid.Parse(convIDStr)
-	if err != nil {
-		conn.Close()
-		return fmt.Errorf("invalid conversationId: %w", err)
-	}
 
 	ctx := g.authCtx()
 	client := pb.NewResponseRecorderServiceClient(conn)
@@ -1260,7 +1251,7 @@ func (g *grpcSteps) startBackgroundStream(tokensStr string, delayMs, keepOpenMs 
 			}
 			req := &pb.RecordRequest{Content: token}
 			if i == 0 {
-				req.ConversationId = uuidToBytes(convID)
+				req.ConversationId = convIDStr
 			}
 			if err := stream.Send(req); err != nil {
 				return
@@ -1339,17 +1330,13 @@ func (g *grpcSteps) iReplayResponseTokensFromTheBeginning(expectedTokens string)
 	defer conn.Close()
 
 	convIDStr := fmt.Sprintf("%v", g.s.Variables["conversationId"])
-	convID, err := uuid.Parse(convIDStr)
-	if err != nil {
-		return fmt.Errorf("invalid conversationId: %w", err)
-	}
 
 	ctx := g.authCtx()
 	client := pb.NewResponseRecorderServiceClient(conn)
 
 	g.replayStart = time.Now()
 	stream, err := client.Replay(ctx, &pb.ReplayRequest{
-		ConversationId: uuidToBytes(convID),
+		ConversationId: convIDStr,
 	})
 	if err != nil {
 		return err

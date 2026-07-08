@@ -27,11 +27,9 @@ tags:
   - name: Admin
     description: Administrative operations and system management.
 paths:
-
   ############################################################
   # Capabilities
   ############################################################
-
   /v1/capabilities:
     get:
       tags: [Capabilities]
@@ -57,11 +55,9 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Conversations
   ############################################################
-
   /v1/conversations:
     get:
       tags: [Conversations]
@@ -103,10 +99,9 @@ paths:
         - name: afterCursor
           in: query
           required: false
-          description: Cursor for pagination; returns items after this conversation id (UUID format).
+          description: Cursor for pagination; returns items after this conversation id.
           schema:
             type: string
-            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -174,7 +169,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}:
     get:
       tags: [Conversations]
@@ -185,10 +179,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       responses:
         '200':
           description: The conversation.
@@ -213,10 +206,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -256,10 +248,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
@@ -359,10 +350,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -382,7 +372,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}/entries/sync:
     post:
       tags: [Conversations]
@@ -405,10 +394,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -428,7 +416,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}/forks:
     get:
       tags: [Conversations]
@@ -445,17 +432,15 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
-          description: Cursor for pagination; returns items after this conversation id (UUID format).
+          description: Cursor for pagination; returns items after this conversation id.
           schema:
             type: string
-            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -487,7 +472,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}/children:
     get:
       tags: [Conversations]
@@ -499,13 +483,11 @@ paths:
           required: true
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
           schema:
             type: string
-            format: uuid
             nullable: true
         - name: limit
           in: query
@@ -534,7 +516,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}/response:
     delete:
       tags: [Conversations]
@@ -547,10 +528,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       responses:
         '200':
           description: Cancel request accepted.
@@ -562,7 +542,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Sharing
   ############################################################
@@ -677,7 +656,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/ownership-transfers/{transferId}:
     get:
       tags: [Sharing]
@@ -737,7 +715,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/ownership-transfers/{transferId}/accept:
     post:
       tags: [Sharing]
@@ -769,7 +746,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/{conversationId}/memberships:
     get:
       tags: [Sharing]
@@ -782,10 +758,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: afterCursor
           in: query
           required: false
@@ -833,10 +808,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
       requestBody:
         required: true
         content:
@@ -856,8 +830,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
-
   /v1/conversations/{conversationId}/memberships/{userId}:
     patch:
       tags: [Sharing]
@@ -867,10 +839,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: userId
           in: path
           required: true
@@ -906,10 +877,9 @@ paths:
         - name: conversationId
           in: path
           required: true
-          description: Conversation identifier (UUID format).
+          description: Conversation identifier.
           schema:
             type: string
-            format: uuid
         - name: userId
           in: path
           required: true
@@ -924,11 +894,9 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Search
   ############################################################
-
   /v1/conversations/search:
     post:
       tags: [Search]
@@ -964,7 +932,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/index:
     post:
       tags: [Search]
@@ -1011,7 +978,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/conversations/unindexed:
     get:
       tags: [Search]
@@ -1060,11 +1026,9 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Memories
   ############################################################
-
   /v1/memories:
     put:
       tags: [Memories]
@@ -1171,7 +1135,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/memories/search:
     post:
       tags: [Memories]
@@ -1195,7 +1158,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/memories/namespaces:
     get:
       tags: [Memories]
@@ -1247,7 +1209,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/memories/events:
     get:
       tags: [Memories]
@@ -1317,11 +1278,9 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   ############################################################
   # Attachments
   ############################################################
-
   /v1/attachments:
     post:
       tags: [Attachments]
@@ -1385,7 +1344,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/attachments/{id}:
     get:
       tags: [Attachments]
@@ -1482,7 +1440,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/attachments/{id}/download-url:
     get:
       tags: [Attachments]
@@ -1533,7 +1490,6 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
-
   /v1/attachments/download/{token}/{filename}:
     get:
       tags: [Attachments]
@@ -1588,11 +1544,9 @@ paths:
           $ref: '#/components/responses/NotFound'
         default:
           $ref: '#/components/responses/Error'
-
   ############################################################
   # Events
   ############################################################
-
   /v1/events:
     get:
       operationId: subscribeEvents
@@ -1660,11 +1614,9 @@ paths:
           description: Authentication required.
         '429':
           description: Too many SSE connections for this user.
-
   ############################################################
   # Admin
   ############################################################
-
   /v1/admin/events:
     get:
       operationId: adminSubscribeEvents
@@ -1738,14 +1690,12 @@ paths:
           description: Authentication required.
         '403':
           description: Admin or auditor role required.
-
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   responses:
     Error:
       description: Error response
@@ -1765,7 +1715,6 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/SearchTypeUnavailableError'
-
   schemas:
     ErrorResponse:
       type: object
@@ -1777,7 +1726,6 @@ components:
         details:
           type: object
           additionalProperties: true
-
     SearchTypeUnavailableError:
       type: object
       description: Error response when the requested search type is not available on the server.
@@ -1796,7 +1744,6 @@ components:
             type: string
           description: List of search types that are available on this server.
           example: [fulltext]
-
     CapabilitiesResponse:
       type: object
       required: [version, tech, features, auth, security]
@@ -1812,7 +1759,6 @@ components:
           $ref: '#/components/schemas/CapabilitiesAuth'
         security:
           $ref: '#/components/schemas/CapabilitiesSecurity'
-
     CapabilitiesTech:
       type: object
       required: [store, attachments, cache, vector, event_bus, embedder]
@@ -1835,7 +1781,6 @@ components:
         embedder:
           type: string
           example: local
-
     CapabilitiesFeatures:
       type: object
       required:
@@ -1861,7 +1806,6 @@ components:
           type: boolean
         s3_direct_download_enabled:
           type: boolean
-
     CapabilitiesAuth:
       type: object
       required: [oidc_enabled, api_key_enabled, admin_justification_required]
@@ -1872,7 +1816,6 @@ components:
           type: boolean
         admin_justification_required:
           type: boolean
-
     CapabilitiesSecurity:
       type: object
       required: [encryption_enabled, db_encryption_enabled, attachment_encryption_enabled]
@@ -1883,7 +1826,6 @@ components:
           type: boolean
         attachment_encryption_enabled:
           type: boolean
-
     AccessLevel:
       type: string
       description: Access level of a user for a conversation.
@@ -1892,13 +1834,11 @@ components:
         - manager
         - writer
         - reader
-
     ConversationSummary:
       type: object
       properties:
         id:
           type: string
-          format: uuid
           description: Unique identifier for the conversation.
         title:
           type: string
@@ -1918,7 +1858,6 @@ components:
           $ref: '#/components/schemas/AccessLevel'
         startedByConversationId:
           type: string
-          format: uuid
           nullable: true
         startedByEntryId:
           type: string
@@ -1936,13 +1875,11 @@ components:
         lastMessagePreview: "Let's try modeling forks as separate conversations…"
         accessLevel: "owner"
         archived: false
-
     ChildConversationSummary:
       type: object
       properties:
         id:
           type: string
-          format: uuid
           description: Unique identifier for the child conversation.
         title:
           type: string
@@ -1977,7 +1914,6 @@ components:
         accessLevel: "owner"
         startedByEntryId: "660e8400-e29b-41d4-a716-446655440111"
         archived: false
-
     Conversation:
       allOf:
         - $ref: '#/components/schemas/ConversationSummary'
@@ -1992,16 +1928,13 @@ components:
               format: uuid
               nullable: true
               description: >-
-                First parent entry excluded by this fork. Null for root
-                conversations and blank-slate forks that inherit no parent entries.
+                First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
             forkedAtConversationId:
               type: string
-              format: uuid
               nullable: true
               description: Conversation ID from which this conversation was forked.
             startedByConversationId:
               type: string
-              format: uuid
               nullable: true
               description: Parent conversation that started this child conversation.
             startedByEntryId:
@@ -2019,19 +1952,14 @@ components:
             accessLevel: "owner"
             forkedAtEntryId: null
             forkedAtConversationId: null
-
     CreateConversationRequest:
       type: object
       properties:
         id:
           type: string
-          format: uuid
           nullable: true
           description: >-
-            Optional client-supplied UUID for the conversation. When provided, the
-            server creates the conversation with exactly this ID instead of generating
-            one. Useful for agents that need a deterministic conversation ID derived
-            from an external thread identifier.
+            Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
         title:
           type: string
           nullable: true
@@ -2049,7 +1977,6 @@ components:
         metadata:
           source: "web-chat"
           projectId: "proj_7890"
-
     UpdateConversationRequest:
       type: object
       properties:
@@ -2060,13 +1987,11 @@ components:
         archived:
           type: boolean
           description: Set to `true` to archive the conversation and its fork tree.
-
     ConversationMembership:
       type: object
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the conversation.
         userId:
           type: string
@@ -2075,25 +2000,21 @@ components:
         createdAt:
           type: string
           format: date-time
-
     ConversationForkSummary:
       type: object
       description: Summary of a forked conversation originating at a given entry.
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the forked conversation.
         forkedAtEntryId:
           type: string
           format: uuid
           nullable: true
           description: >-
-            First parent entry excluded by this fork. Null for blank-slate forks
-            that inherit no parent entries.
+            First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
         forkedAtConversationId:
           type: string
-          format: uuid
           nullable: true
           description: Conversation ID where the fork occurred.
         title:
@@ -2102,7 +2023,6 @@ components:
         createdAt:
           type: string
           format: date-time
-
     ShareConversationRequest:
       type: object
       required:
@@ -2118,14 +2038,12 @@ components:
         createdAt:
           type: string
           format: date-time
-
     Channel:
       type: string
       description: Logical channel of the entry within the conversation.
       enum:
         - history
         - context
-
     PutMemoryRequest:
       type: object
       required:
@@ -2155,7 +2073,6 @@ components:
           type: integer
           format: int64
           description: Optional optimistic concurrency revision expected for the active memory.
-
     MemoryWriteResult:
       type: object
       properties:
@@ -2181,7 +2098,6 @@ components:
         revision:
           type: integer
           format: int64
-
     MemoryItem:
       type: object
       properties:
@@ -2216,7 +2132,6 @@ components:
         archived:
           type: boolean
           description: Synthetic archive flag derived from the internal archived timestamp.
-
     UpdateMemoryRequest:
       type: object
       properties:
@@ -2227,7 +2142,6 @@ components:
           type: integer
           format: int64
           description: Optional optimistic concurrency revision expected for the active memory.
-
     MemoryUsage:
       type: object
       properties:
@@ -2237,7 +2151,6 @@ components:
         lastFetchedAt:
           type: string
           format: date-time
-
     SearchMemoriesRequest:
       type: object
       required:
@@ -2263,7 +2176,6 @@ components:
           type: string
           enum: [exclude, include, only]
           default: exclude
-
     SearchMemoriesResponse:
       type: object
       properties:
@@ -2271,7 +2183,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/MemoryItem'
-
     ListMemoryNamespacesResponse:
       type: object
       properties:
@@ -2281,7 +2192,6 @@ components:
             type: array
             items:
               type: string
-
     MemoryEventItem:
       type: object
       properties:
@@ -2312,7 +2222,6 @@ components:
           type: string
           format: date-time
           nullable: true
-
     ListMemoryEventsResponse:
       type: object
       properties:
@@ -2323,7 +2232,6 @@ components:
         after_cursor:
           type: string
           nullable: true
-
     Attachment:
       type: object
       description: |-
@@ -2364,7 +2272,6 @@ components:
         sha256:
           type: string
           description: SHA-256 hash of the file content (set by server for uploaded attachments).
-
     CreateFromUrlRequest:
       type: object
       description: Request to create an attachment from a source URL.
@@ -2385,7 +2292,6 @@ components:
         sourceUrl: "https://example.com/generated-image.png"
         contentType: "image/png"
         name: "generated-cat.png"
-
     AttachmentUploadResponse:
       type: object
       description: Response from uploading or creating an attachment.
@@ -2436,7 +2342,6 @@ components:
         sha256: "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
         expiresAt: "2025-01-28T11:30:00Z"
         status: "ready"
-
     AttachmentDownloadUrlResponse:
       type: object
       description: Response containing a signed download URL for an attachment.
@@ -2450,7 +2355,6 @@ components:
       example:
         url: "/v1/attachments/download/dG9rZW4.../photo.jpg"
         expiresIn: 300
-
     Entry:
       type: object
       required:
@@ -2467,7 +2371,6 @@ components:
           description: Unique identifier for the entry.
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier for the conversation this entry belongs to.
         userId:
           type: string
@@ -2538,7 +2441,6 @@ components:
                 contentType: "image/jpeg"
                 name: "my-dog.jpg"
         createdAt: "2025-01-10T14:40:12Z"
-
     CreateEntryRequest:
       type: object
       required:
@@ -2558,8 +2460,7 @@ components:
           nullable: true
           maxLength: 255
           description: >-
-            Optional logical agent to associate with the conversation when this
-            request auto-creates a new conversation. Ignored for existing conversations.
+            Optional logical agent to associate with the conversation when this request auto-creates a new conversation. Ignored for existing conversations.
         channel:
           $ref: '#/components/schemas/Channel'
         contentType:
@@ -2604,24 +2505,17 @@ components:
             after creation. Returns 400 Bad Request if specified for non-history channels.
         forkedAtConversationId:
           type: string
-          format: uuid
           description: >-
-            If the target conversation doesn't exist yet, auto-create it as a fork
-            of this conversation. Ignored when the conversation already exists.
+            If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.
         forkedAtEntryId:
           type: string
           format: uuid
           description: >-
-            Entry ID marking the fork point. Entries before this point are inherited;
-            entries at and after this point are excluded. Optional; when unset, all
-            entries are excluded. New messages added will show up as the first
-            message of the fork.
+            Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
         startedByConversationId:
           type: string
-          format: uuid
           description: >-
-            If the target conversation does not exist yet, auto-create it as a
-            child conversation started from this parent conversation.
+            If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.
         startedByEntryId:
           type: string
           format: uuid
@@ -2647,7 +2541,6 @@ components:
                   temp: 72
               - eventType: "PartialResponse"
                 chunk: "The weather in Seattle is 72°F."
-
     SyncEntryResponse:
       type: object
       properties:
@@ -2683,7 +2576,6 @@ components:
             - type: "text"
               text: "Second message added during sync."
           createdAt: "2025-01-10T14:40:12Z"
-
     IndexEntryRequest:
       type: object
       required:
@@ -2693,7 +2585,6 @@ components:
       properties:
         conversationId:
           type: string
-          format: uuid
           description: The conversation containing the entry.
         entryId:
           type: string
@@ -2708,7 +2599,6 @@ components:
         conversationId: "550e8400-e29b-41d4-a716-446655440000"
         entryId: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
         indexedContent: "User asked about conversation forking and branching strategies"
-
     IndexConversationsResponse:
       type: object
       properties:
@@ -2720,7 +2610,6 @@ components:
             entries, they will become searchable asynchronously via background retry.
       example:
         indexed: 3
-
     UnindexedEntriesResponse:
       type: object
       properties:
@@ -2744,20 +2633,16 @@ components:
                   role: "USER"
               createdAt: "2025-01-10T14:40:12Z"
         afterCursor: "eyJjcmVhdGVkQXQiOiIyMDI1LTAxLTEwVDE0OjQwOjEyWiJ9"
-
     UnindexedEntry:
       type: object
       properties:
         conversationId:
           type: string
-          format: uuid
         entry:
           $ref: '#/components/schemas/Entry'
-
     SearchConversationsSearchTypeSingle:
       type: string
       enum: [auto, semantic, fulltext]
-
     SearchConversationsSearchTypeList:
       type: array
       minItems: 1
@@ -2765,7 +2650,6 @@ components:
       items:
         type: string
         enum: [semantic, fulltext]
-
     SearchConversationsRequest:
       type: object
       required:
@@ -2821,13 +2705,11 @@ components:
         limit: 20
         includeEntry: true
         groupByConversation: true
-
     SearchResult:
       type: object
       properties:
         conversationId:
           type: string
-          format: uuid
           description: Unique identifier of the conversation containing this entry.
         conversationTitle:
           type: string
@@ -2867,7 +2749,6 @@ components:
             - text: "Help me design a memory service for my agent."
               role: "USER"
           createdAt: "2025-01-10T14:32:05Z"
-
     OwnershipTransfer:
       type: object
       description: |-
@@ -2887,7 +2768,6 @@ components:
           description: Unique identifier for the transfer.
         conversationId:
           type: string
-          format: uuid
           description: The conversation being transferred.
         conversationTitle:
           type: string
@@ -2910,7 +2790,6 @@ components:
         fromUserId: "user_john_doe"
         toUserId: "user_jane_smith"
         createdAt: "2025-01-28T10:30:00Z"
-
     CreateOwnershipTransferRequest:
       type: object
       required:
@@ -2919,7 +2798,6 @@ components:
       properties:
         conversationId:
           type: string
-          format: uuid
           description: The conversation to transfer ownership of.
         newOwnerUserId:
           type: string

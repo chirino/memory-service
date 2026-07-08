@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"strings"
 
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -87,8 +88,8 @@ func createTransfer(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
 		return
 	}
-	convID, err := uuid.Parse(req.ConversationId)
-	if err != nil {
+	convID := strings.TrimSpace(req.ConversationId)
+	if convID == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid conversationId"})
 		return
 	}

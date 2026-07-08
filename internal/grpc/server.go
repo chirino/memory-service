@@ -66,6 +66,22 @@ func uuidFromBytesPtr(b []byte) *uuid.UUID {
 	return &id
 }
 
+func requiredConversationID(raw string) (string, error) {
+	id := strings.TrimSpace(raw)
+	if id == "" {
+		return "", fmt.Errorf("conversation_id is required")
+	}
+	return id, nil
+}
+
+func optionalConversationID(raw string) *string {
+	id := strings.TrimSpace(raw)
+	if id == "" {
+		return nil
+	}
+	return &id
+}
+
 func stringPtrIfNotEmpty(s string) *string {
 	if s == "" {
 		return nil
@@ -407,7 +423,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 	}
 	for _, cs := range summaries {
 		resp.Conversations = append(resp.Conversations, &pb.ConversationSummary{
-			Id:          uuidToBytes(cs.ID),
+			Id:          string(cs.ID),
 			Title:       cs.Title,
 			OwnerUserId: cs.OwnerUserID,
 			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -416,7 +432,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			Archived:    cs.ArchivedAt != nil,
 		})
 		if cs.StartedByConversationID != nil {
-			resp.Conversations[len(resp.Conversations)-1].StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+			resp.Conversations[len(resp.Conversations)-1].StartedByConversationId = string(*cs.StartedByConversationID)
 		}
 		if cs.StartedByEntryID != nil {
 			resp.Conversations[len(resp.Conversations)-1].StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
@@ -462,7 +478,7 @@ func (s *ConversationsServer) GetConversation(ctx context.Context, req *pb.GetCo
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -485,7 +501,7 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -536,7 +552,7 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -571,7 +587,7 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	resp := &pb.ListForksResponse{PageInfo: &pb.PageInfo{}}
 	for _, f := range forks {
 		fork := &pb.ConversationForkSummary{
-			ConversationId: uuidToBytes(f.ID),
+			ConversationId: string(f.ID),
 			Title:          f.Title,
 			CreatedAt:      f.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
@@ -579,7 +595,7 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 			fork.ForkedAtEntryId = uuidToBytes(*f.ForkedAtEntryID)
 		}
 		if f.ForkedAtConversationID != nil {
-			fork.ForkedAtConversationId = uuidToBytes(*f.ForkedAtConversationID)
+			fork.ForkedAtConversationId = string(*f.ForkedAtConversationID)
 		}
 		resp.Forks = append(resp.Forks, fork)
 	}
@@ -597,7 +613,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsRead); err != nil {
 		return nil, err
 	}
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -629,7 +645,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 	resp := &pb.ListChildConversationsResponse{PageInfo: &pb.PageInfo{}}
 	for _, cs := range children {
 		item := &pb.ChildConversationSummary{
-			Id:          uuidToBytes(cs.ID),
+			Id:          string(cs.ID),
 			Title:       cs.Title,
 			OwnerUserId: cs.OwnerUserID,
 			CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -650,7 +666,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 
 func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversation {
 	c := &pb.Conversation{
-		Id:          uuidToBytes(conv.ID),
+		Id:          string(conv.ID),
 		Title:       conv.Title,
 		OwnerUserId: conv.OwnerUserID,
 		CreatedAt:   conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -662,10 +678,10 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
 	}
 	if conv.ForkedAtConversationID != nil {
-		c.ForkedAtConversationId = uuidToBytes(*conv.ForkedAtConversationID)
+		c.ForkedAtConversationId = string(*conv.ForkedAtConversationID)
 	}
 	if conv.StartedByConversationID != nil {
-		c.StartedByConversationId = uuidToBytes(*conv.StartedByConversationID)
+		c.StartedByConversationId = string(*conv.StartedByConversationID)
 	}
 	if conv.StartedByEntryID != nil {
 		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
@@ -675,7 +691,7 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 
 func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminConversationSummary {
 	item := &pb.AdminConversationSummary{
-		Id:          uuidToBytes(cs.ID),
+		Id:          string(cs.ID),
 		Title:       cs.Title,
 		OwnerUserId: cs.OwnerUserID,
 		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -688,7 +704,7 @@ func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.
 		item.AgentId = cs.AgentID
 	}
 	if cs.StartedByConversationID != nil {
-		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+		item.StartedByConversationId = string(*cs.StartedByConversationID)
 	}
 	if cs.StartedByEntryID != nil {
 		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
@@ -698,7 +714,7 @@ func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.
 
 func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminChildConversationSummary {
 	item := &pb.AdminChildConversationSummary{
-		Id:          uuidToBytes(cs.ID),
+		Id:          string(cs.ID),
 		Title:       cs.Title,
 		OwnerUserId: cs.OwnerUserID,
 		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -711,7 +727,7 @@ func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary)
 		item.AgentId = cs.AgentID
 	}
 	if cs.StartedByConversationID != nil {
-		item.StartedByConversationId = uuidToBytes(*cs.StartedByConversationID)
+		item.StartedByConversationId = string(*cs.StartedByConversationID)
 	}
 	if cs.StartedByEntryID != nil {
 		item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
@@ -721,7 +737,7 @@ func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary)
 
 func adminConversationToProto(conv *registrystore.ConversationDetail) *pb.AdminConversation {
 	c := &pb.AdminConversation{
-		Id:                    uuidToBytes(conv.ID),
+		Id:                    string(conv.ID),
 		Title:                 conv.Title,
 		OwnerUserId:           conv.OwnerUserID,
 		CreatedAt:             conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -743,10 +759,10 @@ func adminConversationToProto(conv *registrystore.ConversationDetail) *pb.AdminC
 		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
 	}
 	if conv.ForkedAtConversationID != nil {
-		c.ForkedAtConversationId = uuidToBytes(*conv.ForkedAtConversationID)
+		c.ForkedAtConversationId = string(*conv.ForkedAtConversationID)
 	}
 	if conv.StartedByConversationID != nil {
-		c.StartedByConversationId = uuidToBytes(*conv.StartedByConversationID)
+		c.StartedByConversationId = string(*conv.StartedByConversationID)
 	}
 	if conv.StartedByEntryID != nil {
 		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
@@ -771,7 +787,7 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -862,7 +878,7 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -992,7 +1008,7 @@ func (s *AdminConversationsServer) GetConversation(ctx context.Context, req *pb.
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1108,7 +1124,7 @@ func (s *AdminConversationsServer) UpdateConversation(ctx context.Context, req *
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1133,7 +1149,7 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1168,7 +1184,7 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 	resp := &pb.ListMembershipsResponse{PageInfo: &pb.PageInfo{}}
 	for _, m := range memberships {
 		resp.Memberships = append(resp.Memberships, &pb.ConversationMembership{
-			ConversationId: uuidToBytes(convID),
+			ConversationId: string(convID),
 			UserId:         m.UserID,
 			AccessLevel:    mapAccessLevel(m.AccessLevel),
 			CreatedAt:      m.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1185,7 +1201,7 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1220,7 +1236,7 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 	resp := &pb.AdminListForksResponse{PageInfo: &pb.PageInfo{}}
 	for _, f := range forks {
 		fork := &pb.ConversationForkSummary{
-			ConversationId: uuidToBytes(f.ID),
+			ConversationId: string(f.ID),
 			Title:          f.Title,
 			CreatedAt:      f.CreatedAt.Format("2006-01-02T15:04:05Z"),
 		}
@@ -1228,7 +1244,7 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 			fork.ForkedAtEntryId = uuidToBytes(*f.ForkedAtEntryID)
 		}
 		if f.ForkedAtConversationID != nil {
-			fork.ForkedAtConversationId = uuidToBytes(*f.ForkedAtConversationID)
+			fork.ForkedAtConversationId = string(*f.ForkedAtConversationID)
 		}
 		resp.Forks = append(resp.Forks, fork)
 	}
@@ -1243,7 +1259,7 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1299,7 +1315,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1343,7 +1359,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 
 	// Handle fork metadata: if conversation doesn't exist and fork metadata is provided, create it
 	if len(entry.GetForkedAtConversationId()) > 0 {
-		forkedAtConvID, ferr := bytesToUUID(entry.GetForkedAtConversationId())
+		forkedAtConvID, ferr := requiredConversationID(entry.GetForkedAtConversationId())
 		if ferr != nil {
 			return nil, status.Error(codes.InvalidArgument, "invalid forked_at_conversation_id")
 		}
@@ -1379,7 +1395,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 			ContentType:             entry.GetContentType(),
 			Channel:                 ch,
 			AgentID:                 agentIDPtr,
-			StartedByConversationID: uuidFromBytesPtr(entry.GetStartedByConversationId()),
+			StartedByConversationID: optionalConversationID(entry.GetStartedByConversationId()),
 			StartedByEntryID:        uuidFromBytesPtr(entry.GetStartedByEntryId()),
 		}}, &clientID, agentIDPtr, nil)
 		if err != nil {
@@ -1412,7 +1428,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1474,7 +1490,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 	return resp, nil
 }
 
-func (s *EntriesServer) entryEventsForCreatedEntries(ctx context.Context, convID uuid.UUID, entries []model.Entry, includeConversationCreated bool) ([]registryeventbus.Event, error) {
+func (s *EntriesServer) entryEventsForCreatedEntries(ctx context.Context, convID string, entries []model.Entry, includeConversationCreated bool) ([]registryeventbus.Event, error) {
 	groupID, err := s.Store.GetEntryGroupID(ctx, entries[0].ID)
 	if err != nil {
 		return nil, err
@@ -1521,7 +1537,7 @@ func (s *EntriesServer) publishEntryEvents(ctx context.Context, events []registr
 func entryToProto(e *model.Entry) *pb.Entry {
 	entry := &pb.Entry{
 		Id:             uuidToBytes(e.ID),
-		ConversationId: uuidToBytes(e.ConversationID),
+		ConversationId: string(e.ConversationID),
 		Channel:        mapChannel(e.Channel),
 		ContentType:    e.ContentType,
 		CreatedAt:      e.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1558,7 +1574,7 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1593,7 +1609,7 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 	resp := &pb.ListMembershipsResponse{PageInfo: &pb.PageInfo{}}
 	for _, m := range memberships {
 		resp.Memberships = append(resp.Memberships, &pb.ConversationMembership{
-			ConversationId: uuidToBytes(convID),
+			ConversationId: string(convID),
 			UserId:         m.UserID,
 			AccessLevel:    mapAccessLevel(m.AccessLevel),
 			CreatedAt:      m.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1614,7 +1630,7 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1628,7 +1644,7 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 	}
 
 	return &pb.ConversationMembership{
-		ConversationId: uuidToBytes(convID),
+		ConversationId: string(convID),
 		UserId:         m.UserID,
 		AccessLevel:    mapAccessLevel(m.AccessLevel),
 		CreatedAt:      m.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1644,7 +1660,7 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1658,7 +1674,7 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 	}
 
 	return &pb.ConversationMembership{
-		ConversationId: uuidToBytes(convID),
+		ConversationId: string(convID),
 		UserId:         m.UserID,
 		AccessLevel:    mapAccessLevel(m.AccessLevel),
 		CreatedAt:      m.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1674,7 +1690,7 @@ func (s *MembershipsServer) DeleteMembership(ctx context.Context, req *pb.Delete
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1757,7 +1773,7 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 	for _, t := range transfers {
 		resp.Transfers = append(resp.Transfers, &pb.OwnershipTransfer{
 			Id:             uuidToBytes(t.ID),
-			ConversationId: uuidToBytes(t.ConversationID),
+			ConversationId: string(t.ConversationID),
 			FromUserId:     t.FromUserID,
 			ToUserId:       t.ToUserID,
 			CreatedAt:      t.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1792,7 +1808,7 @@ func (s *TransfersServer) GetOwnershipTransfer(ctx context.Context, req *pb.GetO
 
 	return &pb.OwnershipTransfer{
 		Id:             uuidToBytes(t.ID),
-		ConversationId: uuidToBytes(t.ConversationID),
+		ConversationId: string(t.ConversationID),
 		FromUserId:     t.FromUserID,
 		ToUserId:       t.ToUserID,
 		CreatedAt:      t.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1808,7 +1824,7 @@ func (s *TransfersServer) CreateOwnershipTransfer(ctx context.Context, req *pb.C
 		return nil, err
 	}
 
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -1822,7 +1838,7 @@ func (s *TransfersServer) CreateOwnershipTransfer(ctx context.Context, req *pb.C
 
 	return &pb.OwnershipTransfer{
 		Id:             uuidToBytes(t.ID),
-		ConversationId: uuidToBytes(t.ConversationID),
+		ConversationId: string(t.ConversationID),
 		FromUserId:     t.FromUserID,
 		ToUserId:       t.ToUserID,
 		CreatedAt:      t.CreatedAt.Format("2006-01-02T15:04:05Z"),
@@ -1942,7 +1958,7 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	resp := &pb.SearchEntriesResponse{}
 	for _, r := range results.Data {
 		sr := &pb.SearchResult{
-			ConversationId: uuidToBytes(r.ConversationID),
+			ConversationId: string(r.ConversationID),
 			EntryId:        uuidToBytes(r.EntryID),
 			Score:          float32(r.Score),
 		}
@@ -1977,7 +1993,7 @@ func (s *SearchServer) IndexConversations(ctx context.Context, req *pb.IndexConv
 
 	var entries []registrystore.IndexEntryRequest
 	for _, e := range req.GetEntries() {
-		convID, err := bytesToUUID(e.GetConversationId())
+		convID, err := requiredConversationID(e.GetConversationId())
 		if err != nil {
 			continue
 		}
@@ -2040,7 +2056,7 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 	resp := &pb.ListUnindexedEntriesResponse{}
 	for _, e := range entries {
 		resp.Entries = append(resp.Entries, &pb.UnindexedEntry{
-			ConversationId: uuidToBytes(e.ConversationID),
+			ConversationId: string(e.ConversationID),
 			Entry:          entryToProto(&e),
 		})
 	}
@@ -3284,7 +3300,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 			expiresAt := time.Now().Add(expiresIn)
 
 			attachment, err := withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-				return s.Store.CreateAttachment(txCtx, userID, uuid.Nil, model.Attachment{
+				return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
 					Filename:    filename,
 					ContentType: contentType,
 					Size:        &out.res.Size,
@@ -3372,7 +3388,7 @@ func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttach
 	}
 
 	attachment, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-		return s.Store.GetAttachment(txCtx, userID, uuid.Nil, attachmentID)
+		return s.Store.GetAttachment(txCtx, userID, "", attachmentID)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -3397,7 +3413,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 		return status.Error(codes.InvalidArgument, "invalid attachment id")
 	}
 	attachment, err := withMemoryRead(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-		return s.Store.GetAttachment(txCtx, userID, uuid.Nil, attachmentID)
+		return s.Store.GetAttachment(txCtx, userID, "", attachmentID)
 	})
 	if err != nil {
 		return mapError(err)
@@ -3513,7 +3529,7 @@ type ResponseRecorderServer struct {
 	EventBus registryeventbus.EventBus
 }
 
-func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, eventName string, statusValue string, convUUID uuid.UUID, recordingID string) {
+func (s *ResponseRecorderServer) publishResponseEvent(ctx context.Context, eventName string, statusValue string, convUUID string, recordingID string) {
 	userID := getUserID(ctx)
 	if s.EventBus == nil || userID == "" {
 		return
@@ -3564,7 +3580,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 		})
 	}
 	var convID string
-	var convUUID uuid.UUID
+	var convUUID string
 	var recorder *internalresumer.Recorder
 	var cancelStream <-chan struct{}
 	defer func() {
@@ -3630,7 +3646,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			}
 
 			if convID == "" && len(req.GetConversationId()) > 0 {
-				id, err := bytesToUUID(req.GetConversationId())
+				id, err := requiredConversationID(req.GetConversationId())
 				if err != nil {
 					return status.Error(codes.InvalidArgument, "invalid conversation_id")
 				}
@@ -3638,7 +3654,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 					return err
 				}
 				convUUID = id
-				convID = id.String()
+				convID = string(id)
 				advertised := s.resolveAdvertisedAddress(stream.Context())
 				recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
 				if err != nil {
@@ -3684,7 +3700,7 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	if !s.Enabled {
 		return nil
 	}
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -3693,7 +3709,7 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	}
 
 	advertised := s.resolveAdvertisedAddress(stream.Context())
-	ch, redirectAddress, err := s.Resumer.ReplayWithAddress(stream.Context(), convID.String(), advertised)
+	ch, redirectAddress, err := s.Resumer.ReplayWithAddress(stream.Context(), string(convID), advertised)
 	if err != nil {
 		return status.Error(codes.Internal, err.Error())
 	}
@@ -3712,7 +3728,7 @@ func (s *ResponseRecorderServer) Cancel(ctx context.Context, req *pb.CancelRecor
 	if !s.Enabled {
 		return nil, status.Error(codes.FailedPrecondition, "response recorder disabled")
 	}
-	convID, err := bytesToUUID(req.GetConversationId())
+	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
@@ -3721,7 +3737,7 @@ func (s *ResponseRecorderServer) Cancel(ctx context.Context, req *pb.CancelRecor
 	}
 
 	advertised := s.resolveAdvertisedAddress(ctx)
-	redirectAddress, err := s.Resumer.RequestCancelWithAddress(ctx, convID.String(), advertised)
+	redirectAddress, err := s.Resumer.RequestCancelWithAddress(ctx, string(convID), advertised)
 	if err != nil {
 		return nil, status.Error(codes.Internal, err.Error())
 	}
@@ -3740,15 +3756,15 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 		return &pb.CheckRecordingsResponse{}, nil
 	}
 	var ids []string
-	for _, b := range req.GetConversationIds() {
-		id, err := bytesToUUID(b)
+	for _, raw := range req.GetConversationIds() {
+		id, err := requiredConversationID(raw)
 		if err != nil {
 			continue
 		}
 		if err := s.requireConversationAccess(ctx, id, model.AccessLevelReader); err != nil {
 			continue
 		}
-		ids = append(ids, id.String())
+		ids = append(ids, string(id))
 	}
 
 	active, err := s.Resumer.Check(ctx, ids)
@@ -3758,13 +3774,12 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 
 	resp := &pb.CheckRecordingsResponse{}
 	for _, idStr := range active {
-		id, _ := uuid.Parse(idStr)
-		resp.ConversationIds = append(resp.ConversationIds, uuidToBytes(id))
+		resp.ConversationIds = append(resp.ConversationIds, idStr)
 	}
 	return resp, nil
 }
 
-func (s *ResponseRecorderServer) requireConversationAccess(ctx context.Context, conversationID uuid.UUID, minLevel model.AccessLevel) error {
+func (s *ResponseRecorderServer) requireConversationAccess(ctx context.Context, conversationID string, minLevel model.AccessLevel) error {
 	if s.Store == nil {
 		return status.Error(codes.Internal, "response recorder store not configured")
 	}
@@ -4001,16 +4016,16 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			kindsFilter[k] = true
 		}
 	}
-	conversationFilter := make(map[uuid.UUID]bool)
+	conversationFilter := make(map[string]bool)
 	for _, raw := range req.GetConversationIds() {
-		id, err := bytesToUUID(raw)
+		id, err := requiredConversationID(raw)
 		if err != nil {
-			return status.Error(codes.InvalidArgument, "conversation_ids must contain 16-byte UUID values")
+			return status.Error(codes.InvalidArgument, "conversation_ids must contain non-empty values")
 		}
 		conversationFilter[id] = true
 	}
 	entryFilter := eventstream.NewEntryEventFilter(req.GetEntryChannels(), req.GetEntryContentTypes(), req.GetEntryRoles())
-	userEntryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
 			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
@@ -4030,7 +4045,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 		return found, nil
 	}
-	adminEntryLoader := func(ctx context.Context, conversationID, entryID uuid.UUID) (*model.Entry, error) {
+	adminEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
 			page, err := s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
@@ -4249,7 +4264,7 @@ const (
 	replayGRPCRecover
 )
 
-func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -4373,7 +4388,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 	}
 }
 
-func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail string, batchSize int, kindsFilter map[string]bool, conversationFilter map[uuid.UUID]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail string, batchSize int, kindsFilter map[string]bool, conversationFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -4501,7 +4516,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 
 	switch event.Kind {
 	case "conversation":
-		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
 		if !ok {
 			return event, true, nil
 		}
@@ -4514,7 +4529,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 		event.Data = grpcFullEventData(conv, data)
 		return event, true, nil
 	case "entry":
-		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
 		if !ok {
 			return event, true, nil
 		}
@@ -4553,7 +4568,7 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 	}
 	switch event.Kind {
 	case "conversation":
-		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
 		if !ok {
 			return event, true, nil
 		}
@@ -4566,7 +4581,7 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 		event.Data = grpcFullEventData(conv, data)
 		return event, true, nil
 	case "entry":
-		conversationID, ok := decodeGRPCUUIDField(data, "conversation")
+		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
 		if !ok {
 			return event, true, nil
 		}
@@ -4610,7 +4625,7 @@ func grpcFullEventData(entity any, summary map[string]any) any {
 	return out
 }
 
-func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map[uuid.UUID]bool) bool {
+func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map[string]bool) bool {
 	if len(filter) == 0 || event.Kind == "stream" {
 		return true
 	}
@@ -4618,10 +4633,10 @@ func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map
 	if !ok {
 		return false
 	}
-	if conversationID, ok := decodeGRPCUUIDField(data, "conversation"); ok && filter[conversationID] {
+	if conversationID, ok := decodeGRPCConversationIDField(data, "conversation"); ok && filter[conversationID] {
 		return true
 	}
-	if conversationID, ok := decodeGRPCUUIDField(data, "conversation_id"); ok && filter[conversationID] {
+	if conversationID, ok := decodeGRPCConversationIDField(data, "conversation_id"); ok && filter[conversationID] {
 		return true
 	}
 	return false
@@ -4659,6 +4674,22 @@ func decodeGRPCUUIDField(data map[string]any, field string) (uuid.UUID, bool) {
 		return uuid.Nil, false
 	}
 	return id, true
+}
+
+func decodeGRPCConversationIDField(data map[string]any, field string) (string, bool) {
+	raw, ok := data[field]
+	if !ok {
+		return "", false
+	}
+	value, ok := raw.(string)
+	if !ok {
+		return "", false
+	}
+	id := strings.TrimSpace(value)
+	if id == "" {
+		return "", false
+	}
+	return string(id), true
 }
 
 func grpcMapKeys(items map[string]bool) []string {

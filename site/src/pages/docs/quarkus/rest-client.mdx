@@ -158,7 +158,7 @@ public class MyService {
     @Inject
     MemoryServiceApiBuilder apiBuilder;
 
-    public Conversation getConversation(String bearerToken, UUID conversationId) {
+    public Conversation getConversation(String bearerToken, String conversationId) {
         ConversationsApi api = apiBuilder
             .withBearerAuth(bearerToken)
             .build(ConversationsApi.class);
@@ -180,7 +180,7 @@ public class MyService {
     }
 
     public ListConversationEntries200Response listEntries(
-            String bearerToken, UUID conversationId) {
+            String bearerToken, String conversationId) {
         ConversationsApi api = apiBuilder
             .withBearerAuth(bearerToken)
             .build(ConversationsApi.class);

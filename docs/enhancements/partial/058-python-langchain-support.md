@@ -166,7 +166,7 @@ python -m grpc_tools.protoc \
 ```
 
 The generated stubs expose `ResponseRecorderServiceStub` with:
-- `Record(iter[RecordRequest]) -> RecordResponse` — client streaming; send `conversation_id` (UUID bytes) first, then content chunks
+- `Record(iter[RecordRequest]) -> RecordResponse` — client streaming; send string `conversation_id` first, then content chunks
 - `Replay(ReplayRequest) -> iter[ReplayResponse]` — server streaming; replay recorded tokens
 - `CheckRecordings(CheckRecordingsRequest) -> CheckRecordingsResponse` — check in-progress conversations
 

@@ -63,7 +63,7 @@ public class ConversationStore {
             block.put("attachments", attachments);
         }
         if (forkedAtConversationId != null) {
-            request.forkedAtConversationId(UUID.fromString(forkedAtConversationId));
+            request.forkedAtConversationId(forkedAtConversationId);
         }
         if (forkedAtEntryId != null) {
             request.forkedAtEntryId(UUID.fromString(forkedAtEntryId));
@@ -147,7 +147,7 @@ public class ConversationStore {
             String conversationId, CreateEntryRequest request, @Nullable String bearerToken) {
         try {
             ConversationsApi api = apiFactory.create(bearerToken);
-            api.appendConversationEntry(UUID.fromString(conversationId), request).block();
+            api.appendConversationEntry(conversationId, request).block();
         } catch (WebClientResponseException e) {
             LOG.warn(
                     "Failed to append conversation entry for conversationId={}: {} {}",

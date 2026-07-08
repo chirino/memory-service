@@ -17,7 +17,7 @@ CREATE TABLE IF NOT EXISTS conversation_groups (
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
-    id              UUID PRIMARY KEY,
+    id              TEXT PRIMARY KEY,
     title           BYTEA,
     -- External user identifier (e.g., OAuth subject); no local users table.
     owner_user_id   TEXT NOT NULL,
@@ -26,8 +26,8 @@ CREATE TABLE IF NOT EXISTS conversations (
     metadata        JSONB NOT NULL DEFAULT '{}'::JSONB,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     forked_at_entry_id UUID,
-    forked_at_conversation_id UUID REFERENCES conversations (id) ON DELETE CASCADE,
-    started_by_conversation_id UUID REFERENCES conversations (id) ON DELETE CASCADE,
+    forked_at_conversation_id TEXT REFERENCES conversations (id) ON DELETE CASCADE,
+    started_by_conversation_id TEXT REFERENCES conversations (id) ON DELETE CASCADE,
     started_by_entry_id UUID,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -69,7 +69,7 @@ CREATE INDEX IF NOT EXISTS idx_conversation_groups_archived
 
 CREATE TABLE IF NOT EXISTS entries (
     id                UUID NOT NULL,
-    conversation_id   UUID NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
+    conversation_id   TEXT NOT NULL REFERENCES conversations (id) ON DELETE CASCADE,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
     user_id           TEXT,
     client_id         TEXT,

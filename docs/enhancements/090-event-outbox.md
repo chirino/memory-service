@@ -503,7 +503,7 @@ The existing `SubscribeEvents` RPC is extended with optional outbox fields:
 
 ```protobuf
 message SubscribeEventsRequest {
-  repeated bytes conversation_ids = 1;
+  repeated string conversation_ids = 1;
   repeated string kinds = 2;
   optional string after_cursor = 3; // New: opaque outbox replay cursor. Omit for tail-only.
   optional string detail = 4;       // New: "summary" or "full". Requires outbox enabled.

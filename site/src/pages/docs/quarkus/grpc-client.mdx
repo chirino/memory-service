@@ -49,30 +49,6 @@ The Memory Service gRPC API is split into multiple services:
 | `ResponseRecorderService`        | Streaming response recording and resumption |
 | `SystemService`                  | Health checks                               |
 
-## UUID Handling
-
-UUID fields in gRPC are represented as 16-byte big-endian binary values (not strings). Use this helper to convert:
-
-```java
-import com.google.protobuf.ByteString;
-import java.nio.ByteBuffer;
-import java.util.UUID;
-
-public class UuidHelper {
-    public static ByteString toBytes(UUID uuid) {
-        ByteBuffer buffer = ByteBuffer.allocate(16);
-        buffer.putLong(uuid.getMostSignificantBits());
-        buffer.putLong(uuid.getLeastSignificantBits());
-        return ByteString.copyFrom(buffer.array());
-    }
-
-    public static UUID fromBytes(ByteString bytes) {
-        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
-        return new UUID(buffer.getLong(), buffer.getLong());
-    }
-}
-```
-
 ## Injecting Clients
 
 ### ConversationsService
@@ -116,19 +92,18 @@ ListConversationsResponse response = conversationsClient.listConversations(
 );
 
 for (ConversationSummary conv : response.getConversationsList()) {
-    UUID id = UuidHelper.fromBytes(conv.getId());
-    System.out.println(conv.getTitle() + " - " + id);
+    System.out.println(conv.getTitle() + " - " + conv.getId());
 }
 ```
 
 ### Get Conversation
 
 ```java
-UUID conversationId = UUID.fromString("d8e8a8c2-3767-4213-a590-c3a72bcbfdda");
+String conversationId = "d8e8a8c2-3767-4213-a590-c3a72bcbfdda";
 
 Conversation conv = conversationsClient.getConversation(
     GetConversationRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .build()
 );
 ```
@@ -154,7 +129,7 @@ Conversation conv = conversationsClient.createConversation(
 ```java
 conversationsClient.deleteConversation(
     DeleteConversationRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .build()
 );
 ```
@@ -164,7 +139,7 @@ conversationsClient.deleteConversation(
 ```java
 ListForksResponse forks = conversationsClient.listForks(
     ListForksRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .build()
 );
 
@@ -180,7 +155,7 @@ for (ConversationForkSummary fork : forks.getForksList()) {
 ```java
 ListEntriesResponse response = entriesClient.listEntries(
     ListEntriesRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .setChannel(Channel.HISTORY)
         .setEpochFilter("latest")
         .setForks("none")
@@ -203,7 +178,7 @@ import com.google.protobuf.Struct;
 
 Entry entry = entriesClient.appendEntry(
     AppendEntryRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .setEntry(CreateEntryRequest.newBuilder()
             .setUserId("user123")
             .setChannel(Channel.HISTORY)
@@ -226,7 +201,7 @@ Entry entry = entriesClient.appendEntry(
 ```java
 SyncEntriesResponse response = entriesClient.syncEntries(
     SyncEntriesRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .setEntry(CreateEntryRequest.newBuilder()
             .setChannel(Channel.CONTEXT)
             .setContentType("LC4J")
@@ -256,7 +231,6 @@ SearchEntriesResponse response = searchClient.searchConversations(
 );
 
 for (SearchResult result : response.getResultsList()) {
-    UUID convId = UuidHelper.fromBytes(result.getConversationId());
     System.out.println("Score: " + result.getScore() +
         " - " + result.getConversationTitle());
 }
@@ -276,14 +250,14 @@ IsEnabledResponse enabled = recorderClient.isEnabled(Empty.getDefaultInstance())
 // Check which conversations have recordings in progress
 CheckRecordingsResponse check = recorderClient.checkRecordings(
     CheckRecordingsRequest.newBuilder()
-        .addConversationIds(UuidHelper.toBytes(conversationId))
+        .addConversationIds(conversationId)
         .build()
 );
 
 // Replay response tokens
 recorderClient.replay(
     ReplayRequest.newBuilder()
-        .setConversationId(UuidHelper.toBytes(conversationId))
+        .setConversationId(conversationId)
         .build(),
     new StreamObserver<ReplayResponse>() {
         @Override

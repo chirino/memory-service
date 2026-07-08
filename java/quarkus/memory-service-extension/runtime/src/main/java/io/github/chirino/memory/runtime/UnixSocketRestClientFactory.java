@@ -12,6 +12,8 @@ import java.io.IOException;
 import java.lang.reflect.InvocationHandler;
 import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -250,8 +252,9 @@ final class UnixSocketRestClientFactory {
         private static String path(String template, Object... args) {
             Object[] encoded = new Object[args.length];
             for (int i = 0; i < args.length; i++) {
-                encoded[i] =
+                String value =
                         args[i] instanceof UUID uuid ? uuid.toString() : String.valueOf(args[i]);
+                encoded[i] = URLEncoder.encode(value, StandardCharsets.UTF_8).replace("+", "%20");
             }
             return String.format(template, encoded);
         }

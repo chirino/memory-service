@@ -248,7 +248,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     getConversation(conversationId: string): Promise<Response> {
       return memoryServiceRequest(
         "GET",
-        `/v1/conversations/${conversationId}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}`,
         options,
       );
     },
@@ -271,7 +271,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
       );
       return memoryServiceRequest(
         "GET",
-        `/v1/conversations/${conversationId}/entries${qs}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/entries${qs}`,
         options,
       );
     },
@@ -282,7 +282,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
       const qs = compactQuery(query);
       return memoryServiceRequest(
         "GET",
-        `/v1/conversations/${conversationId}/forks${qs}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/forks${qs}`,
         options,
       );
     },
@@ -296,7 +296,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     listMemberships(conversationId: string): Promise<Response> {
       return memoryServiceRequest(
         "GET",
-        `/v1/conversations/${conversationId}/memberships`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/memberships`,
         options,
       );
     },
@@ -306,7 +306,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     ): Promise<Response> {
       return memoryServiceRequest(
         "POST",
-        `/v1/conversations/${conversationId}/memberships`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/memberships`,
         { ...options, body: payload, contentType: "application/json" },
       );
     },
@@ -317,7 +317,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     ): Promise<Response> {
       return memoryServiceRequest(
         "PATCH",
-        `/v1/conversations/${conversationId}/memberships/${userId}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/memberships/${encodeURIComponent(userId)}`,
         { ...options, body: payload, contentType: "application/json" },
       );
     },
@@ -327,7 +327,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     ): Promise<Response> {
       return memoryServiceRequest(
         "DELETE",
-        `/v1/conversations/${conversationId}/memberships/${userId}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/memberships/${encodeURIComponent(userId)}`,
         options,
       );
     },
@@ -369,7 +369,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
     cancelResponse(conversationId: string): Promise<Response> {
       return memoryServiceRequest(
         "DELETE",
-        `/v1/conversations/${conversationId}/response`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/response`,
         options,
       );
     },
@@ -479,7 +479,7 @@ async function appendEntries(
   if (options.channel === "memory") {
     const response = await memoryServiceRequest(
       "POST",
-      `/v1/conversations/${options.conversationId}/entries`,
+      `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries`,
       {
         ...options,
         contentType: "application/json",
@@ -500,7 +500,7 @@ async function appendEntries(
     options.entries.map((entry) =>
       memoryServiceRequest(
         "POST",
-        `/v1/conversations/${options.conversationId}/entries`,
+        `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries`,
         {
           ...options,
           contentType: "application/json",
@@ -552,7 +552,7 @@ async function appendHistoryEventsEntry(
 ): Promise<Response> {
   return memoryServiceRequest(
     "POST",
-    `/v1/conversations/${options.conversationId}/entries`,
+    `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries`,
     {
       ...options,
       contentType: "application/json",
@@ -596,7 +596,7 @@ async function appendMemoryMessagesChunked(
   ) {
     const response = await memoryServiceRequest(
       "POST",
-      `/v1/conversations/${options.conversationId}/entries`,
+      `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries`,
       {
         ...options,
         contentType: "application/json",
@@ -622,7 +622,7 @@ async function syncMemoryMessages(
 ): Promise<Response> {
   return memoryServiceRequest(
     "POST",
-    `/v1/conversations/${options.conversationId}/entries/sync`,
+    `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries/sync`,
     {
       ...options,
       contentType: "application/json",
@@ -707,22 +707,6 @@ async function hasGrpcDependencies(): Promise<boolean> {
   return grpcDependenciesAvailable;
 }
 
-function uuidToBytes(uuid: string): Buffer {
-  const hex = uuid.replace(/-/g, "");
-  if (!/^[0-9a-fA-F]{32}$/.test(hex)) {
-    throw new Error(`invalid UUID: ${uuid}`);
-  }
-  return Buffer.from(hex, "hex");
-}
-
-function bytesToUuid(value: Buffer | Uint8Array): string {
-  const hex = Buffer.from(value).toString("hex");
-  if (hex.length !== 32) {
-    throw new Error("invalid UUID byte length");
-  }
-  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`;
-}
-
 async function loadResponseRecorderService(): Promise<{
   grpc: any;
   ResponseRecorderService: any;
@@ -786,7 +770,7 @@ async function grpcUnary<TResponse>(
 }
 
 class GrpcConversationRecorder {
-  private readonly conversationIdBytes: Buffer;
+  private readonly conversationId: string;
   private call: any;
   private readonly writeChain: Promise<void> = Promise.resolve();
   private pendingWrites: Promise<void> = this.writeChain;
@@ -794,7 +778,7 @@ class GrpcConversationRecorder {
   private readonly responseDone: Promise<void>;
 
   constructor(client: any, conversationId: string) {
-    this.conversationIdBytes = uuidToBytes(conversationId);
+    this.conversationId = conversationId;
     this.responseDone = new Promise<void>((resolve, reject) => {
       this.call = client.Record((error: any, response: any) => {
         if (error) {
@@ -825,7 +809,7 @@ class GrpcConversationRecorder {
         new Promise<void>((resolve, reject) => {
           this.call.write(
             {
-              conversation_id: this.conversationIdBytes,
+              conversation_id: this.conversationId,
               content: chunk,
             },
             (error: any) => {
@@ -869,7 +853,7 @@ class GrpcConversationRecorder {
         new Promise<void>((resolve, reject) => {
           this.call.write(
             {
-              conversation_id: this.conversationIdBytes,
+              conversation_id: this.conversationId,
               complete: true,
             },
             (error: any) => {
@@ -1407,7 +1391,7 @@ async function loadMessagesFromChannel(
     });
     const response = await memoryServiceRequest(
       "GET",
-      `/v1/conversations/${options.conversationId}/entries${query}`,
+      `/v1/conversations/${encodeURIComponent(options.conversationId)}/entries${query}`,
       options,
     );
     if (!response.ok) {
@@ -1466,7 +1450,7 @@ async function replayFromTarget(
     const chunks: string[] = [];
     let redirectAddress: string | null = null;
     const call = client.Replay({
-      conversation_id: uuidToBytes(conversationId),
+      conversation_id: conversationId,
     });
     call.on("data", (message: any) => {
       if (
@@ -1544,7 +1528,7 @@ async function cancelFromTarget(
   }
   const client = await createResponseRecorderClient(config, target);
   const response = await grpcUnary<any>(client, "Cancel", {
-    conversation_id: uuidToBytes(conversationId),
+    conversation_id: conversationId,
   });
   if (
     typeof response?.redirect_address === "string" &&
@@ -1568,11 +1552,9 @@ export async function memoryServiceResumeCheck(
   }
   const client = await createResponseRecorderClient(config);
   const response = await grpcUnary<any>(client, "CheckRecordings", {
-    conversation_ids: conversationIds.map(uuidToBytes),
+    conversation_ids: conversationIds,
   });
-  return (response?.conversation_ids ?? []).map((value: Buffer | Uint8Array) =>
-    bytesToUuid(value),
-  );
+  return response?.conversation_ids ?? [];
 }
 
 export async function* memoryServiceReplay(

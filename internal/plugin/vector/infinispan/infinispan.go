@@ -189,11 +189,7 @@ func (s *InfinispanStore) Search(ctx context.Context, embedding []float32, conve
 			continue
 		}
 
-		conversationID, err := uuid.Parse(conversationIDStr)
-		if err != nil {
-			log.Warn("Invalid conversation_id", "value", conversationIDStr, "err", err)
-			continue
-		}
+		conversationID := string(conversationIDStr)
 
 		results = append(results, registryvector.VectorSearchResult{
 			EntryID:        entryID,
@@ -216,7 +212,7 @@ func (s *InfinispanStore) Upsert(ctx context.Context, entries []registryvector.U
 			"_type":                 fmt.Sprintf("VectorItem%d", s.dimension),
 			"entry_id":              entry.EntryID.String(),
 			"embedding":             entry.Embedding,
-			"conversation_id":       entry.ConversationID.String(),
+			"conversation_id":       string(entry.ConversationID),
 			"conversation_group_id": entry.ConversationGroupID.String(),
 			"model":                 entry.ModelName,
 		}

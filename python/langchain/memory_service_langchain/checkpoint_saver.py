@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import base64
-import uuid as _uuid_module
 from collections.abc import AsyncIterator, Callable, Iterator, Sequence
 from typing import Any
+from urllib.parse import quote
 
 import httpx
 from langchain_core.runnables import RunnableConfig
@@ -30,8 +30,11 @@ from .transport import (
     resolve_unix_socket,
 )
 
-# Stable namespace UUID for deriving conversation UUIDs from arbitrary thread_ids.
-_CONV_ID_NAMESPACE = _uuid_module.UUID("6ba7b810-9dad-11d1-80b4-00c04fd430c8")
+
+def _quote_path(value: str) -> str:
+    return quote(value, safe="")
+
+
 _CONTEXT_AGENT_ID = "python-checkpointer"
 
 
@@ -68,18 +71,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         return cls(**config)
 
     def _conv_id(self, thread_id: str) -> str:
-        """Return a deterministic UUID string for any thread_id.
-
-        If thread_id is already a valid UUID, it is returned unchanged.
-        Otherwise a stable UUID v5 is derived so the server (which requires
-        UUID-format conversation IDs) always receives a valid UUID while the
-        caller can still use human-friendly thread IDs like "bob".
-        """
-        try:
-            _uuid_module.UUID(thread_id)
-            return thread_id
-        except ValueError:
-            return str(_uuid_module.uuid5(_CONV_ID_NAMESPACE, thread_id))
+        return thread_id
 
     def _headers(self, thread_id: str | None = None) -> dict[str, str]:
         headers = {"X-API-Key": self.api_key}
@@ -223,7 +215,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         if checkpoint_id:
             response = self._request(
                 "GET",
-                f"/v1/conversations/{conv_id}/entries/{checkpoint_id}",
+                f"/v1/conversations/{_quote_path(conv_id)}/entries/{checkpoint_id}",
                 thread_id=thread_id,
             )
             if response.status_code == 404:
@@ -238,7 +230,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         response = self._request(
             "GET",
-            f"/v1/conversations/{conv_id}/entries",
+            f"/v1/conversations/{_quote_path(conv_id)}/entries",
             thread_id=thread_id,
             params={"channel": "context"},
         )
@@ -278,7 +270,7 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         response = self._request(
             "GET",
-            f"/v1/conversations/{conv_id}/entries",
+            f"/v1/conversations/{_quote_path(conv_id)}/entries",
             thread_id=thread_id,
             params={"channel": "context"},
         )
@@ -339,20 +331,18 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
 
         response = self._request(
             "POST",
-            f"/v1/conversations/{conv_id}/entries",
+            f"/v1/conversations/{_quote_path(conv_id)}/entries",
             thread_id=thread_id,
             json_body=append_payload,
         )
         if response.status_code == 404:
             response = self._request(
                 "POST",
-                f"/v1/conversations/{conv_id}/entries",
+                f"/v1/conversations/{_quote_path(conv_id)}/entries",
                 thread_id=thread_id,
                 json_body=append_payload,
             )
         if response.status_code == 404:
-            # Auto-create the conversation with the derived UUID so subsequent
-            # retries (and future calls) can find it by the same conv_id.
             self._request(
                 "POST",
                 "/v1/conversations",
@@ -361,14 +351,14 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             )
             response = self._request(
                 "POST",
-                f"/v1/conversations/{conv_id}/entries",
+                f"/v1/conversations/{_quote_path(conv_id)}/entries",
                 thread_id=thread_id,
                 json_body=append_payload,
             )
         if self._is_duplicate_conversation_error(response):
             response = self._request(
                 "POST",
-                f"/v1/conversations/{conv_id}/entries",
+                f"/v1/conversations/{_quote_path(conv_id)}/entries",
                 thread_id=thread_id,
                 json_body=append_payload,
             )

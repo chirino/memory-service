@@ -293,7 +293,7 @@ Recommended value shape:
   "confidence": "high",
   "freshness": "stable",
   "provenance": {
-    "conversation_ids": ["uuid"],
+    "conversation_ids": ["conversation-id"],
     "entry_ids": ["uuid"],
     "memory_ids": [],
     "source_hash": "sha256:..."

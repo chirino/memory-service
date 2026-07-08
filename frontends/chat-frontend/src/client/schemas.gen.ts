@@ -174,7 +174,6 @@ export const $ConversationSummary = {
   properties: {
     id: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier for the conversation.",
     },
     title: {
@@ -201,7 +200,6 @@ export const $ConversationSummary = {
     },
     startedByConversationId: {
       type: "string",
-      format: "uuid",
       nullable: true,
     },
     startedByEntryId: {
@@ -231,7 +229,6 @@ export const $ChildConversationSummary = {
   properties: {
     id: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier for the child conversation.",
     },
     title: {
@@ -301,13 +298,11 @@ export const $Conversation = {
         },
         forkedAtConversationId: {
           type: "string",
-          format: "uuid",
           nullable: true,
           description: "Conversation ID from which this conversation was forked.",
         },
         startedByConversationId: {
           type: "string",
-          format: "uuid",
           nullable: true,
           description: "Parent conversation that started this child conversation.",
         },
@@ -338,10 +333,9 @@ export const $CreateConversationRequest = {
   properties: {
     id: {
       type: "string",
-      format: "uuid",
       nullable: true,
       description:
-        "Optional client-supplied UUID for the conversation. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.",
+        "Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.",
     },
     title: {
       type: "string",
@@ -388,7 +382,6 @@ export const $ConversationMembership = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier for the conversation.",
     },
     userId: {
@@ -410,7 +403,6 @@ export const $ConversationForkSummary = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier for the forked conversation.",
     },
     forkedAtEntryId: {
@@ -422,7 +414,6 @@ export const $ConversationForkSummary = {
     },
     forkedAtConversationId: {
       type: "string",
-      format: "uuid",
       nullable: true,
       description: "Conversation ID where the fork occurred.",
     },
@@ -898,7 +889,6 @@ export const $Entry = {
     },
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier for the conversation this entry belongs to.",
     },
     userId: {
@@ -1046,7 +1036,6 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
     },
     forkedAtConversationId: {
       type: "string",
-      format: "uuid",
       description:
         "If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.",
     },
@@ -1058,7 +1047,6 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
     },
     startedByConversationId: {
       type: "string",
-      format: "uuid",
       description:
         "If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.",
     },
@@ -1160,7 +1148,6 @@ export const $IndexEntryRequest = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "The conversation containing the entry.",
     },
     entryId: {
@@ -1239,7 +1226,6 @@ export const $UnindexedEntry = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
     },
     entry: {
       $ref: "#/components/schemas/Entry",
@@ -1337,7 +1323,6 @@ export const $SearchResult = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "Unique identifier of the conversation containing this entry.",
     },
     conversationTitle: {
@@ -1410,7 +1395,6 @@ are hard deleted from the database.`,
     },
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "The conversation being transferred.",
     },
     conversationTitle: {
@@ -1448,7 +1432,6 @@ export const $CreateOwnershipTransferRequest = {
   properties: {
     conversationId: {
       type: "string",
-      format: "uuid",
       description: "The conversation to transfer ownership of.",
     },
     newOwnerUserId: {

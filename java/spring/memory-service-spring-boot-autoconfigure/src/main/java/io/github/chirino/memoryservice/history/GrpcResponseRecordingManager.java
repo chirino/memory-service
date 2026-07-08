@@ -1,7 +1,6 @@
 package io.github.chirino.memoryservice.history;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
-import com.google.protobuf.ByteString;
 import com.google.protobuf.Empty;
 import io.github.chirino.memory.grpc.v1.CancelRecordRequest;
 import io.github.chirino.memory.grpc.v1.CancelRecordResponse;
@@ -23,10 +22,8 @@ import io.grpc.Status;
 import io.grpc.StatusRuntimeException;
 import io.grpc.stub.MetadataUtils;
 import io.grpc.stub.StreamObserver;
-import java.nio.ByteBuffer;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.UUID;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.slf4j.Logger;
@@ -80,7 +77,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                         sink -> {
                             ReplayRequest request =
                                     ReplayRequest.newBuilder()
-                                            .setConversationId(toByteString(conversationId))
+                                            .setConversationId(conversationId)
                                             .build();
                             stub(bearerToken)
                                     .replay(
@@ -144,23 +141,12 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             return List.of();
         }
         try {
-            List<ByteString> byteStringIds =
-                    conversationIds.stream()
-                            .map(GrpcResponseRecordingManager::toByteString)
-                            .toList();
             CheckRecordingsRequest request =
                     CheckRecordingsRequest.newBuilder()
-                            .addAllConversationIds(byteStringIds)
+                            .addAllConversationIds(conversationIds)
                             .build();
             CheckRecordingsResponse response = blockingStub(bearerToken).checkRecordings(request);
-            List<String> resumable = new ArrayList<>();
-            for (ByteString bs : response.getConversationIdsList()) {
-                String id = fromByteString(bs);
-                if (id != null) {
-                    resumable.add(id);
-                }
-            }
-            return resumable;
+            return new ArrayList<>(response.getConversationIdsList());
         } catch (StatusRuntimeException e) {
             Status status = e.getStatus();
             if (status.getCode() == Status.Code.UNIMPLEMENTED
@@ -193,9 +179,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             return;
         }
         CancelRecordRequest request =
-                CancelRecordRequest.newBuilder()
-                        .setConversationId(toByteString(conversationId))
-                        .build();
+                CancelRecordRequest.newBuilder().setConversationId(conversationId).build();
         try {
             CancelRecordResponse response = blockingStub(bearerToken).cancel(request);
             if (!response.getAccepted()) {
@@ -243,27 +227,6 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
         return metadata;
     }
 
-    private static ByteString toByteString(String uuidString) {
-        if (uuidString == null || uuidString.isEmpty()) {
-            return ByteString.EMPTY;
-        }
-        UUID uuid = UUID.fromString(uuidString);
-        ByteBuffer buffer = ByteBuffer.allocate(16);
-        buffer.putLong(uuid.getMostSignificantBits());
-        buffer.putLong(uuid.getLeastSignificantBits());
-        return ByteString.copyFrom(buffer.array());
-    }
-
-    private static String fromByteString(ByteString bytes) {
-        if (bytes == null || bytes.isEmpty()) {
-            return null;
-        }
-        ByteBuffer buffer = ByteBuffer.wrap(bytes.toByteArray());
-        long mostSig = buffer.getLong();
-        long leastSig = buffer.getLong();
-        return new UUID(mostSig, leastSig).toString();
-    }
-
     private final class GrpcResponseRecorder implements RecordingSession {
 
         private final ResponseRecorderServiceGrpc.ResponseRecorderServiceStub service;
@@ -294,7 +257,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             }
             RecordRequest.Builder builder = RecordRequest.newBuilder().setContent(token);
             if (firstMessage.compareAndSet(true, false)) {
-                builder.setConversationId(toByteString(conversationId));
+                builder.setConversationId(conversationId);
             }
             observer.onNext(builder.build());
         }
@@ -311,7 +274,7 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
             }
             RecordRequest.Builder builder = RecordRequest.newBuilder().setComplete(true);
             if (firstMessage.compareAndSet(true, false)) {
-                builder.setConversationId(toByteString(conversationId));
+                builder.setConversationId(conversationId);
             }
             observer.onNext(builder.build());
             observer.onCompleted();
