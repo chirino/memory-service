@@ -6,16 +6,16 @@ import { HistoryRenderer } from "./HistoryRenderer";
 import { JsonRenderer } from "./JsonRenderer";
 
 export type ContentRendererProps = {
-	content: unknown[];
-	contentType: string;
+  content: unknown[];
+  contentType: string;
 };
 
 type RendererComponent = ComponentType<ContentRendererProps>;
 
 // Registry mapping content types to their renderers
 const rendererRegistry: Record<string, RendererComponent> = {
-	history: HistoryRenderer,
-	"history/lc4j": HistoryRenderer,
+  history: HistoryRenderer,
+  "history/lc4j": HistoryRenderer,
 };
 
 /**
@@ -23,20 +23,22 @@ const rendererRegistry: Record<string, RendererComponent> = {
  * Returns JsonRenderer if no specialized renderer exists.
  */
 export function getRenderer(contentType: string): RendererComponent {
-	return rendererRegistry[contentType] ?? JsonRenderer;
+  return rendererRegistry[contentType] ?? JsonRenderer;
 }
 
 /**
  * Check if a content type has a custom renderer.
  */
 export function hasCustomRenderer(contentType: string): boolean {
-	return contentType in rendererRegistry;
+  return contentType in rendererRegistry;
 }
 
 // Export components
 export { ContentRenderer } from "./ContentRenderer";
 export { HistoryRenderer } from "./HistoryRenderer";
 export { JsonRenderer } from "./JsonRenderer";
+export { getLlmContextEntries } from "./LlmContext";
+export { LlmContextRenderer } from "./LlmContextRenderer";
 export type { ViewMode } from "./useContentViewMode";
 export { useContentViewMode } from "./useContentViewMode";
 export { ViewToggle } from "./ViewToggle";

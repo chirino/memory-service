@@ -199,6 +199,6 @@ This frontend follows the same patterns as `chat-frontend`. When adding features
 
 ## Related Documentation
 
-- [Enhancement 106](../../docs/enhancements/106-developer-frontend.md) - Full design document
+- [Enhancement 106](../../docs/enhancements/implemented/106-developer-frontend-integration.md) - Full design document
 - [Admin API Contract](../../contracts/openapi/openapi-admin.yml)
 - [Chat Frontend](../chat-frontend/) - Reference implementation
