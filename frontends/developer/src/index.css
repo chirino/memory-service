@@ -210,6 +210,37 @@
   .text-syntax-punct {
     color: #6d655c;
   }
+
+  .confidence-ring-progress {
+    transition: stroke-dashoffset 900ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+
+  .memory-quote-mark {
+    position: absolute;
+    top: 0.15rem;
+    left: 0.85rem;
+    font-family: 'Fraunces', ui-serif, Georgia, serif;
+    font-size: 3.25rem;
+    line-height: 1;
+    color: rgba(196, 111, 63, 0.22);
+    pointer-events: none;
+    user-select: none;
+  }
+
+  .provenance-chevron {
+    color: currentColor;
+    transition: transform 200ms ease;
+  }
+
+  details[open] > summary .provenance-chevron {
+    transform: rotate(180deg);
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .confidence-ring-progress {
+      transition: none;
+    }
+  }
 }
 
 @layer utilities {
