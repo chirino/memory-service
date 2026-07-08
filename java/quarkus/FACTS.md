@@ -2,7 +2,9 @@
 
 **AI service direct-call test**: `examples/doc-checkpoints/02-with-memory` has an `@QuarkusTest` that injects the generated `@RegisterAiService` `Agent`, calls it directly with a memory id, and points the real LangChain4j OpenAI client at a local OpenAI-compatible mock endpoint.
 
-**Configurable chat memory store**: The Quarkus extension registers the Memory Service-backed LangChain4j `ChatMemoryStore` when `memory-service.chat-memory.kind=memory-service` or is unset. Set `memory-service.chat-memory.kind=in-memory` to skip that extension bean and let Quarkiverse LangChain4j use its local in-memory store, avoiding Memory Service Dev Services.
+**Configurable chat memory store**: The Quarkus extension supports two modes via `memory-service.chat-memory.enabled` (default `true`). Global mode (`enabled=true`) registers `MemoryServiceChatMemoryStore` as the CDI `ChatMemoryStore` bean, overriding Quarkiverse's `InMemoryChatMemoryStore` for all `@RegisterAiService` agents. Selective mode (`enabled=false`) leaves Quarkiverse's default in place; individual agents opt in via `@RegisterAiService(chatMemoryProviderSupplier = MemoryService.class)`. The old `memory-service.chat-memory.kind` property is removed.
+
+**`MemoryService` indexing**: `ChatMemoryProcessor` emits an `AdditionalIndexedClassesBuildItem` so the Quarkiverse `AiServicesProcessor` can find `MemoryService` in the combined Jandex index, register it for reflection, and mark it unremovable when it appears as a `chatMemoryProviderSupplier`.
 
 **Standalone Keycloak tests**: Standalone Quarkus checkpoint tests that use `quarkus-test-keycloak-server` must set `keycloak.version` themselves; for Quarkus `3.35.4`, use Keycloak `26.5.7` from the Quarkus build parent. Older `24.0.5` starts but returns null admin/user tokens with the 3.35 test helper.
 
