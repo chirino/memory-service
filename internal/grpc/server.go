@@ -2340,6 +2340,41 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 
 	query := strings.TrimSpace(req.GetQuery())
+	hasQueries := len(req.GetQueries()) > 0
+	if query != "" && hasQueries {
+		return nil, status.Error(codes.InvalidArgument, "query and queries are mutually exclusive")
+	}
+	if hasQueries {
+		queries, err := protoMemorySearchQuerySpecs(req.GetQueries())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		perQueryLimit, err := protoPerQueryLimit(req.GetPerQueryLimit(), limit)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+		if s.Embedder == nil {
+			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+		}
+		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+			return multiQuerySemanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
+		})
+		if err != nil {
+			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+				return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			}
+			return nil, episodicInternalError("semantic search error", err)
+		}
+		if req.GetIncludeUsage() {
+			if err := inEpisodicRead(ctx, s.Store, func(txCtx context.Context) error {
+				enrichMemoryItemsWithUsage(txCtx, s.Store, items)
+				return nil
+			}); err != nil {
+				return nil, episodicInternalError("failed to enrich memory usage", err)
+			}
+		}
+		return memoryItemsToSearchResponse(items)
+	}
 	if query != "" {
 		if s.Embedder == nil {
 			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
@@ -2602,8 +2637,27 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 	}
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
 	query := strings.TrimSpace(req.GetQuery())
+	hasQueries := len(req.GetQueries()) > 0
+	if query != "" && hasQueries {
+		return nil, status.Error(codes.InvalidArgument, "query and queries are mutually exclusive")
+	}
 	var items []registryepisodic.MemoryItem
-	if query != "" {
+	if hasQueries {
+		queries, queryErr := protoMemorySearchQuerySpecs(req.GetQueries())
+		if queryErr != nil {
+			return nil, status.Error(codes.InvalidArgument, queryErr.Error())
+		}
+		perQueryLimit, queryErr := protoPerQueryLimit(req.GetPerQueryLimit(), limit)
+		if queryErr != nil {
+			return nil, status.Error(codes.InvalidArgument, queryErr.Error())
+		}
+		if s.Embedder == nil {
+			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+		}
+		items, err = withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
+			return multiQuerySemanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
+		})
+	} else if query != "" {
 		if s.Embedder == nil {
 			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
 		}
@@ -2628,7 +2682,7 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 		}
 		return nil, episodicInternalError("failed to search admin memories", err)
 	}
-	if req.GetKeyPrefix() != "" && query != "" {
+	if req.GetKeyPrefix() != "" && (query != "" || hasQueries) {
 		items = filterMemoryItemsByKeyPrefix(items, req.GetKeyPrefix())
 	}
 	if req.GetIncludeUsage() {
@@ -3078,6 +3132,9 @@ func memoryItemToProto(item registryepisodic.MemoryItem) (*pb.MemoryItem, error)
 	if item.Score != nil {
 		resp.Score = item.Score
 	}
+	if len(item.MatchedQueries) > 0 {
+		resp.MatchedQueries = append([]string(nil), item.MatchedQueries...)
+	}
 	if item.ExpiresAt != nil {
 		expiresAt := item.ExpiresAt.UTC().Format(time.RFC3339)
 		resp.ExpiresAt = &expiresAt
@@ -3113,6 +3170,9 @@ func adminMemoryItemToProto(item registryepisodic.MemoryItem) (*pb.AdminMemoryIt
 	}
 	if item.Score != nil {
 		resp.Score = item.Score
+	}
+	if len(item.MatchedQueries) > 0 {
+		resp.MatchedQueries = append([]string(nil), item.MatchedQueries...)
 	}
 	if item.ExpiresAt != nil {
 		resp.ExpiresAt = timestamppb.New(item.ExpiresAt.UTC())
@@ -3232,6 +3292,161 @@ func semanticSearchMemories(ctx context.Context, store registryepisodic.Episodic
 	})
 	if len(results) > limit {
 		results = results[:limit]
+	}
+	return results, nil
+}
+
+type memorySearchQuerySpec struct {
+	Text    string
+	Purpose string
+}
+
+func protoMemorySearchQuerySpecs(queries []*pb.MemorySearchQuery) ([]memorySearchQuerySpec, error) {
+	out := make([]memorySearchQuerySpec, 0, len(queries))
+	for i, q := range queries {
+		if q == nil {
+			return nil, fmt.Errorf("queries[%d].text must not be empty", i)
+		}
+		text := strings.TrimSpace(q.GetText())
+		if text == "" {
+			return nil, fmt.Errorf("queries[%d].text must not be empty", i)
+		}
+		purpose := text
+		if p := strings.TrimSpace(q.GetPurpose()); p != "" {
+			purpose = p
+		}
+		out = append(out, memorySearchQuerySpec{Text: text, Purpose: purpose})
+	}
+	return out, nil
+}
+
+func protoPerQueryLimit(raw int32, limit int) (int, error) {
+	if raw == 0 {
+		return limit, nil
+	}
+	if raw < 1 || raw > 100 {
+		return 0, fmt.Errorf("per_query_limit must be between 1 and 100")
+	}
+	return int(raw), nil
+}
+
+func multiQuerySemanticSearchMemories(
+	ctx context.Context,
+	store registryepisodic.EpisodicStore,
+	embedder registryembed.Embedder,
+	namespacePrefix []string,
+	filter registryepisodic.AttributeFilter,
+	queries []memorySearchQuerySpec,
+	perQueryLimit int,
+	limit int,
+	archived registryepisodic.ArchiveFilter,
+) ([]registryepisodic.MemoryItem, error) {
+	texts := make([]string, 0, len(queries))
+	for _, q := range queries {
+		texts = append(texts, q.Text)
+	}
+
+	embeddings, err := embedder.EmbedTexts(ctx, texts)
+	if err != nil {
+		return nil, fmt.Errorf("embed queries: %w", err)
+	}
+	if len(embeddings) == 0 {
+		return nil, nil
+	}
+	if len(embeddings) != len(texts) {
+		return nil, fmt.Errorf("embed queries: expected %d embeddings, got %d", len(texts), len(embeddings))
+	}
+
+	nsEncoded := ""
+	if len(namespacePrefix) > 0 {
+		nsEncoded, err = episodic.EncodeNamespace(namespacePrefix, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	const rrfK = 60.0
+	type rrfEntry struct {
+		rrfScore   float64
+		bestRaw    float64
+		purposes   []string
+		purposeSet map[string]struct{}
+		firstSeen  int
+	}
+
+	accum := make(map[uuid.UUID]*rrfEntry)
+	seenOrder := make([]uuid.UUID, 0)
+	for qi, q := range queries {
+		vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[qi], filter, perQueryLimit, archived)
+		if err != nil {
+			return nil, fmt.Errorf("search memory vectors (query %d): %w", qi, err)
+		}
+		seenForQuery := make(map[uuid.UUID]bool, len(vectorResults))
+		rank := 1
+		for _, vr := range vectorResults {
+			if seenForQuery[vr.MemoryID] {
+				continue
+			}
+			seenForQuery[vr.MemoryID] = true
+			entry, ok := accum[vr.MemoryID]
+			if !ok {
+				entry = &rrfEntry{
+					purposeSet: make(map[string]struct{}),
+					firstSeen:  len(seenOrder),
+				}
+				accum[vr.MemoryID] = entry
+				seenOrder = append(seenOrder, vr.MemoryID)
+			}
+			entry.rrfScore += 1.0 / (rrfK + float64(rank))
+			if vr.Score > entry.bestRaw {
+				entry.bestRaw = vr.Score
+			}
+			if _, already := entry.purposeSet[q.Purpose]; !already {
+				entry.purposeSet[q.Purpose] = struct{}{}
+				entry.purposes = append(entry.purposes, q.Purpose)
+			}
+			rank++
+		}
+	}
+
+	if len(seenOrder) == 0 {
+		return nil, nil
+	}
+	sort.SliceStable(seenOrder, func(i, j int) bool {
+		ei, ej := accum[seenOrder[i]], accum[seenOrder[j]]
+		if ei.rrfScore != ej.rrfScore {
+			return ei.rrfScore > ej.rrfScore
+		}
+		if ei.bestRaw != ej.bestRaw {
+			return ei.bestRaw > ej.bestRaw
+		}
+		return ei.firstSeen < ej.firstSeen
+	})
+	topIDs := seenOrder
+	if len(topIDs) > limit {
+		topIDs = topIDs[:limit]
+	}
+
+	items, err := store.GetMemoriesByIDs(ctx, topIDs, archived)
+	if err != nil {
+		return nil, fmt.Errorf("get memories by ids: %w", err)
+	}
+	itemByID := make(map[uuid.UUID]registryepisodic.MemoryItem, len(items))
+	for _, item := range items {
+		itemByID[item.ID] = item
+	}
+
+	results := make([]registryepisodic.MemoryItem, 0, len(topIDs))
+	for _, id := range topIDs {
+		item, ok := itemByID[id]
+		if !ok {
+			continue
+		}
+		entry := accum[id]
+		score := entry.rrfScore
+		item.Score = &score
+		item.MatchedQueries = append([]string(nil), entry.purposes...)
+		results = append(results, item)
 	}
 	return results, nil
 }

@@ -617,6 +617,11 @@ message UpdateMemoryRequest {
   optional RequestActor actor = 5;
 }
 
+message MemorySearchQuery {
+  string text = 1;
+  optional string purpose = 2;
+}
+
 message MemoryItem {
   // Memory identifier (UUID as 16-byte big-endian binary)
   bytes id = 1;
@@ -630,6 +635,7 @@ message MemoryItem {
   optional MemoryUsage usage = 9;
   bool archived = 10;
   int64 revision = 11;
+  repeated string matched_queries = 12;
 }
 
 message SearchMemoriesRequest {
@@ -641,6 +647,8 @@ message SearchMemoriesRequest {
   bool include_usage = 6;
   ArchiveFilter archived = 7;
   optional RequestActor actor = 9;
+  repeated MemorySearchQuery queries = 10;
+  int32 per_query_limit = 11;
 }
 
 message SearchMemoriesResponse {
@@ -761,6 +769,8 @@ message AdminSearchMemoriesRequest {
   int32 limit = 7;
   optional string justification = 8;
   optional string as_user_id = 9;
+  repeated MemorySearchQuery queries = 10;
+  int32 per_query_limit = 11;
 }
 
 message AdminListMemoryNamespacesRequest {
@@ -786,6 +796,7 @@ message AdminMemoryItem {
   bool archived = 10;
   optional MemoryUsage usage = 11;
   int64 revision = 12;
+  repeated string matched_queries = 13;
 }
 
 message AdminListMemoriesResponse {

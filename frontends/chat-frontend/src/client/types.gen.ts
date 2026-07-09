@@ -222,6 +222,17 @@ export type MemoryWriteResult = {
   revision?: number;
 };
 
+export type MemorySearchQuery = {
+  /**
+   * The search string for this query. Must be non-empty.
+   */
+  text: string;
+  /**
+   * Human-readable label used as attribution in matchedQueries. Defaults to text when absent.
+   */
+  purpose?: string;
+};
+
 export type MemoryItem = {
   id?: string;
   namespace?: Array<string>;
@@ -233,6 +244,10 @@ export type MemoryItem = {
     [key: string]: unknown;
   };
   score?: number | null;
+  /**
+   * Attribution — purposes (or texts) of all queries that matched this item. Present only in multi-query responses.
+   */
+  matchedQueries?: Array<string> | null;
   createdAt?: string;
   expiresAt?: string | null;
   usage?: MemoryUsage;
@@ -260,7 +275,18 @@ export type MemoryUsage = {
 
 export type SearchMemoriesRequest = {
   namespace_prefix: Array<string>;
+  /**
+   * Single semantic search string. Mutually exclusive with queries.
+   */
   query?: string;
+  /**
+   * Batch of semantic search strings for multi-query retrieval. Mutually exclusive with query.
+   */
+  queries?: Array<MemorySearchQuery>;
+  /**
+   * Per-query vector search budget. Defaults to limit when absent.
+   */
+  per_query_limit?: number;
   filter?: {
     [key: string]: unknown;
   };
