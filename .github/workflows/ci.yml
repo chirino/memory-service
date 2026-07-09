@@ -154,6 +154,7 @@ jobs:
       - name: Add Cucumber summary to job
         if: always() && contains('test-go test-site', matrix.job)
         continue-on-error: true
+        timeout-minutes: 5
         uses: deblockt/cucumber-report-annotations-action@v1.21
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}

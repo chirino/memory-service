@@ -11,3 +11,9 @@
 - What: `internal/plugin/attach/mongostore/MongoAttachmentStore.Store` now takes a mutex before calling the shared Mongo `GridFSBucket` upload path.
 - Why: `go.mongodb.org/mongo-driver/v2` races inside `GridFSBucket`'s first-write/index-creation path under concurrent attachment uploads, which caused `task test:go -race` failures and corrupted BDD attachment contents in the Mongo backend.
 - Proper fix: Replace the store-side lock with a driver-level fix or a safe one-time GridFS index/bootstrap path that avoids shared mutable `GridFSBucket` state during concurrent uploads. I've reported the issue at https://jira.mongodb.org/browse/GODRIVER-3841 
+
+## GitHub Cucumber Annotation Timeout
+
+- What: The optional `deblockt/cucumber-report-annotations-action@v1.21` CI step has a 5-minute timeout while keeping `continue-on-error: true`.
+- Why: The action can hang after test execution, artifact upload, and generated Cucumber report files have already succeeded, leaving an otherwise complete matrix job stuck in progress.
+- Proper fix: Replace the third-party annotation action with a maintained reporting path or an in-repo summary generator that cannot block required CI jobs indefinitely.
