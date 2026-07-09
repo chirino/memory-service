@@ -123,13 +123,17 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]fl
 		return nil, fmt.Errorf("openai embed: read response: %w", err)
 	}
 
-	var result embeddingResponse
-	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("openai embed: parse response: %w", err)
-	}
-
+	// Check status code before attempting JSON parse
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
 		return nil, fmt.Errorf("openai embed: authentication failed with status %d", resp.StatusCode)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return nil, fmt.Errorf("openai embed: request failed with status %d: %s", resp.StatusCode, redactAPIKey(string(body), e.apiKey))
+	}
+
+	var result embeddingResponse
+	if err := json.Unmarshal(body, &result); err != nil {
+		return nil, fmt.Errorf("openai embed: parse response (status %d): %w, body: %s", resp.StatusCode, err, redactAPIKey(string(body), e.apiKey))
 	}
 	if result.Error != nil {
 		return nil, fmt.Errorf("openai embed error: %s", redactAPIKey(result.Error.Message, e.apiKey))
