@@ -363,7 +363,7 @@ services:
 
   cognition-processor:
     profiles: ["cognition"]
-    image: quay.io/rigazilla/cognitive-memory:cd-latest
+    image: cognitive-memory/cognition-processor-quarkus:dev
     ports:
       - "8090:8090"
     environment:
@@ -390,8 +390,8 @@ services:
       COGNITION_CHECKPOINT_RESET_ON_STARTUP: "false"
 
       # LLM configuration - memory model for extraction and verification
-      COGNITION_OPENAI_BASE_URL: ${COGNITION_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-https://api.openai.com}}
-      COGNITION_OPENAI_MODEL_NAME: ${COGNITION_OPENAI_MODEL_NAME:-gpt-4o}
+      COGNITION_OPENAI_BASE_URL: ${COGNITION_OPENAI_BASE_URL:-${OPENAI_BASE_URL:-https://api.openai.com/v1}}
+      COGNITION_OPENAI_MODEL_NAME: ${COGNITION_OPENAI_MODEL_NAME:-gpt-4o-mini}
       COGNITION_OPENAI_API_KEY: ${COGNITION_OPENAI_API_KEY:-${OPENAI_API_KEY:-none}}
 
     extra_hosts:
