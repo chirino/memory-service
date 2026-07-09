@@ -282,7 +282,7 @@ Key endpoints:
 - `POST /v1/admin/evict` - Hard-delete resources past retention period.
 - `GET /admin/v1/memories` - List latest episodic memory rows across users.
 - `GET /admin/v1/memories/{id}` - Get any retained episodic memory row by UUID.
-- `POST /admin/v1/memories/search` - Search episodic memories across users or as a target user.
+- `POST /admin/v1/memories/search` - Search episodic memories across users or as a target user, including single-query or multi-query semantic retrieval.
 - `GET /admin/v1/memory-namespaces` - Browse memory namespaces across users.
 
 ---

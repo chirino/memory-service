@@ -44,17 +44,18 @@ type PutMemoryRequest struct {
 
 // MemoryItem is the external representation of an active memory (returned by GET / search).
 type MemoryItem struct {
-	ID         uuid.UUID              `json:"id"`
-	Namespace  []string               `json:"namespace"`
-	Key        string                 `json:"key"`
-	Value      map[string]interface{} `json:"value,omitempty"`
-	Attributes map[string]interface{} `json:"attributes,omitempty"`
-	Score      *float64               `json:"score,omitempty"` // nil for non-vector results
-	Usage      *MemoryUsage           `json:"usage,omitempty"`
-	CreatedAt  time.Time              `json:"createdAt"`
-	ExpiresAt  *time.Time             `json:"expiresAt"`
-	ArchivedAt *time.Time             `json:"archivedAt,omitempty"`
-	Revision   int64                  `json:"revision"`
+	ID             uuid.UUID              `json:"id"`
+	Namespace      []string               `json:"namespace"`
+	Key            string                 `json:"key"`
+	Value          map[string]interface{} `json:"value,omitempty"`
+	Attributes     map[string]interface{} `json:"attributes,omitempty"`
+	Score          *float64               `json:"score,omitempty"`          // nil for non-vector results
+	MatchedQueries []string               `json:"matchedQueries,omitempty"` // attribution for multi-query results
+	Usage          *MemoryUsage           `json:"usage,omitempty"`
+	CreatedAt      time.Time              `json:"createdAt"`
+	ExpiresAt      *time.Time             `json:"expiresAt"`
+	ArchivedAt     *time.Time             `json:"archivedAt,omitempty"`
+	Revision       int64                  `json:"revision"`
 }
 
 // MemoryUsage stores usage counters for one (namespace, key) pair.

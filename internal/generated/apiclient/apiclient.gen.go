@@ -865,10 +865,22 @@ type MemoryItem struct {
 	ExpiresAt  *time.Time              `json:"expiresAt,omitempty"`
 	Id         *openapi_types.UUID     `json:"id,omitempty"`
 	Key        *string                 `json:"key,omitempty"`
-	Namespace  *[]string               `json:"namespace,omitempty"`
-	Score      *float64                `json:"score,omitempty"`
-	Usage      *MemoryUsage            `json:"usage,omitempty"`
-	Value      *map[string]interface{} `json:"value,omitempty"`
+
+	// MatchedQueries Attribution — purposes (or texts) of all queries that matched this item. Present only in multi-query responses.
+	MatchedQueries *[]string               `json:"matchedQueries,omitempty"`
+	Namespace      *[]string               `json:"namespace,omitempty"`
+	Score          *float64                `json:"score,omitempty"`
+	Usage          *MemoryUsage            `json:"usage,omitempty"`
+	Value          *map[string]interface{} `json:"value,omitempty"`
+}
+
+// MemorySearchQuery defines model for MemorySearchQuery.
+type MemorySearchQuery struct {
+	// Purpose Human-readable label used as attribution in matchedQueries. Defaults to text when absent.
+	Purpose *string `json:"purpose,omitempty"`
+
+	// Text The search string for this query. Must be non-empty.
+	Text string `json:"text"`
 }
 
 // MemoryUsage defines model for MemoryUsage.
@@ -985,7 +997,15 @@ type SearchMemoriesRequest struct {
 	IncludeUsage    *bool                          `json:"include_usage,omitempty"`
 	Limit           *int                           `json:"limit,omitempty"`
 	NamespacePrefix []string                       `json:"namespace_prefix"`
-	Query           *string                        `json:"query,omitempty"`
+
+	// PerQueryLimit Per-query vector search budget. Defaults to limit when absent.
+	PerQueryLimit *int `json:"per_query_limit,omitempty"`
+
+	// Queries Batch of semantic search strings for multi-query retrieval. Mutually exclusive with query.
+	Queries *[]MemorySearchQuery `json:"queries,omitempty"`
+
+	// Query Single semantic search string. Mutually exclusive with queries.
+	Query *string `json:"query,omitempty"`
 }
 
 // SearchMemoriesRequestArchived defines model for SearchMemoriesRequest.Archived.

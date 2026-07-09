@@ -308,7 +308,7 @@ Likely enhancements include:
 - richer query filters on derived memories, including type, confidence, freshness, provenance, and runtime id
 - graph-style access patterns for entity relationships, citations, and memory-to-memory links
 - first-class provenance fields instead of encoding source references only inside opaque payloads
-- richer filtered memory search so runtimes can expose cognition outputs through `/v1/memories`
+- richer filtered and multi-query memory search so runtimes can expose cognition outputs through `/v1/memories`
 
 Event replay and cursoring are especially important. A cognition runtime must be able to stop, resume, rebuild, and backfill without losing correctness. Processors should persist their last accepted admin event cursor through the admin checkpoint APIs and use that checkpoint to reconnect to the event stream near their previous position instead of replaying from the beginning on every restart.
 
@@ -320,6 +320,7 @@ This document is the top-level architecture for cognition. Existing enhancement 
 - [Skill Extraction](enhancements/partial/091-skill-extraction.md) is one example of a cognition-stage implementation that turns verified procedural memories into reusable user-facing skills.
 - [Quarkus + LangChain4j Cognition Processor](enhancements/099-quarkus-cognition-processor.md) is the concrete reference strategy for building a high-quality extraction, verification, consolidation, and memory-retrieval runtime on top of the substrate.
 - [Enhanced Episodic Memory Search](enhancements/100-enhanced-memory-search.md) defines the generic `/v1/memories/search` improvements that cognition runtimes use for governed retrieval.
+- [Multi-Query Semantic Memory Search](enhancements/implemented/106-multi-query-semantic-memory-search.md) lets agents decompose a multi-intent prompt into several semantic search strings while receiving one deduplicated, attributed result set.
 
 Those enhancements describe specific cognition capabilities. This document defines the layer they belong to.
 

@@ -131,6 +131,40 @@ Feature: Episodic Memory REST API
     Then the response status should be 200
     And the response body "items" should have at least 2 items
 
+  Scenario: Multi-query memory search validates request shape
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "notes"],
+      "query": "release",
+      "queries": [{ "text": "release" }],
+      "limit": 10
+    }
+    """
+    Then the response status should be 400
+    And the response body should contain "query and queries are mutually exclusive"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "notes"],
+      "queries": [{ "text": "  " }],
+      "limit": 10
+    }
+    """
+    Then the response status should be 400
+    And the response body should contain "queries[0].text must not be empty"
+    When I call POST "/v1/memories/search" with body:
+    """
+    {
+      "namespace_prefix": ["user", "alice", "notes"],
+      "queries": [{ "text": "release" }],
+      "per_query_limit": 0,
+      "limit": 10
+    }
+    """
+    Then the response status should be 400
+    And the response body should contain "per_query_limit must be between 1 and 100"
+
   Scenario: Memory search supports pushdownable attribute filter operators
     Given I am authenticated as user "alice"
     And I call PUT "/v1/memories" with body:

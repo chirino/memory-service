@@ -128,7 +128,7 @@ Returns `204 No Content`. Archiving is recorded as a memory update, and semantic
 
 ## Searching Memories
 
-`POST /v1/memories/search` supports two modes depending on whether a `query` string is provided. Both modes honor the same `archived` selector used by direct reads: `exclude` (default), `include`, or `only`.
+`POST /v1/memories/search` supports attribute-filter search, single-query semantic search, and multi-query semantic search. All search modes honor the same `archived` selector used by direct reads: `exclude` (default), `include`, or `only`.
 
 ### Attribute-Filter Search
 
@@ -178,17 +178,56 @@ Response:
 }
 ```
 
-`score` is `null` for attribute-only results and a cosine similarity value (0–1) for semantic results. Semantic search pre-filters by archive state in the vector store and then re-checks the hydrated memory rows before returning results.
+For prompts with multiple retrieval intents, send `queries` instead of `query`. Each query item has a required `text` and an optional `purpose`; the response uses the purpose as query attribution and falls back to the text when purpose is omitted.
+
+```bash
+curl -X POST http://localhost:8080/v1/memories/search \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "namespace_prefix": ["user", "alice", "cognition.v1"],
+    "queries": [
+      {"text": "release plan", "purpose": "release"},
+      {"text": "Docker image build failure", "purpose": "docker"},
+      {"text": "Python packages excluded from release", "purpose": "python-scope"}
+    ],
+    "per_query_limit": 5,
+    "limit": 12
+  }'
+```
+
+Multi-query search embeds all query texts in one batch, runs vector search independently for each query, deduplicates memory IDs, and merges rankings with Reciprocal Rank Fusion. Returned items include `matchedQueries` so callers can see which query purposes matched each memory:
+
+```json
+{
+  "items": [
+    {
+      "id": "a1b2c3d4-e5f6-7890-abcd-ef1234567890",
+      "namespace": ["user", "alice", "cognition.v1", "procedures"],
+      "key": "procedure:deployment-debugging",
+      "value": { "text": "Check CI image build logs before rerunning release." },
+      "score": 0.0325,
+      "matchedQueries": ["release", "docker"]
+    }
+  ]
+}
+```
+
+`query` and `queries` are mutually exclusive. `queries` must be non-empty when present, and every `queries[].text` must be non-blank.
+
+`score` is `null` for attribute-only results, a cosine similarity value (0–1) for single-query semantic results, and an RRF score for multi-query semantic results. Semantic search pre-filters by archive state in the vector store and then re-checks the hydrated memory rows before returning results.
 
 ### Search Parameters
 
-| Parameter          | Type       | Required | Description                                 |
-| ------------------ | ---------- | -------- | ------------------------------------------- |
-| `namespace_prefix` | `string[]` | yes      | Restricts results to this namespace subtree |
-| `query`            | `string`   | no       | If set, enables vector similarity search    |
-| `filter`           | `object`   | no       | Attribute filter expressions (see below)    |
-| `archived`         | `string`   | no       | `exclude` (default), `include`, or `only`   |
-| `limit`            | `integer`  | no       | Max results, default 10, max 100            |
+| Parameter          | Type       | Required | Description                                                                     |
+| ------------------ | ---------- | -------- | ------------------------------------------------------------------------------- |
+| `namespace_prefix` | `string[]` | yes      | Restricts results to this namespace subtree                                     |
+| `query`            | `string`   | no       | Single semantic search string. Mutually exclusive with `queries`                |
+| `queries`          | `object[]` | no       | Multi-query semantic search strings with required `text` and optional `purpose` |
+| `per_query_limit`  | `integer`  | no       | Per-query vector search budget for multi-query search, default `limit`, max 100 |
+| `filter`           | `object`   | no       | Attribute filter expressions (see below)                                        |
+| `archived`         | `string`   | no       | `exclude` (default), `include`, or `only`                                       |
+| `limit`            | `integer`  | no       | Max results, default 10, max 100                                                |
 
 ### Attribute Filter Expressions
 
@@ -450,14 +489,14 @@ See the [Admin APIs](/docs/concepts/admin-apis/) for policy management endpoints
 
 Admin and auditor users can inspect episodic memories through a dedicated admin surface. Admin users can also write or archive namespace-scoped memories through this surface. These endpoints are separate from `/v1/memories`; they do not rely on user-facing OPA policy injection unless an admin explicitly searches as a target user.
 
-| Method  | Endpoint                      | Role             | Purpose                                                                               |
-| ------- | ----------------------------- | ---------------- | ------------------------------------------------------------------------------------- |
-| `GET`   | `/admin/v1/memories`          | admin or auditor | List latest memory rows across users with filters and cursor pagination               |
-| `PUT`   | `/admin/v1/memories`          | admin            | Upsert a memory in any namespace                                                      |
-| `PATCH` | `/admin/v1/memories`          | admin            | Archive an active memory by namespace and key                                         |
-| `GET`   | `/admin/v1/memories/{id}`     | admin or auditor | Read a retained memory row by UUID without incrementing usage counters                |
-| `POST`  | `/admin/v1/memories/search`   | admin or auditor | Search across users by namespace prefix, safe attributes, and optional semantic query |
-| `GET`   | `/admin/v1/memory-namespaces` | admin or auditor | Browse memory namespace trees across users                                            |
+| Method  | Endpoint                      | Role             | Purpose                                                                                              |
+| ------- | ----------------------------- | ---------------- | ---------------------------------------------------------------------------------------------------- |
+| `GET`   | `/admin/v1/memories`          | admin or auditor | List latest memory rows across users with filters and cursor pagination                              |
+| `PUT`   | `/admin/v1/memories`          | admin            | Upsert a memory in any namespace                                                                     |
+| `PATCH` | `/admin/v1/memories`          | admin            | Archive an active memory by namespace and key                                                        |
+| `GET`   | `/admin/v1/memories/{id}`     | admin or auditor | Read a retained memory row by UUID without incrementing usage counters                               |
+| `POST`  | `/admin/v1/memories/search`   | admin or auditor | Search across users by namespace prefix, safe attributes, and optional semantic query or query batch |
+| `GET`   | `/admin/v1/memory-namespaces` | admin or auditor | Browse memory namespace trees across users                                                           |
 
 Admin list and namespace query parameters use camelCase query names, for example:
 
@@ -467,7 +506,7 @@ curl "http://localhost:8080/admin/v1/memories?namespacePrefix=user&namespacePref
   -H "X-Justification: support investigation"
 ```
 
-Admin search reuses the public memory search JSON shape and adds `as_user_id`:
+Admin search reuses the public memory search JSON shape, including single-query and multi-query semantic search, and adds `as_user_id`:
 
 ```bash
 curl -X POST http://localhost:8080/admin/v1/memories/search \

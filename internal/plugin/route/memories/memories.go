@@ -293,6 +293,18 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 		c.JSON(http.StatusBadRequest, gin.H{"error": "namespace_prefix is required"})
 		return
 	}
+	// Validate mutual exclusivity of query and queries.
+	hasQuery := req.Query != nil && strings.TrimSpace(*req.Query) != ""
+	hasQueries := req.Queries != nil && len(*req.Queries) > 0
+	if hasQuery && hasQueries {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query and queries are mutually exclusive"})
+		return
+	}
+	if req.Queries != nil && len(*req.Queries) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "queries must not be empty when present"})
+		return
+	}
+
 	limit := 10
 	if req.Limit != nil && *req.Limit > 0 && *req.Limit <= 100 {
 		limit = *req.Limit
@@ -336,6 +348,48 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 		return
 	}
 
+	// Multi-query semantic search.
+	if hasQueries {
+		queries, err := toSearchQuerySpecs(*req.Queries)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		perQueryLimit := limit
+		if req.PerQueryLimit != nil {
+			if *req.PerQueryLimit <= 0 || *req.PerQueryLimit > 100 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "per_query_limit must be between 1 and 100"})
+				return
+			}
+			perQueryLimit = *req.PerQueryLimit
+		}
+		if embedder == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+			return
+		}
+		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+			items, err := multiQuerySemanticSearch(c.Request.Context(), store, embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
+			if err != nil {
+				return err
+			}
+			if includeUsage {
+				enrichMemoryItemsWithUsage(ctx, store, items)
+			}
+			respItems := toAPIMemoryItems(items)
+			c.JSON(http.StatusOK, generatedapi.SearchMemoriesResponse{Items: &respItems})
+			return nil
+		}); err != nil {
+			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+				return
+			}
+			handleError(c, err)
+			return
+		}
+		return
+	}
+
+	// Single-query semantic search.
 	query := ""
 	if req.Query != nil {
 		query = strings.TrimSpace(*req.Query)
@@ -789,6 +843,18 @@ func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicSt
 		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 100"})
 		return
 	}
+	// Validate mutual exclusivity of query and queries.
+	hasAdminQuery := req.Query != nil && strings.TrimSpace(*req.Query) != ""
+	hasAdminQueries := req.Queries != nil && len(*req.Queries) > 0
+	if hasAdminQuery && hasAdminQueries {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "query and queries are mutually exclusive"})
+		return
+	}
+	if req.Queries != nil && len(*req.Queries) == 0 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "queries must not be empty when present"})
+		return
+	}
+
 	archived := registryepisodic.ArchiveFilterExclude
 	if req.Archived != nil {
 		parsed, err := registryepisodic.ParseArchiveFilter(string(*req.Archived))
@@ -832,6 +898,51 @@ func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicSt
 		keyPrefix = *req.KeyPrefix
 	}
 	includeUsage := req.IncludeUsage != nil && *req.IncludeUsage
+
+	// Multi-query semantic search.
+	if hasAdminQueries {
+		queries, err := toAdminSearchQuerySpecs(*req.Queries)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
+		perQueryLimit := limit
+		if req.PerQueryLimit != nil {
+			if *req.PerQueryLimit <= 0 || *req.PerQueryLimit > 100 {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "per_query_limit must be between 1 and 100"})
+				return
+			}
+			perQueryLimit = *req.PerQueryLimit
+		}
+		if embedder == nil {
+			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+			return
+		}
+		if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
+			items, err := multiQuerySemanticSearch(c.Request.Context(), store, embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
+			if err != nil {
+				return err
+			}
+			if keyPrefix != "" {
+				items = filterMemoryItemsByKeyPrefix(items, keyPrefix)
+			}
+			if includeUsage {
+				enrichMemoryItemsWithUsage(ctx, store, items)
+			}
+			respItems := toAdminMemoryItems(items)
+			c.JSON(http.StatusOK, generatedadmin.AdminSearchMemoriesResponse{Items: &respItems})
+			return nil
+		}); err != nil {
+			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
+				c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
+				return
+			}
+			handleError(c, err)
+			return
+		}
+		return
+	}
+
 	query := ""
 	if req.Query != nil {
 		query = strings.TrimSpace(*req.Query)
@@ -1194,7 +1305,7 @@ func toAPIMemoryItem(item registryepisodic.MemoryItem) generatedapi.MemoryItem {
 		t := item.ExpiresAt.UTC()
 		expiresAt = &t
 	}
-	return generatedapi.MemoryItem{
+	out := generatedapi.MemoryItem{
 		Id:         &id,
 		Namespace:  &namespace,
 		Key:        &key,
@@ -1206,6 +1317,11 @@ func toAPIMemoryItem(item registryepisodic.MemoryItem) generatedapi.MemoryItem {
 		ExpiresAt:  expiresAt,
 		Archived:   &archived,
 	}
+	if len(item.MatchedQueries) > 0 {
+		mq := append([]string(nil), item.MatchedQueries...)
+		out.MatchedQueries = &mq
+	}
+	return out
 }
 
 func toAPIMemoryItems(items []registryepisodic.MemoryItem) []generatedapi.MemoryItem {
@@ -1233,7 +1349,7 @@ func toAdminMemoryItem(item registryepisodic.MemoryItem) generatedadmin.AdminMem
 		archivedAt = &t
 	}
 	revision := item.Revision
-	return generatedadmin.AdminMemoryItem{
+	out := generatedadmin.AdminMemoryItem{
 		Id:         &id,
 		Namespace:  &namespace,
 		Key:        &key,
@@ -1247,6 +1363,11 @@ func toAdminMemoryItem(item registryepisodic.MemoryItem) generatedadmin.AdminMem
 		Archived:   &archived,
 		Revision:   &revision,
 	}
+	if len(item.MatchedQueries) > 0 {
+		mq := append([]string(nil), item.MatchedQueries...)
+		out.MatchedQueries = &mq
+	}
+	return out
 }
 
 func toAdminMemoryItems(items []registryepisodic.MemoryItem) []generatedadmin.AdminMemoryItem {
@@ -1410,6 +1531,190 @@ func semanticSearch(c *gin.Context, store registryepisodic.EpisodicStore, embedd
 	})
 	if len(results) > limit {
 		results = results[:limit]
+	}
+	return results, nil
+}
+
+// searchQuerySpec carries text and attribution label for one query in a multi-query search.
+type searchQuerySpec struct {
+	Text    string
+	Purpose string // attribution label; equals Text when not explicitly provided
+}
+
+// toSearchQuerySpecs converts the API query array to internal specs.
+func toSearchQuerySpecs(queries []generatedapi.MemorySearchQuery) ([]searchQuerySpec, error) {
+	out := make([]searchQuerySpec, 0, len(queries))
+	for i, q := range queries {
+		text := strings.TrimSpace(q.Text)
+		if text == "" {
+			return nil, fmt.Errorf("queries[%d].text must not be empty", i)
+		}
+		purpose := text
+		if q.Purpose != nil && strings.TrimSpace(*q.Purpose) != "" {
+			purpose = strings.TrimSpace(*q.Purpose)
+		}
+		out = append(out, searchQuerySpec{Text: text, Purpose: purpose})
+	}
+	return out, nil
+}
+
+// toAdminSearchQuerySpecs converts the admin API query array to internal specs.
+func toAdminSearchQuerySpecs(queries []generatedadmin.AdminMemorySearchQuery) ([]searchQuerySpec, error) {
+	out := make([]searchQuerySpec, 0, len(queries))
+	for i, q := range queries {
+		text := strings.TrimSpace(q.Text)
+		if text == "" {
+			return nil, fmt.Errorf("queries[%d].text must not be empty", i)
+		}
+		purpose := text
+		if q.Purpose != nil && strings.TrimSpace(*q.Purpose) != "" {
+			purpose = strings.TrimSpace(*q.Purpose)
+		}
+		out = append(out, searchQuerySpec{Text: text, Purpose: purpose})
+	}
+	return out, nil
+}
+
+// multiQuerySemanticSearch executes vector search for each query independently,
+// deduplicates results using Reciprocal Rank Fusion (RRF, k=60), and attaches
+// query attribution to each result.
+func multiQuerySemanticSearch(
+	ctx context.Context,
+	store registryepisodic.EpisodicStore,
+	embedder registryembed.Embedder,
+	namespacePrefix []string,
+	filter registryepisodic.AttributeFilter,
+	queries []searchQuerySpec,
+	perQueryLimit int,
+	limit int,
+	archived registryepisodic.ArchiveFilter,
+) ([]registryepisodic.MemoryItem, error) {
+	// Validate all query texts are non-empty.
+	texts := make([]string, 0, len(queries))
+	for _, q := range queries {
+		if q.Text == "" {
+			return nil, fmt.Errorf("query text must not be empty")
+		}
+		texts = append(texts, q.Text)
+	}
+
+	// Embed all queries in one batched call.
+	embeddings, err := embedder.EmbedTexts(ctx, texts)
+	if err != nil {
+		return nil, fmt.Errorf("embed queries: %w", err)
+	}
+	if len(embeddings) == 0 {
+		return nil, nil
+	}
+	if len(embeddings) != len(texts) {
+		return nil, fmt.Errorf("embed queries: expected %d embeddings, got %d", len(texts), len(embeddings))
+	}
+
+	nsEncoded := ""
+	if len(namespacePrefix) > 0 {
+		nsEncoded, err = episodic.EncodeNamespace(namespacePrefix, 0)
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	const rrfK = 60.0
+
+	// rrfAccum accumulates RRF scores and attribution per memory ID.
+	type rrfEntry struct {
+		rrfScore   float64
+		bestRaw    float64
+		purposes   []string
+		purposeSet map[string]struct{}
+		firstSeen  int // order of first encounter for stable tie-breaking
+	}
+	accum := make(map[uuid.UUID]*rrfEntry)
+	seenOrder := make([]uuid.UUID, 0)
+
+	// For each query, run vector search and accumulate RRF contributions.
+	for qi, q := range queries {
+		if qi >= len(embeddings) {
+			break
+		}
+		vectorResults, err := store.SearchMemoryVectors(ctx, nsEncoded, embeddings[qi], filter, perQueryLimit, archived)
+		if err != nil {
+			return nil, fmt.Errorf("search memory vectors (query %d): %w", qi, err)
+		}
+		// Build rank from this query's results (1-based rank by result order).
+		// SearchMemoryVectors returns results in score-descending order.
+		seen := make(map[uuid.UUID]bool, len(vectorResults))
+		rank := 1
+		for _, vr := range vectorResults {
+			if seen[vr.MemoryID] {
+				continue
+			}
+			seen[vr.MemoryID] = true
+			contrib := 1.0 / (rrfK + float64(rank))
+			rank++
+			entry, exists := accum[vr.MemoryID]
+			if !exists {
+				entry = &rrfEntry{
+					purposeSet: make(map[string]struct{}),
+					firstSeen:  len(seenOrder),
+				}
+				accum[vr.MemoryID] = entry
+				seenOrder = append(seenOrder, vr.MemoryID)
+			}
+			entry.rrfScore += contrib
+			if vr.Score > entry.bestRaw {
+				entry.bestRaw = vr.Score
+			}
+			if _, already := entry.purposeSet[q.Purpose]; !already {
+				entry.purposeSet[q.Purpose] = struct{}{}
+				entry.purposes = append(entry.purposes, q.Purpose)
+			}
+		}
+	}
+
+	if len(seenOrder) == 0 {
+		return nil, nil
+	}
+
+	// Sort IDs by RRF score descending; ties broken by best raw score then first-seen order.
+	sort.SliceStable(seenOrder, func(i, j int) bool {
+		ei, ej := accum[seenOrder[i]], accum[seenOrder[j]]
+		if ei.rrfScore != ej.rrfScore {
+			return ei.rrfScore > ej.rrfScore
+		}
+		if ei.bestRaw != ej.bestRaw {
+			return ei.bestRaw > ej.bestRaw
+		}
+		return ei.firstSeen < ej.firstSeen
+	})
+
+	// Apply overall limit before fetching full items.
+	topIDs := seenOrder
+	if len(topIDs) > limit {
+		topIDs = topIDs[:limit]
+	}
+
+	// Fetch full memory items.
+	items, err := store.GetMemoriesByIDs(ctx, topIDs, archived)
+	if err != nil {
+		return nil, fmt.Errorf("get memories by ids: %w", err)
+	}
+	itemByID := make(map[uuid.UUID]registryepisodic.MemoryItem, len(items))
+	for _, item := range items {
+		itemByID[item.ID] = item
+	}
+
+	// Assemble results preserving RRF order, attach scores and attribution.
+	results := make([]registryepisodic.MemoryItem, 0, len(topIDs))
+	for _, id := range topIDs {
+		item, ok := itemByID[id]
+		if !ok {
+			continue
+		}
+		entry := accum[id]
+		rrfScore := entry.rrfScore
+		item.Score = &rrfScore
+		item.MatchedQueries = append([]string(nil), entry.purposes...)
+		results = append(results, item)
 	}
 	return results, nil
 }

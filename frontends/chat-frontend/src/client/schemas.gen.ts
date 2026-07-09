@@ -526,6 +526,21 @@ export const $MemoryWriteResult = {
   },
 } as const;
 
+export const $MemorySearchQuery = {
+  type: "object",
+  required: ["text"],
+  properties: {
+    text: {
+      type: "string",
+      description: "The search string for this query. Must be non-empty.",
+    },
+    purpose: {
+      type: "string",
+      description: "Human-readable label used as attribution in matchedQueries. Defaults to text when absent.",
+    },
+  },
+} as const;
+
 export const $MemoryItem = {
   type: "object",
   properties: {
@@ -553,6 +568,15 @@ export const $MemoryItem = {
     score: {
       type: "number",
       format: "double",
+      nullable: true,
+    },
+    matchedQueries: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+      description:
+        "Attribution — purposes (or texts) of all queries that matched this item. Present only in multi-query responses.",
       nullable: true,
     },
     createdAt: {
@@ -615,6 +639,20 @@ export const $SearchMemoriesRequest = {
     },
     query: {
       type: "string",
+      description: "Single semantic search string. Mutually exclusive with queries.",
+    },
+    queries: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/MemorySearchQuery",
+      },
+      description: "Batch of semantic search strings for multi-query retrieval. Mutually exclusive with query.",
+    },
+    per_query_limit: {
+      type: "integer",
+      minimum: 1,
+      maximum: 100,
+      description: "Per-query vector search budget. Defaults to limit when absent.",
     },
     filter: {
       type: "object",
