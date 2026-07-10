@@ -1,0 +1,4 @@
+interface:
+  display_name: "Verify Dependabot PRs"
+  short_description: "Batch, validate, and consolidate dependency PRs"
+  default_prompt: "Use $verify-dependabot-prs to validate the open Dependabot PR queue and prepare a consolidated batch PR."
