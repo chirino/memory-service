@@ -121,6 +121,25 @@ Feature: Entries gRPC API
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
 
+  Scenario: User entry listing rejects a malformed forward token via gRPC
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    page { page_size: 2 page_token: "not-a-uuid" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin entry listing rejects a malformed forward token via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    page { page_size: 2 page_token: "not-a-uuid" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: List entries with channel filter via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has an entry "Memory entry" in channel "CONTEXT" with contentType "test.v1"

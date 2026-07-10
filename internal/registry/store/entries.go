@@ -2,9 +2,67 @@ package store
 
 import (
 	"fmt"
+	"strings"
 
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/google/uuid"
 )
+
+// EpochForChannel applies epoch semantics to an entry. Epochs belong only to
+// context entries; context defaults to epoch 1 when the request omits one.
+func EpochForChannel(channel model.Channel, requested *int64) *int64 {
+	if channel != model.ChannelContext {
+		return nil
+	}
+	if requested != nil {
+		return requested
+	}
+	one := int64(1)
+	return &one
+}
+
+// ValidateEntryEpochChannels rejects request-level epochs on batches containing
+// entries from channels where epochs have no meaning.
+func ValidateEntryEpochChannels(entries []CreateEntryRequest, epoch *int64) error {
+	if epoch == nil {
+		return nil
+	}
+	for _, entry := range entries {
+		channel := model.Channel(strings.ToLower(entry.Channel))
+		if channel == "" {
+			channel = model.ChannelHistory
+		}
+		if channel != model.ChannelContext {
+			return fmt.Errorf("epoch can only be set for context entries; entry channel %q does not support epochs", channel)
+		}
+	}
+	return nil
+}
+
+// EntryLookupQuery builds the bounded listing query used when an entry must be
+// loaded through normal conversation visibility rules.
+func EntryLookupQuery(entryID uuid.UUID, channel *model.Channel, clientID *string) EntryListQuery {
+	entryIDString := entryID.String()
+	return EntryListQuery{
+		Limit:       1,
+		Channel:     channel,
+		ClientID:    clientID,
+		AllForks:    true,
+		UpToEntryID: &entryIDString,
+		Tail:        true,
+	}
+}
+
+// AdminEntryLookupQuery builds the equivalent bounded admin lookup.
+func AdminEntryLookupQuery(entryID uuid.UUID) AdminMessageQuery {
+	entryIDString := entryID.String()
+	return AdminMessageQuery{
+		Limit:       1,
+		AllForks:    true,
+		UpToEntryID: &entryIDString,
+		Tail:        true,
+	}
+}
 
 // TrimEntriesToVisiblePrefix keeps entries that are part of the visible prefix
 // ending at upToEntryID. The visible slice should already reflect the caller's
@@ -117,11 +175,16 @@ func PaginateEntries(
 	// Forward pagination (afterCursor or from the beginning).
 	start := 0
 	if afterEntryID != nil {
+		found := false
 		for i, e := range entries {
 			if e.ID.String() == *afterEntryID {
 				start = i + 1
+				found = true
 				break
 			}
+		}
+		if !found {
+			return nil, nil, nil, fmt.Errorf("afterCursor entry not found in visible results")
 		}
 	}
 	if start >= n {

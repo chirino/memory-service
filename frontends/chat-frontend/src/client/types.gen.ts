@@ -290,6 +290,9 @@ export type SearchMemoriesRequest = {
   filter?: {
     [key: string]: unknown;
   };
+  /**
+   * Maximum number of results to return. The server may enforce a lower configured maximum.
+   */
   limit?: number;
   include_usage?: boolean;
   archived?: "exclude" | "include" | "only";
@@ -669,7 +672,7 @@ export type SearchConversationsRequest = {
    */
   afterCursor?: string | null;
   /**
-   * Maximum number of results to return. The server-wide configured maximum defaults to 1000.
+   * Maximum number of results to return. The server may enforce a lower configured maximum.
    */
   limit?: number;
   /**

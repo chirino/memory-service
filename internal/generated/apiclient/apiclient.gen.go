@@ -962,7 +962,7 @@ type SearchConversationsRequest struct {
 	// IncludeEntry Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
 	IncludeEntry *bool `json:"includeEntry,omitempty"`
 
-	// Limit Maximum number of results to return. The server-wide configured maximum defaults to 1000.
+	// Limit Maximum number of results to return. The server may enforce a lower configured maximum.
 	Limit *int `json:"limit,omitempty"`
 
 	// Query Natural language query.
@@ -1007,11 +1007,13 @@ type SearchConversationsSearchTypeSingle string
 
 // SearchMemoriesRequest defines model for SearchMemoriesRequest.
 type SearchMemoriesRequest struct {
-	Archived        *SearchMemoriesRequestArchived `json:"archived,omitempty"`
-	Filter          *map[string]interface{}        `json:"filter,omitempty"`
-	IncludeUsage    *bool                          `json:"include_usage,omitempty"`
-	Limit           *int                           `json:"limit,omitempty"`
-	NamespacePrefix []string                       `json:"namespace_prefix"`
+	Archived     *SearchMemoriesRequestArchived `json:"archived,omitempty"`
+	Filter       *map[string]interface{}        `json:"filter,omitempty"`
+	IncludeUsage *bool                          `json:"include_usage,omitempty"`
+
+	// Limit Maximum number of results to return. The server may enforce a lower configured maximum.
+	Limit           *int     `json:"limit,omitempty"`
+	NamespacePrefix []string `json:"namespace_prefix"`
 
 	// PerQueryLimit Per-query vector search budget. Defaults to limit when absent.
 	PerQueryLimit *int `json:"per_query_limit,omitempty"`

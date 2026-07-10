@@ -84,7 +84,7 @@ All filter parameters correspond to indexed columns to ensure predictable query 
 | `entryId` | string | -- | Filter by linked entry ID (indexed) |
 | `status` | string | `all` | Filter: `linked`, `unlinked`, `expired`, `all` (maps to indexed `entry_id` and `expires_at`) |
 | `after` | string | -- | Cursor for pagination (encodes `created_at` + `id`) |
-| `limit` | integer | 50 | Page size (max 200) |
+| `limit` | integer | 50 | Page size, capped by the server-configured maximum (default 1000) |
 | `justification` | string | -- | Audit justification |
 
 #### Response

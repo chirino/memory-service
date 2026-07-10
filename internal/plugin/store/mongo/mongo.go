@@ -84,9 +84,13 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	defer client.Disconnect(ctx)
 
 	db := client.Database("memory_service")
+	if err := mongoRequireSchema110OrEmpty(ctx, db); err != nil {
+		return err
+	}
 
 	// Create collections with indexes
 	collections := map[string][]mongo.IndexModel{
+		"schema_metadata": {},
 		"conversation_groups": {
 			{Keys: bson.D{{Key: "archived_at", Value: 1}}},
 		},
@@ -102,9 +106,16 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 				Options: options.Index().SetUnique(true),
 			},
 		},
+		"conversation_ancestry": {
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "parent_conversation_id", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "ancestors.conversation_id", Value: 1}}},
+		},
 		"entries": {
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "conversation_id", Value: 1}}},
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "channel", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "channel", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
 			// Branch/channel/order index for bounded backward and tail history reads (Enhancement 109).
 			{Keys: bson.D{{Key: "conversation_id", Value: 1}, {Key: "channel", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "channel", Value: 1}}},
@@ -155,6 +166,47 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 				Options: options.Index().SetUnique(true),
 			},
 		},
+		"memories": {
+			{Keys: bson.D{{Key: "namespace", Value: 1}, {Key: "key", Value: 1}, {Key: "archived_at", Value: 1}}},
+			{
+				Keys:    bson.D{{Key: "expires_at", Value: 1}},
+				Options: options.Index().SetSparse(true),
+			},
+			{
+				Keys:    bson.D{{Key: "indexed_at", Value: 1}},
+				Options: options.Index().SetSparse(true),
+			},
+			{Keys: bson.D{{Key: "namespace", Value: 1}, {Key: "key", Value: 1}, {Key: "revision", Value: 1}}},
+			{
+				Keys: bson.D{{Key: "namespace", Value: 1}, {Key: "created_at", Value: 1}, {Key: "_id", Value: 1}},
+				Options: options.Index().
+					SetPartialFilterExpression(bson.M{"kind": bson.M{"$in": bson.A{0, 1}}}),
+			},
+			{
+				Keys: bson.D{{Key: "namespace", Value: 1}, {Key: "archived_at", Value: 1}, {Key: "_id", Value: 1}},
+				Options: options.Index().
+					SetPartialFilterExpression(bson.M{"deleted_reason": bson.M{"$in": bson.A{1, 2}}}),
+			},
+		},
+		"memory_usage_stats": {
+			{
+				Keys:    bson.D{{Key: "namespace", Value: 1}, {Key: "key", Value: 1}},
+				Options: options.Index().SetUnique(true),
+			},
+			{Keys: bson.D{{Key: "fetch_count", Value: -1}}},
+			{Keys: bson.D{{Key: "last_fetched_at", Value: -1}}},
+		},
+		"memory_vectors": {
+			{
+				Keys:    bson.D{{Key: "memory_id", Value: 1}, {Key: "field_name", Value: 1}},
+				Options: options.Index().SetUnique(true),
+			},
+			{Keys: bson.D{{Key: "namespace", Value: 1}}},
+			{
+				Keys:    bson.D{{Key: "policy_attributes", Value: 1}},
+				Options: options.Index().SetSparse(true),
+			},
+		},
 	}
 
 	for name, indexes := range collections {
@@ -167,18 +219,107 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 		}
 	}
 	_ = db.Collection("entries").Indexes().DropOne(ctx, "conversation_group_id_1_created_at_1")
+	if _, err := db.Collection("schema_metadata").UpdateOne(
+		ctx,
+		bson.M{"_id": "core_schema_version"},
+		bson.M{"$set": bson.M{"value": "110", "updated_at": time.Now()}},
+		options.UpdateOne().SetUpsert(true),
+	); err != nil {
+		return fmt.Errorf("mongo migration: failed to write schema metadata: %w", err)
+	}
+	if err := mongoCleanupOrphanConversationAncestry(ctx, db, 1000); err != nil {
+		log.Warn("MongoDB orphan conversation ancestry cleanup failed", "err", err)
+	}
 
 	log.Info("MongoDB schema migration complete")
 	return nil
 }
 
+func mongoRequireSchema110OrEmpty(ctx context.Context, db *mongo.Database) error {
+	names, err := db.ListCollectionNames(ctx, bson.M{})
+	if err != nil {
+		return fmt.Errorf("mongo migration: failed to inspect collections: %w", err)
+	}
+	hasMetadata := false
+	hasCoreCollection := false
+	coreCollections := map[string]bool{
+		"conversation_groups":              true,
+		"conversations":                    true,
+		"conversation_memberships":         true,
+		"entries":                          true,
+		"conversation_ownership_transfers": true,
+		"attachments":                      true,
+		"outbox_events":                    true,
+		"tasks":                            true,
+		"admin_checkpoints":                true,
+		"memories":                         true,
+		"memory_usage_stats":               true,
+		"memory_vectors":                   true,
+	}
+	for _, name := range names {
+		if name == "schema_metadata" {
+			hasMetadata = true
+			continue
+		}
+		if coreCollections[name] {
+			hasCoreCollection = true
+		}
+	}
+	if !hasMetadata {
+		if hasCoreCollection {
+			return fmt.Errorf("mongo migration: existing pre-110 MongoDB schema detected; reset the datastore before applying squashed schema 110")
+		}
+		return nil
+	}
+
+	var meta struct {
+		Value string `bson:"value"`
+	}
+	err = db.Collection("schema_metadata").FindOne(ctx, bson.M{"_id": "core_schema_version"}).Decode(&meta)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return fmt.Errorf("mongo migration: schema metadata is missing core_schema_version; reset the datastore before applying squashed schema 110")
+	}
+	if err != nil {
+		return fmt.Errorf("mongo migration: failed to read schema metadata: %w", err)
+	}
+	if meta.Value != "110" {
+		return fmt.Errorf("mongo migration: unsupported MongoDB schema version %s; reset the datastore before applying squashed schema 110", meta.Value)
+	}
+	return nil
+}
+
+func mongoCleanupOrphanConversationAncestry(ctx context.Context, db *mongo.Database, limit int64) error {
+	cur, err := db.Collection("conversation_ancestry").Find(ctx, bson.M{}, options.Find().SetProjection(bson.M{"_id": 1}).SetLimit(limit))
+	if err != nil {
+		return err
+	}
+	defer cur.Close(ctx)
+	for cur.Next(ctx) {
+		var doc struct {
+			ID string `bson:"_id"`
+		}
+		if err := cur.Decode(&doc); err != nil {
+			return err
+		}
+		count, err := db.Collection("conversations").CountDocuments(ctx, bson.M{"_id": doc.ID})
+		if err != nil {
+			return err
+		}
+		if count == 0 {
+			_, _ = db.Collection("conversation_ancestry").DeleteOne(ctx, bson.M{"_id": doc.ID})
+		}
+	}
+	return cur.Err()
+}
+
 // MongoStore implements MemoryStore using MongoDB.
 type MongoStore struct {
-	client       *mongo.Client
-	db           *mongo.Database
-	cfg          *config.Config
-	enc          *dataencryption.Service
-	entriesCache registrycache.MemoryEntriesCache
+	client                      *mongo.Client
+	db                          *mongo.Database
+	cfg                         *config.Config
+	enc                         *dataencryption.Service
+	entriesCache                registrycache.MemoryEntriesCache
+	maxBSONDocumentSizeOverride int
 }
 
 func (s *MongoStore) OutboxEnabled() bool {
@@ -237,13 +378,27 @@ type convDoc struct {
 	AgentID                 *string        `bson:"agent_id,omitempty"`
 	Metadata                map[string]any `bson:"metadata"`
 	ConversationGroupID     string         `bson:"conversation_group_id"`
-	ForkedAtConversationID  *string        `bson:"forked_at_conversation_id,omitempty"`
-	ForkedAtEntryID         *string        `bson:"forked_at_entry_id,omitempty"`
+	ForkedAtConversationID  *string        `bson:"-"`
+	ForkedAtEntryID         *uuid.UUID     `bson:"-"`
 	StartedByConversationID *string        `bson:"started_by_conversation_id,omitempty"`
 	StartedByEntryID        *string        `bson:"started_by_entry_id,omitempty"`
 	CreatedAt               time.Time      `bson:"created_at"`
 	UpdatedAt               time.Time      `bson:"updated_at"`
 	ArchivedAt              *time.Time     `bson:"archived_at,omitempty"`
+}
+
+type ancestryAncestorDoc struct {
+	ConversationID string  `bson:"conversation_id"`
+	Depth          int     `bson:"depth"`
+	BeforeEntryID  *string `bson:"before_entry_id,omitempty"`
+}
+
+type conversationAncestryDoc struct {
+	ID                   string                `bson:"_id"`
+	ConversationGroupID  string                `bson:"conversation_group_id"`
+	ParentConversationID *string               `bson:"parent_conversation_id,omitempty"`
+	ForkedAtEntryID      *string               `bson:"forked_at_entry_id,omitempty"`
+	Ancestors            []ancestryAncestorDoc `bson:"ancestors"`
 }
 
 type memberDoc struct {
@@ -340,6 +495,9 @@ type attachmentDoc struct {
 
 func (s *MongoStore) groups() *mongo.Collection        { return s.db.Collection("conversation_groups") }
 func (s *MongoStore) conversations() *mongo.Collection { return s.db.Collection("conversations") }
+func (s *MongoStore) conversationAncestry() *mongo.Collection {
+	return s.db.Collection("conversation_ancestry")
+}
 func (s *MongoStore) memberships() *mongo.Collection {
 	return s.db.Collection("conversation_memberships")
 }
@@ -397,6 +555,270 @@ func valueOrEmpty(ptr *string) string {
 		return ""
 	}
 	return *ptr
+}
+
+func (s *MongoStore) hydrateConversationFork(ctx context.Context, doc *convDoc) error {
+	var ancestry conversationAncestryDoc
+	err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": doc.ID}).Decode(&ancestry)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		doc.ForkedAtConversationID = nil
+		doc.ForkedAtEntryID = nil
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("failed to load conversation ancestry: %w", err)
+	}
+	doc.ForkedAtConversationID = ptrStrToConversationID(ancestry.ParentConversationID)
+	doc.ForkedAtEntryID = ptrStrToUUID(ancestry.ForkedAtEntryID)
+	return nil
+}
+
+func (s *MongoStore) conversationSummaryFromDoc(ctx context.Context, doc convDoc, access model.AccessLevel) (registrystore.ConversationSummary, error) {
+	if err := s.hydrateConversationFork(ctx, &doc); err != nil {
+		return registrystore.ConversationSummary{}, err
+	}
+	return registrystore.ConversationSummary{
+		ID:                      string(doc.ID),
+		Title:                   s.decryptString(doc.Title),
+		OwnerUserID:             doc.OwnerUserID,
+		ClientID:                doc.ClientID,
+		AgentID:                 doc.AgentID,
+		Metadata:                doc.Metadata,
+		ConversationGroupID:     strToUUID(doc.ConversationGroupID),
+		ForkedAtConversationID:  ptrStrToConversationID(doc.ForkedAtConversationID),
+		ForkedAtEntryID:         doc.ForkedAtEntryID,
+		StartedByConversationID: ptrStrToConversationID(doc.StartedByConversationID),
+		StartedByEntryID:        ptrStrToUUID(doc.StartedByEntryID),
+		CreatedAt:               doc.CreatedAt,
+		UpdatedAt:               doc.UpdatedAt,
+		ArchivedAt:              doc.ArchivedAt,
+		AccessLevel:             access,
+	}, nil
+}
+
+func (s *MongoStore) conversationForkSummaryFromDoc(ctx context.Context, doc convDoc) (registrystore.ConversationForkSummary, error) {
+	if err := s.hydrateConversationFork(ctx, &doc); err != nil {
+		return registrystore.ConversationForkSummary{}, err
+	}
+	return registrystore.ConversationForkSummary{
+		ID:                     doc.ID,
+		Title:                  s.decryptString(doc.Title),
+		ForkedAtEntryID:        doc.ForkedAtEntryID,
+		ForkedAtConversationID: doc.ForkedAtConversationID,
+		CreatedAt:              doc.CreatedAt,
+	}, nil
+}
+
+func (s *MongoStore) rootConversationIDs(ctx context.Context, groupIDs []string) ([]string, error) {
+	filter := bson.M{"parent_conversation_id": bson.M{"$exists": false}}
+	if len(groupIDs) > 0 {
+		filter["conversation_group_id"] = bson.M{"$in": groupIDs}
+	}
+	cur, err := s.conversationAncestry().Find(ctx, filter, options.Find().SetProjection(bson.M{"_id": 1}))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list root conversation ancestry: %w", err)
+	}
+	var docs []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode root conversation ancestry: %w", err)
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	return ids, nil
+}
+
+func (s *MongoStore) directForkChildIDs(ctx context.Context, groupID string, parentID string) ([]string, error) {
+	cur, err := s.conversationAncestry().Find(ctx,
+		bson.M{
+			"conversation_group_id":  groupID,
+			"parent_conversation_id": parentID,
+		},
+		options.Find().SetProjection(bson.M{"_id": 1}),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list direct fork ancestry: %w", err)
+	}
+	var docs []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode direct fork ancestry: %w", err)
+	}
+	ids := make([]string, 0, len(docs))
+	for _, doc := range docs {
+		ids = append(ids, doc.ID)
+	}
+	return ids, nil
+}
+
+func (s *MongoStore) createConversationAncestryDoc(ctx context.Context, convID, groupID string, sourceConv *convDoc, forkedAtEntryID *uuid.UUID, anchorOwnerDepth *int) (conversationAncestryDoc, error) {
+	doc := conversationAncestryDoc{
+		ID:                  convID,
+		ConversationGroupID: groupID,
+		Ancestors: []ancestryAncestorDoc{{
+			ConversationID: convID,
+			Depth:          0,
+		}},
+	}
+	if sourceConv == nil {
+		return doc, nil
+	}
+
+	parentID := sourceConv.ID
+	doc.ParentConversationID = &parentID
+	doc.ForkedAtEntryID = ptrUUIDToStr(forkedAtEntryID)
+
+	var parentAncestry conversationAncestryDoc
+	if err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": sourceConv.ID, "conversation_group_id": groupID}).Decode(&parentAncestry); err != nil {
+		return conversationAncestryDoc{}, fmt.Errorf("failed to load parent conversation ancestry: %w", err)
+	}
+	if len(parentAncestry.Ancestors) == 0 {
+		return conversationAncestryDoc{}, fmt.Errorf("parent conversation ancestry is missing: %s", sourceConv.ID)
+	}
+
+	parentSegments := make([]model.ConversationAncestrySegment, 0, len(parentAncestry.Ancestors))
+	for _, parentRow := range parentAncestry.Ancestors {
+		var beforeEntryID *uuid.UUID
+		if parentRow.BeforeEntryID != nil {
+			parsed, err := uuid.Parse(*parentRow.BeforeEntryID)
+			if err != nil {
+				return conversationAncestryDoc{}, fmt.Errorf("parent conversation ancestry contains invalid before_entry_id %q: %w", *parentRow.BeforeEntryID, err)
+			}
+			beforeEntryID = &parsed
+		}
+		parentSegments = append(parentSegments, model.ConversationAncestrySegment{
+			ConversationID:  parentRow.ConversationID,
+			Depth:           parentRow.Depth,
+			BeforeEntryID:   beforeEntryID,
+			ForkedAtEntryID: nil,
+		})
+	}
+	segments, err := model.BuildConversationAncestrySegments(convID, parentSegments, forkedAtEntryID, anchorOwnerDepth)
+	if err != nil {
+		return conversationAncestryDoc{}, err
+	}
+	for _, segment := range segments[1:] {
+		doc.Ancestors = append(doc.Ancestors, ancestryAncestorDoc{
+			ConversationID: segment.ConversationID,
+			Depth:          segment.Depth,
+			BeforeEntryID:  ptrUUIDToStr(segment.BeforeEntryID),
+		})
+	}
+	if err := s.validateConversationAncestryDocSize(ctx, doc); err != nil {
+		return conversationAncestryDoc{}, err
+	}
+	return doc, nil
+}
+
+func (s *MongoStore) claimConversationAncestry(ctx context.Context, requested conversationAncestryDoc) (*registrystore.ConversationDetail, error) {
+	for attempt := 0; attempt < 2; attempt++ {
+		if _, err := s.conversationAncestry().InsertOne(ctx, requested); err == nil {
+			return nil, nil
+		} else if !mongo.IsDuplicateKeyError(err) {
+			return nil, fmt.Errorf("failed to create conversation ancestry: %w", err)
+		}
+
+		var existingAncestry conversationAncestryDoc
+		err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": requested.ID}).Decode(&existingAncestry)
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("failed to load existing conversation ancestry: %w", err)
+		}
+		if !conversationAncestryDocsMatch(existingAncestry, requested) {
+			return nil, &registrystore.ConflictError{Message: "conversation id already exists with different ancestry"}
+		}
+
+		var existing convDoc
+		err = s.conversations().FindOne(ctx, bson.M{"_id": requested.ID}).Decode(&existing)
+		if err == nil {
+			summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
+			if summaryErr != nil {
+				return nil, summaryErr
+			}
+			return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
+		}
+		if !errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, fmt.Errorf("failed to load existing conversation: %w", err)
+		}
+		// Matching ancestry without a conversation is an orphan from a failed
+		// publish-last attempt. Remove it and retry the ancestry claim once.
+		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": requested.ID})
+	}
+	return nil, &registrystore.ConflictError{Message: "conversation ancestry claim is in progress"}
+}
+
+func conversationAncestryDocsMatch(left, right conversationAncestryDoc) bool {
+	return left.ID == right.ID &&
+		left.ConversationGroupID == right.ConversationGroupID &&
+		stringPtrEqual(left.ParentConversationID, right.ParentConversationID) &&
+		stringPtrEqual(left.ForkedAtEntryID, right.ForkedAtEntryID) &&
+		reflect.DeepEqual(left.Ancestors, right.Ancestors)
+}
+
+func stringPtrEqual(left, right *string) bool {
+	if left == nil || right == nil {
+		return left == right
+	}
+	return *left == *right
+}
+
+func (s *MongoStore) validateConversationAncestryDocSize(ctx context.Context, doc conversationAncestryDoc) error {
+	raw, err := bson.Marshal(doc)
+	if err != nil {
+		return fmt.Errorf("failed to encode conversation ancestry: %w", err)
+	}
+	maxSize := s.maxBSONDocumentSize(ctx)
+	if len(raw) >= maxSize {
+		return &registrystore.ValidationError{Field: "forkedAtConversationId", Message: fmt.Sprintf("conversation ancestry document exceeds MongoDB maximum BSON document size (%d bytes)", maxSize)}
+	}
+	return nil
+}
+
+func (s *MongoStore) maxBSONDocumentSize(ctx context.Context) int {
+	const defaultMaxBSONDocumentSize = 16 * 1024 * 1024
+	if s.maxBSONDocumentSizeOverride > 0 {
+		return s.maxBSONDocumentSizeOverride
+	}
+	var hello struct {
+		MaxBSONObjectSize int32 `bson:"maxBsonObjectSize"`
+	}
+	if err := s.db.RunCommand(ctx, bson.D{{Key: "hello", Value: 1}}).Decode(&hello); err == nil && hello.MaxBSONObjectSize > 0 {
+		return int(hello.MaxBSONObjectSize)
+	}
+	return defaultMaxBSONDocumentSize
+}
+
+func (s *MongoStore) visibleAncestryDepthForEntry(ctx context.Context, target convDoc, entry entryDoc) (*int, error) {
+	var ancestry conversationAncestryDoc
+	if err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": target.ID, "conversation_group_id": target.ConversationGroupID}).Decode(&ancestry); err != nil {
+		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
+	}
+	for _, row := range ancestry.Ancestors {
+		if row.ConversationID != entry.ConversationID {
+			continue
+		}
+		if row.Depth > 0 {
+			if row.BeforeEntryID == nil {
+				return nil, nil
+			}
+			stopAt, err := s.entryDocOrderKey(ctx, *row.BeforeEntryID)
+			if err != nil {
+				return nil, err
+			}
+			if !entryDocOrderLess(entry, stopAt) {
+				return nil, nil
+			}
+		}
+		depth := row.Depth
+		return &depth, nil
+	}
+	return nil, nil
 }
 
 // --- Access control ---
@@ -469,23 +891,26 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	var actualGroupID string
 	ownerUserID := userID
 	var membershipsToCopy []memberDoc
+	var sourceConv *convDoc
+	var anchorOwnerDepth *int
 	if forkedAtConversationID != nil {
-		var sourceConv convDoc
+		var parent convDoc
 		err := s.conversations().FindOne(ctx, bson.M{
 			"_id":         string(*forkedAtConversationID),
 			"archived_at": bson.M{"$exists": false},
-		}).Decode(&sourceConv)
+		}).Decode(&parent)
 		if err != nil {
 			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
 		}
-		if _, err := s.requireAccess(ctx, userID, sourceConv.ConversationGroupID, model.AccessLevelReader); err != nil {
+		sourceConv = &parent
+		if _, err := s.requireAccess(ctx, userID, parent.ConversationGroupID, model.AccessLevelReader); err != nil {
 			return nil, err
 		}
 		if forkedAtEntryID != nil {
 			var entry entryDoc
 			err := s.entries().FindOne(ctx, bson.M{
 				"_id":                   uuidToStr(*forkedAtEntryID),
-				"conversation_group_id": sourceConv.ConversationGroupID,
+				"conversation_group_id": parent.ConversationGroupID,
 			}).Decode(&entry)
 			if err != nil {
 				return nil, &registrystore.NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
@@ -499,8 +924,16 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 					return nil, &registrystore.ForbiddenError{}
 				}
 			}
+			ownerDepth, err := s.visibleAncestryDepthForEntry(ctx, parent, entry)
+			if err != nil {
+				return nil, err
+			}
+			if ownerDepth == nil {
+				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "forkedAtEntryId must be visible in the parent conversation ancestry"}
+			}
+			anchorOwnerDepth = ownerDepth
 		}
-		actualGroupID = sourceConv.ConversationGroupID
+		actualGroupID = parent.ConversationGroupID
 	} else if startedByConversationID != nil {
 		var parentConv convDoc
 		err := s.conversations().FindOne(ctx, bson.M{
@@ -561,14 +994,35 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		AgentID:                 agentID,
 		Metadata:                metadata,
 		ConversationGroupID:     actualGroupID,
-		ForkedAtConversationID:  ptrConversationIDToStr(forkedAtConversationID),
-		ForkedAtEntryID:         ptrUUIDToStr(forkedAtEntryID),
 		StartedByConversationID: ptrConversationIDToStr(startedByConversationID),
 		StartedByEntryID:        ptrUUIDToStr(startedByEntryID),
 		CreatedAt:               now,
 		UpdatedAt:               now,
 	}
+
+	ancestryDoc, err := s.createConversationAncestryDoc(ctx, string(convID), actualGroupID, sourceConv, forkedAtEntryID, anchorOwnerDepth)
+	if err != nil {
+		return nil, err
+	}
+	existingDetail, err := s.claimConversationAncestry(ctx, ancestryDoc)
+	if err != nil {
+		return nil, err
+	}
+	if existingDetail != nil {
+		return existingDetail, nil
+	}
 	if _, err := s.conversations().InsertOne(ctx, doc); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			var existing convDoc
+			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing); findErr == nil {
+				summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
+				if summaryErr != nil {
+					return nil, summaryErr
+				}
+				return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
+			}
+		}
+		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
 	}
 
@@ -660,7 +1114,14 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 
 	switch mode {
 	case model.ListModeRoots:
-		filter["forked_at_conversation_id"] = bson.M{"$exists": false}
+		rootIDs, err := s.rootConversationIDs(ctx, groupIDs)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(rootIDs) == 0 {
+			return []registrystore.ConversationSummary{}, nil, nil
+		}
+		filter["_id"] = bson.M{"$in": rootIDs}
 	case model.ListModeLatestFork:
 		return s.listConversationsLatestFork(ctx, filter, accessMap, afterCursor, limit)
 	}
@@ -691,23 +1152,11 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
 		al := accessMap[d.ConversationGroupID]
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                      string(d.ID),
-			Title:                   s.decryptString(d.Title),
-			OwnerUserID:             d.OwnerUserID,
-			ClientID:                d.ClientID,
-			AgentID:                 d.AgentID,
-			Metadata:                d.Metadata,
-			ConversationGroupID:     strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(d.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
-			CreatedAt:               d.CreatedAt,
-			UpdatedAt:               d.UpdatedAt,
-			ArchivedAt:              d.ArchivedAt,
-			AccessLevel:             al,
+		summary, err := s.conversationSummaryFromDoc(ctx, d, al)
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 
 	var nextCursor *string
@@ -769,23 +1218,11 @@ func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, 
 	}
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                      string(d.ID),
-			Title:                   s.decryptString(d.Title),
-			OwnerUserID:             d.OwnerUserID,
-			ClientID:                d.ClientID,
-			AgentID:                 d.AgentID,
-			Metadata:                d.Metadata,
-			ConversationGroupID:     strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(d.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
-			CreatedAt:               d.CreatedAt,
-			UpdatedAt:               d.UpdatedAt,
-			ArchivedAt:              d.ArchivedAt,
-			AccessLevel:             accessMap[d.ConversationGroupID],
+		summary, err := s.conversationSummaryFromDoc(ctx, d, accessMap[d.ConversationGroupID])
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
@@ -852,23 +1289,11 @@ func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter
 	summaries := make([]registrystore.ConversationSummary, len(filtered))
 	for i, d := range filtered {
 		al := accessMap[d.ConversationGroupID]
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                      string(d.ID),
-			Title:                   s.decryptString(d.Title),
-			OwnerUserID:             d.OwnerUserID,
-			ClientID:                d.ClientID,
-			AgentID:                 d.AgentID,
-			Metadata:                d.Metadata,
-			ConversationGroupID:     strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(d.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
-			CreatedAt:               d.CreatedAt,
-			UpdatedAt:               d.UpdatedAt,
-			ArchivedAt:              d.ArchivedAt,
-			AccessLevel:             al,
+		summary, err := s.conversationSummaryFromDoc(ctx, d, al)
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 
 	var nextCursor *string
@@ -890,25 +1315,11 @@ func (s *MongoStore) GetConversation(ctx context.Context, userID string, convers
 		return nil, err
 	}
 
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      string(doc.ID),
-			Title:                   s.decryptString(doc.Title),
-			OwnerUserID:             doc.OwnerUserID,
-			ClientID:                doc.ClientID,
-			AgentID:                 doc.AgentID,
-			Metadata:                doc.Metadata,
-			ConversationGroupID:     strToUUID(doc.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(doc.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(doc.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(doc.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(doc.StartedByEntryID),
-			CreatedAt:               doc.CreatedAt,
-			UpdatedAt:               doc.UpdatedAt,
-			ArchivedAt:              doc.ArchivedAt,
-			AccessLevel:             access,
-		},
-	}, nil
+	summary, err := s.conversationSummaryFromDoc(ctx, doc, access)
+	if err != nil {
+		return nil, err
+	}
+	return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
 }
 
 func (s *MongoStore) UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadata map[string]any) (*registrystore.ConversationDetail, error) {
@@ -1168,18 +1579,29 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 		return nil, nil, err
 	}
 
+	childIDs, err := s.directForkChildIDs(ctx, doc.ConversationGroupID, doc.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(childIDs) == 0 {
+		return []registrystore.ConversationForkSummary{}, nil, nil
+	}
 	filter := bson.M{
 		"conversation_group_id": doc.ConversationGroupID,
+		"_id":                   bson.M{"$in": childIDs},
 	}
 	if afterCursor != nil {
 		var cursorDoc convDoc
 		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
 		if err == nil {
-			filter["created_at"] = bson.M{"$gt": cursorDoc.CreatedAt}
+			filter["$or"] = bson.A{
+				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
+				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
+			}
 		}
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit + 1))
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
 	cur, err := s.conversations().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to list forks: %w", err)
@@ -1196,13 +1618,11 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 
 	forks := make([]registrystore.ConversationForkSummary, len(docs))
 	for i, d := range docs {
-		forks[i] = registrystore.ConversationForkSummary{
-			ID:                     string(d.ID),
-			Title:                  s.decryptString(d.Title),
-			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
-			ForkedAtConversationID: ptrStrToConversationID(d.ForkedAtConversationID),
-			CreatedAt:              d.CreatedAt,
+		fork, err := s.conversationForkSummaryFromDoc(ctx, d)
+		if err != nil {
+			return nil, nil, err
 		}
+		forks[i] = fork
 	}
 
 	var nextCursor *string
@@ -1451,6 +1871,62 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, &registrystore.ForbiddenError{}
 	}
 
+	if allForks && effectiveChannel == model.ChannelHistory {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupHistoryDocs(ctx, conv.ConversationGroupID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == model.ChannelContext {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupContextDocs(ctx, conv.ConversationGroupID, clientID, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == model.ChannelJournal {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupChannelDocs(ctx, conv.ConversationGroupID, model.ChannelJournal, clientID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == "" {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupAllChannelDocs(ctx, conv.ConversationGroupID, clientID, true, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
 	if allForks {
 		docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
 		if err != nil {
@@ -1482,10 +1958,8 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
-	// Bounded path: history channel, no forks, no upToEntryID, no fromSeq,
-	// tail or beforeCursor — query in DESC order across ancestry segments.
-	if effectiveChannel == model.ChannelHistory && !allForks && upToEntryID == nil && fromSeq == nil && (tail || beforeEntryID != nil) {
-		docs, afterCursor, beforeCursor, err := s.boundedHistoryBackwardDocs(ctx, ancestry, beforeEntryID, tail, limit)
+	if effectiveChannel == model.ChannelHistory && !allForks {
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleHistoryDocs(ctx, conv, ancestry, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -1498,32 +1972,55 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
-	if effectiveChannel == model.ChannelContext && upToEntryID == nil && fromSeq == nil && !tail && beforeEntryID == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
-		// Use cache for the common latest-epoch case.
-		cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
+	if effectiveChannel == model.ChannelContext && !allForks {
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleContextDocs(ctx, conv, ancestry, clientID, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
 		if err != nil {
 			return nil, err
 		}
-		page, afterCursor, beforeCursor, pErr := registrystore.PaginateEntries(cachedEntries, afterEntryID, beforeEntryID, tail, limit)
-		if pErr != nil {
-			return nil, &registrystore.BadRequestError{Message: pErr.Error()}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
 		}
-		for i := range page {
-			if dec, err := s.decrypt(page[i].Content); err == nil {
-				page[i].Content = dec
-			}
-		}
-		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
-	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
+	if effectiveChannel == model.ChannelJournal && !allForks {
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleChannelDocs(ctx, conv, ancestry, model.ChannelJournal, clientID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if effectiveChannel == "" && !allForks {
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleAllChannelDocs(ctx, conv, ancestry, clientID, true, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	visible, err := s.loadVisibleEntriesForConversation(ctx, conv)
 	if err != nil {
 		return nil, err
 	}
-	visible := filterEntriesByAncestryDocs(docs, ancestry)
 	var filtered []entryDoc
 	if effectiveChannel == model.ChannelContext {
-		filtered = filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
+		filtered = filterVisibleMemoryEntriesWithEpochDocs(visible, *clientID, valueOrEmpty(agentID), epochFilter)
 	} else if effectiveChannel == "" {
 		// All channels (agent without filter): include scoped channels
 		// only when they belong to the calling client.
@@ -1597,6 +2094,9 @@ func (s *MongoStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (
 }
 
 func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
+	if err := registrystore.ValidateEntryEpochChannels(entries, epoch); err != nil {
+		return nil, &registrystore.ValidationError{Field: "epoch", Message: err.Error()}
+	}
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"_id":         string(conversationID),
@@ -1651,12 +2151,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			ch = string(model.ChannelHistory)
 		}
 
-		// Auto-assign epoch=1 for context entries when no epoch specified.
-		entryEpoch := epoch
-		if model.Channel(ch) == model.ChannelContext && entryEpoch == nil {
-			var one int64 = 1
-			entryEpoch = &one
-		}
+		entryEpoch := registrystore.EpochForChannel(model.Channel(ch), epoch)
 
 		encContent, err := s.encrypt(req.Content)
 		if err != nil {
@@ -1899,8 +2394,26 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 		CreatedAt:           now,
 		UpdatedAt:           now,
 	}
+	ancestryDoc, err := s.createConversationAncestryDoc(ctx, conv.ID, groupID, nil, nil, nil)
+	if err != nil {
+		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
+		return convDoc{}, err
+	}
+	if _, err := s.conversationAncestry().InsertOne(ctx, ancestryDoc); err != nil {
+		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
+		if mongo.IsDuplicateKeyError(err) {
+			// A concurrent request already claimed this conversation; fetch and return it.
+			var existing convDoc
+			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": conv.ID}).Decode(&existing); findErr != nil {
+				return convDoc{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
+			}
+			return existing, nil
+		}
+		return convDoc{}, fmt.Errorf("failed to create conversation ancestry: %w", err)
+	}
 	if _, err := s.conversations().InsertOne(ctx, conv); err != nil {
 		// Clean up the orphaned group before handling the error.
+		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": conv.ID})
 		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
 		if mongo.IsDuplicateKeyError(err) {
 			// A concurrent request already created this conversation; fetch and return it.
@@ -1920,6 +2433,9 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 		CreatedAt:           now,
 	}
 	if _, err := s.memberships().InsertOne(ctx, member); err != nil {
+		_, _ = s.conversations().DeleteOne(ctx, bson.M{"_id": conv.ID})
+		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": conv.ID})
+		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
 		return convDoc{}, fmt.Errorf("failed to create membership: %w", err)
 	}
 
@@ -2263,7 +2779,14 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 
 	switch query.Mode {
 	case model.ListModeRoots:
-		filter["forked_at_conversation_id"] = bson.M{"$exists": false}
+		rootIDs, err := s.rootConversationIDs(ctx, nil)
+		if err != nil {
+			return nil, nil, err
+		}
+		if len(rootIDs) == 0 {
+			return []registrystore.ConversationSummary{}, nil, nil
+		}
+		filter["_id"] = bson.M{"$in": rootIDs}
 	case model.ListModeLatestFork:
 		return s.adminListConversationsLatestFork(ctx, filter, query)
 	}
@@ -2293,23 +2816,11 @@ func (s *MongoStore) AdminListConversations(ctx context.Context, query registrys
 
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                      string(d.ID),
-			Title:                   s.decryptString(d.Title),
-			OwnerUserID:             d.OwnerUserID,
-			ClientID:                d.ClientID,
-			AgentID:                 d.AgentID,
-			Metadata:                d.Metadata,
-			ConversationGroupID:     strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(d.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
-			CreatedAt:               d.CreatedAt,
-			UpdatedAt:               d.UpdatedAt,
-			ArchivedAt:              d.ArchivedAt,
-			AccessLevel:             model.AccessLevelOwner,
+		summary, err := s.conversationSummaryFromDoc(ctx, d, model.AccessLevelOwner)
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 
 	var nextCursor *string
@@ -2348,21 +2859,11 @@ func (s *MongoStore) AdminListChildConversations(ctx context.Context, conversati
 	}
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                      string(d.ID),
-			Title:                   s.decryptString(d.Title),
-			OwnerUserID:             d.OwnerUserID,
-			Metadata:                d.Metadata,
-			ConversationGroupID:     strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(d.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(d.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(d.StartedByEntryID),
-			CreatedAt:               d.CreatedAt,
-			UpdatedAt:               d.UpdatedAt,
-			ArchivedAt:              d.ArchivedAt,
-			AccessLevel:             model.AccessLevelOwner,
+		summary, err := s.conversationSummaryFromDoc(ctx, d, model.AccessLevelOwner)
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
@@ -2421,21 +2922,11 @@ func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseF
 
 	summaries := make([]registrystore.ConversationSummary, len(filtered))
 	for i, d := range filtered {
-		summaries[i] = registrystore.ConversationSummary{
-			ID:                     string(d.ID),
-			Title:                  s.decryptString(d.Title),
-			OwnerUserID:            d.OwnerUserID,
-			ClientID:               d.ClientID,
-			AgentID:                d.AgentID,
-			Metadata:               d.Metadata,
-			ConversationGroupID:    strToUUID(d.ConversationGroupID),
-			ForkedAtConversationID: ptrStrToConversationID(d.ForkedAtConversationID),
-			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
-			CreatedAt:              d.CreatedAt,
-			UpdatedAt:              d.UpdatedAt,
-			ArchivedAt:             d.ArchivedAt,
-			AccessLevel:            model.AccessLevelOwner,
+		summary, err := s.conversationSummaryFromDoc(ctx, d, model.AccessLevelOwner)
+		if err != nil {
+			return nil, nil, err
 		}
+		summaries[i] = summary
 	}
 
 	var nextCursor *string
@@ -2452,25 +2943,11 @@ func (s *MongoStore) AdminGetConversation(ctx context.Context, conversationID st
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      string(doc.ID),
-			Title:                   s.decryptString(doc.Title),
-			OwnerUserID:             doc.OwnerUserID,
-			ClientID:                doc.ClientID,
-			AgentID:                 doc.AgentID,
-			Metadata:                doc.Metadata,
-			ConversationGroupID:     strToUUID(doc.ConversationGroupID),
-			ForkedAtConversationID:  ptrStrToConversationID(doc.ForkedAtConversationID),
-			ForkedAtEntryID:         ptrStrToUUID(doc.ForkedAtEntryID),
-			StartedByConversationID: ptrStrToConversationID(doc.StartedByConversationID),
-			StartedByEntryID:        ptrStrToUUID(doc.StartedByEntryID),
-			CreatedAt:               doc.CreatedAt,
-			UpdatedAt:               doc.UpdatedAt,
-			ArchivedAt:              doc.ArchivedAt,
-			AccessLevel:             model.AccessLevelOwner,
-		},
-	}, nil
+	summary, err := s.conversationSummaryFromDoc(ctx, doc, model.AccessLevelOwner)
+	if err != nil {
+		return nil, err
+	}
+	return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
 }
 
 func (s *MongoStore) AdminSetConversationArchived(ctx context.Context, conversationID string, archived bool) error {
@@ -2511,27 +2988,165 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		limit = 50
 	}
 
-	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(defaultEntryDocSort()))
-	if err != nil {
-		return nil, fmt.Errorf("failed to get admin entries: %w", err)
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelHistory {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupHistoryDocs(ctx, conv.ConversationGroupID, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
-	var docs []entryDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, fmt.Errorf("failed to decode entries: %w", err)
+
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelContext {
+		epochFilter := query.EpochFilter
+		if epochFilter == nil {
+			epochFilter = &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeAll}
+		}
+		docs, afterCursor, beforeCursor, err := s.boundedGroupContextDocs(ctx, conv.ConversationGroupID, nil, epochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelJournal {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupChannelDocs(ctx, conv.ConversationGroupID, model.ChannelJournal, nil, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if query.AllForks && query.Channel == nil {
+		docs, afterCursor, beforeCursor, err := s.boundedGroupAllChannelDocs(ctx, conv.ConversationGroupID, nil, false, query.EpochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelHistory {
+		ancestry, err := s.buildAncestryStack(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleHistoryDocs(ctx, conv, ancestry, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelContext {
+		ancestry, err := s.buildAncestryStack(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		epochFilter := query.EpochFilter
+		if epochFilter == nil {
+			epochFilter = &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeAll}
+		}
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleContextDocs(ctx, conv, ancestry, nil, epochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelJournal {
+		ancestry, err := s.buildAncestryStack(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleChannelDocs(ctx, conv, ancestry, model.ChannelJournal, nil, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel == nil {
+		ancestry, err := s.buildAncestryStack(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		docs, afterCursor, beforeCursor, err := s.boundedVisibleAllChannelDocs(ctx, conv, ancestry, nil, false, query.EpochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			entries[i] = s.entryDocToModel(d)
+			if decrypted, err := s.decrypt(d.Content); err == nil {
+				entries[i].Content = decrypted
+			}
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	var filtered []entryDoc
 	var visible []entryDoc
 	if query.AllForks {
-		filtered = docs
-		visible = docs
-	} else {
-		ancestry, err := s.buildAncestryStack(ctx, conv)
+		docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
 		if err != nil {
 			return nil, err
 		}
-		filtered = filterEntriesByAncestryDocs(docs, ancestry)
-		visible = filtered
+		filtered = docs
+		visible = docs
+	} else {
+		visible, err = s.loadVisibleEntriesForConversation(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		filtered = visible
 	}
 	if query.Channel != nil {
 		ch := strings.ToLower(string(*query.Channel))
@@ -2627,18 +3242,29 @@ func (s *MongoStore) AdminListForks(ctx context.Context, conversationID string, 
 		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
+	childIDs, err := s.directForkChildIDs(ctx, conv.ConversationGroupID, conv.ID)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(childIDs) == 0 {
+		return []registrystore.ConversationForkSummary{}, nil, nil
+	}
 	filter := bson.M{
 		"conversation_group_id": conv.ConversationGroupID,
+		"_id":                   bson.M{"$in": childIDs},
 	}
 	if afterCursor != nil {
 		var cursorDoc convDoc
 		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
 		if err == nil {
-			filter["created_at"] = bson.M{"$gt": cursorDoc.CreatedAt}
+			filter["$or"] = bson.A{
+				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
+				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
+			}
 		}
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit + 1))
+	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
 	cur, err := s.conversations().Find(ctx, filter, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to admin list forks: %w", err)
@@ -2655,13 +3281,11 @@ func (s *MongoStore) AdminListForks(ctx context.Context, conversationID string, 
 
 	forks := make([]registrystore.ConversationForkSummary, len(docs))
 	for i, d := range docs {
-		forks[i] = registrystore.ConversationForkSummary{
-			ID:                     string(d.ID),
-			Title:                  s.decryptString(d.Title),
-			ForkedAtEntryID:        ptrStrToUUID(d.ForkedAtEntryID),
-			ForkedAtConversationID: ptrStrToConversationID(d.ForkedAtConversationID),
-			CreatedAt:              d.CreatedAt,
+		fork, err := s.conversationForkSummaryFromDoc(ctx, d)
+		if err != nil {
+			return nil, nil, err
 		}
+		forks[i] = fork
 	}
 
 	var nextCursor *string
@@ -3275,25 +3899,19 @@ func (s *MongoStore) DeleteTask(ctx context.Context, taskID uuid.UUID) error {
 }
 
 func (s *MongoStore) entryVisibleInConversationAncestry(ctx context.Context, conv convDoc, entryID uuid.UUID) (bool, error) {
-	ancestry, err := s.buildAncestryStack(ctx, conv)
+	var entry entryDoc
+	err := s.entries().FindOne(ctx, bson.M{
+		"_id":                   uuidToStr(entryID),
+		"conversation_group_id": conv.ConversationGroupID,
+	}).Decode(&entry)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
 	if err != nil {
 		return false, err
 	}
-	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(defaultEntryDocSort()))
-	if err != nil {
-		return false, err
-	}
-	var docs []entryDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return false, fmt.Errorf("failed to decode entries: %w", err)
-	}
-	visibleEntries := filterEntriesByAncestryDocs(docs, ancestry)
-	for _, entry := range visibleEntries {
-		if strToUUID(entry.ID) == entryID {
-			return true, nil
-		}
-	}
-	return false, nil
+	depth, err := s.visibleAncestryDepthForEntry(ctx, conv, entry)
+	return depth != nil, err
 }
 
 func (s *MongoStore) FailTask(ctx context.Context, taskID uuid.UUID, errMsg string, retryDelay time.Duration) error {
@@ -3334,42 +3952,21 @@ type forkAncestorDoc struct {
 }
 
 func (s *MongoStore) buildAncestryStack(ctx context.Context, target convDoc) ([]forkAncestorDoc, error) {
-	cur, err := s.conversations().Find(ctx, bson.M{"conversation_group_id": target.ConversationGroupID})
-	if err != nil {
+	var ancestry conversationAncestryDoc
+	if err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": target.ID, "conversation_group_id": target.ConversationGroupID}).Decode(&ancestry); err != nil {
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
 	}
-	var conversations []convDoc
-	if err := cur.All(ctx, &conversations); err != nil {
-		return nil, fmt.Errorf("failed to decode fork ancestry: %w", err)
-	}
+	rows := append([]ancestryAncestorDoc(nil), ancestry.Ancestors...)
+	sort.Slice(rows, func(i, j int) bool {
+		return rows[i].Depth > rows[j].Depth
+	})
 
-	byID := make(map[string]convDoc, len(conversations))
-	for _, conv := range conversations {
-		byID[conv.ID] = conv
-	}
-
-	stack := make([]forkAncestorDoc, 0, len(conversations))
-	current := target
-	var stopAt *string
-	for {
+	stack := make([]forkAncestorDoc, 0, len(rows))
+	for _, row := range rows {
 		stack = append(stack, forkAncestorDoc{
-			ConversationID: current.ID,
-			StopAtEntryID:  stopAt,
+			ConversationID: row.ConversationID,
+			StopAtEntryID:  row.BeforeEntryID,
 		})
-
-		stopAt = current.ForkedAtEntryID
-		if current.ForkedAtConversationID == nil {
-			break
-		}
-		parent, ok := byID[*current.ForkedAtConversationID]
-		if !ok {
-			break
-		}
-		current = parent
-	}
-
-	for i, j := 0, len(stack)-1; i < j; i, j = i+1, j-1 {
-		stack[i], stack[j] = stack[j], stack[i]
 	}
 	return stack, nil
 }
@@ -3564,6 +4161,42 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 	return result
 }
 
+func filterVisibleMemoryEntriesWithEpochDocs(entries []entryDoc, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
+	epoch := normalizeEpochFilter(epochFilter)
+	result := make([]entryDoc, 0, len(entries))
+	maxEpochSeen := int64(0)
+	maxEpochInitialized := false
+
+	for _, entry := range entries {
+		if !strings.EqualFold(entry.Channel, string(model.ChannelContext)) || entry.ClientID == nil || *entry.ClientID != clientID {
+			continue
+		}
+		entryEpoch := int64(0)
+		if entry.Epoch != nil {
+			entryEpoch = *entry.Epoch
+		}
+
+		switch epoch.Mode {
+		case registrystore.MemoryEpochModeAll:
+			result = append(result, entry)
+		case registrystore.MemoryEpochModeEpoch:
+			if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
+				result = append(result, entry)
+			}
+		default:
+			if !maxEpochInitialized || entryEpoch > maxEpochSeen {
+				result = result[:0]
+				maxEpochSeen = entryEpoch
+				maxEpochInitialized = true
+			}
+			if entryEpoch == maxEpochSeen {
+				result = append(result, entry)
+			}
+		}
+	}
+	return result
+}
+
 func filterEntryDocsForAllChannels(entries []entryDoc, clientID *string) []entryDoc {
 	filtered := make([]entryDoc, 0, len(entries))
 	for _, entry := range entries {
@@ -3648,6 +4281,44 @@ func (s *MongoStore) loadEntriesForGroup(ctx context.Context, groupID string) ([
 	return docs, nil
 }
 
+func (s *MongoStore) loadVisibleEntriesForConversation(ctx context.Context, conv convDoc) ([]entryDoc, error) {
+	ancestry, err := s.buildAncestryStack(ctx, conv)
+	if err != nil {
+		return nil, err
+	}
+	docs := make([]entryDoc, 0)
+	for i, seg := range ancestry {
+		isTarget := i == len(ancestry)-1
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+		filter := bson.M{
+			"conversation_group_id": conv.ConversationGroupID,
+			"conversation_id":       seg.ConversationID,
+		}
+		if !isTarget && seg.StopAtEntryID != nil {
+			stopDoc, err := s.entryDocOrderKey(ctx, *seg.StopAtEntryID)
+			if err != nil {
+				return nil, err
+			}
+			addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(stopDoc))
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(defaultEntryDocSort()))
+		if err != nil {
+			return nil, fmt.Errorf("failed to get visible entries: %w", err)
+		}
+		var batch []entryDoc
+		if err := cur.All(ctx, &batch); err != nil {
+			return nil, fmt.Errorf("failed to decode visible entries: %w", err)
+		}
+		docs = append(docs, batch...)
+	}
+	sort.Slice(docs, func(i, j int) bool {
+		return entryDocOrderLess(docs[i], docs[j])
+	})
+	return docs, nil
+}
+
 func defaultEntryDocSort() bson.D {
 	return bson.D{
 		{Key: "created_at", Value: 1},
@@ -3656,11 +4327,1178 @@ func defaultEntryDocSort() bson.D {
 	}
 }
 
+func cloneBsonM(in bson.M) bson.M {
+	out := make(bson.M, len(in))
+	for k, v := range in {
+		out[k] = v
+	}
+	return out
+}
+
+func (s *MongoStore) visibleHistoryFilter(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc) (bson.M, error) {
+	segments := make(bson.A, 0, len(ancestry))
+	for i, seg := range ancestry {
+		isTarget := i == len(ancestry)-1
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+		filter := bson.M{
+			"conversation_group_id": conv.ConversationGroupID,
+			"conversation_id":       seg.ConversationID,
+			"channel":               string(model.ChannelHistory),
+		}
+		if !isTarget && seg.StopAtEntryID != nil {
+			stopDoc, err := s.entryDocOrderKey(ctx, *seg.StopAtEntryID)
+			if err != nil {
+				return nil, err
+			}
+			addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(stopDoc))
+		}
+		segments = append(segments, filter)
+	}
+	switch len(segments) {
+	case 0:
+		return bson.M{"_id": bson.M{"$exists": false}}, nil
+	case 1:
+		if only, ok := segments[0].(bson.M); ok {
+			return only, nil
+		}
+	}
+	return bson.M{"$or": segments}, nil
+}
+
+func (s *MongoStore) visibleEntriesFilter(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc) (bson.M, error) {
+	return s.visibleChannelFilter(ctx, conv, ancestry, "", nil)
+}
+
+func (s *MongoStore) visibleContextFilter(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID *string) (bson.M, error) {
+	return s.visibleChannelFilter(ctx, conv, ancestry, model.ChannelContext, clientID)
+}
+
+func (s *MongoStore) visibleChannelFilter(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, channel model.Channel, clientID *string) (bson.M, error) {
+	segments := make(bson.A, 0, len(ancestry))
+	for i, seg := range ancestry {
+		isTarget := i == len(ancestry)-1
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+		filter := bson.M{
+			"conversation_group_id": conv.ConversationGroupID,
+			"conversation_id":       seg.ConversationID,
+		}
+		if channel != "" {
+			filter["channel"] = string(channel)
+		}
+		if clientID != nil {
+			filter["client_id"] = *clientID
+		}
+		if !isTarget && seg.StopAtEntryID != nil {
+			stopDoc, err := s.entryDocOrderKey(ctx, *seg.StopAtEntryID)
+			if err != nil {
+				return nil, err
+			}
+			addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(stopDoc))
+		}
+		segments = append(segments, filter)
+	}
+	switch len(segments) {
+	case 0:
+		return bson.M{"_id": bson.M{"$exists": false}}, nil
+	case 1:
+		if only, ok := segments[0].(bson.M); ok {
+			return only, nil
+		}
+	}
+	return bson.M{"$or": segments}, nil
+}
+
+func (s *MongoStore) listLatestVisibleContextDocs(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID string) ([]entryDoc, error) {
+	base, err := s.visibleContextFilter(ctx, conv, ancestry, &clientID)
+	if err != nil {
+		return nil, err
+	}
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: base}},
+		bson.D{{Key: "$group", Value: bson.D{
+			{Key: "_id", Value: nil},
+			{Key: "max_epoch", Value: bson.D{{Key: "$max", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$epoch", int64(0)}}}}}},
+		}}},
+	}
+	cur, err := s.entries().Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest context epoch: %w", err)
+	}
+	defer cur.Close(ctx)
+	var rows []struct {
+		MaxEpoch *int64 `bson:"max_epoch"`
+	}
+	if err := cur.All(ctx, &rows); err != nil {
+		return nil, fmt.Errorf("failed to decode latest context epoch: %w", err)
+	}
+	if len(rows) == 0 || rows[0].MaxEpoch == nil {
+		return []entryDoc{}, nil
+	}
+
+	epochFilter := bson.M{"epoch": *rows[0].MaxEpoch}
+	if *rows[0].MaxEpoch == 0 {
+		epochFilter = bson.M{"$or": bson.A{bson.M{"epoch": int64(0)}, bson.M{"epoch": nil}}}
+	}
+	filter := bson.M{"$and": bson.A{base, epochFilter}}
+	cur, err = s.entries().Find(ctx, filter, options.Find().SetSort(defaultEntryDocSort()))
+	if err != nil {
+		return nil, fmt.Errorf("failed to list latest context entries: %w", err)
+	}
+	defer cur.Close(ctx)
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, fmt.Errorf("failed to decode latest context entries: %w", err)
+	}
+	return docs, nil
+}
+
+func addMongoAndCondition(filter bson.M, condition bson.M) {
+	if existingAnd, ok := filter["$and"].(bson.A); ok {
+		filter["$and"] = append(existingAnd, condition)
+		return
+	}
+	if existingOr, ok := filter["$or"]; ok {
+		filter["$and"] = bson.A{bson.M{"$or": existingOr}, condition}
+		delete(filter, "$or")
+		return
+	}
+	existing := make(bson.M, len(filter))
+	for k, v := range filter {
+		existing[k] = v
+		delete(filter, k)
+	}
+	filter["$and"] = bson.A{existing, condition}
+}
+
+func mongoEpochCondition(epoch int64) bson.M {
+	if epoch == 0 {
+		return bson.M{"$or": bson.A{bson.M{"epoch": int64(0)}, bson.M{"epoch": nil}}}
+	}
+	return bson.M{"epoch": epoch}
+}
+
+func addMongoEpochFilter(filter bson.M, epoch int64) {
+	addMongoAndCondition(filter, mongoEpochCondition(epoch))
+}
+
+func (s *MongoStore) applyMongoEpochFilterToBase(ctx context.Context, base bson.M, epochFilter *registrystore.MemoryEpochFilter) (bson.M, error) {
+	if epochFilter == nil {
+		return base, nil
+	}
+	epoch := normalizeEpochFilter(epochFilter)
+	switch epoch.Mode {
+	case registrystore.MemoryEpochModeAll:
+		return base, nil
+	case registrystore.MemoryEpochModeEpoch:
+		if epoch.Epoch == nil {
+			addMongoAndCondition(base, bson.M{"channel": bson.M{"$ne": string(model.ChannelContext)}})
+		} else {
+			addMongoAndCondition(base, mongoAllChannelEpochCondition(*epoch.Epoch))
+		}
+		return base, nil
+	default:
+		contextBase := cloneBsonM(base)
+		addMongoAndCondition(contextBase, bson.M{"channel": string(model.ChannelContext)})
+		pipeline := mongo.Pipeline{
+			bson.D{{Key: "$match", Value: contextBase}},
+			bson.D{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: nil},
+				{Key: "max_epoch", Value: bson.D{{Key: "$max", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$epoch", int64(0)}}}}}},
+			}}},
+		}
+		cur, err := s.entries().Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, fmt.Errorf("failed to get latest entry epoch: %w", err)
+		}
+		defer cur.Close(ctx)
+		var rows []struct {
+			MaxEpoch *int64 `bson:"max_epoch"`
+		}
+		if err := cur.All(ctx, &rows); err != nil {
+			return nil, fmt.Errorf("failed to decode latest entry epoch: %w", err)
+		}
+		if len(rows) == 0 || rows[0].MaxEpoch == nil {
+			return base, nil
+		}
+		addMongoAndCondition(base, mongoAllChannelEpochCondition(*rows[0].MaxEpoch))
+		return base, nil
+	}
+}
+
+func mongoAllChannelEpochCondition(epoch int64) bson.M {
+	return bson.M{"$or": bson.A{
+		bson.M{"channel": bson.M{"$ne": string(model.ChannelContext)}},
+		bson.M{"$and": bson.A{
+			bson.M{"channel": string(model.ChannelContext)},
+			mongoEpochCondition(epoch),
+		}},
+	}}
+}
+
+func addMongoAllChannelScope(filter bson.M, clientID *string, suppressScopedWithoutClient bool) {
+	if !suppressScopedWithoutClient {
+		return
+	}
+	scopedChannels := bson.A{string(model.ChannelContext), string(model.ChannelJournal)}
+	if clientID == nil {
+		addMongoAndCondition(filter, bson.M{"channel": bson.M{"$nin": scopedChannels}})
+		return
+	}
+	addMongoAndCondition(filter, bson.M{"$or": bson.A{
+		bson.M{"channel": bson.M{"$nin": scopedChannels}},
+		bson.M{"client_id": *clientID},
+	}})
+}
+
+func addMongoSeqFromBound(filter bson.M, fromSeq uint32) {
+	filter["seq"] = bson.M{"$gte": fromSeq}
+}
+
+func (s *MongoStore) visibleHistoryDocByID(ctx context.Context, base bson.M, entryID string) (entryDoc, bool, error) {
+	filter := cloneBsonM(base)
+	filter["_id"] = entryID
+	var doc entryDoc
+	err := s.entries().FindOne(ctx, filter).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return entryDoc{}, false, nil
+	}
+	if err != nil {
+		return entryDoc{}, false, err
+	}
+	return doc, true, nil
+}
+
+func (s *MongoStore) mongoCursorEntryError(ctx context.Context, cursorName, entryID string) error {
+	err := s.entries().FindOne(ctx, bson.M{"_id": entryID}, options.FindOne().SetProjection(bson.M{"_id": 1})).Err()
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return &registrystore.BadRequestError{Message: cursorName + " entry not found"}
+	}
+	if err != nil {
+		return err
+	}
+	return &registrystore.BadRequestError{Message: cursorName + " entry not found in visible results"}
+}
+
+func mongoEntryAfterBound(bound entryDoc) bson.A {
+	conditions := bson.A{
+		bson.M{"created_at": bson.M{"$gt": bound.CreatedAt}},
+	}
+	if bound.Seq == nil {
+		return append(conditions,
+			bson.M{"created_at": bound.CreatedAt, "seq": nil, "_id": bson.M{"$gt": bound.ID}},
+			bson.M{"created_at": bound.CreatedAt, "seq": bson.M{"$ne": nil}},
+		)
+	}
+	return append(conditions,
+		bson.M{"created_at": bound.CreatedAt, "seq": bson.M{"$gt": *bound.Seq}},
+		bson.M{"created_at": bound.CreatedAt, "seq": *bound.Seq, "_id": bson.M{"$gt": bound.ID}},
+	)
+}
+
+func mongoSeqBeforeBound(bound entryDoc) bson.A {
+	if bound.Seq == nil {
+		return bson.A{bson.M{"_id": bson.M{"$exists": false}}}
+	}
+	return bson.A{
+		bson.M{"seq": bson.M{"$lt": *bound.Seq}},
+		bson.M{"seq": *bound.Seq, "_id": bson.M{"$lt": bound.ID}},
+	}
+}
+
+func mongoSeqAfterBound(bound entryDoc) bson.A {
+	if bound.Seq == nil {
+		return bson.A{bson.M{"_id": bson.M{"$exists": false}}}
+	}
+	return bson.A{
+		bson.M{"seq": bson.M{"$gt": *bound.Seq}},
+		bson.M{"seq": *bound.Seq, "_id": bson.M{"$gt": bound.ID}},
+	}
+}
+
+func addMongoEntryAfterBound(filter bson.M, bound bson.A) {
+	if existingAnd, ok := filter["$and"].(bson.A); ok {
+		filter["$and"] = append(existingAnd, bson.M{"$or": bound})
+		return
+	}
+	if existing, ok := filter["$or"]; ok {
+		filter["$and"] = bson.A{bson.M{"$or": existing}, bson.M{"$or": bound}}
+		delete(filter, "$or")
+		return
+	}
+	filter["$or"] = bound
+}
+
+func (s *MongoStore) boundedVisibleHistoryDocs(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base, err := s.visibleHistoryFilter(ctx, conv, ancestry)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		visible, err := s.visibleEntriesFilter(ctx, conv, ancestry)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, visible, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history decode failed: %w", err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded history decode failed: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
+func (s *MongoStore) boundedVisibleContextDocs(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID *string, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base, err := s.visibleContextFilter(ctx, conv, ancestry, clientID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		visible, err := s.visibleEntriesFilter(ctx, conv, ancestry)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, visible, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+
+	epoch := normalizeEpochFilter(epochFilter)
+	switch epoch.Mode {
+	case registrystore.MemoryEpochModeAll:
+	case registrystore.MemoryEpochModeEpoch:
+		if epoch.Epoch == nil {
+			addMongoAndCondition(base, bson.M{"_id": bson.M{"$exists": false}})
+		} else {
+			addMongoEpochFilter(base, *epoch.Epoch)
+		}
+	default:
+		pipeline := mongo.Pipeline{
+			bson.D{{Key: "$match", Value: base}},
+			bson.D{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: nil},
+				{Key: "max_epoch", Value: bson.D{{Key: "$max", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$epoch", int64(0)}}}}}},
+			}}},
+		}
+		cur, err := s.entries().Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get latest context epoch: %w", err)
+		}
+		defer cur.Close(ctx)
+		var rows []struct {
+			MaxEpoch *int64 `bson:"max_epoch"`
+		}
+		if err := cur.All(ctx, &rows); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to decode latest context epoch: %w", err)
+		}
+		if len(rows) == 0 || rows[0].MaxEpoch == nil {
+			return []entryDoc{}, nil, nil, nil
+		}
+		addMongoEpochFilter(base, *rows[0].MaxEpoch)
+	}
+
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded context scan failed: %w", err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded context decode failed: %w", err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded context scan failed: %w", err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded context decode failed: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
+func (s *MongoStore) boundedVisibleChannelDocs(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, channel model.Channel, clientID *string, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base, err := s.visibleChannelFilter(ctx, conv, ancestry, channel, clientID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		visible, err := s.visibleEntriesFilter(ctx, conv, ancestry)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, visible, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded channel scan failed: %w", err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded channel decode failed: %w", err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded channel scan failed: %w", err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded channel decode failed: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
+func (s *MongoStore) boundedVisibleAllChannelDocs(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID *string, suppressScopedWithoutClient bool, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base, err := s.visibleEntriesFilter(ctx, conv, ancestry)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	addMongoAllChannelScope(base, clientID, suppressScopedWithoutClient)
+	if upToEntryID != nil && *upToEntryID != "" {
+		visible, err := s.visibleEntriesFilter(ctx, conv, ancestry)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, visible, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	base, err = s.applyMongoEpochFilterToBase(ctx, base, epochFilter)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded all-channel scan failed: %w", err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded all-channel decode failed: %w", err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded all-channel scan failed: %w", err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded all-channel decode failed: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
+func (s *MongoStore) boundedDocsFromBase(ctx context.Context, base bson.M, fromSeq *uint32, afterEntryID, beforeEntryID *string, tail bool, limit int, scanErr string) ([]entryDoc, *string, *string, error) {
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("%s: %w", scanErr, err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("%s decode failed: %w", scanErr, err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("%s: %w", scanErr, err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("%s decode failed: %w", scanErr, err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
+func (s *MongoStore) boundedGroupContextDocs(ctx context.Context, groupID string, clientID *string, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base := bson.M{
+		"conversation_group_id": groupID,
+		"channel":               string(model.ChannelContext),
+	}
+	if clientID != nil {
+		base["client_id"] = *clientID
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, bson.M{"conversation_group_id": groupID}, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	epoch := normalizeEpochFilter(epochFilter)
+	switch epoch.Mode {
+	case registrystore.MemoryEpochModeAll:
+	case registrystore.MemoryEpochModeEpoch:
+		if epoch.Epoch == nil {
+			addMongoAndCondition(base, bson.M{"_id": bson.M{"$exists": false}})
+		} else {
+			addMongoEpochFilter(base, *epoch.Epoch)
+		}
+	default:
+		pipeline := mongo.Pipeline{
+			bson.D{{Key: "$match", Value: base}},
+			bson.D{{Key: "$group", Value: bson.D{
+				{Key: "_id", Value: nil},
+				{Key: "max_epoch", Value: bson.D{{Key: "$max", Value: bson.D{{Key: "$ifNull", Value: bson.A{"$epoch", int64(0)}}}}}},
+			}}},
+		}
+		cur, err := s.entries().Aggregate(ctx, pipeline)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to get latest context epoch: %w", err)
+		}
+		defer cur.Close(ctx)
+		var rows []struct {
+			MaxEpoch *int64 `bson:"max_epoch"`
+		}
+		if err := cur.All(ctx, &rows); err != nil {
+			return nil, nil, nil, fmt.Errorf("failed to decode latest context epoch: %w", err)
+		}
+		if len(rows) == 0 || rows[0].MaxEpoch == nil {
+			return []entryDoc{}, nil, nil, nil
+		}
+		addMongoEpochFilter(base, *rows[0].MaxEpoch)
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+	return s.boundedDocsFromBase(ctx, base, fromSeq, afterEntryID, beforeEntryID, tail, limit, "bounded group context scan failed")
+}
+
+func (s *MongoStore) boundedGroupChannelDocs(ctx context.Context, groupID string, channel model.Channel, clientID *string, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base := bson.M{
+		"conversation_group_id": groupID,
+		"channel":               string(channel),
+	}
+	if clientID != nil {
+		base["client_id"] = *clientID
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, bson.M{"conversation_group_id": groupID}, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+	return s.boundedDocsFromBase(ctx, base, fromSeq, afterEntryID, beforeEntryID, tail, limit, "bounded group channel scan failed")
+}
+
+func (s *MongoStore) boundedGroupAllChannelDocs(ctx context.Context, groupID string, clientID *string, suppressScopedWithoutClient bool, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base := bson.M{"conversation_group_id": groupID}
+	addMongoAllChannelScope(base, clientID, suppressScopedWithoutClient)
+	if upToEntryID != nil && *upToEntryID != "" {
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, bson.M{"conversation_group_id": groupID}, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	base, err := s.applyMongoEpochFilterToBase(ctx, base, epochFilter)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+	return s.boundedDocsFromBase(ctx, base, fromSeq, afterEntryID, beforeEntryID, tail, limit, "bounded group all-channel scan failed")
+}
+
+func (s *MongoStore) boundedGroupHistoryDocs(ctx context.Context, groupID string, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	base := bson.M{
+		"conversation_group_id": groupID,
+		"channel":               string(model.ChannelHistory),
+	}
+	if upToEntryID != nil && *upToEntryID != "" {
+		upTo, ok, err := s.visibleHistoryDocByID(ctx, bson.M{"conversation_group_id": groupID}, *upToEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, &registrystore.NotFoundError{Resource: "entry", ID: *upToEntryID}
+		}
+		addMongoEntryBeforeBound(base, mongoEntryAtOrBeforeBound(upTo))
+	}
+	if fromSeq != nil {
+		addMongoSeqFromBound(base, *fromSeq)
+	}
+
+	if tail || beforeEntryID != nil {
+		filter := cloneBsonM(base)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.mongoCursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			if fromSeq != nil {
+				addMongoEntryBeforeBound(filter, mongoSeqBeforeBound(anchor))
+			} else {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(anchor))
+			}
+		}
+		sortSpec := bson.D{{Key: "created_at", Value: -1}, {Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		if fromSeq != nil {
+			sortSpec = bson.D{{Key: "seq", Value: -1}, {Key: "_id", Value: -1}}
+		}
+		cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded group history scan failed: %w", err)
+		}
+		var docs []entryDoc
+		if err := cur.All(ctx, &docs); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded group history decode failed: %w", err)
+		}
+		for lo, hi := 0, len(docs)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			docs[lo], docs[hi] = docs[hi], docs[lo]
+		}
+		hasMore := len(docs) > limit
+		if hasMore {
+			docs = docs[1:]
+			c := docs[0].ID
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(docs) > 0 {
+				ac := docs[len(docs)-1].ID
+				afterCursor = &ac
+			}
+			return docs, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(docs) > 0 {
+			c := docs[len(docs)-1].ID
+			afterCursor = &c
+		}
+		return docs, afterCursor, nil, nil
+	}
+
+	filter := cloneBsonM(base)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryDocByID(ctx, base, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.mongoCursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		if fromSeq != nil {
+			addMongoEntryAfterBound(filter, mongoSeqAfterBound(anchor))
+		} else {
+			addMongoEntryAfterBound(filter, mongoEntryAfterBound(anchor))
+		}
+	}
+	sortSpec := defaultEntryDocSort()
+	if fromSeq != nil {
+		sortSpec = bson.D{{Key: "seq", Value: 1}, {Key: "_id", Value: 1}}
+	}
+	cur, err := s.entries().Find(ctx, filter, options.Find().SetSort(sortSpec).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded group history scan failed: %w", err)
+	}
+	var docs []entryDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded group history decode failed: %w", err)
+	}
+	hasMore := len(docs) > limit
+	if hasMore {
+		docs = docs[:limit]
+		afterCursor := docs[len(docs)-1].ID
+		var beforeCursor *string
+		if afterEntryID != nil && len(docs) > 0 {
+			bc := docs[0].ID
+			beforeCursor = &bc
+		}
+		return docs, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(docs) > 0 {
+		c := docs[0].ID
+		beforeCursor = &c
+	}
+	return docs, nil, beforeCursor, nil
+}
+
 // boundedHistoryBackwardDocs performs a bounded DESC-order read of history
 // entry docs across the ancestry stack, collecting at most limit+1 docs then
 // reversing to return a page in ascending order.
 func (s *MongoStore) boundedHistoryBackwardDocs(ctx context.Context, ancestry []forkAncestorDoc, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
-	if limit > config.MaxPageSizeFromContext(ctx) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
 		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
 	}
 	need := limit + 1
@@ -3803,6 +5641,18 @@ func entryDocOrderLess(left, right entryDoc) bool {
 	return left.ID < right.ID
 }
 
+func (s *MongoStore) entryDocOrderKey(ctx context.Context, entryID string) (entryDoc, error) {
+	var doc entryDoc
+	err := s.entries().FindOne(ctx, bson.M{"_id": entryID}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return entryDoc{}, &registrystore.NotFoundError{Resource: "entry", ID: entryID}
+	}
+	if err != nil {
+		return entryDoc{}, err
+	}
+	return doc, nil
+}
+
 func mongoEntryBeforeBound(bound entryDoc) bson.A {
 	conditions := bson.A{
 		bson.M{"created_at": bson.M{"$lt": bound.CreatedAt}},
@@ -3818,6 +5668,24 @@ func mongoEntryBeforeBound(bound entryDoc) bson.A {
 		bson.M{"created_at": bound.CreatedAt, "seq": nil},
 		bson.M{"created_at": bound.CreatedAt, "seq": bson.M{"$lt": *bound.Seq}},
 		bson.M{"created_at": bound.CreatedAt, "seq": *bound.Seq, "_id": bson.M{"$lt": bound.ID}},
+	)
+}
+
+func mongoEntryAtOrBeforeBound(bound entryDoc) bson.A {
+	conditions := bson.A{
+		bson.M{"created_at": bson.M{"$lt": bound.CreatedAt}},
+	}
+	if bound.Seq == nil {
+		return append(conditions, bson.M{
+			"created_at": bound.CreatedAt,
+			"seq":        nil,
+			"_id":        bson.M{"$lte": bound.ID},
+		})
+	}
+	return append(conditions,
+		bson.M{"created_at": bound.CreatedAt, "seq": nil},
+		bson.M{"created_at": bound.CreatedAt, "seq": bson.M{"$lt": *bound.Seq}},
+		bson.M{"created_at": bound.CreatedAt, "seq": *bound.Seq, "_id": bson.M{"$lte": bound.ID}},
 	)
 }
 
@@ -3849,15 +5717,13 @@ func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc,
 		}
 	}
 
-	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
+	docs, err := s.listLatestVisibleContextDocs(ctx, conv, ancestry, clientID)
 	if err != nil {
 		return nil, err
 	}
-	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, agentID, latestFilter)
 
-	entries := make([]model.Entry, len(filteredDocs))
-	for i, d := range filteredDocs {
+	entries := make([]model.Entry, len(docs))
+	for i, d := range docs {
 		entries[i] = s.entryDocToModel(d)
 	}
 
@@ -3888,15 +5754,13 @@ func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestr
 	}
 	convID := string(conv.ID)
 	cacheKey := scopedAgentCacheKey(clientID, agentID)
-	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
+	docs, err := s.listLatestVisibleContextDocs(ctx, conv, ancestry, clientID)
 	if err != nil {
 		log.Warn("warmEntriesCache: failed to list entries", "err", err)
 		return
 	}
-	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	filteredDocs := filterMemoryEntriesWithEpochDocs(docs, ancestry, clientID, agentID, latestFilter)
-	entries := make([]model.Entry, len(filteredDocs))
-	for i, d := range filteredDocs {
+	entries := make([]model.Entry, len(docs))
+	for i, d := range docs {
 		entries[i] = s.entryDocToModel(d)
 	}
 	if len(entries) == 0 {

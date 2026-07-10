@@ -396,10 +396,7 @@ func readAdminEntryDetail(ctx context.Context, store registrystore.MemoryStore, 
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
-		result, err = store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
-			Limit:    5000,
-			AllForks: true,
-		})
+		result, err = store.AdminGetEntries(txCtx, conversationID, registrystore.AdminEntryLookupQuery(entryID))
 		return err
 	})
 	if err != nil {
@@ -408,11 +405,9 @@ func readAdminEntryDetail(ctx context.Context, store registrystore.MemoryStore, 
 	if result == nil {
 		return nil, fmt.Errorf("entry not found")
 	}
-	for i := range result.Data {
-		if result.Data[i].ID == entryID {
-			entry := result.Data[i]
-			return &entry, nil
-		}
+	if len(result.Data) == 1 && result.Data[0].ID == entryID {
+		entry := result.Data[0]
+		return &entry, nil
 	}
 	return nil, fmt.Errorf("entry not found")
 }

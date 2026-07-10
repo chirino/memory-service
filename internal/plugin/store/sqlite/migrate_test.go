@@ -27,8 +27,10 @@ func TestSQLiteMigratorCreatesCoreTables(t *testing.T) {
 	require.NoError(t, err)
 
 	for _, table := range []string{
+		"schema_metadata",
 		"conversation_groups",
 		"conversations",
+		"conversation_ancestry",
 		"conversation_memberships",
 		"entries",
 		"conversation_ownership_transfers",

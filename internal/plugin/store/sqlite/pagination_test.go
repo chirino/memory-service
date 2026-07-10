@@ -4,11 +4,13 @@ import (
 	"context"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -64,7 +66,7 @@ func TestBoundedHistoryTailMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
 	materialized := int64(0)
 	callbackName := fmt.Sprintf("test:count-bounded-pagination-%s", t.Name())
 	require.NoError(t, handle.db.Callback().Query().After("gorm:query").Register(callbackName, func(db *gorm.DB) {
-		if db.Statement.Table == "entries" && len(db.Statement.Selects) == 0 {
+		if strings.HasPrefix(db.Statement.Table, "entries") {
 			materialized += db.RowsAffected
 		}
 	}))
@@ -84,4 +86,75 @@ func TestBoundedHistoryTailMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
 	}))
 	require.Len(t, page, 10)
 	assert.Equal(t, int64(11), materialized)
+}
+
+func TestBoundedGroupContextMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
+	cfg := &config.Config{
+		DatastoreType:           "sqlite",
+		DBURL:                   filepath.Join(t.TempDir(), "group-context-pagination.db"),
+		DatastoreMigrateAtStart: true,
+		EncryptionDBDisabled:    true,
+	}
+	ctx := config.WithContext(context.Background(), cfg)
+	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
+	handle, err := getSharedHandle(ctx)
+	require.NoError(t, err)
+	store := &SQLiteStore{handle: handle, db: handle.db, cfg: cfg}
+
+	groupID := uuid.New()
+	conversationID := uuid.NewString()
+	require.NoError(t, handle.db.Create(&model.ConversationGroup{ID: groupID}).Error)
+	require.NoError(t, handle.db.Create(&model.Conversation{
+		ID:                  conversationID,
+		OwnerUserID:         "alice",
+		ClientID:            "test-client",
+		ConversationGroupID: groupID,
+		CreatedAt:           time.Now().UTC(),
+		UpdatedAt:           time.Now().UTC(),
+	}).Error)
+	epoch := int64(1)
+	clientID := "test-client"
+	for i := 0; i < 100; i++ {
+		require.NoError(t, handle.db.Create(&model.Entry{
+			ID:                  uuid.New(),
+			ConversationID:      conversationID,
+			ConversationGroupID: groupID,
+			Channel:             model.ChannelContext,
+			ClientID:            &clientID,
+			ContentType:         "test.v1",
+			Content:             []byte("[]"),
+			Epoch:               &epoch,
+			CreatedAt:           time.Date(2026, 7, 10, 12, 0, i, 0, time.UTC),
+		}).Error)
+	}
+
+	materialized := int64(0)
+	callbackName := fmt.Sprintf("test:count-bounded-group-context-%s", t.Name())
+	require.NoError(t, handle.db.Callback().Query().After("gorm:query").Register(callbackName, func(db *gorm.DB) {
+		if db.RowsAffected > 0 {
+			materialized += db.RowsAffected
+		}
+	}))
+	t.Cleanup(func() { handle.db.Callback().Query().Remove(callbackName) })
+
+	var page []model.Entry
+	require.NoError(t, handle.InReadTx(ctx, func(txCtx context.Context) error {
+		var scanErr error
+		page, _, _, scanErr = store.boundedGroupContext(
+			txCtx,
+			groupID,
+			&clientID,
+			&registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeEpoch, Epoch: &epoch},
+			nil,
+			nil,
+			nil,
+			nil,
+			true,
+			10,
+		)
+		return scanErr
+	}))
+	require.Len(t, page, 10)
+	assert.LessOrEqual(t, materialized, int64(12))
+	assert.GreaterOrEqual(t, materialized, int64(10))
 }

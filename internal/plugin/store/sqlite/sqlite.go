@@ -17,6 +17,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/store/sqlentry"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -76,36 +77,12 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 		return fmt.Errorf("migration: failed to connect: %w", err)
 	}
 
+	if err := sqliteRequireSchema110OrEmpty(ctx, handle.sqlDB); err != nil {
+		return err
+	}
+
 	if _, err := handle.sqlDB.ExecContext(ctx, schemaSQL); err != nil {
 		return fmt.Errorf("migration: failed to execute schema: %w", err)
-	}
-	if err := sqliteEnsureColumn(ctx, handle.sqlDB, "memories", "revision", "INTEGER NOT NULL DEFAULT 1"); err != nil {
-		return fmt.Errorf("migration: failed to add memories.revision: %w", err)
-	}
-	if err := sqliteEnsureColumn(ctx, handle.sqlDB, "entries", "seq", "INTEGER CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295))"); err != nil {
-		return fmt.Errorf("migration: failed to add entries.seq: %w", err)
-	}
-	// This index references entries.seq, so it must be created after the column
-	// is guaranteed to exist (either from CREATE TABLE on a fresh DB, or from
-	// sqliteEnsureColumn on an existing DB that lacks the column).
-	const seqIdxSQL = `CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
-		ON entries(conversation_id, seq) WHERE seq IS NOT NULL`
-	if _, err := handle.sqlDB.ExecContext(ctx, seqIdxSQL); err != nil {
-		return fmt.Errorf("migration: failed to create entries.seq index: %w", err)
-	}
-	const entryOrderIdxSQL = `CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
-		ON entries(conversation_group_id, created_at, seq, id)`
-	if _, err := handle.sqlDB.ExecContext(ctx, entryOrderIdxSQL); err != nil {
-		return fmt.Errorf("migration: failed to create entries default order index: %w", err)
-	}
-	// Branch/channel/order index for bounded backward and tail history reads (Enhancement 109).
-	const branchChannelIdxSQL = `CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
-		ON entries(conversation_id, channel, created_at, seq, id)`
-	if _, err := handle.sqlDB.ExecContext(ctx, branchChannelIdxSQL); err != nil {
-		return fmt.Errorf("migration: failed to create entries branch/channel order index: %w", err)
-	}
-	if _, err := handle.sqlDB.ExecContext(ctx, `DROP INDEX IF EXISTS idx_entries_group_created_at`); err != nil {
-		return fmt.Errorf("migration: failed to drop legacy entries created_at index: %w", err)
 	}
 	if handle.fts5Enabled {
 		if _, err := handle.sqlDB.ExecContext(ctx, ftsSchemaSQL); err != nil {
@@ -116,33 +93,56 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	return nil
 }
 
-func sqliteEnsureColumn(ctx context.Context, db interface {
-	QueryContext(context.Context, string, ...interface{}) (*sql.Rows, error)
-	ExecContext(context.Context, string, ...interface{}) (sql.Result, error)
-}, table, column, definition string) error {
-	rows, err := db.QueryContext(ctx, "PRAGMA table_info("+table+")")
+func sqliteRequireSchema110OrEmpty(ctx context.Context, db *sql.DB) error {
+	const versionKey = "core_schema_version"
+	const expectedVersion = "110"
+
+	var hasMetadata bool
+	if err := db.QueryRowContext(ctx, "SELECT EXISTS (SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'schema_metadata')").Scan(&hasMetadata); err != nil {
+		return fmt.Errorf("migration: failed to inspect schema metadata: %w", err)
+	}
+	if !hasMetadata {
+		var hasCoreTables bool
+		err := db.QueryRowContext(ctx, `
+			SELECT EXISTS (
+				SELECT 1
+				FROM sqlite_master
+				WHERE type = 'table'
+				  AND name IN (
+				      'conversation_groups',
+				      'conversations',
+				      'conversation_memberships',
+				      'entries',
+				      'tasks',
+				      'outbox_events',
+				      'attachments',
+				      'memories',
+				      'memory_usage_stats',
+				      'memory_vectors'
+				  )
+			)
+		`).Scan(&hasCoreTables)
+		if err != nil {
+			return fmt.Errorf("migration: failed to inspect existing schema: %w", err)
+		}
+		if hasCoreTables {
+			return fmt.Errorf("migration: existing pre-110 SQLite schema detected; reset the datastore before applying squashed schema 110")
+		}
+		return nil
+	}
+
+	var version string
+	err := db.QueryRowContext(ctx, "SELECT value FROM schema_metadata WHERE key = ?", versionKey).Scan(&version)
+	if errors.Is(err, sql.ErrNoRows) {
+		return fmt.Errorf("migration: schema metadata is missing %s; reset the datastore before applying squashed schema 110", versionKey)
+	}
 	if err != nil {
-		return err
+		return fmt.Errorf("migration: failed to read schema metadata: %w", err)
 	}
-	defer rows.Close()
-	for rows.Next() {
-		var cid int
-		var name, typ string
-		var notNull int
-		var defaultValue interface{}
-		var pk int
-		if err := rows.Scan(&cid, &name, &typ, &notNull, &defaultValue, &pk); err != nil {
-			return err
-		}
-		if strings.EqualFold(name, column) {
-			return nil
-		}
+	if version != expectedVersion {
+		return fmt.Errorf("migration: unsupported SQLite schema version %s; reset the datastore before applying squashed schema 110", version)
 	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	_, err = db.ExecContext(ctx, fmt.Sprintf("ALTER TABLE %s ADD COLUMN %s %s", table, column, definition))
-	return err
+	return nil
 }
 
 // SQLiteStore implements MemoryStore using GORM + SQLite.
@@ -272,19 +272,22 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 	var actualGroupID uuid.UUID
 	ownerUserID := userID
 	var membershipsToCopy []model.ConversationMembership
+	var sourceConv *model.Conversation
+	var anchorOwnerDepth *int
 	if forkedAtConversationID != nil {
-		var sourceConv model.Conversation
-		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&sourceConv).Error; err != nil {
+		var parent model.Conversation
+		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&parent).Error; err != nil {
 			return nil, &NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
 		}
+		sourceConv = &parent
 		// Verify user has access
-		if _, err := s.requireAccess(ctx, userID, sourceConv.ConversationGroupID, model.AccessLevelReader); err != nil {
+		if _, err := s.requireAccess(ctx, userID, parent.ConversationGroupID, model.AccessLevelReader); err != nil {
 			return nil, err
 		}
 		// Validate fork point entry exists
 		if forkedAtEntryID != nil {
 			var entry model.Entry
-			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, sourceConv.ConversationGroupID).First(&entry).Error; err != nil {
+			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, parent.ConversationGroupID).First(&entry).Error; err != nil {
 				return nil, &NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
 			}
 			if entry.Channel != model.ChannelHistory && entry.Channel != model.ChannelJournal {
@@ -295,8 +298,16 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 					return nil, &ForbiddenError{}
 				}
 			}
+			ownerDepth, err := s.visibleAncestryDepthForEntry(ctx, parent, entry)
+			if err != nil {
+				return nil, err
+			}
+			if ownerDepth == nil {
+				return nil, &ValidationError{Field: "forkedAtEntryId", Message: "forkedAtEntryId must be visible in the parent conversation ancestry"}
+			}
+			anchorOwnerDepth = ownerDepth
 		}
-		actualGroupID = sourceConv.ConversationGroupID
+		actualGroupID = parent.ConversationGroupID
 	} else if startedByConversationID != nil {
 		var parentConv model.Conversation
 		findResult := db.Where("id = ? AND archived_at IS NULL", *startedByConversationID).Limit(1).Find(&parentConv)
@@ -361,8 +372,6 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		AgentID:                 agentID,
 		Metadata:                metadata,
 		ConversationGroupID:     actualGroupID,
-		ForkedAtConversationID:  forkedAtConversationID,
-		ForkedAtEntryID:         forkedAtEntryID,
 		StartedByConversationID: startedByConversationID,
 		StartedByEntryID:        startedByEntryID,
 		CreatedAt:               now,
@@ -378,6 +387,10 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 		)
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
+	}
+
+	if err := s.createConversationAncestry(ctx, db, actualGroupID, convID, sourceConv, forkedAtEntryID, anchorOwnerDepth); err != nil {
+		return nil, err
 	}
 
 	// Root conversations get a new owner membership; started conversations copy parent memberships.
@@ -409,7 +422,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      convID,
 			Title:                   title,
-			OwnerUserID:             userID,
+			OwnerUserID:             ownerUserID,
 			ClientID:                clientID,
 			AgentID:                 agentID,
 			Metadata:                metadata,
@@ -434,9 +447,10 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 
 	tx := s.dbFor(ctx).
 		Table("conversations c").
-		Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, cm.access_level").
+		Select(conversationSelectColumns+", cm.access_level").
 		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
 		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id")
+	tx = joinDirectConversationAncestry(tx)
 
 	switch archived {
 	case registrystore.ArchiveFilterInclude:
@@ -448,7 +462,7 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 
 	switch mode {
 	case model.ListModeRoots:
-		tx = tx.Where("c.forked_at_conversation_id IS NULL")
+		tx = tx.Where("ca_direct.ancestor_conversation_id IS NULL")
 	case model.ListModeLatestFork:
 		subquery := "SELECT MAX(c2.updated_at) FROM conversations c2 WHERE c2.conversation_group_id = c.conversation_group_id"
 		if archived == registrystore.ArchiveFilterOnly {
@@ -555,6 +569,9 @@ func (s *SQLiteStore) GetConversation(ctx context.Context, userID string, conver
 	}
 	access, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader)
 	if err != nil {
+		return nil, err
+	}
+	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
 	}
 
@@ -809,12 +826,14 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 	}
 
 	tx := s.dbFor(ctx).
-		Table("conversations").
-		Where("conversation_group_id = ?", conv.ConversationGroupID).
-		Order("created_at ASC")
+		Table("conversations c").
+		Select("c.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = c.conversation_group_id AND ca.descendant_conversation_id = c.id").
+		Where("ca.conversation_group_id = ? AND ca.ancestor_conversation_id = ? AND ca.depth = 1", conv.ConversationGroupID, conv.ID).
+		Order("c.created_at ASC, c.id ASC")
 
 	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
+		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
 	}
 	tx = tx.Limit(limit + 1)
 
@@ -830,6 +849,9 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 
 	forks := make([]registrystore.ConversationForkSummary, len(convs))
 	for i, c := range convs {
+		if err := s.hydrateConversationFork(ctx, &c); err != nil {
+			return nil, nil, err
+		}
 		forks[i] = registrystore.ConversationForkSummary{
 			ID:                     c.ID,
 			Title:                  s.decryptString(c.Title),
@@ -859,15 +881,14 @@ func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string,
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
 	}
-	return s.listChildConversationsForBase(ctx,
-		s.dbFor(ctx).
-			Table("conversations c").
-			Select("c.id, c.title, c.owner_user_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, cm.access_level").
-			Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
-			Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id").
-			Where("c.started_by_conversation_id = ?", conversationID),
-		afterCursor, limit,
-	)
+	tx := s.dbFor(ctx).
+		Table("conversations c").
+		Select(conversationSelectColumns+", cm.access_level").
+		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
+		Joins("JOIN conversation_groups cg ON cg.id = c.conversation_group_id").
+		Where("c.started_by_conversation_id = ?", conversationID)
+	tx = joinDirectConversationAncestry(tx)
+	return s.listChildConversationsForBase(ctx, tx, afterCursor, limit)
 }
 
 // --- Ownership Transfers ---
@@ -1077,6 +1098,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, err
 	}
+	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
+		return nil, err
+	}
 
 	limit := query.Limit
 	if limit <= 0 {
@@ -1108,6 +1132,42 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		return nil, &ForbiddenError{}
 	}
 
+	if allForks && effectiveChannel == model.ChannelHistory {
+		page, afterCursor, beforeCursor, err := s.boundedGroupHistory(ctx, conv.ConversationGroupID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == model.ChannelContext {
+		page, afterCursor, beforeCursor, err := s.boundedGroupContext(ctx, conv.ConversationGroupID, clientID, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == model.ChannelJournal {
+		page, afterCursor, beforeCursor, err := s.boundedGroupChannel(ctx, conv.ConversationGroupID, model.ChannelJournal, clientID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if allForks && effectiveChannel == "" {
+		page, afterCursor, beforeCursor, err := s.boundedGroupAllChannels(ctx, conv.ConversationGroupID, clientID, true, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
 	if allForks {
 		entries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
 		if err != nil {
@@ -1135,11 +1195,8 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		return nil, err
 	}
 
-	// Bounded path: history channel, no forks, no upToEntryID, no fromSeq,
-	// tail or beforeCursor — query in DESC order across ancestry segments
-	// instead of materialising the entire group.
-	if effectiveChannel == model.ChannelHistory && !allForks && upToEntryID == nil && fromSeq == nil && (tail || beforeEntryID != nil) {
-		page, afterCursor, beforeCursor, err := s.boundedHistoryBackward(ctx, ancestry, beforeEntryID, tail, limit)
+	if effectiveChannel == model.ChannelHistory && !allForks {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleHistory(ctx, conv, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
 		if err != nil {
 			return nil, err
 		}
@@ -1147,18 +1204,43 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
-	var allEntries []model.Entry
+	if effectiveChannel == model.ChannelContext && !allForks {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleContext(ctx, conv, clientID, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if effectiveChannel == model.ChannelJournal && !allForks {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleChannel(ctx, conv, model.ChannelJournal, clientID, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if effectiveChannel == "" && !allForks {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleAllChannels(ctx, conv, clientID, true, epochFilter, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
 	var visible []model.Entry
 	ensureVisible := func() error {
 		if visible != nil {
 			return nil
 		}
 		var err error
-		allEntries, err = s.listEntriesForGroup(ctx, conv.ConversationGroupID)
+		visible, err = s.listVisibleEntriesForConversation(ctx, conv)
 		if err != nil {
 			return err
 		}
-		visible = filterEntriesByAncestry(allEntries, ancestry)
 		return nil
 	}
 
@@ -1175,7 +1257,7 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 			if err := ensureVisible(); err != nil {
 				return nil, err
 			}
-			filtered = filterMemoryEntriesWithEpoch(allEntries, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
+			filtered = filterVisibleMemoryEntriesWithEpoch(visible, *clientID, valueOrEmpty(agentID), epochFilter)
 		}
 	} else {
 		if err := ensureVisible(); err != nil {
@@ -1261,6 +1343,9 @@ func (s *SQLiteStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) 
 }
 
 func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
+	if err := registrystore.ValidateEntryEpochChannels(entries, epoch); err != nil {
+		return nil, &ValidationError{Field: "epoch", Message: err.Error()}
+	}
 	db := s.writeDBFor(ctx, "sqlite store append entries")
 	var conv model.Conversation
 	convResult := db.Where("id = ? AND archived_at IS NULL", conversationID).Limit(1).Find(&conv)
@@ -1359,12 +1444,7 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 			ch = model.ChannelHistory
 		}
 
-		// Auto-assign epoch=1 for context entries when no epoch specified.
-		entryEpoch := epoch
-		if ch == model.ChannelContext && entryEpoch == nil {
-			var one int64 = 1
-			entryEpoch = &one
-		}
+		entryEpoch := registrystore.EpochForChannel(ch, epoch)
 
 		encContent, err := s.encrypt(req.Content)
 		if err != nil {
@@ -1632,6 +1712,11 @@ func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string,
 			return existing, nil
 		}
 		return model.Conversation{}, fmt.Errorf("failed to create conversation: %w", err)
+	}
+	if err := s.createConversationAncestry(ctx, db, groupID, conversationID, nil, nil, nil); err != nil {
+		_ = db.Delete(&conv).Error
+		_ = db.Delete(&group).Error
+		return model.Conversation{}, err
 	}
 
 	membership := model.ConversationMembership{
@@ -1925,7 +2010,7 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 // --- Admin ---
 
 func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	const selectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level"
+	const selectColumns = conversationSelectColumns + ", 'owner' as access_level"
 
 	type row struct {
 		ID                      string                 `gorm:"column:id"`
@@ -1945,7 +2030,7 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 
-	base := s.dbFor(ctx).Table("conversations c")
+	base := joinDirectConversationAncestry(s.dbFor(ctx).Table("conversations c"))
 
 	switch query.Archived {
 	case registrystore.ArchiveFilterInclude:
@@ -1975,7 +2060,7 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 	switch query.Mode {
 	case model.ListModeRoots:
 		tx = base.
-			Where("c.forked_at_conversation_id IS NULL").
+			Where("ca_direct.ancestor_conversation_id IS NULL").
 			Select(selectColumns)
 	case model.ListModeLatestFork:
 		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
@@ -2036,6 +2121,9 @@ func (s *SQLiteStore) AdminGetConversation(ctx context.Context, conversationID s
 	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
 		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
+	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
+		return nil, err
+	}
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      conv.ID,
@@ -2092,23 +2180,102 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		limit = 50
 	}
 
-	allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
-	if err != nil {
-		return nil, err
+	var err error
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelHistory {
+		page, afterCursor, beforeCursor, err := s.boundedGroupHistory(ctx, conv.ConversationGroupID, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelContext {
+		epochFilter := query.EpochFilter
+		if epochFilter == nil {
+			epochFilter = &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeAll}
+		}
+		page, afterCursor, beforeCursor, err := s.boundedGroupContext(ctx, conv.ConversationGroupID, nil, epochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if query.AllForks && query.Channel != nil && *query.Channel == model.ChannelJournal {
+		page, afterCursor, beforeCursor, err := s.boundedGroupChannel(ctx, conv.ConversationGroupID, model.ChannelJournal, nil, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if query.AllForks && query.Channel == nil {
+		page, afterCursor, beforeCursor, err := s.boundedGroupAllChannels(ctx, conv.ConversationGroupID, nil, false, query.EpochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelHistory {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleHistory(ctx, conv, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelContext {
+		epochFilter := query.EpochFilter
+		if epochFilter == nil {
+			epochFilter = &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeAll}
+		}
+		page, afterCursor, beforeCursor, err := s.boundedVisibleContext(ctx, conv, nil, epochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel != nil && *query.Channel == model.ChannelJournal {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleChannel(ctx, conv, model.ChannelJournal, nil, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if !query.AllForks && query.Channel == nil {
+		page, afterCursor, beforeCursor, err := s.boundedVisibleAllChannels(ctx, conv, nil, false, query.EpochFilter, query.FromSeq, query.UpToEntryID, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	var filtered []model.Entry
 	var visible []model.Entry
 	if query.AllForks {
-		filtered = allEntries
-		visible = allEntries
-	} else {
-		ancestry, err := s.buildAncestryStack(ctx, conv)
+		allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
 		if err != nil {
 			return nil, err
 		}
-		filtered = filterEntriesByAncestry(allEntries, ancestry)
-		visible = filtered
+		filtered = allEntries
+		visible = allEntries
+	} else {
+		visible, err = s.listVisibleEntriesForConversation(ctx, conv)
+		if err != nil {
+			return nil, err
+		}
+		filtered = visible
 	}
 	if query.Channel != nil {
 		ch := *query.Channel
@@ -2175,12 +2342,14 @@ func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string,
 	}
 
 	tx := s.dbFor(ctx).
-		Table("conversations").
-		Where("conversation_group_id = ?", conv.ConversationGroupID).
-		Order("created_at ASC")
+		Table("conversations c").
+		Select("c.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = c.conversation_group_id AND ca.descendant_conversation_id = c.id").
+		Where("ca.conversation_group_id = ? AND ca.ancestor_conversation_id = ? AND ca.depth = 1", conv.ConversationGroupID, conv.ID).
+		Order("c.created_at ASC, c.id ASC")
 
 	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
+		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
 	}
 	tx = tx.Limit(limit + 1)
 
@@ -2196,6 +2365,9 @@ func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string,
 
 	forks := make([]registrystore.ConversationForkSummary, len(convs))
 	for i, c := range convs {
+		if err := s.hydrateConversationFork(ctx, &c); err != nil {
+			return nil, nil, err
+		}
 		forks[i] = registrystore.ConversationForkSummary{
 			ID:                     c.ID,
 			Title:                  s.decryptString(c.Title),
@@ -2222,13 +2394,12 @@ func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversat
 	if findResult.RowsAffected == 0 {
 		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-	return s.listChildConversationsForBase(ctx,
-		s.dbFor(ctx).
-			Table("conversations c").
-			Select("c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, c.forked_at_entry_id, c.forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at, 'owner' as access_level").
-			Where("c.started_by_conversation_id = ?", conversationID),
-		afterCursor, limit,
-	)
+	tx := s.dbFor(ctx).
+		Table("conversations c").
+		Select(conversationSelectColumns+", 'owner' as access_level").
+		Where("c.started_by_conversation_id = ?", conversationID)
+	tx = joinDirectConversationAncestry(tx)
+	return s.listChildConversationsForBase(ctx, tx, afterCursor, limit)
 }
 
 func (s *SQLiteStore) AdminSearchEntries(ctx context.Context, query registrystore.AdminSearchQuery) (*registrystore.SearchResults, error) {
@@ -2604,22 +2775,90 @@ func valueOrEmpty(ptr *string) string {
 	return *ptr
 }
 
-func (s *SQLiteStore) entryVisibleInConversationAncestry(ctx context.Context, conv model.Conversation, entryID uuid.UUID) (bool, error) {
-	ancestry, err := s.buildAncestryStack(ctx, conv)
-	if err != nil {
-		return false, err
-	}
-	allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
-	if err != nil {
-		return false, err
-	}
-	visibleEntries := filterEntriesByAncestry(allEntries, ancestry)
-	for _, entry := range visibleEntries {
-		if entry.ID == entryID {
-			return true, nil
+const conversationSelectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, ca_direct.forked_at_entry_id, ca_direct.ancestor_conversation_id AS forked_at_conversation_id, c.started_by_conversation_id, c.started_by_entry_id, c.created_at, c.updated_at, c.archived_at"
+
+func joinDirectConversationAncestry(tx *gorm.DB) *gorm.DB {
+	return tx.Joins("LEFT JOIN conversation_ancestry ca_direct ON ca_direct.conversation_group_id = c.conversation_group_id AND ca_direct.descendant_conversation_id = c.id AND ca_direct.depth = 1")
+}
+
+func (s *SQLiteStore) createConversationAncestry(ctx context.Context, db *gorm.DB, groupID uuid.UUID, convID string, sourceConv *model.Conversation, forkedAtEntryID *uuid.UUID, anchorOwnerDepth *int) error {
+	var parentRows []model.ConversationAncestry
+	if sourceConv != nil {
+		if err := db.WithContext(ctx).
+			Where("conversation_group_id = ? AND descendant_conversation_id = ?", groupID, sourceConv.ID).
+			Order("depth ASC").
+			Find(&parentRows).Error; err != nil {
+			return fmt.Errorf("failed to load parent conversation ancestry: %w", err)
+		}
+		if len(parentRows) == 0 {
+			return fmt.Errorf("parent conversation ancestry is missing: %s", sourceConv.ID)
 		}
 	}
-	return false, nil
+
+	parentSegments := make([]model.ConversationAncestrySegment, 0, len(parentRows))
+	for _, parentRow := range parentRows {
+		parentSegments = append(parentSegments, model.ConversationAncestrySegment{
+			ConversationID:  parentRow.AncestorConversationID,
+			Depth:           parentRow.Depth,
+			BeforeEntryID:   parentRow.BeforeEntryID,
+			ForkedAtEntryID: parentRow.ForkedAtEntryID,
+		})
+	}
+	segments, err := model.BuildConversationAncestrySegments(convID, parentSegments, forkedAtEntryID, anchorOwnerDepth)
+	if err != nil {
+		return err
+	}
+	rows := make([]model.ConversationAncestry, 0, len(segments))
+	for _, segment := range segments {
+		rows = append(rows, model.ConversationAncestry{
+			ConversationGroupID:      groupID,
+			DescendantConversationID: convID,
+			AncestorConversationID:   segment.ConversationID,
+			Depth:                    segment.Depth,
+			BeforeEntryID:            segment.BeforeEntryID,
+			ForkedAtEntryID:          segment.ForkedAtEntryID,
+		})
+	}
+	if err := db.WithContext(ctx).Create(&rows).Error; err != nil {
+		return fmt.Errorf("failed to create conversation ancestry rows: %w", err)
+	}
+	return nil
+}
+
+func (s *SQLiteStore) hydrateConversationFork(ctx context.Context, conv *model.Conversation) error {
+	var direct model.ConversationAncestry
+	result := s.dbFor(ctx).
+		Where("conversation_group_id = ? AND descendant_conversation_id = ? AND depth = 1", conv.ConversationGroupID, conv.ID).
+		Limit(1).
+		Find(&direct)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		conv.ForkedAtConversationID = nil
+		conv.ForkedAtEntryID = nil
+		return nil
+	}
+	parentID := direct.AncestorConversationID
+	conv.ForkedAtConversationID = &parentID
+	conv.ForkedAtEntryID = direct.ForkedAtEntryID
+	return nil
+}
+
+func (s *SQLiteStore) entryVisibleInConversationAncestry(ctx context.Context, conv model.Conversation, entryID uuid.UUID) (bool, error) {
+	var entry model.Entry
+	result := s.dbFor(ctx).
+		Where("id = ? AND conversation_group_id = ?", entryID, conv.ConversationGroupID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	depth, err := s.visibleAncestryDepthForEntry(ctx, conv, entry)
+	return depth != nil, err
 }
 
 func (s *SQLiteStore) startedConversationGroupIDsForDelete(ctx context.Context, rootGroupID uuid.UUID) ([]uuid.UUID, error) {
@@ -2729,12 +2968,10 @@ func (s *SQLiteStore) fetchLatestMemoryEntries(ctx context.Context, conv model.C
 		}
 	}
 
-	allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
+	entries, err := s.listLatestVisibleContextEntries(ctx, conv, clientID)
 	if err != nil {
 		return nil, err
 	}
-	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	entries := filterMemoryEntriesWithEpoch(allEntries, ancestry, clientID, agentID, latestFilter)
 
 	if s.entriesCache != nil && s.entriesCache.Available() {
 		if security.CacheMissesTotal != nil {
@@ -2762,13 +2999,11 @@ func (s *SQLiteStore) warmEntriesCache(ctx context.Context, conv model.Conversat
 		return
 	}
 	cacheKey := scopedAgentCacheKey(clientID, agentID)
-	allEntries, err := s.listEntriesForGroup(ctx, conv.ConversationGroupID)
+	entries, err := s.listLatestVisibleContextEntries(ctx, conv, clientID)
 	if err != nil {
 		log.Warn("warmEntriesCache: failed to list entries", "err", err)
 		return
 	}
-	latestFilter := &registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
-	entries := filterMemoryEntriesWithEpoch(allEntries, ancestry, clientID, agentID, latestFilter)
 	if len(entries) == 0 {
 		if rerr := s.entriesCache.Remove(ctx, conv.ID, cacheKey); rerr != nil {
 			log.Warn("warmEntriesCache: cache remove error", "err", rerr)
@@ -2797,44 +3032,589 @@ func (s *SQLiteStore) listEntriesForGroup(ctx context.Context, groupID uuid.UUID
 	return entries, nil
 }
 
+func (s *SQLiteStore) listVisibleEntriesForConversation(ctx context.Context, conv model.Conversation) ([]model.Entry, error) {
+	var entries []model.Entry
+	err := s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = e.conversation_group_id AND ca.descendant_conversation_id = ? AND ca.ancestor_conversation_id = e.conversation_id", conv.ID).
+		Joins("LEFT JOIN entries boundary ON boundary.conversation_group_id = ca.conversation_group_id AND boundary.id = ca.before_entry_id").
+		Where("e.conversation_group_id = ?", conv.ConversationGroupID).
+		Where(visibleAncestryEntrySQL("e", "ca", "boundary")).
+		Order("e.created_at ASC, e.seq ASC NULLS FIRST, e.id ASC").
+		Find(&entries).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list visible entries: %w", err)
+	}
+	return entries, nil
+}
+
+func (s *SQLiteStore) visibleContextEntriesQuery(ctx context.Context, conv model.Conversation, clientID string) *gorm.DB {
+	return s.visibleChannelEntriesQuery(ctx, conv, model.ChannelContext, &clientID)
+}
+
+func (s *SQLiteStore) visibleChannelEntriesQuery(ctx context.Context, conv model.Conversation, channel model.Channel, clientID *string) *gorm.DB {
+	tx := s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = e.conversation_group_id AND ca.descendant_conversation_id = ? AND ca.ancestor_conversation_id = e.conversation_id", conv.ID).
+		Joins("LEFT JOIN entries boundary ON boundary.conversation_group_id = ca.conversation_group_id AND boundary.id = ca.before_entry_id").
+		Where("e.conversation_group_id = ? AND e.channel = ?", conv.ConversationGroupID, channel).
+		Where(visibleAncestryEntrySQL("e", "ca", "boundary"))
+	if clientID != nil {
+		tx = tx.Where("e.client_id = ?", *clientID)
+	}
+	return tx
+}
+
+func (s *SQLiteStore) visibleEntriesQuery(ctx context.Context, conv model.Conversation) *gorm.DB {
+	return s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = e.conversation_group_id AND ca.descendant_conversation_id = ? AND ca.ancestor_conversation_id = e.conversation_id", conv.ID).
+		Joins("LEFT JOIN entries boundary ON boundary.conversation_group_id = ca.conversation_group_id AND boundary.id = ca.before_entry_id").
+		Where("e.conversation_group_id = ?", conv.ConversationGroupID).
+		Where(visibleAncestryEntrySQL("e", "ca", "boundary"))
+}
+
+func (s *SQLiteStore) visibleEntryByID(ctx context.Context, conv model.Conversation, entryID string) (model.Entry, bool, error) {
+	var entry model.Entry
+	result := s.visibleEntriesQuery(ctx, conv).
+		Where("e.id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, false, result.Error
+	}
+	return entry, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) visibleAllChannelsQuery(ctx context.Context, conv model.Conversation, clientID *string, suppressScopedWithoutClient bool) *gorm.DB {
+	tx := s.visibleEntriesQuery(ctx, conv)
+	if !suppressScopedWithoutClient {
+		return tx
+	}
+	scopedChannels := []string{string(model.ChannelContext), string(model.ChannelJournal)}
+	if clientID == nil {
+		return tx.Where("e.channel NOT IN ?", scopedChannels)
+	}
+	return tx.Where("(e.channel NOT IN ? OR e.client_id = ?)", scopedChannels, *clientID)
+}
+
+func (s *SQLiteStore) listLatestVisibleContextEntries(ctx context.Context, conv model.Conversation, clientID string) ([]model.Entry, error) {
+	base := s.visibleContextEntriesQuery(ctx, conv, clientID)
+	var epochRow struct {
+		MaxEpoch *int64 `gorm:"column:max_epoch"`
+	}
+	if err := base.Session(&gorm.Session{}).
+		Select("MAX(COALESCE(e.epoch, 0)) AS max_epoch").
+		Scan(&epochRow).Error; err != nil {
+		return nil, fmt.Errorf("failed to get latest context epoch: %w", err)
+	}
+	if epochRow.MaxEpoch == nil {
+		return []model.Entry{}, nil
+	}
+	var entries []model.Entry
+	err := base.Session(&gorm.Session{}).
+		Where("COALESCE(e.epoch, 0) = ?", *epochRow.MaxEpoch).
+		Order("e.created_at ASC, e.seq ASC NULLS FIRST, e.id ASC").
+		Find(&entries).Error
+	if err != nil {
+		return nil, fmt.Errorf("failed to list latest context entries: %w", err)
+	}
+	return entries, nil
+}
+
+func visibleAncestryEntrySQL(entryAlias, ancestryAlias, boundaryAlias string) string {
+	return fmt.Sprintf(`(
+		%s.depth = 0
+		OR (
+			%s.before_entry_id IS NOT NULL
+			AND (
+				%s.created_at < %s.created_at
+				OR (
+					%s.created_at = %s.created_at
+					AND (
+						(%s.seq IS NULL AND %s.seq IS NULL AND %s.id < %s.id)
+						OR (
+							%s.seq IS NOT NULL
+							AND (
+								%s.seq IS NULL
+								OR %s.seq < %s.seq
+								OR (%s.seq = %s.seq AND %s.id < %s.id)
+							)
+						)
+					)
+				)
+			)
+		)
+	)`, ancestryAlias,
+		ancestryAlias,
+		entryAlias, boundaryAlias,
+		entryAlias, boundaryAlias,
+		entryAlias, boundaryAlias, entryAlias, boundaryAlias,
+		boundaryAlias,
+		entryAlias,
+		entryAlias, boundaryAlias,
+		entryAlias, boundaryAlias, entryAlias, boundaryAlias,
+	)
+}
+
+func (s *SQLiteStore) visibleHistoryEntriesQuery(ctx context.Context, conv model.Conversation) *gorm.DB {
+	return s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = e.conversation_group_id AND ca.descendant_conversation_id = ? AND ca.ancestor_conversation_id = e.conversation_id", conv.ID).
+		Joins("LEFT JOIN entries boundary ON boundary.conversation_group_id = ca.conversation_group_id AND boundary.id = ca.before_entry_id").
+		Where("e.conversation_group_id = ? AND e.channel = ?", conv.ConversationGroupID, model.ChannelHistory).
+		Where(visibleAncestryEntrySQL("e", "ca", "boundary"))
+}
+
+func (s *SQLiteStore) visibleHistoryEntryByID(ctx context.Context, conv model.Conversation, entryID string) (model.Entry, bool, error) {
+	var entry model.Entry
+	result := s.visibleHistoryEntriesQuery(ctx, conv).
+		Where("e.id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, false, result.Error
+	}
+	return entry, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) entryExists(ctx context.Context, entryID string) (bool, error) {
+	var entry model.Entry
+	result := s.dbFor(ctx).
+		Select("id").
+		Where("id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return false, result.Error
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) cursorEntryError(ctx context.Context, cursorName, entryID string) error {
+	exists, err := s.entryExists(ctx, entryID)
+	if err != nil {
+		return err
+	}
+	if !exists {
+		return &BadRequestError{Message: cursorName + " entry not found"}
+	}
+	return &BadRequestError{Message: cursorName + " entry not found in visible results"}
+}
+
+func whereEntryOrderBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
+	return sqlentry.WhereEntryOrderBeforeAlias(tx, alias, bound, sqlentry.UUIDStringValue)
+}
+
+func whereEntryOrderStrictlyAfterAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
+	return sqlentry.WhereEntryOrderStrictlyAfterAlias(tx, alias, bound, sqlentry.UUIDStringValue)
+}
+
+func whereEntryOrderAtOrBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
+	return sqlentry.WhereEntryOrderAtOrBeforeAlias(tx, alias, bound, sqlentry.UUIDStringValue)
+}
+
+func whereSeqOrderBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
+	return sqlentry.WhereSeqOrderBeforeAlias(tx, alias, bound, sqlentry.UUIDStringValue)
+}
+
+func whereSeqOrderStrictlyAfterAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
+	return sqlentry.WhereSeqOrderStrictlyAfterAlias(tx, alias, bound, sqlentry.UUIDStringValue)
+}
+
+func (s *SQLiteStore) visibleHistoryFromSeqQuery(ctx context.Context, conv model.Conversation, fromSeq uint32) *gorm.DB {
+	return s.visibleHistoryEntriesQuery(ctx, conv).
+		Where("e.seq IS NOT NULL AND e.seq >= ?", fromSeq)
+}
+
+func (s *SQLiteStore) visibleHistoryFromSeqEntryByID(ctx context.Context, conv model.Conversation, fromSeq uint32, entryID string) (model.Entry, bool, error) {
+	var entry model.Entry
+	result := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
+		Where("e.id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, false, result.Error
+	}
+	return entry, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) boundedVisibleHistoryFromSeq(ctx context.Context, conv model.Conversation, fromSeq uint32, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+
+	if tail || beforeEntryID != nil {
+		tx := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
+			Order("e.seq DESC, e.id DESC").
+			Limit(limit + 1)
+		if beforeEntryID != nil {
+			anchor, ok, err := s.visibleHistoryFromSeqEntryByID(ctx, conv, fromSeq, *beforeEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			if !ok {
+				return nil, nil, nil, s.cursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+			}
+			tx = whereSeqOrderBeforeAlias(tx, "e", anchor)
+		}
+
+		var entries []model.Entry
+		if err := tx.Find(&entries).Error; err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded fromSeq history scan failed: %w", err)
+		}
+		for lo, hi := 0, len(entries)-1; lo < hi; lo, hi = lo+1, hi-1 {
+			entries[lo], entries[hi] = entries[hi], entries[lo]
+		}
+		hasMore := len(entries) > limit
+		if hasMore {
+			entries = entries[1:]
+			c := entries[0].ID.String()
+			beforeCursor := &c
+			var afterCursor *string
+			if beforeEntryID != nil && len(entries) > 0 {
+				ac := entries[len(entries)-1].ID.String()
+				afterCursor = &ac
+			}
+			return entries, afterCursor, beforeCursor, nil
+		}
+		var afterCursor *string
+		if beforeEntryID != nil && len(entries) > 0 {
+			c := entries[len(entries)-1].ID.String()
+			afterCursor = &c
+		}
+		return entries, afterCursor, nil, nil
+	}
+
+	tx := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
+		Order("e.seq ASC, e.id ASC").
+		Limit(limit + 1)
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryFromSeqEntryByID(ctx, conv, fromSeq, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.cursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		tx = whereSeqOrderStrictlyAfterAlias(tx, "e", anchor)
+	}
+
+	var entries []model.Entry
+	if err := tx.Find(&entries).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded fromSeq history scan failed: %w", err)
+	}
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[:limit]
+		afterCursor := entries[len(entries)-1].ID.String()
+		var beforeCursor *string
+		if afterEntryID != nil && len(entries) > 0 {
+			bc := entries[0].ID.String()
+			beforeCursor = &bc
+		}
+		return entries, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(entries) > 0 {
+		c := entries[0].ID.String()
+		beforeCursor = &c
+	}
+	return entries, nil, beforeCursor, nil
+}
+
+func (s *SQLiteStore) groupHistoryEntriesQuery(ctx context.Context, groupID uuid.UUID, fromSeq *uint32) *gorm.DB {
+	tx := s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Where("e.conversation_group_id = ? AND e.channel = ?", groupID, model.ChannelHistory)
+	if fromSeq != nil {
+		tx = tx.Where("e.seq IS NOT NULL AND e.seq >= ?", *fromSeq)
+	}
+	return tx
+}
+
+func (s *SQLiteStore) groupHistoryEntryByID(ctx context.Context, groupID uuid.UUID, fromSeq *uint32, entryID string) (model.Entry, bool, error) {
+	var entry model.Entry
+	result := s.groupHistoryEntriesQuery(ctx, groupID, fromSeq).
+		Where("e.id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, false, result.Error
+	}
+	return entry, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) groupEntriesQuery(ctx context.Context, groupID uuid.UUID) *gorm.DB {
+	return s.dbFor(ctx).
+		Table("entries e").
+		Select("e.*").
+		Where("e.conversation_group_id = ?", groupID)
+}
+
+func (s *SQLiteStore) groupEntryByID(ctx context.Context, groupID uuid.UUID, entryID string) (model.Entry, bool, error) {
+	var entry model.Entry
+	result := s.groupEntriesQuery(ctx, groupID).
+		Where("e.id = ?", entryID).
+		Limit(1).
+		Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, false, result.Error
+	}
+	return entry, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) groupChannelEntriesQuery(ctx context.Context, groupID uuid.UUID, channel model.Channel, clientID *string) *gorm.DB {
+	tx := s.groupEntriesQuery(ctx, groupID).Where("e.channel = ?", channel)
+	if clientID != nil {
+		tx = tx.Where("e.client_id = ?", *clientID)
+	}
+	return tx
+}
+
+func (s *SQLiteStore) groupAllChannelsQuery(ctx context.Context, groupID uuid.UUID, clientID *string, suppressScopedWithoutClient bool) *gorm.DB {
+	tx := s.groupEntriesQuery(ctx, groupID)
+	if !suppressScopedWithoutClient {
+		return tx
+	}
+	scopedChannels := []string{string(model.ChannelContext), string(model.ChannelJournal)}
+	if clientID == nil {
+		return tx.Where("e.channel NOT IN ?", scopedChannels)
+	}
+	return tx.Where("(e.channel NOT IN ? OR e.client_id = ?)", scopedChannels, *clientID)
+}
+
+func (s *SQLiteStore) runBoundedSQLQuery(ctx context.Context, base *gorm.DB, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int, upToLookup sqlentry.LookupFunc, transform func(*gorm.DB) (*gorm.DB, error), scanErr string) ([]model.Entry, *string, *string, error) {
+	return sqlentry.RunBoundedQuery(ctx, sqlentry.BoundedQuery{
+		Base:             base,
+		FromSeq:          fromSeq,
+		UpToEntryID:      upToEntryID,
+		AfterEntryID:     afterEntryID,
+		BeforeEntryID:    beforeEntryID,
+		Tail:             tail,
+		Limit:            limit,
+		MaxLimit:         config.MaxPageSizeFromContext(ctx),
+		UpToLookup:       upToLookup,
+		BaseTransform:    transform,
+		CursorEntryError: s.cursorEntryError,
+		LimitError: func(max int) error {
+			return &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", max)}
+		},
+		EntryNotFound: func(entryID string) error {
+			return &NotFoundError{Resource: "entry", ID: entryID}
+		},
+		EntryIDValue: sqlentry.UUIDStringValue,
+		ScanErr:      scanErr,
+	})
+}
+
+func (s *SQLiteStore) boundedVisibleHistory(ctx context.Context, conv model.Conversation, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.visibleHistoryEntriesQuery(ctx, conv)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.visibleEntryByID(ctx, conv, entryID)
+	}, nil, "bounded history scan failed")
+}
+
+func (s *SQLiteStore) boundedVisibleContext(ctx context.Context, conv model.Conversation, clientID *string, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.visibleChannelEntriesQuery(ctx, conv, model.ChannelContext, clientID)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.visibleEntryByID(ctx, conv, entryID)
+	}, func(base *gorm.DB) (*gorm.DB, error) {
+		return sqlentry.ApplyEpochFilter(base, epochFilter, true, "failed to get latest context epoch")
+	}, "bounded context scan failed")
+}
+
+func (s *SQLiteStore) boundedVisibleChannel(ctx context.Context, conv model.Conversation, channel model.Channel, clientID *string, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.visibleChannelEntriesQuery(ctx, conv, channel, clientID)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.visibleEntryByID(ctx, conv, entryID)
+	}, nil, "bounded channel scan failed")
+}
+
+func (s *SQLiteStore) boundedVisibleAllChannels(ctx context.Context, conv model.Conversation, clientID *string, suppressScopedWithoutClient bool, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.visibleAllChannelsQuery(ctx, conv, clientID, suppressScopedWithoutClient)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.visibleEntryByID(ctx, conv, entryID)
+	}, func(base *gorm.DB) (*gorm.DB, error) {
+		return applySQLEpochFilterToBase(base, epochFilter)
+	}, "bounded all-channel scan failed")
+}
+
+func (s *SQLiteStore) boundedGroupHistory(ctx context.Context, groupID uuid.UUID, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.groupHistoryEntriesQuery(ctx, groupID, nil)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.groupEntryByID(ctx, groupID, entryID)
+	}, nil, "bounded group history scan failed")
+}
+
+func (s *SQLiteStore) boundedGroupContext(ctx context.Context, groupID uuid.UUID, clientID *string, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.groupChannelEntriesQuery(ctx, groupID, model.ChannelContext, clientID)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.groupEntryByID(ctx, groupID, entryID)
+	}, func(base *gorm.DB) (*gorm.DB, error) {
+		return sqlentry.ApplyEpochFilter(base, epochFilter, true, "failed to get latest context epoch")
+	}, "bounded group context scan failed")
+}
+
+func (s *SQLiteStore) boundedGroupChannel(ctx context.Context, groupID uuid.UUID, channel model.Channel, clientID *string, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.groupChannelEntriesQuery(ctx, groupID, channel, clientID)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.groupEntryByID(ctx, groupID, entryID)
+	}, nil, "bounded group channel scan failed")
+}
+
+func (s *SQLiteStore) boundedGroupAllChannels(ctx context.Context, groupID uuid.UUID, clientID *string, suppressScopedWithoutClient bool, epochFilter *registrystore.MemoryEpochFilter, fromSeq *uint32, upToEntryID, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	base := s.groupAllChannelsQuery(ctx, groupID, clientID, suppressScopedWithoutClient)
+	return s.runBoundedSQLQuery(ctx, base, fromSeq, upToEntryID, afterEntryID, beforeEntryID, tail, limit, func(entryID string) (model.Entry, bool, error) {
+		return s.groupEntryByID(ctx, groupID, entryID)
+	}, func(base *gorm.DB) (*gorm.DB, error) {
+		return applySQLEpochFilterToBase(base, epochFilter)
+	}, "bounded group all-channel scan failed")
+}
+
+func (s *SQLiteStore) boundedVisibleHistoryBackward(ctx context.Context, conv model.Conversation, beforeEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+
+	tx := s.visibleHistoryEntriesQuery(ctx, conv).
+		Order("e.created_at DESC, e.seq DESC NULLS LAST, e.id DESC").
+		Limit(limit + 1)
+
+	if beforeEntryID != nil {
+		anchor, ok, err := s.visibleHistoryEntryByID(ctx, conv, *beforeEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.cursorEntryError(ctx, "beforeCursor", *beforeEntryID)
+		}
+		tx = whereEntryOrderBeforeAlias(tx, "e", anchor)
+	}
+
+	var entries []model.Entry
+	if err := tx.Find(&entries).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+	}
+	for lo, hi := 0, len(entries)-1; lo < hi; lo, hi = lo+1, hi-1 {
+		entries[lo], entries[hi] = entries[hi], entries[lo]
+	}
+
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[1:]
+		c := entries[0].ID.String()
+		beforeCursor := &c
+		var afterCursor *string
+		if beforeEntryID != nil && len(entries) > 0 {
+			ac := entries[len(entries)-1].ID.String()
+			afterCursor = &ac
+		}
+		return entries, afterCursor, beforeCursor, nil
+	}
+	var afterCursor *string
+	if beforeEntryID != nil && len(entries) > 0 {
+		c := entries[len(entries)-1].ID.String()
+		afterCursor = &c
+	}
+	return entries, afterCursor, nil, nil
+}
+
+func (s *SQLiteStore) boundedVisibleHistoryForward(ctx context.Context, conv model.Conversation, afterEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+
+	tx := s.visibleHistoryEntriesQuery(ctx, conv).
+		Order("e.created_at ASC, e.seq ASC NULLS FIRST, e.id ASC").
+		Limit(limit + 1)
+
+	if afterEntryID != nil {
+		anchor, ok, err := s.visibleHistoryEntryByID(ctx, conv, *afterEntryID)
+		if err != nil {
+			return nil, nil, nil, err
+		}
+		if !ok {
+			return nil, nil, nil, s.cursorEntryError(ctx, "afterCursor", *afterEntryID)
+		}
+		tx = whereEntryOrderStrictlyAfterAlias(tx, "e", anchor)
+	}
+
+	var entries []model.Entry
+	if err := tx.Find(&entries).Error; err != nil {
+		return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+	}
+
+	hasMore := len(entries) > limit
+	if hasMore {
+		entries = entries[:limit]
+		afterCursor := entries[len(entries)-1].ID.String()
+		var beforeCursor *string
+		if afterEntryID != nil && len(entries) > 0 {
+			bc := entries[0].ID.String()
+			beforeCursor = &bc
+		}
+		return entries, &afterCursor, beforeCursor, nil
+	}
+	var beforeCursor *string
+	if afterEntryID != nil && len(entries) > 0 {
+		c := entries[0].ID.String()
+		beforeCursor = &c
+	}
+	return entries, nil, beforeCursor, nil
+}
+
 func (s *SQLiteStore) buildAncestryStack(ctx context.Context, target model.Conversation) ([]forkAncestor, error) {
-	var conversations []model.Conversation
+	var rows []model.ConversationAncestry
 	if err := s.dbFor(ctx).
-		Where("conversation_group_id = ? AND archived_at IS NULL", target.ConversationGroupID).
-		Find(&conversations).Error; err != nil {
+		Where("conversation_group_id = ? AND descendant_conversation_id = ?", target.ConversationGroupID, target.ID).
+		Order("depth DESC").
+		Find(&rows).Error; err != nil {
 		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
 	}
-
-	byID := make(map[string]model.Conversation, len(conversations))
-	for _, conv := range conversations {
-		byID[conv.ID] = conv
-	}
-
-	stack := make([]forkAncestor, 0, len(conversations))
-	current := target
-	var stopAt *uuid.UUID
-
-	for {
+	stack := make([]forkAncestor, 0, len(rows))
+	for _, row := range rows {
 		stack = append(stack, forkAncestor{
-			ConversationID: current.ID,
-			StopAtEntryID:  stopAt,
+			ConversationID: row.AncestorConversationID,
+			StopAtEntryID:  row.BeforeEntryID,
 		})
-
-		stopAt = current.ForkedAtEntryID
-		if current.ForkedAtConversationID == nil {
-			break
-		}
-		parent, ok := byID[*current.ForkedAtConversationID]
-		if !ok {
-			break
-		}
-		current = parent
-	}
-
-	for i, j := 0, len(stack)-1; i < j; i, j = i+1, j-1 {
-		stack[i], stack[j] = stack[j], stack[i]
 	}
 	return stack, nil
+}
+
+func (s *SQLiteStore) visibleAncestryDepthForEntry(ctx context.Context, target model.Conversation, entry model.Entry) (*int, error) {
+	var rows []model.ConversationAncestry
+	if err := s.dbFor(ctx).
+		Where("conversation_group_id = ? AND descendant_conversation_id = ?", target.ConversationGroupID, target.ID).
+		Order("depth ASC").
+		Find(&rows).Error; err != nil {
+		return nil, fmt.Errorf("failed to load fork ancestry: %w", err)
+	}
+	for _, row := range rows {
+		if row.AncestorConversationID != entry.ConversationID {
+			continue
+		}
+		if row.Depth > 0 {
+			if row.BeforeEntryID == nil {
+				return nil, nil
+			}
+			stopAt, err := s.entryOrderKey(ctx, *row.BeforeEntryID)
+			if err != nil {
+				return nil, err
+			}
+			if !entryOrderLess(entry, stopAt) {
+				return nil, nil
+			}
+		}
+		depth := row.Depth
+		return &depth, nil
+	}
+	return nil, nil
 }
 
 func advanceForkAncestorForNilStop(ancestry []forkAncestor, ancestorIndex *int, current *forkAncestor, isTarget *bool) bool {
@@ -2888,7 +3668,7 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 // across the ancestry stack, collecting at most limit+1 rows then reversing
 // to return a page in ascending order.
 func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []forkAncestor, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
-	if limit > config.MaxPageSizeFromContext(ctx) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
 		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
 	}
 	need := limit + 1
@@ -3054,11 +3834,215 @@ func whereEntryOrderBefore(tx *gorm.DB, bound model.Entry) *gorm.DB {
 	)
 }
 
+// whereEntryOrderAtOrAfter adds a predicate matching entries at or after bound
+// using the same (created_at, seq NULLS FIRST, id) composite order used by the
+// default ASC sort.  A nil seq sorts before seq=0 in ASC order.
+func whereEntryOrderAtOrAfter(tx *gorm.DB, bound model.Entry) *gorm.DB {
+	if bound.Seq == nil {
+		// bound has nil seq — match anything >= (created_at, nil-seq, id).
+		// In ASC order nil-seq comes first within the same created_at bucket,
+		// so "at or after" means: same created_at & same nil-seq & id >= bound,
+		// OR same created_at & seq IS NOT NULL (seq > nil), OR created_at > bound.
+		return tx.Where(
+			"created_at > ? OR (created_at = ? AND (seq IS NOT NULL OR id >= ?))",
+			bound.CreatedAt, bound.CreatedAt, bound.ID.String(),
+		)
+	}
+	// bound has a non-nil seq.
+	// In ASC order nil-seq comes before any integer seq within the same
+	// created_at bucket.  So "at or after bound" means:
+	//   created_at > bound, OR
+	//   created_at = bound AND seq > bound.seq, OR
+	//   created_at = bound AND seq = bound.seq AND id >= bound.id
+	// (nil-seq rows at same created_at come BEFORE bound, so they are excluded.)
+	return tx.Where(
+		"created_at > ? OR (created_at = ? AND (seq > ? OR (seq = ? AND id >= ?)))",
+		bound.CreatedAt, bound.CreatedAt, *bound.Seq, *bound.Seq, bound.ID.String(),
+	)
+}
+
+// whereEntryOrderStrictlyAfter adds a predicate matching entries strictly after
+// bound, used when paginating past an afterCursor anchor.
+func whereEntryOrderStrictlyAfter(tx *gorm.DB, bound model.Entry) *gorm.DB {
+	if bound.Seq == nil {
+		return tx.Where(
+			"created_at > ? OR (created_at = ? AND (seq IS NOT NULL OR id > ?))",
+			bound.CreatedAt, bound.CreatedAt, bound.ID.String(),
+		)
+	}
+	return tx.Where(
+		"created_at > ? OR (created_at = ? AND (seq > ? OR (seq = ? AND id > ?)))",
+		bound.CreatedAt, bound.CreatedAt, *bound.Seq, *bound.Seq, bound.ID.String(),
+	)
+}
+
+// boundedHistoryForward performs a bounded ASC-order read of history entries
+// across the ancestry stack, collecting at most limit+1 rows to determine
+// whether a next page exists.
+//
+// ancestry is ordered oldest-to-newest (root first, target last).
+// When afterEntryID is set the anchor must be on the ancestry path; we start
+// strictly after it.  When afterEntryID is nil we start from the beginning.
+func (s *SQLiteStore) boundedHistoryForward(ctx context.Context, ancestry []forkAncestor, afterEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
+	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	need := limit + 1
+	collected := make([]model.Entry, 0, need)
+
+	// startSegment: the ancestry index of the segment that contains the anchor
+	// (or 0 when there is no anchor).
+	startSegment := 0
+
+	var anchorCreatedAt *time.Time
+	var anchorSeq *uint32
+	var anchorID *uuid.UUID
+	var anchorConvID string
+
+	if afterEntryID != nil {
+		var anchor model.Entry
+		result := s.dbFor(ctx).
+			Where("id = ?", *afterEntryID).
+			Select("id, conversation_id, channel, created_at, seq").
+			Limit(1).Find(&anchor)
+		if result.Error != nil {
+			return nil, nil, nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found"}
+		}
+		if anchor.Channel != model.ChannelHistory {
+			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
+		}
+		anchorCreatedAt = &anchor.CreatedAt
+		anchorSeq = anchor.Seq
+		anchorID = &anchor.ID
+		anchorConvID = anchor.ConversationID
+
+		// Verify the anchor is on the ancestry path and find its segment.
+		onPath := false
+		for i, a := range ancestry {
+			if a.ConversationID == anchorConvID {
+				// For non-target ancestors the anchor must be before StopAtEntryID.
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
+					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					if !entryOrderLess(anchor, stopAt) {
+						return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
+					}
+				}
+				startSegment = i
+				onPath = true
+				break
+			}
+		}
+		if !onPath {
+			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
+		}
+	}
+
+	for i := startSegment; i < len(ancestry) && len(collected) < need; i++ {
+		seg := ancestry[i]
+		isTarget := i == len(ancestry)-1
+
+		// Skip non-target ancestors that contribute nothing (nil StopAtEntryID
+		// means the fork inherited no entries from this ancestor).
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+
+		tx := s.dbFor(ctx).
+			Where("conversation_id = ? AND channel = ?", seg.ConversationID, model.ChannelHistory).
+			Order("created_at ASC, seq ASC NULLS FIRST, id ASC")
+
+		// For ancestor segments, only include entries strictly before StopAtEntryID.
+		if !isTarget && seg.StopAtEntryID != nil {
+			stopAt, err := s.entryOrderKey(ctx, *seg.StopAtEntryID)
+			if err != nil {
+				return nil, nil, nil, err
+			}
+			tx = whereEntryOrderBefore(tx, stopAt)
+		}
+
+		// Apply the afterCursor anchor bound for the segment containing the anchor.
+		if afterEntryID != nil && seg.ConversationID == anchorConvID {
+			tx = whereEntryOrderStrictlyAfter(tx, model.Entry{ID: *anchorID, CreatedAt: *anchorCreatedAt, Seq: anchorSeq})
+		}
+
+		remaining := need - len(collected)
+		tx = tx.Limit(remaining)
+
+		var batch []model.Entry
+		if err := tx.Find(&batch).Error; err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history forward scan failed: %w", err)
+		}
+		collected = append(collected, batch...)
+	}
+
+	// Use limit+1 probe to detect whether a next page exists.
+	hasMore := len(collected) > limit
+	if hasMore {
+		collected = collected[:limit]
+	}
+
+	if len(collected) == 0 {
+		return []model.Entry{}, nil, nil, nil
+	}
+
+	var afterCursor *string
+	if hasMore {
+		c := collected[len(collected)-1].ID.String()
+		afterCursor = &c
+	}
+	// beforeCursor: older entries exist when there was an afterEntryID anchor.
+	var beforeCursor *string
+	if afterEntryID != nil {
+		c := collected[0].ID.String()
+		beforeCursor = &c
+	}
+	return collected, afterCursor, beforeCursor, nil
+}
+
 func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore.MemoryEpochFilter {
 	if filter == nil || filter.Mode == "" {
 		return registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
 	}
 	return *filter
+}
+
+func applySQLEpochFilterToBase(base *gorm.DB, epochFilter *registrystore.MemoryEpochFilter) (*gorm.DB, error) {
+	if epochFilter == nil {
+		return base, nil
+	}
+	epoch := normalizeEpochFilter(epochFilter)
+	switch epoch.Mode {
+	case registrystore.MemoryEpochModeAll:
+		return base, nil
+	case registrystore.MemoryEpochModeEpoch:
+		if epoch.Epoch == nil {
+			return base.Where("e.channel <> ?", model.ChannelContext), nil
+		}
+		return base.Where("e.channel <> ? OR COALESCE(e.epoch, 0) = ?", model.ChannelContext, *epoch.Epoch), nil
+	default:
+		var epochRow struct {
+			MaxEpoch *int64 `gorm:"column:max_epoch"`
+		}
+		if err := base.Session(&gorm.Session{}).
+			Where("e.channel = ?", model.ChannelContext).
+			Select("MAX(COALESCE(e.epoch, 0)) AS max_epoch").
+			Scan(&epochRow).Error; err != nil {
+			return nil, fmt.Errorf("failed to get latest entry epoch: %w", err)
+		}
+		if epochRow.MaxEpoch == nil {
+			return base, nil
+		}
+		return base.Where("e.channel <> ? OR COALESCE(e.epoch, 0) = ?", model.ChannelContext, *epochRow.MaxEpoch), nil
+	}
 }
 
 func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clientID *string, agentID *string, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
@@ -3195,6 +4179,42 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 
 	}
 
+	return result
+}
+
+func filterVisibleMemoryEntriesWithEpoch(entries []model.Entry, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
+	epoch := normalizeEpochFilter(epochFilter)
+	result := make([]model.Entry, 0, len(entries))
+	maxEpochSeen := int64(0)
+	maxEpochInitialized := false
+
+	for _, entry := range entries {
+		if entry.Channel != model.ChannelContext || entry.ClientID == nil || *entry.ClientID != clientID {
+			continue
+		}
+		entryEpoch := int64(0)
+		if entry.Epoch != nil {
+			entryEpoch = *entry.Epoch
+		}
+
+		switch epoch.Mode {
+		case registrystore.MemoryEpochModeAll:
+			result = append(result, entry)
+		case registrystore.MemoryEpochModeEpoch:
+			if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
+				result = append(result, entry)
+			}
+		default:
+			if !maxEpochInitialized || entryEpoch > maxEpochSeen {
+				result = result[:0]
+				maxEpochSeen = entryEpoch
+				maxEpochInitialized = true
+			}
+			if entryEpoch == maxEpochSeen {
+				result = append(result, entry)
+			}
+		}
+	}
 	return result
 }
 

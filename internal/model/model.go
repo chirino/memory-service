@@ -85,8 +85,8 @@ type Conversation struct {
 	Metadata                map[string]interface{} `json:"metadata"                          gorm:"type:jsonb;serializer:json;not null;default:'{}'"` // JSONB
 	ConversationGroupID     uuid.UUID              `json:"-"                                 gorm:"not null;type:uuid"`
 	ConversationGroup       *ConversationGroup     `json:"-"                                 gorm:"foreignKey:ConversationGroupID"`
-	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"         gorm:"type:uuid"`
-	ForkedAtConversationID  *string                `json:"forkedAtConversationId,omitempty"  gorm:"type:text"`
+	ForkedAtEntryID         *uuid.UUID             `json:"forkedAtEntryId,omitempty"         gorm:"-"`
+	ForkedAtConversationID  *string                `json:"forkedAtConversationId,omitempty"  gorm:"-"`
 	StartedByConversationID *string                `json:"startedByConversationId,omitempty" gorm:"type:text"`
 	StartedByEntryID        *uuid.UUID             `json:"startedByEntryId,omitempty"        gorm:"type:uuid"`
 	CreatedAt               time.Time              `json:"createdAt"                         gorm:"not null;default:now()"`
@@ -96,6 +96,18 @@ type Conversation struct {
 }
 
 func (Conversation) TableName() string { return "conversations" }
+
+// ConversationAncestry materializes the visible fork path for a conversation.
+type ConversationAncestry struct {
+	ConversationGroupID      uuid.UUID  `json:"-"                         gorm:"primaryKey;type:uuid"`
+	DescendantConversationID string     `json:"descendantConversationId"  gorm:"primaryKey;type:text"`
+	AncestorConversationID   string     `json:"ancestorConversationId"    gorm:"primaryKey;type:text"`
+	Depth                    int        `json:"depth"                     gorm:"not null"`
+	BeforeEntryID            *uuid.UUID `json:"beforeEntryId,omitempty"   gorm:"type:uuid"`
+	ForkedAtEntryID          *uuid.UUID `json:"forkedAtEntryId,omitempty" gorm:"type:uuid"`
+}
+
+func (ConversationAncestry) TableName() string { return "conversation_ancestry" }
 
 // ConversationMembership tracks per-user access to a conversation group.
 type ConversationMembership struct {

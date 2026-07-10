@@ -469,7 +469,7 @@ type ListEventsRequest struct {
 	Before *time.Time
 	// AfterCursor is the opaque cursor from a previous page response.
 	AfterCursor string
-	// Limit is the max events per page (default 50, max 200).
+	// Limit is the max events per page (default 50, capped by server configuration).
 	Limit int
 }
 

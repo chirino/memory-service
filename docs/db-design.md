@@ -19,12 +19,19 @@ erDiagram
         TEXT owner_user_id
         JSONB metadata
         UUID conversation_group_id FK
-        UUID forked_at_entry_id
-        TEXT forked_at_conversation_id FK
         TIMESTAMPTZ created_at
         TIMESTAMPTZ updated_at
         TIMESTAMPTZ vectorized_at
         TIMESTAMPTZ archived_at
+    }
+
+    conversation_ancestry {
+        UUID conversation_group_id PK, FK
+        TEXT descendant_conversation_id PK
+        TEXT ancestor_conversation_id PK
+        INT depth
+        UUID before_entry_id
+        UUID forked_at_entry_id
     }
 
     conversation_memberships {
@@ -92,10 +99,12 @@ erDiagram
     }
 
     conversation_groups ||--o{ conversations : "contains"
+    conversation_groups ||--o{ conversation_ancestry : "tracks lineage"
     conversation_groups ||--o{ conversation_memberships : "grants access"
     conversation_groups ||--o{ conversation_ownership_transfers : "transfer of"
     conversations ||--o{ entries : "contains"
-    conversations o|--o{ conversations : "forked from"
+    conversations ||--o{ conversation_ancestry : "descendant"
+    conversations ||--o{ conversation_ancestry : "ancestor"
     entries ||--o{ attachments : "has"
     entries ||--o| entry_embeddings : "embedded as"
     conversation_groups ||--o{ entries : "scoped to"
@@ -120,9 +129,21 @@ The `metadata` column is a free-form `JSONB` field for agent-defined tags and pr
 
 - `id` is the public conversation identifier and is an arbitrary non-empty string.
 - `conversation_group_id` links to the owning group.
-- `forked_at_conversation_id` and `forked_at_entry_id` record the fork point when a conversation is created by forking.
+- Direct fork metadata is not stored on this table. It is hydrated from the depth-1 row in `conversation_ancestry`.
 - `vectorized_at` tracks when entries were last sent for vector embedding.
 - Soft-deleted via `archived_at`.
+
+### conversation_ancestry
+
+Closure table for fork lineage inside a conversation group. Each conversation has one self row
+with `depth = 0`, and each fork also has one row for every inherited ancestor.
+
+- `conversation_group_id` is the lifecycle and access-control boundary and cascades on group deletion.
+- `descendant_conversation_id` is the conversation being read.
+- `ancestor_conversation_id` is a conversation whose entries may be visible to the descendant.
+- `depth = 1` is the direct parent row used to hydrate public `forkedAtConversationId` and `forkedAtEntryId`.
+- `before_entry_id` is the exclusive upper bound for entries inherited from that ancestor.
+- `forked_at_entry_id` is populated on inherited rows to preserve direct fork metadata without storing it on `conversations`.
 
 ### conversation_memberships
 
@@ -185,6 +206,19 @@ Rather than attaching memberships directly to individual conversations, access i
 the **group** level. A conversation group contains one or more conversations (a root plus its forks).
 This means forking a conversation does not require copying membership rows &mdash; the fork
 automatically inherits all access grants from the group.
+
+### Conversation Ancestry Closure for Fork Reads
+
+Fork reads use `conversation_ancestry` rather than loading every conversation in a group. The closure lets
+the store build datastore-side predicates for the requested descendant's visible ancestor segments, including
+forward, backward, tail, `fromSeq`, and `upToEntryId` pagination. `forks=all` remains group-scoped and uses
+bounded group queries.
+
+### Schema Reset Requirement for Version 110
+
+Schema version 110 squashes previous datastore migrations and changes the persisted fork lineage model. Existing
+pre-110 PostgreSQL, SQLite, and MongoDB datastores must be reset before startup. The service writes schema metadata
+for fresh version-110 stores and rejects older layouts with an explicit reset error.
 
 ### Soft Deletes with Retention Indexes
 

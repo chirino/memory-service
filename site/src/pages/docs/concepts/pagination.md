@@ -40,13 +40,13 @@ All paginated endpoints share the same pattern but differ in defaults and parame
 
 | Endpoint                                 | Cursor Param                                    | Limit Param     | Default Limit | Max Limit |
 | ---------------------------------------- | ----------------------------------------------- | --------------- | ------------- | --------- |
-| `GET /v1/conversations`                  | `afterCursor` (query)                           | `limit` (query) | 20            | 200       |
-| `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50            | 200       |
-| `GET /v1/conversations/{id}/memberships` | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
-| `GET /v1/conversations/{id}/forks`       | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
-| `POST /v1/conversations/search`          | `afterCursor` (body)                            | `limit` (body)  | 20            | 200       |
-| `GET /v1/conversations/unindexed`        | `afterCursor` (query)                           | `limit` (query) | 100           | 200       |
-| `GET /v1/ownership-transfers`            | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
+| `GET /v1/conversations`                  | `afterCursor` (query)                           | `limit` (query) | 20            | 1000      |
+| `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50            | 1000      |
+| `GET /v1/conversations/{id}/memberships` | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
+| `GET /v1/conversations/{id}/forks`       | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
+| `POST /v1/conversations/search`          | `afterCursor` (body)                            | `limit` (body)  | 20            | 1000      |
+| `GET /v1/conversations/unindexed`        | `afterCursor` (query)                           | `limit` (query) | 100           | 1000      |
+| `GET /v1/ownership-transfers`            | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
 
 ### Admin API
 
@@ -306,17 +306,17 @@ curl -X POST "http://localhost:8080/v1/conversations/search" \
 
 ## Limits Reference
 
-| Constraint                    | Value                      |
-| ----------------------------- | -------------------------- |
-| Minimum `limit`               | 1                          |
-| Maximum `limit`               | 200 (agent) / 1000 (admin) |
-| Default limit (conversations) | 20                         |
-| Default limit (entries)       | 50                         |
-| Default limit (memberships)   | 50                         |
-| Default limit (forks)         | 50                         |
-| Default limit (search)        | 20                         |
-| Default limit (unindexed)     | 100                        |
-| Default limit (transfers)     | 50                         |
+| Constraint                    | Value                                 |
+| ----------------------------- | ------------------------------------- |
+| Minimum `limit`               | 1                                     |
+| Maximum `limit`               | 1000 by default (server-configurable) |
+| Default limit (conversations) | 20                                    |
+| Default limit (entries)       | 50                                    |
+| Default limit (memberships)   | 50                                    |
+| Default limit (forks)         | 50                                    |
+| Default limit (search)        | 20                                    |
+| Default limit (unindexed)     | 100                                   |
+| Default limit (transfers)     | 50                                    |
 
 If no `limit` is provided, the endpoint-specific default is used. Requesting a `limit` above the maximum or below 1 returns a validation error.
 

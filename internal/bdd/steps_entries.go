@@ -15,6 +15,7 @@ func init() {
 		// Given steps - conversation entry setup
 		ctx.Step(`^the conversation has no entries$`, e.theConversationHasNoEntries)
 		ctx.Step(`^the conversation has an entry "([^"]*)"$`, e.theConversationHasAnEntry)
+		ctx.Step(`^the conversation has (\d+) entry$`, e.theConversationHasEntries)
 		ctx.Step(`^the conversation has (\d+) entries$`, e.theConversationHasEntries)
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)"$`, e.theConversationHasAnEntryInChannel)
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)" with contentType "([^"]*)"$`, e.theConversationHasAnEntryInChannelWithContentType)

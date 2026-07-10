@@ -351,7 +351,7 @@ GET /v1/memories/events?ns=user&ns=alice&kinds=add&kinds=update&kinds=delete&lim
 | `after` | ISO 8601 timestamp | Only return events with `occurred_at` after this time |
 | `before` | ISO 8601 timestamp | Only return events with `occurred_at` before this time |
 | `after_cursor` | string | Opaque pagination cursor (encodes `occurred_at + id`) |
-| `limit` | integer | Max events per page; default 50, max 200 |
+| `limit` | integer | Max events per page; default 50, server-configurable maximum (default 1000) |
 
 Response `200 OK`:
 

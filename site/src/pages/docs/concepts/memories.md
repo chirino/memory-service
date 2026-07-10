@@ -321,7 +321,7 @@ curl "http://localhost:8080/v1/memories/events?ns=user&ns=alice&limit=50" \
 | `kinds`            | Filter by event kind: `add`, `update`, `expired`; default all |
 | `after` / `before` | ISO 8601 timestamp bounds on `occurred_at`                    |
 | `after_cursor`     | Opaque cursor for paginating through results                  |
-| `limit`            | Max events per page; default 50, max 200                      |
+| `limit`            | Max events per page; default 50, server-configurable maximum  |
 
 The same OPA access control that governs memory reads applies here — callers only see events for namespaces they can access. `value` and `attributes` are `null` for `expired` events; archive operations appear as `update` events.
 

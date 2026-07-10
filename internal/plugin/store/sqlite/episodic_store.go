@@ -367,9 +367,7 @@ func (e *sqliteEpisodicStore) ListTopMemoryUsage(ctx context.Context, req regist
 	if limit <= 0 {
 		limit = 100
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	q := e.dbFor(ctx).Table("memory_usage_stats")
 	if len(req.Prefix) > 0 {
@@ -789,9 +787,7 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	// Decode cursor.
 	var cursorOccurredAt time.Time
@@ -1007,9 +1003,7 @@ func (e *sqliteEpisodicStore) AdminListMemories(ctx context.Context, query regis
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
 	if err != nil {
 		return registryepisodic.AdminMemoryPage{}, err
@@ -1045,9 +1039,7 @@ func (e *sqliteEpisodicStore) AdminSearchMemories(ctx context.Context, query reg
 	if limit <= 0 {
 		limit = 10
 	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
 	if err != nil {
 		return nil, err
@@ -1085,9 +1077,7 @@ func (e *sqliteEpisodicStore) AdminListNamespaces(ctx context.Context, query reg
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	offset := decodeAdminOffsetCursor(query.AfterCursor)
 	namespaces, err := e.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
 		Prefix:   query.NamespacePrefix,

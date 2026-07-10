@@ -661,7 +661,7 @@ export const $SearchMemoriesRequest = {
     limit: {
       type: "integer",
       minimum: 1,
-      maximum: 100,
+      description: "Maximum number of results to return. The server may enforce a lower configured maximum.",
     },
     include_usage: {
       type: "boolean",
@@ -1349,7 +1349,7 @@ error is returned with details about which search types are available.
       type: "integer",
       default: 20,
       minimum: 1,
-      description: "Maximum number of results to return. The server-wide configured maximum defaults to 1000.",
+      description: "Maximum number of results to return. The server may enforce a lower configured maximum.",
     },
     includeEntry: {
       type: "boolean",

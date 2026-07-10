@@ -234,7 +234,7 @@ Feature: Tail and backward pagination for conversation entries (REST)
     Given the conversation has 5 entries
     When I list entries for the conversation
     And set "upToEntryId" to the json response field "data[3].id"
-    When I call GET "/v1/conversations/${conversationId}/entries?tail=true&limit=2&upToEntryId=${upToEntryId}"
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=history&tail=true&limit=2&upToEntryId=${upToEntryId}"
     Then the response status should be 200
     And the response should contain 2 entries
     And entry at index 0 should have content "Entry 3"

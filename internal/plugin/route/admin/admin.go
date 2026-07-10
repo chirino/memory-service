@@ -417,6 +417,12 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	afterCursor := queryPtr(c, "afterCursor")
+	if afterCursor != nil {
+		if _, err := uuid.Parse(*afterCursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid afterCursor: must be a UUID"})
+			return
+		}
+	}
 	beforeCursor := queryPtr(c, "beforeCursor")
 	if beforeCursor != nil {
 		if _, err := uuid.Parse(*beforeCursor); err != nil {
@@ -449,16 +455,30 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
+	upToEntryID := queryPtr(c, "upToEntryId")
+	if upToEntryID != nil {
+		if _, err := uuid.Parse(*upToEntryID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upToEntryId: must be a UUID"})
+			return
+		}
+	}
+
 	query := registrystore.AdminMessageQuery{
 		Limit:        queryInt(c, "limit", 20),
 		AfterCursor:  afterCursor,
 		BeforeCursor: beforeCursor,
 		Tail:         tail,
-		UpToEntryID:  queryPtr(c, "upToEntryId"),
+		UpToEntryID:  upToEntryID,
 		AllForks:     forks == "all",
 	}
 	if ch := c.Query("channel"); ch != "" {
-		v := model.Channel(ch)
+		v := model.Channel(strings.ToLower(strings.TrimSpace(ch)))
+		switch v {
+		case model.ChannelHistory, model.ChannelContext, model.ChannelJournal:
+		default:
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid channel"})
+			return
+		}
 		query.Channel = &v
 	}
 	if epoch := c.Query("epoch"); epoch != "" {

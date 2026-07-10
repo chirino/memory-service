@@ -1,5 +1,15 @@
 PRAGMA foreign_keys = ON;
 
+CREATE TABLE IF NOT EXISTS schema_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO schema_metadata (key, value, updated_at)
+VALUES ('core_schema_version', '110', CURRENT_TIMESTAMP)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
+
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id TEXT PRIMARY KEY,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -14,8 +24,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     agent_id TEXT,
     metadata TEXT NOT NULL DEFAULT '{}',
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
-    forked_at_entry_id TEXT,
-    forked_at_conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
     started_by_conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,
     started_by_entry_id TEXT,
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -24,12 +32,48 @@ CREATE TABLE IF NOT EXISTS conversations (
     archived_at DATETIME
 );
 
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_group_id_id ON conversations(conversation_group_id, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(conversation_group_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_not_archived ON conversations(archived_at) WHERE archived_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_conversation ON conversations(forked_at_conversation_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry ON conversations(forked_at_entry_id);
 CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_started_by_entry ON conversations(started_by_entry_id);
+
+CREATE TABLE IF NOT EXISTS conversation_ancestry (
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    descendant_conversation_id TEXT NOT NULL,
+    ancestor_conversation_id TEXT NOT NULL,
+    depth INTEGER NOT NULL CHECK (depth >= 0),
+    before_entry_id TEXT,
+    forked_at_entry_id TEXT,
+    PRIMARY KEY (conversation_group_id, descendant_conversation_id, ancestor_conversation_id),
+    UNIQUE (conversation_group_id, descendant_conversation_id, depth),
+    FOREIGN KEY (conversation_group_id, descendant_conversation_id)
+        REFERENCES conversations(conversation_group_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_group_id, ancestor_conversation_id)
+        REFERENCES conversations(conversation_group_id, id) ON DELETE CASCADE,
+    CHECK (
+        (
+            depth = 0
+            AND descendant_conversation_id = ancestor_conversation_id
+            AND before_entry_id IS NULL
+            AND forked_at_entry_id IS NULL
+        )
+        OR
+        (
+            depth = 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+        )
+        OR
+        (
+            depth > 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+            AND forked_at_entry_id IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_ancestry_ancestor
+    ON conversation_ancestry(conversation_group_id, ancestor_conversation_id, depth, descendant_conversation_id);
 
 CREATE TABLE IF NOT EXISTS conversation_memberships (
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
@@ -56,7 +100,7 @@ CREATE TABLE IF NOT EXISTS entries (
     client_id TEXT,
     agent_id TEXT,
     channel TEXT NOT NULL,
-    epoch INTEGER,
+    epoch INTEGER CHECK (channel = 'context' OR epoch IS NULL),
     seq INTEGER CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)),
     content_type TEXT NOT NULL,
     content BLOB NOT NULL,
@@ -72,6 +116,16 @@ CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
     ON entries(indexed_at) WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
     ON entries(conversation_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
+    ON entries(conversation_id, seq) WHERE seq IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
+    ON entries(conversation_group_id, created_at, seq, id);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_created_seq_id
+    ON entries(conversation_group_id, channel, created_at, seq, id);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_seq_id
+    ON entries(conversation_group_id, channel, seq, id) WHERE seq IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
+    ON entries(conversation_id, channel, created_at, seq, id);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
     ON entries(conversation_id, channel, client_id, epoch, created_at);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_created_at
