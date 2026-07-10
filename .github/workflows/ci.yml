@@ -308,17 +308,17 @@ jobs:
             artifact-memory-service-linux-amd64)
               platform="linux/amd64"
               platform_key="linux-amd64"
-              artifact_file="memory-service-linux-amd64.zip"
+              artifact_name="memory-service-linux-amd64"
               ;;
             artifact-memory-service-linux-arm64)
               platform="linux/arm64"
               platform_key="linux-arm64"
-              artifact_file="memory-service-linux-arm64.zip"
+              artifact_name="memory-service-linux-arm64"
               ;;
             artifact-memory-service-macos-arm64)
               platform="darwin/arm64"
               platform_key="macos-arm64"
-              artifact_file="memory-service-macos-arm64.zip"
+              artifact_name="memory-service-macos-arm64"
               ;;
             *)
               echo "Unsupported artifact matrix job: ${{ matrix.job }}" >&2
@@ -329,7 +329,7 @@ jobs:
           {
             echo "platform=$platform"
             echo "platform-key=$platform_key"
-            echo "artifact-file=$artifact_file"
+            echo "artifact-name=$artifact_name"
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx for portable Linux artifact
@@ -355,7 +355,6 @@ jobs:
           trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
           docker cp "$cid":/memory-service dist/memory-service
           chmod +x dist/memory-service
-          (cd dist && zip -q "${{ steps.artifact-meta.outputs.artifact-file }}" memory-service)
 
       - name: Set up Go for macOS artifact
         if: matrix.job == 'artifact-memory-service-macos-arm64'
@@ -379,14 +378,13 @@ jobs:
               -ldflags "-X main.Version=${{ github.sha }}" \
               -o dist/memory-service .
           chmod +x dist/memory-service
-          (cd dist && zip -q "${{ steps.artifact-meta.outputs.artifact-file }}" memory-service)
 
       - name: Upload binary artifact
         if: startsWith(matrix.job, 'artifact-')
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ steps.artifact-meta.outputs.artifact-file }}
-          path: dist/${{ steps.artifact-meta.outputs.artifact-file }}
+          name: ${{ steps.artifact-meta.outputs.artifact-name }}
+          path: dist/memory-service
           if-no-files-found: error
 
   image-manifest:
