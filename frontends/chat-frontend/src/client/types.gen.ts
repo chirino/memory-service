@@ -669,7 +669,7 @@ export type SearchConversationsRequest = {
    */
   afterCursor?: string | null;
   /**
-   * Maximum number of results to return.
+   * Maximum number of results to return. The server-wide configured maximum defaults to 1000.
    */
   limit?: number;
   /**
@@ -881,6 +881,12 @@ export type $OpenApiTs = {
          */
         afterCursor?: string | null;
         /**
+         * Cursor for backward pagination; returns up to `limit` entries strictly
+         * before this entry in the caller-visible order. Results remain chronological
+         * (ascending). Mutually exclusive with `afterCursor` and `tail=true`.
+         */
+        beforeCursor?: string | null;
+        /**
          * Channel of entries to return. Defaults to `history` for the
          * user-visible conversation; `context` returns agent-managed context entries
          * scoped to the calling client id.
@@ -913,6 +919,12 @@ export type $OpenApiTs = {
         fromSeq?: number | null;
         limit?: number;
         /**
+         * When `true`, returns the last `limit` entries in the caller-visible order
+         * (newest page). Results remain chronological (ascending). Mutually exclusive
+         * with `afterCursor` and `beforeCursor`.
+         */
+        tail?: boolean;
+        /**
          * Upper-bound entry id (UUID format). When set, only entries at or
          * before this entry in the caller-visible conversation order are
          * returned. This is useful with `channel=context` and `epoch` to
@@ -925,6 +937,10 @@ export type $OpenApiTs = {
          * Error response
          */
         200: ErrorResponse;
+        /**
+         * Bad request
+         */
+        400: ErrorResponse;
         /**
          * Resource not found
          */

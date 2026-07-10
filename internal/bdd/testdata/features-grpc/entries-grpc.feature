@@ -12,7 +12,7 @@ Feature: Entries gRPC API
   Scenario: List entries via gRPC
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: HISTORY
     page {
       page_size: 10
@@ -23,7 +23,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId | uuid_to_hex_string}"
+      conversation_id: "${conversationId}"
       user_id: "alice"
       channel: HISTORY
       content_type: "history"
@@ -35,7 +35,7 @@ Feature: Entries gRPC API
     And the conversation has 5 entries
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: HISTORY
     page {
       page_size: 2
@@ -47,7 +47,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId | uuid_to_hex_string}"
+      conversation_id: "${conversationId}"
       channel: HISTORY
       content_type: "history"
     }
@@ -56,13 +56,78 @@ Feature: Entries gRPC API
     }
     """
 
+  Scenario: List the tail and page backward via gRPC
+    Given the conversation has 5 entries
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    tail: true
+    page { page_size: 2 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0].text" should be "Entry 4"
+    And the gRPC response field "entries[1].content[0].text" should be "Entry 5"
+    And the gRPC response field "pageInfo.previousPageToken" should not be null
+    And set "grpcBeforePageToken" to the gRPC response field "pageInfo.previousPageToken"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    before_page_token: "${grpcBeforePageToken}"
+    page { page_size: 2 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0].text" should be "Entry 2"
+    And the gRPC response field "entries[1].content[0].text" should be "Entry 3"
+    And the gRPC response field "pageInfo.nextPageToken" should not be null
+
+  Scenario: Admin lists the tail via gRPC
+    Given the conversation has 3 entries
+    And I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    tail: true
+    page { page_size: 2 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0].text" should be "Entry 2"
+    And the gRPC response field "entries[1].content[0].text" should be "Entry 3"
+    And the gRPC response field "pageInfo.previousPageToken" should not be null
+
+  Scenario: User entry listing rejects a malformed backward token via gRPC
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    before_page_token: "not-a-uuid"
+    page { page_size: 2 }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin entry listing rejects a malformed backward token via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    before_page_token: "not-a-uuid"
+    page { page_size: 2 }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: List entries with channel filter via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has an entry "Memory entry" in channel "CONTEXT" with contentType "test.v1"
     And the conversation has an entry "History entry" in channel "HISTORY"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: CONTEXT
     page {
       page_size: 10
@@ -73,7 +138,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     entries {
-      conversation_id: "${conversationId | uuid_to_hex_string}"
+      conversation_id: "${conversationId}"
       channel: CONTEXT
       content_type: "test.v1"
     }
@@ -85,7 +150,7 @@ Feature: Entries gRPC API
     And the conversation has a context entry "Epoch Two" with epoch 2 and contentType "test.v1"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: CONTEXT
     epoch_filter: "1"
     page {
@@ -102,7 +167,7 @@ Feature: Entries gRPC API
     And the conversation has an entry "gRPC history bound"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: HISTORY
     page {
       page_size: 10
@@ -113,7 +178,7 @@ Feature: Entries gRPC API
     And the conversation has a context entry "gRPC context after bound" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: CONTEXT
     epoch_filter: "1"
     up_to_entry_id: "${grpcBoundEntryId | uuid_to_hex_string}"
@@ -131,7 +196,7 @@ Feature: Entries gRPC API
     And the conversation has an entry "Admin gRPC history bound"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: HISTORY
     page {
       page_size: 10
@@ -143,7 +208,7 @@ Feature: Entries gRPC API
     Given I am authenticated as admin user "alice"
     When I send gRPC request "AdminEntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: CONTEXT
     epoch_filter: "1"
     up_to_entry_id: "${adminGrpcBoundEntryId | uuid_to_hex_string}"
@@ -160,7 +225,7 @@ Feature: Entries gRPC API
     And the conversation has a context entry "Stable gRPC epoch" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       channel: CONTEXT
       content_type: "test.v1"
@@ -193,7 +258,7 @@ Feature: Entries gRPC API
     And the conversation has a context entry "Original epoch entry" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       channel: CONTEXT
       content_type: "test.v1"
@@ -214,7 +279,7 @@ Feature: Entries gRPC API
     And the conversation has a context entry "Memory to clear" with epoch 1 and contentType "test.v1"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       channel: CONTEXT
       content_type: "test.v1"
@@ -232,7 +297,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       channel: CONTEXT
       content_type: "test.v1"
@@ -248,7 +313,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       content_type: "message"
@@ -264,7 +329,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: CONTEXT
@@ -282,7 +347,7 @@ Feature: Entries gRPC API
     And the gRPC response text should match text proto:
     """
     id: "${response.body.id | base64_to_hex_string}"
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     user_id: "alice"
     channel: CONTEXT
     content_type: "test.v1"
@@ -296,7 +361,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: CONTEXT
@@ -320,7 +385,7 @@ Feature: Entries gRPC API
     Given I am authenticated as agent with API key "test-agent-key-b"
     When I send gRPC request "EntriesService/ListEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     channel: CONTEXT
     page {
       page_size: 10
@@ -334,7 +399,7 @@ Feature: Entries gRPC API
     Given I am authenticated as agent with API key "test-agent-key-b"
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: CONTEXT
@@ -352,7 +417,7 @@ Feature: Entries gRPC API
     Given I am authenticated as agent with API key "test-agent-key-b"
     When I send gRPC request "EntriesService/SyncEntries" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       channel: CONTEXT
       content_type: "test.v1"
@@ -368,7 +433,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -400,7 +465,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -427,7 +492,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: HISTORY
@@ -466,7 +531,7 @@ Feature: Entries gRPC API
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
-    conversation_id: "${conversationId | uuid_to_hex_string}"
+    conversation_id: "${conversationId}"
     entry {
       user_id: "alice"
       channel: HISTORY

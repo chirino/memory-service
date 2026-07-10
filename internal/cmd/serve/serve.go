@@ -2,7 +2,9 @@ package serve
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"strconv"
 	"strings"
 	"time"
 
@@ -214,6 +216,14 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Value:       state.ReadHeaderTimeoutSecs,
 			Usage:       "HTTP read header timeout in seconds",
 		},
+		&cli.IntFlag{
+			Name:        "max-page-size",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MAX_PAGE_SIZE"),
+			Destination: &cfg.MaxPageSize,
+			Value:       cfg.MaxPageSize,
+			Usage:       "Maximum items accepted by listing endpoints",
+		},
 		&cli.StringFlag{
 			Name:        "temp-dir",
 			Category:    "Server:",
@@ -240,6 +250,14 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 
 func embeddedServerFlags(cfg *config.Config) []cli.Flag {
 	return []cli.Flag{
+		&cli.IntFlag{
+			Name:        "max-page-size",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MAX_PAGE_SIZE"),
+			Destination: &cfg.MaxPageSize,
+			Value:       cfg.MaxPageSize,
+			Usage:       "Maximum items accepted by listing endpoints",
+		},
 		&cli.StringFlag{
 			Name:        "temp-dir",
 			Category:    "Server:",
@@ -821,6 +839,9 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	cfg.Listener.ReadHeaderTimeout = time.Duration(state.ReadHeaderTimeoutSecs) * time.Second
 	cfg.ManagementListener.ReadHeaderTimeout = cfg.Listener.ReadHeaderTimeout
 	cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
+	if cfg.MaxPageSize <= 0 {
+		return fmt.Errorf("max-page-size must be greater than zero")
+	}
 
 	if !validateListeners {
 		cfg.ManagementListenerEnabled = false
@@ -865,6 +886,26 @@ func maxBodySizeMiddleware(maxBodySize int64) gin.HandlerFunc {
 			return
 		}
 		c.Request.Body = http.MaxBytesReader(c.Writer, c.Request.Body, maxBodySize)
+		c.Next()
+	}
+}
+
+func maxPageSizeMiddleware(cfg *config.Config) gin.HandlerFunc {
+	maxPageSize := cfg.EffectiveMaxPageSize()
+	return func(c *gin.Context) {
+		c.Request = c.Request.WithContext(config.WithContext(c.Request.Context(), cfg))
+		raw := strings.TrimSpace(c.Query("limit"))
+		if raw == "" {
+			c.Next()
+			return
+		}
+		limit, err := strconv.Atoi(raw)
+		if err != nil || limit <= 0 || limit > maxPageSize {
+			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{
+				"error": fmt.Sprintf("limit must be between 1 and %d", maxPageSize),
+			})
+			return
+		}
 		c.Next()
 	}
 }

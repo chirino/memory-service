@@ -176,6 +176,7 @@ func mapError(err error) error {
 	var forbidden *registrystore.ForbiddenError
 	var validation *registrystore.ValidationError
 	var conflict *registrystore.ConflictError
+	var badRequest *registrystore.BadRequestError
 
 	switch {
 	case errors.Is(err, registryepisodic.ErrMemoryRevisionConflict):
@@ -185,6 +186,8 @@ func mapError(err error) error {
 	case errors.As(err, &forbidden):
 		return status.Error(codes.PermissionDenied, err.Error())
 	case errors.As(err, &validation):
+		return status.Error(codes.InvalidArgument, err.Error())
+	case errors.As(err, &badRequest):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.As(err, &conflict):
 		// ALREADY_EXISTS or FAILED_PRECONDITION are both valid mappings for HTTP 409/422 style conflicts.
@@ -390,7 +393,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 
 	var afterCursor *string
 	var query *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -560,7 +563,7 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -620,7 +623,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -794,17 +797,41 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	var afterCursor *string
-	limit := 20
-	if req.GetPage() != nil {
-		if req.GetPage().GetPageToken() != "" {
-			t := req.GetPage().GetPageToken()
-			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
-		}
+	limit := config.ClampPageSize(ctx, 20)
+	if req.GetPage() != nil && req.GetPage().GetPageSize() > 0 {
+		limit = int(req.GetPage().GetPageSize())
 	}
+
+	// Validate mutually exclusive pagination controls.
+	paginationCount := 0
+	if req.GetPage() != nil && req.GetPage().GetPageToken() != "" {
+		paginationCount++
+	}
+	if req.GetBeforePageToken() != "" {
+		paginationCount++
+	}
+	if req.GetTail() {
+		paginationCount++
+	}
+	if paginationCount > 1 {
+		return nil, status.Error(codes.InvalidArgument, "page.page_token, before_page_token, and tail are mutually exclusive")
+	}
+
+	var afterCursor *string
+	if req.GetPage() != nil && req.GetPage().GetPageToken() != "" {
+		t := req.GetPage().GetPageToken()
+		afterCursor = &t
+	}
+	var beforeCursor *string
+	if req.GetBeforePageToken() != "" {
+		t := req.GetBeforePageToken()
+		if _, err := uuid.Parse(t); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid before_page_token")
+		}
+		beforeCursor = &t
+	}
+	tail := req.GetTail()
+
 	var upToEntryID *string
 	if len(req.GetUpToEntryId()) > 0 {
 		id, err := bytesToUUID(req.GetUpToEntryId())
@@ -851,7 +878,19 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	fromSeq := req.FromSeq
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, upToEntryID, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks, fromSeq)
+		return s.Store.GetEntries(txCtx, userID, convID, registrystore.EntryListQuery{
+			AfterCursor:  afterCursor,
+			BeforeCursor: beforeCursor,
+			Tail:         tail,
+			UpToEntryID:  upToEntryID,
+			Limit:        limit,
+			Channel:      &channel,
+			EpochFilter:  epochFilter,
+			ClientID:     clientIDPtr,
+			AgentID:      agentIDPtr,
+			AllForks:     allForks,
+			FromSeq:      fromSeq,
+		})
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -863,6 +902,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	}
 	if result.AfterCursor != nil {
 		resp.PageInfo.NextPageToken = *result.AfterCursor
+	}
+	if result.BeforeCursor != nil {
+		resp.PageInfo.PreviousPageToken = *result.BeforeCursor
 	}
 	return resp, nil
 }
@@ -885,6 +927,21 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
+	// Validate mutually exclusive pagination controls.
+	paginationCount := 0
+	if req.GetPage() != nil && req.GetPage().GetPageToken() != "" {
+		paginationCount++
+	}
+	if req.GetBeforePageToken() != "" {
+		paginationCount++
+	}
+	if req.GetTail() {
+		paginationCount++
+	}
+	if paginationCount > 1 {
+		return nil, status.Error(codes.InvalidArgument, "page.page_token, before_page_token, and tail are mutually exclusive")
+	}
+
 	query := registrystore.AdminMessageQuery{Limit: 20}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
@@ -895,6 +952,14 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 			query.Limit = int(req.GetPage().GetPageSize())
 		}
 	}
+	if req.GetBeforePageToken() != "" {
+		t := req.GetBeforePageToken()
+		if _, err := uuid.Parse(t); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid before_page_token")
+		}
+		query.BeforeCursor = &t
+	}
+	query.Tail = req.GetTail()
 	if len(req.GetUpToEntryId()) > 0 {
 		id, err := bytesToUUID(req.GetUpToEntryId())
 		if err != nil {
@@ -940,6 +1005,9 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	}
 	if result.AfterCursor != nil {
 		resp.PageInfo.NextPageToken = *result.AfterCursor
+	}
+	if result.BeforeCursor != nil {
+		resp.PageInfo.PreviousPageToken = *result.BeforeCursor
 	}
 	return resp, nil
 }
@@ -1059,7 +1127,7 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1161,7 +1229,7 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1213,7 +1281,7 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1271,7 +1339,7 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1598,7 +1666,7 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1761,7 +1829,7 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1955,7 +2023,7 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 20
+		limit = config.ClampPageSize(ctx, 20)
 	}
 	includeEntry := true
 	if req.IncludeEntry != nil {
@@ -2049,7 +2117,7 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 20
+		limit = config.ClampPageSize(ctx, 20)
 	}
 	var afterCursor *string
 	if req.Cursor != nil {
@@ -2330,8 +2398,8 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 
 	limit := int(req.GetLimit())
-	if limit <= 0 || limit > 100 {
-		limit = 10
+	if limit <= 0 {
+		limit = config.ClampPageSize(ctx, 10)
 	}
 
 	filter := map[string]interface{}{}
@@ -2514,10 +2582,7 @@ func (s *AdminMemoriesServer) ListMemories(ctx context.Context, req *pb.AdminLis
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 200")
+		limit = config.ClampPageSize(ctx, 50)
 	}
 	query := registryepisodic.AdminMemoryQuery{
 		NamespacePrefix: prefix,
@@ -2622,10 +2687,7 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 100 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 100")
+		limit = config.ClampPageSize(ctx, 10)
 	}
 	filter := map[string]interface{}{}
 	if req.GetFilter() != nil {
@@ -2744,10 +2806,7 @@ func (s *AdminMemoriesServer) ListNamespaces(ctx context.Context, req *pb.AdminL
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 200
-	}
-	if limit > 1000 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
+		limit = config.ClampPageSize(ctx, 200)
 	}
 	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (registryepisodic.AdminNamespacePage, error) {
 		return s.Store.AdminListNamespaces(txCtx, registryepisodic.AdminNamespaceQuery{
@@ -2847,10 +2906,7 @@ func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.Ad
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
+		limit = config.ClampPageSize(ctx, 100)
 	}
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.TopMemoryUsageItem, error) {
 		return s.Store.ListTopMemoryUsage(txCtx, registryepisodic.ListTopMemoryUsageRequest{
@@ -4267,7 +4323,12 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
-			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, grpcClientIDPtr, nil, true, nil)
+			page, err := s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
+				Limit:    5000,
+				Channel:  channel,
+				ClientID: grpcClientIDPtr,
+				AllForks: true,
+			})
 			if err != nil {
 				return err
 			}
@@ -4778,7 +4839,12 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 		}
 		channel := grpcChannelFromEventData(data)
 		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-			return s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, clientID, nil, true, nil)
+			return s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
+				Limit:    5000,
+				Channel:  channel,
+				ClientID: clientID,
+				AllForks: true,
+			})
 		})
 		if err != nil {
 			return event, false, nil

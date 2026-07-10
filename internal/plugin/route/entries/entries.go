@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
@@ -59,8 +60,40 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	afterCursor := queryPtr(c, "afterCursor")
+	beforeCursor := queryPtr(c, "beforeCursor")
+	if beforeCursor != nil {
+		if _, err := uuid.Parse(*beforeCursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid beforeCursor: must be a UUID"})
+			return
+		}
+	}
+	var tail bool
+	if tailStr := strings.TrimSpace(c.Query("tail")); tailStr != "" {
+		var err error
+		tail, err = strconv.ParseBool(tailStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tail value: must be true or false"})
+			return
+		}
+	}
 	upToEntryID := queryPtr(c, "upToEntryId")
 	limit := queryInt(c, "limit", 50)
+
+	// Mutually exclusive pagination controls.
+	paginationCount := 0
+	if afterCursor != nil {
+		paginationCount++
+	}
+	if beforeCursor != nil {
+		paginationCount++
+	}
+	if tail {
+		paginationCount++
+	}
+	if paginationCount > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "afterCursor, beforeCursor, and tail are mutually exclusive"})
+		return
+	}
 
 	var clientIDParam *string
 	if clientID := security.GetClientID(c); clientID != "" {
@@ -120,11 +153,23 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryRead(c, store, func(context.Context) error {
-		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, upToEntryID, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks, fromSeq)
+		result, err := store.GetEntries(c.Request.Context(), userID, convID, registrystore.EntryListQuery{
+			AfterCursor:  afterCursor,
+			BeforeCursor: beforeCursor,
+			Tail:         tail,
+			UpToEntryID:  upToEntryID,
+			Limit:        limit,
+			Channel:      channelPtr,
+			EpochFilter:  epochFilter,
+			ClientID:     clientIDParam,
+			AgentID:      agentIDParam,
+			AllForks:     allForks,
+			FromSeq:      fromSeq,
+		})
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
+		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor, "beforeCursor": result.BeforeCursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -705,12 +750,15 @@ func handleError(c *gin.Context, err error) {
 	var validation *registrystore.ValidationError
 	var conflict *registrystore.ConflictError
 	var forbidden *registrystore.ForbiddenError
+	var badRequest *registrystore.BadRequestError
 
 	switch {
 	case errors.As(err, &notFound):
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": err.Error()})
 	case errors.As(err, &validation):
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
+	case errors.As(err, &badRequest):
+		c.JSON(http.StatusBadRequest, gin.H{"code": "bad_request", "error": err.Error()})
 	case errors.As(err, &conflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.As(err, &forbidden):
@@ -732,11 +780,11 @@ func queryPtr(c *gin.Context, key string) *string {
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	i, err := strconv.Atoi(v)
 	if err != nil {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
-	return i
+	return config.ClampPageSize(c.Request.Context(), i)
 }

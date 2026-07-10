@@ -1104,7 +1104,7 @@ func (s *PostgresStore) DeleteTransfer(ctx context.Context, userID string, trans
 
 // --- Entries ---
 
-func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*registrystore.PagedEntries, error) {
+func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID string, query registrystore.EntryListQuery) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	result := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
@@ -1117,9 +1117,21 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		return nil, err
 	}
 
+	limit := query.Limit
 	if limit <= 0 {
 		limit = 50
 	}
+
+	afterEntryID := query.AfterCursor
+	beforeEntryID := query.BeforeCursor
+	tail := query.Tail
+	upToEntryID := query.UpToEntryID
+	clientID := query.ClientID
+	agentID := query.AgentID
+	allForks := query.AllForks
+	fromSeq := query.FromSeq
+	channel := query.Channel
+	epochFilter := query.EpochFilter
 
 	// channel==nil means "all channels" (agent without filter).
 	// Determine effective channel for filtering.
@@ -1149,14 +1161,29 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if fromSeq != nil {
 			entries = filterEntriesByFromSeq(entries, *fromSeq)
 		}
-		entries, cursor := paginateEntries(entries, afterEntryID, limit)
-		decryptEntries(s, entries)
-		return &registrystore.PagedEntries{Data: entries, AfterCursor: cursor}, nil
+		page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(entries, afterEntryID, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, &BadRequestError{Message: err.Error()}
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	ancestry, err := s.buildAncestryStack(ctx, conv)
 	if err != nil {
 		return nil, err
+	}
+
+	// Bounded path: history channel, no forks, no upToEntryID, no fromSeq,
+	// tail or beforeCursor — query in DESC order across ancestry segments
+	// instead of materialising the entire group.
+	if effectiveChannel == model.ChannelHistory && !allForks && upToEntryID == nil && fromSeq == nil && (tail || beforeEntryID != nil) {
+		page, afterCursor, beforeCursor, err := s.boundedHistoryBackward(ctx, ancestry, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		decryptEntries(s, page)
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	var allEntries []model.Entry
@@ -1234,9 +1261,12 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		filtered = filterEntriesByFromSeq(filtered, *fromSeq)
 	}
 
-	filtered, cursor := paginateEntries(filtered, afterEntryID, limit)
-	decryptEntries(s, filtered)
-	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
+	page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(filtered, afterEntryID, beforeEntryID, tail, limit)
+	if err != nil {
+		return nil, &BadRequestError{Message: err.Error()}
+	}
+	decryptEntries(s, page)
+	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
 func (s *PostgresStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error) {
@@ -2207,13 +2237,12 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		filtered = filterEntriesByFromSeq(filtered, *query.FromSeq)
 	}
 
-	filtered, cursor := paginateEntries(filtered, query.AfterCursor, limit)
-	for i := range filtered {
-		if decrypted, err := s.decrypt(filtered[i].Content); err == nil {
-			filtered[i].Content = decrypted
-		}
+	page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(filtered, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+	if err != nil {
+		return nil, &BadRequestError{Message: err.Error()}
 	}
-	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
+	decryptEntries(s, page)
+	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
 func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
@@ -2849,6 +2878,204 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 	return result
 }
 
+// boundedHistoryBackward performs a bounded DESC-order read of history entries
+// across the ancestry stack, collecting at most limit+1 rows then reversing
+// to return a page in ascending order. This avoids loading the entire
+// conversation group for tail and beforeCursor requests.
+//
+// ancestry is ordered oldest-to-newest (root first, target last).
+// When beforeEntryID is set the anchor must be on the ancestry path; we start
+// strictly before it. When tail=true we start from the newest entry.
+func (s *PostgresStore) boundedHistoryBackward(ctx context.Context, ancestry []forkAncestor, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	if limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	need := limit + 1
+	collected := make([]model.Entry, 0, need)
+	startSegment := len(ancestry) - 1
+
+	// When beforeCursor is used we resolve the anchor entry first.
+	var anchorCreatedAt *time.Time
+	var anchorSeq *uint32
+	var anchorID *uuid.UUID
+	var anchorConvID string
+
+	if beforeEntryID != nil {
+		var anchor model.Entry
+		result := s.dbFor(ctx).
+			Where("id = ?", *beforeEntryID).
+			Select("id, conversation_id, channel, created_at, seq").
+			Limit(1).Find(&anchor)
+		if result.Error != nil {
+			return nil, nil, nil, result.Error
+		}
+		if result.RowsAffected == 0 {
+			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found"}
+		}
+		anchorCreatedAt = &anchor.CreatedAt
+		anchorSeq = anchor.Seq
+		anchorID = &anchor.ID
+		anchorConvID = anchor.ConversationID
+
+		if anchor.Channel != model.ChannelHistory {
+			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+		}
+
+		// Verify the anchor is in the visible portion of an ancestry segment and
+		// start scanning there so newer child segments cannot leak into the page.
+		onPath := false
+		for i, a := range ancestry {
+			if a.ConversationID == anchorConvID {
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
+					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
+					if err != nil {
+						return nil, nil, nil, err
+					}
+					if !entryOrderLess(anchor, stopAt) {
+						return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+					}
+				}
+				startSegment = i
+				onPath = true
+				break
+			}
+		}
+		if !onPath {
+			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+		}
+	}
+
+	// Iterate segments newest-to-oldest.
+	for i := startSegment; i >= 0 && len(collected) < need; i-- {
+		seg := ancestry[i]
+		isTarget := i == len(ancestry)-1
+
+		// When StopAtEntryID is nil for a non-target ancestor, the entire
+		// ancestor segment is excluded from the visible history (the fork
+		// happened at nothing, meaning this ancestor contributed no history
+		// to the child — skip it).
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+
+		tx := s.dbFor(ctx).
+			Where("conversation_id = ? AND channel = ?", seg.ConversationID, model.ChannelHistory).
+			Order("created_at DESC, seq DESC NULLS LAST, id DESC")
+
+		// For ancestor segments, include entries strictly before StopAtEntryID.
+		// Fetch the stop entry's sort key, then bound the DESC scan.
+		if !isTarget && seg.StopAtEntryID != nil {
+			var stopAt model.Entry
+			stopResult := s.dbFor(ctx).
+				Where("id = ?", seg.StopAtEntryID).
+				Select("id, created_at, seq").
+				Limit(1).Find(&stopAt)
+			if stopResult.Error != nil {
+				return nil, nil, nil, stopResult.Error
+			}
+			if stopResult.RowsAffected > 0 {
+				tx = whereEntryOrderBefore(tx, stopAt)
+			}
+		}
+
+		// Apply anchor bound for beforeCursor: skip entries at or after anchor.
+		if beforeEntryID != nil && seg.ConversationID == anchorConvID {
+			// Strict before anchor: rows where (created_at, seq, id) < anchor.
+			tx = whereEntryOrderBefore(tx, model.Entry{ID: *anchorID, CreatedAt: *anchorCreatedAt, Seq: anchorSeq})
+		}
+
+		remaining := need - len(collected)
+		tx = tx.Limit(remaining)
+
+		var batch []model.Entry
+		if err := tx.Find(&batch).Error; err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+		}
+		collected = append(collected, batch...)
+	}
+
+	// collected is in DESC order across segments; reverse to get ASC.
+	for lo, hi := 0, len(collected)-1; lo < hi; lo, hi = lo+1, hi-1 {
+		collected[lo], collected[hi] = collected[hi], collected[lo]
+	}
+
+	// Determine cursors using the limit+1 probe.
+	hasMore := len(collected) > limit
+	if hasMore {
+		collected = collected[1:] // drop the oldest probe entry
+		// beforeCursor = first entry of the page (signals older entries exist).
+		c := collected[0].ID.String()
+		beforeCursor := &c
+		// afterCursor: when beforeEntryID was set, there are newer entries beyond the anchor.
+		var afterCursor *string
+		if beforeEntryID != nil && len(collected) > 0 {
+			ac := collected[len(collected)-1].ID.String()
+			afterCursor = &ac
+		}
+		return collected, afterCursor, beforeCursor, nil
+	}
+	// No older page exists.
+	var afterCursor *string
+	if beforeEntryID != nil && len(collected) > 0 {
+		// There are newer entries (the anchor and beyond).
+		c := collected[len(collected)-1].ID.String()
+		afterCursor = &c
+	}
+	return collected, afterCursor, nil, nil
+}
+
+func (s *PostgresStore) entryOrderKey(ctx context.Context, entryID uuid.UUID) (model.Entry, error) {
+	var entry model.Entry
+	result := s.dbFor(ctx).Where("id = ?", entryID).Select("id, created_at, seq").Limit(1).Find(&entry)
+	if result.Error != nil {
+		return model.Entry{}, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return model.Entry{}, &NotFoundError{Resource: "entry", ID: entryID.String()}
+	}
+	return entry, nil
+}
+
+func entryOrderLess(left, right model.Entry) bool {
+	if !left.CreatedAt.Equal(right.CreatedAt) {
+		return left.CreatedAt.Before(right.CreatedAt)
+	}
+	if left.Seq == nil || right.Seq == nil {
+		if left.Seq == nil && right.Seq != nil {
+			return true
+		}
+		if left.Seq != nil && right.Seq == nil {
+			return false
+		}
+	} else if *left.Seq != *right.Seq {
+		return *left.Seq < *right.Seq
+	}
+	return left.ID.String() < right.ID.String()
+}
+
+func whereEntryOrderBefore(tx *gorm.DB, bound model.Entry) *gorm.DB {
+	if bound.Seq == nil {
+		return tx.Where(
+			"created_at < ? OR (created_at = ? AND seq IS NULL AND id < ?)",
+			bound.CreatedAt, bound.CreatedAt, bound.ID,
+		)
+	}
+	return tx.Where(
+		"created_at < ? OR (created_at = ? AND (seq IS NULL OR seq < ? OR (seq = ? AND id < ?)))",
+		bound.CreatedAt, bound.CreatedAt, *bound.Seq, *bound.Seq, bound.ID,
+	)
+}
+
+func derefInt64(p *int64) int64 {
+	if p == nil {
+		return -9223372036854775808
+	}
+	return *p
+}
+
 func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore.MemoryEpochFilter {
 	if filter == nil || filter.Mode == "" {
 		return registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
@@ -3051,35 +3278,6 @@ func filterEntriesByFromSeq(entries []model.Entry, fromSeq uint32) []model.Entry
 		return *filtered[i].Seq < *filtered[j].Seq
 	})
 	return filtered
-}
-
-func paginateEntries(entries []model.Entry, afterEntryID *string, limit int) ([]model.Entry, *string) {
-	start := 0
-	if afterEntryID != nil {
-		for i, entry := range entries {
-			if entry.ID.String() == *afterEntryID {
-				start = i + 1
-				break
-			}
-		}
-	}
-
-	if start >= len(entries) {
-		return []model.Entry{}, nil
-	}
-
-	end := start + limit
-	if end > len(entries) {
-		end = len(entries)
-	}
-
-	page := entries[start:end]
-	var cursor *string
-	if end < len(entries) && len(page) > 0 {
-		c := page[len(page)-1].ID.String()
-		cursor = &c
-	}
-	return page, cursor
 }
 
 func decryptEntries(s *PostgresStore, entries []model.Entry) {

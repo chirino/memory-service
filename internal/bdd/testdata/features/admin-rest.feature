@@ -274,6 +274,29 @@ Feature: Admin REST API
     Then the response status should be 200
     And the response should contain at least 1 items
 
+  Scenario: Admin can list the entry tail and page backward
+    Given I am authenticated as user "bob"
+    And set "conversationId" to "${bobConversationId}"
+    And the conversation has 4 entries
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?tail=true&limit=2"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Entry 3"
+    And entry at index 1 should have content "Entry 4"
+    And the response should have a beforeCursor
+    And set "adminBeforeCursor" to the json response field "beforeCursor"
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?beforeCursor=${adminBeforeCursor}&limit=2"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Entry 1"
+    And entry at index 1 should have content "Entry 2"
+    And the response should have an afterCursor
+
+  Scenario: Admin rejects a malformed beforeCursor
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?beforeCursor=not-a-uuid"
+    Then the response status should be 400
+
   # Serial today only because this feature shares the serial admin runner; this scenario reads context entries for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get context channel entries from any conversation
     # Create context entries as an agent (which sets clientId).

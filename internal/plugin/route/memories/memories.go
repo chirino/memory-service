@@ -305,8 +305,12 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 		return
 	}
 
-	limit := 10
-	if req.Limit != nil && *req.Limit > 0 && *req.Limit <= 100 {
+	limit := config.ClampPageSize(c.Request.Context(), 10)
+	if req.Limit != nil {
+		if err := config.ValidatePageSize(c.Request.Context(), *req.Limit); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
+		}
 		limit = *req.Limit
 	}
 	includeUsage := req.IncludeUsage != nil && *req.IncludeUsage
@@ -604,7 +608,7 @@ func listMemoryEventsWithParams(c *gin.Context, store registryepisodic.EpisodicS
 		}
 	}
 
-	limit := 50
+	limit := config.ClampPageSize(c.Request.Context(), 50)
 	if params.Limit != nil {
 		limit = *params.Limit
 	}
@@ -762,8 +766,8 @@ func HandleAdminListMemories(c *gin.Context, store registryepisodic.EpisodicStor
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	if query.Limit <= 0 || query.Limit > 200 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 200"})
+	if err := config.ValidatePageSize(c.Request.Context(), query.Limit); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	if err := routetx.EpisodicRead(c, store, func(ctx context.Context) error {
@@ -835,12 +839,12 @@ func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicSt
 			return
 		}
 	}
-	limit := 10
+	limit := config.ClampPageSize(c.Request.Context(), 10)
 	if req.Limit != nil {
 		limit = *req.Limit
 	}
-	if limit <= 0 || limit > 100 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 100"})
+	if err := config.ValidatePageSize(c.Request.Context(), limit); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	// Validate mutual exclusivity of query and queries.
@@ -1005,8 +1009,8 @@ func HandleAdminListMemoryNamespaces(c *gin.Context, store registryepisodic.Epis
 		}
 	}
 	limit := queryInt(c, "limit", 200)
-	if limit <= 0 || limit > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
+	if err := config.ValidatePageSize(c.Request.Context(), limit); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 	query := registryepisodic.AdminNamespaceQuery{
@@ -1190,8 +1194,8 @@ func HandleAdminListTopMemoryUsage(c *gin.Context, store registryepisodic.Episod
 	}
 
 	limit := queryInt(c, "limit", 100)
-	if limit <= 0 || limit > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "limit must be between 1 and 1000"})
+	if err := config.ValidatePageSize(c.Request.Context(), limit); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
@@ -1722,13 +1726,13 @@ func multiQuerySemanticSearch(
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	var i int
 	if _, err := fmt.Sscanf(v, "%d", &i); err != nil {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
-	return i
+	return config.ClampPageSize(c.Request.Context(), i)
 }
 
 func queryBool(c *gin.Context, key string, def bool) bool {

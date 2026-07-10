@@ -625,7 +625,12 @@ func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userI
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
-		result, err = store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, clientID, nil, true, nil)
+		result, err = store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
+			Limit:    5000,
+			Channel:  channel,
+			ClientID: clientID,
+			AllForks: true,
+		})
 		return err
 	})
 	if err != nil {

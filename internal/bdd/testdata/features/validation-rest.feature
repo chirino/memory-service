@@ -70,7 +70,7 @@ Feature: API Field Validation
     """
     {
       "query": "test",
-      "limit": 201
+      "limit": 1001
     }
     """
     Then the response status should be 400

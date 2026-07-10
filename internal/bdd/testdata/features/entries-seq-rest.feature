@@ -228,7 +228,7 @@ Feature: Client-assigned entry sequence (REST)
     {
       "afterCursor": null,
       "data": [
-        {"seq": null, "content": [{"role": "USER", "text": "No seq"}]},
+        {"content": [{"role": "USER", "text": "No seq"}]},
         {"seq": 10, "content": [{"role": "USER", "text": "Seq 10"}]},
         {"seq": 20, "content": [{"role": "USER", "text": "Seq 20"}]}
       ]

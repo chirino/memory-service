@@ -105,6 +105,8 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 		"entries": {
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "conversation_id", Value: 1}}},
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
+			// Branch/channel/order index for bounded backward and tail history reads (Enhancement 109).
+			{Keys: bson.D{{Key: "conversation_id", Value: 1}, {Key: "channel", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "channel", Value: 1}}},
 			{Keys: bson.D{{Key: "indexed_at", Value: 1}}},
 			{Keys: bson.D{{Key: "indexed_content", Value: "text"}}},
@@ -1411,7 +1413,7 @@ func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transfer
 
 // --- Entries ---
 
-func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*registrystore.PagedEntries, error) {
+func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID string, query registrystore.EntryListQuery) (*registrystore.PagedEntries, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{"_id": string(conversationID)}).Decode(&conv)
 	if err != nil {
@@ -1421,9 +1423,21 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
+	limit := query.Limit
 	if limit <= 0 {
 		limit = 50
 	}
+
+	afterEntryID := query.AfterCursor
+	beforeEntryID := query.BeforeCursor
+	tail := query.Tail
+	upToEntryID := query.UpToEntryID
+	clientID := query.ClientID
+	agentID := query.AgentID
+	allForks := query.AllForks
+	fromSeq := query.FromSeq
+	channel := query.Channel
+	epochFilter := query.EpochFilter
 
 	// channel==nil means "all channels" (agent without filter).
 	var effectiveChannel model.Channel
@@ -1450,14 +1464,17 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if fromSeq != nil {
 			filtered = filterEntryDocsByFromSeq(filtered, *fromSeq)
 		}
-		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
-		entries := make([]model.Entry, len(filtered))
-		for i, d := range filtered {
+		page, afterCursor, beforeCursor, pErr := paginateEntryDocsBi(filtered, afterEntryID, beforeEntryID, tail, limit)
+		if pErr != nil {
+			return nil, &registrystore.BadRequestError{Message: pErr.Error()}
+		}
+		entries := make([]model.Entry, len(page))
+		for i, d := range page {
 			content, _ := s.decrypt(d.Content)
 			entries[i] = s.entryDocToModel(d)
 			entries[i].Content = content
 		}
-		return &registrystore.PagedEntries{Data: entries, AfterCursor: nextCursor}, nil
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	ancestry, err := s.buildAncestryStack(ctx, conv)
@@ -1465,19 +1482,38 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
-	if effectiveChannel == model.ChannelContext && upToEntryID == nil && fromSeq == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
+	// Bounded path: history channel, no forks, no upToEntryID, no fromSeq,
+	// tail or beforeCursor — query in DESC order across ancestry segments.
+	if effectiveChannel == model.ChannelHistory && !allForks && upToEntryID == nil && fromSeq == nil && (tail || beforeEntryID != nil) {
+		docs, afterCursor, beforeCursor, err := s.boundedHistoryBackwardDocs(ctx, ancestry, beforeEntryID, tail, limit)
+		if err != nil {
+			return nil, err
+		}
+		entries := make([]model.Entry, len(docs))
+		for i, d := range docs {
+			content, _ := s.decrypt(d.Content)
+			entries[i] = s.entryDocToModel(d)
+			entries[i].Content = content
+		}
+		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
+	}
+
+	if effectiveChannel == model.ChannelContext && upToEntryID == nil && fromSeq == nil && !tail && beforeEntryID == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
 		// Use cache for the common latest-epoch case.
 		cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 		if err != nil {
 			return nil, err
 		}
-		page, nextCursor := paginateEntriesModel(cachedEntries, afterEntryID, limit)
+		page, afterCursor, beforeCursor, pErr := registrystore.PaginateEntries(cachedEntries, afterEntryID, beforeEntryID, tail, limit)
+		if pErr != nil {
+			return nil, &registrystore.BadRequestError{Message: pErr.Error()}
+		}
 		for i := range page {
 			if dec, err := s.decrypt(page[i].Content); err == nil {
 				page[i].Content = dec
 			}
 		}
-		return &registrystore.PagedEntries{Data: page, AfterCursor: nextCursor}, nil
+		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
 	docs, err := s.loadEntriesForGroup(ctx, conv.ConversationGroupID)
@@ -1518,14 +1554,17 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if fromSeq != nil {
 		filtered = filterEntryDocsByFromSeq(filtered, *fromSeq)
 	}
-	filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
-	entries := make([]model.Entry, len(filtered))
-	for i, d := range filtered {
+	page, afterCursor, beforeCursor, pErr := paginateEntryDocsBi(filtered, afterEntryID, beforeEntryID, tail, limit)
+	if pErr != nil {
+		return nil, &registrystore.BadRequestError{Message: pErr.Error()}
+	}
+	entries := make([]model.Entry, len(page))
+	for i, d := range page {
 		content, _ := s.decrypt(d.Content)
 		entries[i] = s.entryDocToModel(d)
 		entries[i].Content = content
 	}
-	return &registrystore.PagedEntries{Data: entries, AfterCursor: nextCursor}, nil
+	return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
 func (s *MongoStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error) {
@@ -2515,16 +2554,18 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		filtered = filterEntryDocsByFromSeq(filtered, *query.FromSeq)
 	}
 
-	filtered, nextCursor := paginateEntryDocs(filtered, query.AfterCursor, limit)
-
-	entries := make([]model.Entry, len(filtered))
-	for i, d := range filtered {
+	page, afterCursor, beforeCursor, pErr := paginateEntryDocsBi(filtered, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
+	if pErr != nil {
+		return nil, &registrystore.BadRequestError{Message: pErr.Error()}
+	}
+	entries := make([]model.Entry, len(page))
+	for i, d := range page {
 		entries[i] = s.entryDocToModel(d)
 		if decrypted, err := s.decrypt(d.Content); err == nil {
 			entries[i].Content = decrypted
 		}
 	}
-	return &registrystore.PagedEntries{Data: entries, AfterCursor: nextCursor}, nil
+	return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
 func (s *MongoStore) AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error) {
@@ -3615,6 +3656,184 @@ func defaultEntryDocSort() bson.D {
 	}
 }
 
+// boundedHistoryBackwardDocs performs a bounded DESC-order read of history
+// entry docs across the ancestry stack, collecting at most limit+1 docs then
+// reversing to return a page in ascending order.
+func (s *MongoStore) boundedHistoryBackwardDocs(ctx context.Context, ancestry []forkAncestorDoc, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
+	need := limit + 1
+	collected := make([]entryDoc, 0, need)
+	startSegment := len(ancestry) - 1
+
+	var anchorDoc *entryDoc
+	var anchorConvID string
+
+	if beforeEntryID != nil {
+		var doc entryDoc
+		err := s.entries().FindOne(ctx, bson.M{"_id": *beforeEntryID}).Decode(&doc)
+		if err != nil {
+			if err == mongo.ErrNoDocuments {
+				return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found"}
+			}
+			return nil, nil, nil, err
+		}
+		anchorDoc = &doc
+		anchorConvID = doc.ConversationID
+		if !strings.EqualFold(doc.Channel, string(model.ChannelHistory)) {
+			return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
+		}
+
+		onPath := false
+		for i, a := range ancestry {
+			if a.ConversationID == anchorConvID {
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
+					var stopDoc entryDoc
+					if err := s.entries().FindOne(ctx, bson.M{"_id": *a.StopAtEntryID}).Decode(&stopDoc); err != nil {
+						return nil, nil, nil, err
+					}
+					if !entryDocOrderLess(doc, stopDoc) {
+						return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
+					}
+				}
+				startSegment = i
+				onPath = true
+				break
+			}
+		}
+		if !onPath {
+			return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
+		}
+	}
+
+	descSort := bson.D{
+		{Key: "created_at", Value: -1},
+		{Key: "seq", Value: -1},
+		{Key: "_id", Value: -1},
+	}
+
+	for i := startSegment; i >= 0 && len(collected) < need; i-- {
+		seg := ancestry[i]
+		isTarget := i == len(ancestry)-1
+
+		if !isTarget && seg.StopAtEntryID == nil {
+			continue
+		}
+
+		filter := bson.M{
+			"conversation_id": seg.ConversationID,
+			"channel":         string(model.ChannelHistory),
+		}
+
+		// For ancestor segments, include entries strictly before the stop entry.
+		if !isTarget && seg.StopAtEntryID != nil {
+			var stopDoc entryDoc
+			err := s.entries().FindOne(ctx, bson.M{"_id": *seg.StopAtEntryID}).Decode(&stopDoc)
+			if err != nil && err != mongo.ErrNoDocuments {
+				return nil, nil, nil, err
+			}
+			if err == nil {
+				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(stopDoc))
+			}
+		}
+
+		// Apply anchor bound for beforeCursor.
+		if beforeEntryID != nil && seg.ConversationID == anchorConvID && anchorDoc != nil {
+			addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(*anchorDoc))
+		}
+
+		remaining := need - len(collected)
+		opts := options.Find().SetSort(descSort).SetLimit(int64(remaining))
+		cur, err := s.entries().Find(ctx, filter, opts)
+		if err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
+		}
+		var batch []entryDoc
+		if err := cur.All(ctx, &batch); err != nil {
+			return nil, nil, nil, fmt.Errorf("bounded history decode failed: %w", err)
+		}
+		collected = append(collected, batch...)
+	}
+
+	// Reverse to ascending order.
+	for lo, hi := 0, len(collected)-1; lo < hi; lo, hi = lo+1, hi-1 {
+		collected[lo], collected[hi] = collected[hi], collected[lo]
+	}
+
+	hasMore := len(collected) > limit
+	if hasMore {
+		collected = collected[1:] // drop the oldest probe entry
+		// beforeCursor = first entry of the page (signals older entries exist).
+		c := collected[0].ID
+		beforeCursor := &c
+		// afterCursor: when beforeEntryID was set, there are newer entries beyond the anchor.
+		var afterCursor *string
+		if beforeEntryID != nil && len(collected) > 0 {
+			ac := collected[len(collected)-1].ID
+			afterCursor = &ac
+		}
+		return collected, afterCursor, beforeCursor, nil
+	}
+	var afterCursor *string
+	if beforeEntryID != nil && len(collected) > 0 {
+		c := collected[len(collected)-1].ID
+		afterCursor = &c
+	}
+	return collected, afterCursor, nil, nil
+}
+
+func entryDocOrderLess(left, right entryDoc) bool {
+	if !left.CreatedAt.Equal(right.CreatedAt) {
+		return left.CreatedAt.Before(right.CreatedAt)
+	}
+	if left.Seq == nil || right.Seq == nil {
+		if left.Seq == nil && right.Seq != nil {
+			return true
+		}
+		if left.Seq != nil && right.Seq == nil {
+			return false
+		}
+	} else if *left.Seq != *right.Seq {
+		return *left.Seq < *right.Seq
+	}
+	return left.ID < right.ID
+}
+
+func mongoEntryBeforeBound(bound entryDoc) bson.A {
+	conditions := bson.A{
+		bson.M{"created_at": bson.M{"$lt": bound.CreatedAt}},
+	}
+	if bound.Seq == nil {
+		return append(conditions, bson.M{
+			"created_at": bound.CreatedAt,
+			"seq":        nil,
+			"_id":        bson.M{"$lt": bound.ID},
+		})
+	}
+	return append(conditions,
+		bson.M{"created_at": bound.CreatedAt, "seq": nil},
+		bson.M{"created_at": bound.CreatedAt, "seq": bson.M{"$lt": *bound.Seq}},
+		bson.M{"created_at": bound.CreatedAt, "seq": *bound.Seq, "_id": bson.M{"$lt": bound.ID}},
+	)
+}
+
+func addMongoEntryBeforeBound(filter bson.M, bound bson.A) {
+	if existingAnd, ok := filter["$and"].(bson.A); ok {
+		filter["$and"] = append(existingAnd, bson.M{"$or": bound})
+		return
+	}
+	if existing, ok := filter["$or"]; ok {
+		filter["$and"] = bson.A{bson.M{"$or": existing}, bson.M{"$or": bound}}
+		delete(filter, "$or")
+		return
+	}
+	filter["$or"] = bound
+}
+
 // fetchLatestMemoryEntries returns the latest-epoch context entries for the given
 // conversation and clientID, using MemoryEntriesCache as a read-through layer.
 func (s *MongoStore) fetchLatestMemoryEntries(ctx context.Context, conv convDoc, ancestry []forkAncestorDoc, clientID, agentID string) ([]model.Entry, error) {
@@ -3710,33 +3929,6 @@ func flattenMemoryContentEntries(s *MongoStore, entries []model.Entry) []any {
 	return result
 }
 
-// paginateEntriesModel applies cursor-based pagination to a []model.Entry slice.
-func paginateEntriesModel(entries []model.Entry, afterEntryID *string, limit int) ([]model.Entry, *string) {
-	start := 0
-	if afterEntryID != nil {
-		for i, e := range entries {
-			if e.ID.String() == *afterEntryID {
-				start = i + 1
-				break
-			}
-		}
-	}
-	if start >= len(entries) {
-		return []model.Entry{}, nil
-	}
-	end := start + limit
-	if end > len(entries) {
-		end = len(entries)
-	}
-	page := entries[start:end]
-	var cursor *string
-	if end < len(entries) && len(page) > 0 {
-		c := page[len(page)-1].ID.String()
-		cursor = &c
-	}
-	return page, cursor
-}
-
 func parseContentArray(raw []byte) []any {
 	raw = []byte(strings.TrimSpace(string(raw)))
 	if len(raw) == 0 {
@@ -3788,30 +3980,90 @@ func filterEntryDocsByFromSeq(entries []entryDoc, fromSeq uint32) []entryDoc {
 	return filtered
 }
 
-func paginateEntryDocs(entries []entryDoc, afterEntryID *string, limit int) ([]entryDoc, *string) {
+// paginateEntryDocsBi applies bidirectional pagination to an ascending []entryDoc slice.
+// Returns (page, afterCursor, beforeCursor, err).
+func paginateEntryDocsBi(entries []entryDoc, afterEntryID *string, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit <= 0 {
+		limit = 50
+	}
+	n := len(entries)
+	if n == 0 {
+		return []entryDoc{}, nil, nil, nil
+	}
+	if tail {
+		start := n - limit
+		if start < 0 {
+			start = 0
+		}
+		page := entries[start:]
+		var beforeCursor *string
+		if start > 0 {
+			c := entries[start].ID
+			beforeCursor = &c
+		}
+		return page, nil, beforeCursor, nil
+	}
+	if beforeEntryID != nil {
+		anchorIdx := -1
+		for i, e := range entries {
+			if e.ID == *beforeEntryID {
+				anchorIdx = i
+				break
+			}
+		}
+		if anchorIdx < 0 {
+			return nil, nil, nil, fmt.Errorf("beforeCursor entry not found in visible results")
+		}
+		end := anchorIdx
+		start := end - limit
+		if start < 0 {
+			start = 0
+		}
+		page := entries[start:end]
+		if len(page) == 0 {
+			return []entryDoc{}, nil, nil, nil
+		}
+		var beforeCursor *string
+		if start > 0 {
+			c := entries[start].ID
+			beforeCursor = &c
+		}
+		var afterCursor *string
+		if anchorIdx < n {
+			c := entries[end-1].ID
+			afterCursor = &c
+		}
+		return page, afterCursor, beforeCursor, nil
+	}
+	// Forward pagination.
 	start := 0
 	if afterEntryID != nil {
-		for i, entry := range entries {
-			if entry.ID == *afterEntryID {
+		for i, e := range entries {
+			if e.ID == *afterEntryID {
 				start = i + 1
 				break
 			}
 		}
 	}
-	if start >= len(entries) {
-		return []entryDoc{}, nil
+	if start >= n {
+		return []entryDoc{}, nil, nil, nil
 	}
 	end := start + limit
-	if end > len(entries) {
-		end = len(entries)
+	if end > n {
+		end = n
 	}
 	page := entries[start:end]
-	var cursor *string
-	if end < len(entries) && len(page) > 0 {
+	var afterCursor *string
+	if end < n && len(page) > 0 {
 		c := page[len(page)-1].ID
-		cursor = &c
+		afterCursor = &c
 	}
-	return page, cursor
+	var beforeCursor *string
+	if start > 0 && len(page) > 0 {
+		c := page[0].ID
+		beforeCursor = &c
+	}
+	return page, afterCursor, beforeCursor, nil
 }
 
 // lookupConversationTitle fetches and decrypts a conversation's title by ID.

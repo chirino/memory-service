@@ -39,3 +39,12 @@ type ForbiddenError struct{}
 func (e *ForbiddenError) Error() string {
 	return "forbidden"
 }
+
+// BadRequestError indicates a client-side request error (e.g., invalid pagination parameters).
+type BadRequestError struct {
+	Message string
+}
+
+func (e *BadRequestError) Error() string {
+	return e.Message
+}

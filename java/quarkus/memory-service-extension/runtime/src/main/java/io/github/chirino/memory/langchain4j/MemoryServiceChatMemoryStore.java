@@ -65,6 +65,8 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     memoryId.toString(),
                                     null,
                                     null,
+                                    null,
+                                    null,
                                     50,
                                     Channel.CONTEXT,
                                     null,

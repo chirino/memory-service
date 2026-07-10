@@ -58,6 +58,16 @@ public class MemoryServiceProxy {
         return s == null || s.isBlank() ? null : UUID.fromString(s);
     }
 
+    /** Stable entry-list options that avoid exposing generated-client parameter ordering. */
+    public record EntryListOptions(
+            String afterCursor,
+            String beforeCursor,
+            Boolean tail,
+            Integer limit,
+            Channel channel,
+            String epoch,
+            String forks) {}
+
     private final MemoryServiceClientProperties properties;
     private final WebClient.Builder webClientBuilder;
     private final OAuth2AuthorizedClientService authorizedClientService;
@@ -170,17 +180,26 @@ public class MemoryServiceProxy {
             Channel channel,
             String epoch,
             String forks) {
+        return listConversationEntries(
+                conversationId,
+                new EntryListOptions(afterCursor, null, null, limit, channel, epoch, forks));
+    }
+
+    public ResponseEntity<?> listConversationEntries(
+            String conversationId, EntryListOptions options) {
         return execute(
                 api ->
                         api.listConversationEntriesWithHttpInfo(
                                 conversationId,
-                                toUuid(afterCursor),
+                                toUuid(options.afterCursor()),
+                                toUuid(options.beforeCursor()),
+                                options.tail(),
                                 null,
-                                limit,
-                                channel,
-                                epoch,
+                                options.limit(),
+                                options.channel(),
+                                options.epoch(),
                                 null,
-                                forks),
+                                options.forks()),
                 HttpStatus.OK);
     }
 

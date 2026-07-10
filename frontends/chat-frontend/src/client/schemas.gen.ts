@@ -1349,8 +1349,7 @@ error is returned with details about which search types are available.
       type: "integer",
       default: 20,
       minimum: 1,
-      maximum: 200,
-      description: "Maximum number of results to return.",
+      description: "Maximum number of results to return. The server-wide configured maximum defaults to 1000.",
     },
     includeEntry: {
       type: "boolean",

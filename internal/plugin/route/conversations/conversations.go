@@ -566,11 +566,11 @@ func queryPtr(c *gin.Context, key string) *string {
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	var i int
 	if _, err := fmt.Sscanf(v, "%d", &i); err != nil {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
-	return i
+	return config.ClampPageSize(c.Request.Context(), i)
 }

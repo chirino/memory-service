@@ -171,6 +171,12 @@ export class ConversationsService {
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier.
    * @param data.afterCursor Cursor for pagination; returns entries after this entry id (UUID format).
+   * @param data.beforeCursor Cursor for backward pagination; returns up to `limit` entries strictly
+   * before this entry in the caller-visible order. Results remain chronological
+   * (ascending). Mutually exclusive with `afterCursor` and `tail=true`.
+   * @param data.tail When `true`, returns the last `limit` entries in the caller-visible order
+   * (newest page). Results remain chronological (ascending). Mutually exclusive
+   * with `afterCursor` and `beforeCursor`.
    * @param data.upToEntryId Upper-bound entry id (UUID format). When set, only entries at or
    * before this entry in the caller-visible conversation order are
    * returned. This is useful with `channel=context` and `epoch` to
@@ -209,6 +215,8 @@ export class ConversationsService {
       },
       query: {
         afterCursor: data.afterCursor,
+        beforeCursor: data.beforeCursor,
+        tail: data.tail,
         upToEntryId: data.upToEntryId,
         limit: data.limit,
         channel: data.channel,
@@ -217,6 +225,7 @@ export class ConversationsService {
         forks: data.forks,
       },
       errors: {
+        400: "Bad request",
         404: "Resource not found",
       },
     });

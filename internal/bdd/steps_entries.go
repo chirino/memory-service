@@ -24,6 +24,11 @@ func init() {
 		// When steps - entry operations
 		ctx.Step(`^I list entries for the conversation$`, e.iListEntriesForTheConversation)
 		ctx.Step(`^I list entries with limit (\d+)$`, e.iListEntriesWithLimit)
+		ctx.Step(`^I list entries with tail enabled and limit (\d+)$`, e.iListEntriesWithTailAndLimit)
+		ctx.Step(`^I list entries with tail "([^"]*)" and limit (\d+)$`, e.iListEntriesWithTailValueAndLimit)
+		ctx.Step(`^I list entries with beforeCursor and limit (\d+)$`, e.iListEntriesWithBeforeCursorAndLimit)
+		ctx.Step(`^I list entries with afterCursor from previous response and limit (\d+)$`, e.iListEntriesWithAfterCursorAndLimit)
+		ctx.Step(`^I list entries with both afterCursor and tail enabled$`, e.iListEntriesWithConflictingCursors)
 		ctx.Step(`^I list entries for the conversation with channel "([^"]*)"$`, e.iListEntriesForTheConversationWithChannel)
 		ctx.Step(`^I list context entries for the conversation with epoch "([^"]*)"$`, e.iListMemoryEntriesWithEpoch)
 		ctx.Step(`^I list entries for conversation "([^"]*)"$`, e.iListEntriesForConversation)
@@ -257,6 +262,55 @@ func (e *entrySteps) iIndexATranscript(body *godog.DocString) error {
 
 func (e *entrySteps) iSearchEntries(body *godog.DocString) error {
 	return e.s.SendHTTPRequestWithJSONBodyAndStyle("POST", "/v1/user/search/entries", body, false, true)
+}
+
+func (e *entrySteps) iListEntriesWithTailAndLimit(limit int) error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?tail=true&limit=%d", convID, limit), nil, false, true)
+}
+
+func (e *entrySteps) iListEntriesWithBeforeCursorAndLimit(limit int) error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	cursor, err := e.s.ResolveString("response.body.beforeCursor")
+	if err != nil {
+		return fmt.Errorf("no beforeCursor in previous response: %w", err)
+	}
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?beforeCursor=%s&limit=%d", convID, cursor, limit), nil, false, true)
+}
+
+func (e *entrySteps) iListEntriesWithAfterCursorAndLimit(limit int) error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	cursor, err := e.s.ResolveString("response.body.afterCursor")
+	if err != nil {
+		return fmt.Errorf("no afterCursor in previous response: %w", err)
+	}
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?afterCursor=%s&limit=%d", convID, cursor, limit), nil, false, true)
+}
+
+func (e *entrySteps) iListEntriesWithTailValueAndLimit(tailValue string, limit int) error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?tail=%s&limit=%d", convID, tailValue, limit), nil, false, true)
+}
+
+func (e *entrySteps) iListEntriesWithConflictingCursors() error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	// Generate a fake cursor UUID for this test
+	return e.s.SendHTTPRequestWithJSONBodyAndStyle("GET", fmt.Sprintf("/v1/conversations/%s/entries?afterCursor=00000000-0000-0000-0000-000000000001&tail=true", convID), nil, false, true)
 }
 
 func (e *entrySteps) iSearchConversations(body *godog.DocString) error {

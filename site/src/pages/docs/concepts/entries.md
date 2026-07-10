@@ -80,7 +80,7 @@ Response:
 
 ## Entry Ordering
 
-Entries are returned ordered by creation time (`createdAt`). When multiple entries have the same timestamp, entries without `seq` sort first, followed by sequenced entries in ascending `seq`, then `id`. Use cursor-based pagination with the `after` parameter to retrieve entries in batches.
+Entries are returned ordered by creation time (`createdAt`). When multiple entries have the same timestamp, entries without `seq` sort first, followed by sequenced entries in ascending `seq`, then `id`. Use `afterCursor` for forward pagination, `tail=true` to open at the newest page, and `beforeCursor` to load older pages. All returned pages remain chronological.
 
 Clients that need deterministic replay across channels can set `seq` when appending entries. `seq` values are unsigned 32-bit integers and must be unique within a conversation. When listing entries with `fromSeq`, Memory Service returns entries with `seq >= fromSeq`, excludes entries without `seq`, and orders the response by `seq` ascending.
 
@@ -91,13 +91,27 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=50&c
   -H "Authorization: Bearer <token>"
 ```
 
+### Get the last page
+
+Set `tail=true` to fetch the last page without first reading every older page.
+The response remains chronological, and `limit` controls the maximum page size:
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?channel=history&tail=true&limit=50" \
+  -H "Authorization: Bearer <token>"
+```
+
+`afterCursor`, `beforeCursor`, and `tail=true` are mutually exclusive. Entry
+filters—including channel, fork ancestry, epoch, `upToEntryId`, and
+`fromSeq`—are applied before pagination.
+
 Response:
 
 ```json
 {
   "data": [
     {
-      "id": "entry_01HF8XJQWXYZ9876ABCD5432",
+      "id": "ddd7b810-9dad-11d1-80b4-00c04fd430cb",
       "conversationId": "conv_01HF8XH1XABCD1234EFGH5678",
       "userId": "user_1234",
       "channel": "history",
@@ -106,14 +120,30 @@ Response:
       "createdAt": "2025-01-10T14:40:12Z"
     }
   ],
-  "nextCursor": "entry_01HF8XJQWXYZ9876ABCD5433"
+  "afterCursor": null,
+  "beforeCursor": "ddd7b810-9dad-11d1-80b4-00c04fd430cb"
 }
 ```
+
+### Get the previous page
+
+If more history exists, pass the last page's `beforeCursor` as the
+`beforeCursor` parameter to load the adjacent older page:
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?channel=history&beforeCursor=ddd7b810-9dad-11d1-80b4-00c04fd430cb&limit=50" \
+  -H "Authorization: Bearer <token>"
+```
+
+The previous page is also returned chronologically. Its `beforeCursor` leads to
+the next older page, while its `afterCursor` leads back toward newer entries.
 
 Query parameters:
 
 - `limit` - Maximum entries to return (default: 50)
-- `after` - Cursor for pagination (entry ID)
+- `afterCursor` - Return entries strictly after this entry ID
+- `beforeCursor` - Return up to `limit` entries strictly before this entry ID
+- `tail` - Set to `true` to return the last page
 - `fromSeq` - Return sequenced entries with `seq >= fromSeq`
 - `channel` - Filter by channel: `history` (default for end-user reads), `context`, or `journal`
 - `epoch` - For `context` channel: `latest`, `all`, or a specific epoch number

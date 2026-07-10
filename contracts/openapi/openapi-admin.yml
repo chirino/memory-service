@@ -94,7 +94,6 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 200
             default: 50
         - name: afterCursor
           in: query
@@ -256,7 +255,6 @@ paths:
           schema:
             type: integer
             minimum: 1
-            maximum: 1000
             default: 200
         - name: afterCursor
           in: query
@@ -501,7 +499,6 @@ paths:
             type: integer
             default: 100
             minimum: 1
-            maximum: 1000
       responses:
         '200':
           description: Ranked usage rows.
@@ -600,7 +597,6 @@ paths:
             type: integer
             default: 100
             minimum: 1
-            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -716,6 +712,20 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: beforeCursor
+          in: query
+          required: false
+          description: Cursor for backward pagination; returns up to limit entries strictly before this entry in admin-visible order. Mutually exclusive with afterCursor and tail=true.
+          schema:
+            type: string
+            format: uuid
+        - name: tail
+          in: query
+          required: false
+          description: When true, returns the last limit entries (newest page). Mutually exclusive with afterCursor and beforeCursor.
+          schema:
+            type: boolean
+            default: false
         - name: limit
           in: query
           required: false
@@ -724,7 +734,6 @@ paths:
             type: integer
             default: 50
             minimum: 1
-            maximum: 1000
         - name: channel
           in: query
           required: false
@@ -780,7 +789,16 @@ paths:
                       $ref: '#/components/schemas/Entry'
                   afterCursor:
                     type: string
+                    format: uuid
                     nullable: true
+                    description: Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
+                  beforeCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
+                    description: Pass as beforeCursor to fetch the adjacent older page. Null when no older entries exist.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -816,7 +834,6 @@ paths:
             type: integer
             default: 50
             minimum: 1
-            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -878,7 +895,6 @@ paths:
             type: integer
             default: 50
             minimum: 1
-            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -929,7 +945,6 @@ paths:
             type: integer
             default: 100
             minimum: 1
-            maximum: 1000
       responses:
         '200':
           description: A list of direct child conversations.
@@ -1234,12 +1249,11 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Maximum number of attachments to return (max 200).
+          description: Maximum number of attachments to return. The server-wide configured maximum defaults to 1000.
           schema:
             type: integer
             default: 50
             minimum: 1
-            maximum: 1000
         - name: justification
           in: query
           required: false
@@ -1784,6 +1798,12 @@ components:
         application/json:
           schema:
             $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Bad request
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
     NotFound:
       description: Resource not found
       content:
@@ -2248,8 +2268,7 @@ components:
           type: integer
           default: 20
           minimum: 1
-          maximum: 1000
-          description: Maximum number of results to return.
+          description: Maximum number of results to return. The server-wide configured maximum defaults to 1000.
         userId:
           type: string
           nullable: true
