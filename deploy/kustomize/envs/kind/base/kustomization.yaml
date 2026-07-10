@@ -15,7 +15,6 @@ resources:
 components:
   - ../../../components/gateway-envoy
   - ../../../components/demo/gateway
-  - ../../../components/storage/minio
 
 configMapGenerator:
   - name: keycloak-realm

@@ -105,11 +105,7 @@ func normalizedAttachments(cfg *config.Config) string {
 		if attach == "" || attach == "db" {
 			return "fs"
 		}
-	case "mongo":
-		if attach == "db" {
-			return "mongo"
-		}
-	default:
+	case "postgres":
 		if attach == "db" {
 			return "postgres"
 		}

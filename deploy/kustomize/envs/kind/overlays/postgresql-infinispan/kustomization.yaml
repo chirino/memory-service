@@ -6,6 +6,7 @@ resources:
 
 components:
   - ../../base
+  - ../../../../components/storage/minio
 
 patches:
   - target:
