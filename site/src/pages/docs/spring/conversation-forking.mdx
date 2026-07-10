@@ -36,6 +36,8 @@ Forks are created implicitly when the first entry is appended to a new conversat
 
 **Why**: Passing `forkedAtConversationId` and `forkedAtEntryId` through advisor context lets the same chat endpoint create either a root conversation or a fork, while still recording fork metadata on the first USER turn.
 
+This guide keeps the example history-based. Trusted runtime clients can also fork at client-visible `journal` entries for replay/debug workflows; see [Forking](/docs/concepts/forking/) for the channel rules.
+
 ### Listing Forks
 
 Add this method to the `MemoryServiceProxyController` to list forks for a conversation:

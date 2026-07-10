@@ -90,8 +90,8 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 - `GET /v1/conversations/{conversationId}/entries`
   - Lists entries in a conversation, ordered by creation time.
   - Parameters:
-    - `channel`: Filter by channel (`history` default, `memory`).
-    - `epoch`: For memory channel - `latest` (default), `all`, or a specific epoch number.
+    - `channel`: Filter by channel (`history` default for user-only reads; `history`, `context`, or `journal` for authenticated clients).
+    - `epoch`: For context channel - `latest` (default), `all`, or a specific epoch number.
     - `after`: cursor for pagination (UUID).
     - `limit`: maximum entries to return.
     - `forks`: Controls fork inclusion:
@@ -106,8 +106,8 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
   - Appends a new entry to the conversation.
   - Request: `CreateEntryRequest`
     - `userId`: optional user ID.
-    - `channel`: `history` or `memory`.
-    - `contentType`: schema identifier (e.g., `history` for chat, `LC4J`, `SpringAI` for memory).
+    - `channel`: `history`, `context`, or `journal`.
+    - `contentType`: schema identifier (e.g., `history` for chat, `LC4J`, `SpringAI`, or `agent/step` for runtime data).
     - `content`: array of content blocks.
     - `indexedContent`: optional text to index for search (history channel only).
   - Response: created `Entry`.
@@ -131,15 +131,13 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 
 #### Fork a Conversation
 
-- `POST /v1/conversations/{conversationId}/entries/{entryId}/fork`
-  - Forks an existing conversation at a specific entry.
-  - Request: `ForkFromEntryRequest`
-    - `title`: optional title for the new forked conversation.
+- Forks are created implicitly on the first append to a new conversation ID by passing `forkedAtConversationId` and optional `forkedAtEntryId` on `CreateEntryRequest`.
   - Behavior:
     - "Fork at entry X" means the fork includes all parent entries up to but NOT including X.
     - A new conversation is created with:
       - `forkedAtConversationId`: the original conversation id.
       - `forkedAtEntryId`: the fork point entry id itself (the first parent entry excluded from the fork). When omitted, the fork inherits no parent entries.
+    - Fork points may reference `history` entries or client-visible `journal` entries. `context` entries are not valid fork points.
     - No entries are copied; fork creation is O(1) writes.
   - Response: new `Conversation` with fork metadata.
   - Access control is enforced at the fork tree level; all forks share the same permissions.

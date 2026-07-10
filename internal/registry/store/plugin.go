@@ -146,6 +146,7 @@ type AdminMessageQuery struct {
 	Channel     *model.Channel
 	EpochFilter *MemoryEpochFilter
 	AllForks    bool
+	FromSeq     *uint32
 }
 
 // AdminSearchQuery holds parameters for admin search.
@@ -277,7 +278,7 @@ type MemoryStore interface {
 	DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error
 
 	// Entries
-	GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*PagedEntries, error)
+	GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*PagedEntries, error)
 	AppendEntries(ctx context.Context, userID string, conversationID string, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
 	SyncAgentEntry(ctx context.Context, userID string, conversationID string, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)
@@ -338,6 +339,7 @@ type CreateEntryRequest struct {
 	ContentType             string          `json:"contentType"`
 	Channel                 string          `json:"channel"`
 	IndexedContent          *string         `json:"indexedContent,omitempty"`
+	Seq                     *uint32         `json:"seq,omitempty"`
 	Role                    *string         `json:"role,omitempty"`
 	UserID                  *string         `json:"userId,omitempty"`
 	AgentID                 *string         `json:"agentId,omitempty"`

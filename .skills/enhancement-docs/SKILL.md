@@ -92,7 +92,7 @@ For partial: `> **Status**: Partial — see [NNN](../implemented/NNN-name.md) fo
 - **Tables**: Use markdown tables for field constraints, API parameters, file lists
 - **Cross-references**: Link to other enhancements with paths relative to the current doc, for example `[065](implemented/065-go-port.md)` from a proposed doc or `[017](../implemented/017-hide-conversation-groups.md)` from a partial doc
 - **Task checkboxes**: Use `- [ ]` for incomplete and `- [x]` for completed tasks
-- **Pre-release stance**: No backward compatibility needed. Don't deprecate — just delete/rename. Datastores are reset frequently.
+- **Data compatibility stance**: DB schema/data changes must preserve existing data through migrations. Enhancement plans that change persisted structures should call out migration steps, compatibility risks, and upgrade validation. API cleanup can still remove pre-release surface area when requested, but persisted data transitions need an explicit migration path.
 - **OpenAPI specs**: Agent API is in `contracts/openapi/openapi.yml`, Admin API is in `contracts/openapi/openapi-admin.yml`
 - **Proto file**: gRPC definitions in `contracts/protobuf/memory/v1/memory_service.proto`
 

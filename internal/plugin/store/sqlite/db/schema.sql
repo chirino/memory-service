@@ -57,6 +57,7 @@ CREATE TABLE IF NOT EXISTS entries (
     agent_id TEXT,
     channel TEXT NOT NULL,
     epoch INTEGER,
+    seq INTEGER CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)),
     content_type TEXT NOT NULL,
     content BLOB NOT NULL,
     indexed_content TEXT,
@@ -71,8 +72,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
     ON entries(indexed_at) WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
     ON entries(conversation_id, created_at);
-CREATE INDEX IF NOT EXISTS idx_entries_group_created_at
-    ON entries(conversation_group_id, created_at);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
     ON entries(conversation_id, channel, client_id, epoch, created_at);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_created_at

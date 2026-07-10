@@ -299,6 +299,7 @@ const (
 	Channel_CHANNEL_UNSPECIFIED Channel = 0
 	Channel_HISTORY             Channel = 1
 	Channel_CONTEXT             Channel = 2
+	Channel_JOURNAL             Channel = 3
 )
 
 // Enum value maps for Channel.
@@ -307,11 +308,13 @@ var (
 		0: "CHANNEL_UNSPECIFIED",
 		1: "HISTORY",
 		2: "CONTEXT",
+		3: "JOURNAL",
 	}
 	Channel_value = map[string]int32{
 		"CHANNEL_UNSPECIFIED": 0,
 		"HISTORY":             1,
 		"CONTEXT":             2,
+		"JOURNAL":             3,
 	}
 )
 
@@ -824,7 +827,9 @@ type Conversation struct {
 	UpdatedAt          string      `protobuf:"bytes,5,opt,name=updated_at,json=updatedAt,proto3" json:"updated_at,omitempty"`
 	LastMessagePreview string      `protobuf:"bytes,6,opt,name=last_message_preview,json=lastMessagePreview,proto3" json:"last_message_preview,omitempty"`
 	AccessLevel        AccessLevel `protobuf:"varint,7,opt,name=access_level,json=accessLevel,proto3,enum=memory.v1.AccessLevel" json:"access_level,omitempty"`
-	// First parent entry excluded by this fork (empty if root or blank-slate fork)
+	// First parent entry excluded by this fork. Fork anchors may be history
+	// entries or same-client-visible journal entries; context entries are
+	// invalid anchors. Empty if root or blank-slate fork.
 	ForkedAtEntryId []byte `protobuf:"bytes,9,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked (empty if root)
 	ForkedAtConversationId  string `protobuf:"bytes,10,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
@@ -1030,7 +1035,9 @@ type ConversationForkSummary struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Forked conversation identifier
 	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	// First parent entry excluded by this fork
+	// First parent entry excluded by this fork. Fork anchors may be history
+	// entries or same-client-visible journal entries; context entries are
+	// invalid anchors.
 	ForkedAtEntryId []byte `protobuf:"bytes,3,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3" json:"forked_at_entry_id,omitempty"`
 	// Conversation ID from which this was forked
 	ForkedAtConversationId string `protobuf:"bytes,4,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3" json:"forked_at_conversation_id,omitempty"`
@@ -1631,15 +1638,19 @@ type CreateEntryRequest struct {
 	IndexedContent *string `protobuf:"bytes,6,opt,name=indexed_content,json=indexedContent,proto3,oneof" json:"indexed_content,omitempty"`
 	// Fork metadata: if the target conversation doesn't exist yet, auto-create
 	// it as a fork of forked_at_conversation_id. Optionally provide
-	// forked_at_entry_id to fork at a specific point. When unset, all source
-	// entries are excluded and the new entry become the first entry in the fork.
+	// forked_at_entry_id to fork at a specific point. Valid fork anchors are
+	// history entries and same-client-visible journal entries; context entries
+	// are invalid anchors. When unset, all source entries are excluded and the
+	// new entry becomes the first entry in the fork.
 	ForkedAtConversationId  *string `protobuf:"bytes,7,opt,name=forked_at_conversation_id,json=forkedAtConversationId,proto3,oneof" json:"forked_at_conversation_id,omitempty"`
 	ForkedAtEntryId         []byte  `protobuf:"bytes,8,opt,name=forked_at_entry_id,json=forkedAtEntryId,proto3,oneof" json:"forked_at_entry_id,omitempty"` // UUID as 16-byte big-endian
 	AgentId                 *string `protobuf:"bytes,9,opt,name=agent_id,json=agentId,proto3,oneof" json:"agent_id,omitempty"`
 	StartedByConversationId *string `protobuf:"bytes,10,opt,name=started_by_conversation_id,json=startedByConversationId,proto3,oneof" json:"started_by_conversation_id,omitempty"`
 	StartedByEntryId        []byte  `protobuf:"bytes,11,opt,name=started_by_entry_id,json=startedByEntryId,proto3,oneof" json:"started_by_entry_id,omitempty"`
-	unknownFields           protoimpl.UnknownFields
-	sizeCache               protoimpl.SizeCache
+	// Optional client-assigned sequence number, unique within the conversation.
+	Seq           *uint32 `protobuf:"varint,12,opt,name=seq,proto3,oneof" json:"seq,omitempty"`
+	unknownFields protoimpl.UnknownFields
+	sizeCache     protoimpl.SizeCache
 }
 
 func (x *CreateEntryRequest) Reset() {
@@ -1740,6 +1751,13 @@ func (x *CreateEntryRequest) GetStartedByEntryId() []byte {
 		return x.StartedByEntryId
 	}
 	return nil
+}
+
+func (x *CreateEntryRequest) GetSeq() uint32 {
+	if x != nil && x.Seq != nil {
+		return *x.Seq
+	}
+	return 0
 }
 
 type SyncEntriesRequest struct {
@@ -1932,7 +1950,10 @@ type ListEntriesRequest struct {
 	Forks string `protobuf:"bytes,5,opt,name=forks,proto3" json:"forks,omitempty"`
 	// Return entries at or before this entry in the caller-visible conversation order.
 	// Useful with channel=CONTEXT and epoch_filter to reconstruct context as of a history entry.
-	UpToEntryId   []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
+	UpToEntryId []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
+	// When set, return only entries with seq >= from_seq, ordered by seq ASC.
+	// Entries without a seq value are excluded.
+	FromSeq       *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2009,6 +2030,13 @@ func (x *ListEntriesRequest) GetUpToEntryId() []byte {
 	return nil
 }
 
+func (x *ListEntriesRequest) GetFromSeq() uint32 {
+	if x != nil && x.FromSeq != nil {
+		return *x.FromSeq
+	}
+	return 0
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
@@ -2072,7 +2100,10 @@ type AdminListEntriesRequest struct {
 	// "all" returns entries from all forks in the conversation group
 	Forks string `protobuf:"bytes,5,opt,name=forks,proto3" json:"forks,omitempty"`
 	// Return entries at or before this entry in the admin-visible conversation order.
-	UpToEntryId   []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
+	UpToEntryId []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
+	// When set, return only entries with seq >= from_seq, ordered by seq ASC.
+	// Entries without a seq value are excluded.
+	FromSeq       *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2147,6 +2178,13 @@ func (x *AdminListEntriesRequest) GetUpToEntryId() []byte {
 		return x.UpToEntryId
 	}
 	return nil
+}
+
+func (x *AdminListEntriesRequest) GetFromSeq() uint32 {
+	if x != nil && x.FromSeq != nil {
+		return *x.FromSeq
+	}
+	return 0
 }
 
 type AdminGetConversationRequest struct {
@@ -3217,8 +3255,10 @@ type Entry struct {
 	ContentType string `protobuf:"bytes,6,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// For history channel entries (content_type: "history"), each block
 	// contains text and role fields.
-	Content       []*structpb.Value `protobuf:"bytes,7,rep,name=content,proto3" json:"content,omitempty"`
-	CreatedAt     string            `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	Content   []*structpb.Value `protobuf:"bytes,7,rep,name=content,proto3" json:"content,omitempty"`
+	CreatedAt string            `protobuf:"bytes,8,opt,name=created_at,json=createdAt,proto3" json:"created_at,omitempty"`
+	// Optional client-assigned sequence number, unique within the conversation.
+	Seq           *uint32 `protobuf:"varint,9,opt,name=seq,proto3,oneof" json:"seq,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -3307,6 +3347,13 @@ func (x *Entry) GetCreatedAt() string {
 		return x.CreatedAt
 	}
 	return ""
+}
+
+func (x *Entry) GetSeq() uint32 {
+	if x != nil && x.Seq != nil {
+		return *x.Seq
+	}
+	return 0
 }
 
 type ListMembershipsRequest struct {
@@ -8473,7 +8520,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\"\x9d\x01\n" +
 	"\x1eListChildConversationsResponse\x12I\n" +
 	"\rconversations\x18\x01 \x03(\v2#.memory.v1.ChildConversationSummaryR\rconversations\x120\n" +
-	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xf9\x04\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\x98\x05\n" +
 	"\x12CreateEntryRequest\x12\x17\n" +
 	"\auser_id\x18\x01 \x01(\tR\x06userId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
@@ -8485,13 +8532,15 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\bagent_id\x18\t \x01(\tH\x03R\aagentId\x88\x01\x01\x12@\n" +
 	"\x1astarted_by_conversation_id\x18\n" +
 	" \x01(\tH\x04R\x17startedByConversationId\x88\x01\x01\x122\n" +
-	"\x13started_by_entry_id\x18\v \x01(\fH\x05R\x10startedByEntryId\x88\x01\x01B\x12\n" +
+	"\x13started_by_entry_id\x18\v \x01(\fH\x05R\x10startedByEntryId\x88\x01\x01\x12\x15\n" +
+	"\x03seq\x18\f \x01(\rH\x06R\x03seq\x88\x01\x01B\x12\n" +
 	"\x10_indexed_contentB\x1c\n" +
 	"\x1a_forked_at_conversation_idB\x15\n" +
 	"\x13_forked_at_entry_idB\v\n" +
 	"\t_agent_idB\x1d\n" +
 	"\x1b_started_by_conversation_idB\x16\n" +
-	"\x14_started_by_entry_idJ\x04\b\x03\x10\x04\"r\n" +
+	"\x14_started_by_entry_idB\x06\n" +
+	"\x04_seqJ\x04\b\x03\x10\x04\"r\n" +
 	"\x12SyncEntriesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
 	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\xb3\x01\n" +
@@ -8504,26 +8553,30 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x06_entry\"r\n" +
 	"\x12AppendEntryRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
-	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\x8d\x02\n" +
+	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\xba\x02\n" +
 	"\x12ListEntriesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
 	"\fepoch_filter\x18\x03 \x01(\tR\vepochFilter\x12*\n" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
 	"\x05forks\x18\x05 \x01(\tR\x05forks\x12(\n" +
-	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01B\x11\n" +
-	"\x0f_up_to_entry_id\"s\n" +
+	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01\x12\x1e\n" +
+	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01B\x11\n" +
+	"\x0f_up_to_entry_idB\v\n" +
+	"\t_from_seq\"s\n" +
 	"\x13ListEntriesResponse\x12*\n" +
 	"\aentries\x18\x01 \x03(\v2\x10.memory.v1.EntryR\aentries\x120\n" +
-	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\x92\x02\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xbf\x02\n" +
 	"\x17AdminListEntriesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
 	"\fepoch_filter\x18\x03 \x01(\tR\vepochFilter\x12*\n" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
 	"\x05forks\x18\x05 \x01(\tR\x05forks\x12(\n" +
-	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01B\x11\n" +
-	"\x0f_up_to_entry_id\"\x83\x01\n" +
+	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01\x12\x1e\n" +
+	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01B\x11\n" +
+	"\x0f_up_to_entry_idB\v\n" +
+	"\t_from_seq\"\x83\x01\n" +
 	"\x1bAdminGetConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
 	"\rjustification\x18\x02 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
@@ -8633,7 +8686,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x12forked_at_entry_id\x18\x0e \x01(\fR\x0fforkedAtEntryId\x129\n" +
 	"\x19forked_at_conversation_id\x18\x0f \x01(\tR\x16forkedAtConversationId\x127\n" +
 	"\x18has_response_in_progress\x18\x10 \x01(\bR\x15hasResponseInProgressB\v\n" +
-	"\t_agent_id\"\x91\x02\n" +
+	"\t_agent_id\"\xb0\x02\n" +
 	"\x05Entry\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12'\n" +
 	"\x0fconversation_id\x18\x02 \x01(\tR\x0econversationId\x12\x17\n" +
@@ -8643,7 +8696,9 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\fcontent_type\x18\x06 \x01(\tR\vcontentType\x120\n" +
 	"\acontent\x18\a \x03(\v2\x16.google.protobuf.ValueR\acontent\x12\x1d\n" +
 	"\n" +
-	"created_at\x18\b \x01(\tR\tcreatedAt\"m\n" +
+	"created_at\x18\b \x01(\tR\tcreatedAt\x12\x15\n" +
+	"\x03seq\x18\t \x01(\rH\x00R\x03seq\x88\x01\x01B\x06\n" +
+	"\x04_seq\"m\n" +
 	"\x16ListMembershipsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\"\x90\x01\n" +
@@ -9126,11 +9181,12 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\n" +
 	"\x06WRITER\x10\x03\x12\n" +
 	"\n" +
-	"\x06READER\x10\x04*<\n" +
+	"\x06READER\x10\x04*I\n" +
 	"\aChannel\x12\x17\n" +
 	"\x13CHANNEL_UNSPECIFIED\x10\x00\x12\v\n" +
 	"\aHISTORY\x10\x01\x12\v\n" +
-	"\aCONTEXT\x10\x02*H\n" +
+	"\aCONTEXT\x10\x02\x12\v\n" +
+	"\aJOURNAL\x10\x03*H\n" +
 	"\fTransferRole\x12\x1d\n" +
 	"\x19TRANSFER_ROLE_UNSPECIFIED\x10\x00\x12\n" +
 	"\n" +
@@ -9622,6 +9678,7 @@ func file_memory_v1_memory_service_proto_init() {
 	file_memory_v1_memory_service_proto_msgTypes[33].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[34].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[35].OneofWrappers = []any{}
+	file_memory_v1_memory_service_proto_msgTypes[36].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[49].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[55].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[56].OneofWrappers = []any{}

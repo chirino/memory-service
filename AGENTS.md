@@ -114,7 +114,7 @@ task test:go > test.log 2>&1
 - `./site/FACTS.md`
 - `./java/spring/FACTS.md`
 
-**Pre-release**: Changes do not need backward compatibility.  Don't deprecate, just delete.  The datastores are reset frequently.
+**Data compatibility**: DB schema/data changes must preserve existing data through migrations. Do not assume datastores can be reset for breaking changes. When changing persisted structures, update the relevant schema/migration files and add or adjust tests that validate upgrade behavior where practical. API cleanup can still remove pre-release surface area when requested, but persisted data transitions need an explicit migration path.
 
 **Enhancement docs**: Proposed enhancements stay in `docs/enhancements/`. Non-proposed enhancements live in `docs/enhancements/<status>/` where status is `implemented`, `partial`, or `superseded`. When implementing work from `docs/enhancements/`, update the corresponding enhancement doc as you complete each phase. If the implementation diverges from the original design, update the doc to reflect what was actually implemented.
 

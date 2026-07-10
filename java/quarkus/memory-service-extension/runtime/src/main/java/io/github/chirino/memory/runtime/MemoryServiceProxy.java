@@ -131,6 +131,7 @@ public class MemoryServiceProxy {
                                         limit,
                                         channel,
                                         epoch,
+                                        null,
                                         forks),
                 OK,
                 "Error listing entries for history %s",

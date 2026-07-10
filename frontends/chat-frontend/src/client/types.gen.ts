@@ -113,7 +113,7 @@ export type Conversation = ConversationSummary & {
    */
   agentId?: string | null;
   /**
-   * First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
+   * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
   forkedAtEntryId?: string | null;
   /**
@@ -172,7 +172,7 @@ export type ConversationForkSummary = {
    */
   conversationId?: string;
   /**
-   * First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
+   * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for blank-slate forks that inherit no parent entries.
    */
   forkedAtEntryId?: string | null;
   /**
@@ -192,7 +192,7 @@ export type ShareConversationRequest = {
 /**
  * Logical channel of the entry within the conversation.
  */
-export type Channel = "history" | "context";
+export type Channel = "history" | "context" | "journal";
 
 export type PutMemoryRequest = {
   namespace: Array<string>;
@@ -501,6 +501,13 @@ export type Entry = {
    * contains `role` and at least one of `text`, `events`, or `attachments`.
    */
   content: Array<unknown>;
+  /**
+   * Optional client-assigned sequence number, unique within the conversation.
+   * Default listing uses seq only as a createdAt tie-breaker, with entries
+   * without seq sorted before sequenced entries at the same timestamp. Gaps
+   * are permitted.
+   */
+  seq?: number | null;
   createdAt: string;
 };
 
@@ -556,7 +563,7 @@ export type CreateEntryRequest = {
    */
   forkedAtConversationId?: string;
   /**
-   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
+   * Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
    */
   forkedAtEntryId?: string;
   /**
@@ -567,6 +574,13 @@ export type CreateEntryRequest = {
    * Optional parent entry that caused this child conversation to be started.
    */
   startedByEntryId?: string;
+  /**
+   * Optional client-assigned sequence number. Must be unique within the
+   * conversation. Must be >= 0. Returns 409 Conflict if a duplicate seq is
+   * submitted. Returns 400 Bad Request if the value is negative or exceeds
+   * 4294967295.
+   */
+  seq?: number | null;
 };
 
 export type SyncEntryResponse = {
@@ -891,6 +905,12 @@ export type $OpenApiTs = {
          * complete picture of all activity across forks.
          */
         forks?: "none" | "all";
+        /**
+         * When set, return only entries with `seq >= fromSeq`, ordered by `seq` ASC.
+         * Entries without a `seq` are excluded. When omitted the default
+         * ordering is `createdAt` ASC, `seq` ASC NULLS FIRST, then `id` ASC.
+         */
+        fromSeq?: number | null;
         limit?: number;
         /**
          * Upper-bound entry id (UUID format). When set, only entries at or
@@ -932,6 +952,10 @@ export type $OpenApiTs = {
          * Resource not found
          */
         404: ErrorResponse;
+        /**
+         * Error response
+         */
+        409: ErrorResponse;
       };
     };
   };

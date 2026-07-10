@@ -135,10 +135,11 @@ Per-user access grants scoped to a conversation group. The composite primary key
 
 ### entries
 
-Individual messages, memory records, and transcript items within a conversation.
+Individual history messages, context records, and journal items within a conversation.
 
-- `channel` categorizes the entry: `history`, `memory`, or `transcript`.
-- `epoch` supports memory compaction versioning (see [entry-data-model.md](entry-data-model.md)).
+- `channel` categorizes the entry: `history`, `context`, or `journal`.
+- `epoch` supports context compaction versioning (see [entry-data-model.md](entry-data-model.md)).
+- `history` and client-visible `journal` entries can be conversation fork anchors; `context` entries cannot.
 - `content` is stored as `BYTEA` (encrypted).
 - `indexed_content` is a plaintext copy used for full-text search.
 - `indexed_content_tsv` is a generated `tsvector` column maintained automatically by PostgreSQL, indexed with a GIN index for fast full-text queries.

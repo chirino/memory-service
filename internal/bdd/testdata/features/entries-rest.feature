@@ -108,6 +108,20 @@ Feature: Entries REST API
     }
     """
 
+  Scenario: User cannot append context entries by forging clientId query parameter
+    Given I am authenticated as user "alice"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries?clientId=test-agent" with body:
+    """
+    {
+      "channel": "context",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Forged context"}]
+    }
+    """
+    Then the response status should be 403
+    And the response should contain error code "forbidden"
+
   Scenario: Agent can list all entries including context channel
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has an entry "User entry"
@@ -115,6 +129,13 @@ Feature: Entries REST API
     When I list entries for the conversation
     Then the response status should be 200
     And the response should contain 2 entries
+
+  Scenario: User cannot list context entries by forging clientId query parameter
+    Given I am authenticated as user "alice"
+    And the conversation exists
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=context&clientId=test-agent"
+    Then the response status should be 403
+    And the response should contain error code "forbidden"
 
   Scenario: Agent can filter context entries by epoch
     Given I am authenticated as agent with API key "test-agent-key"

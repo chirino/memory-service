@@ -17,7 +17,7 @@ func TestEnrichUserEventResponseFullKeepsSummaryPayload(t *testing.T) {
 		Data:  raw,
 	}
 
-	enriched, ok := enrichUserEvent(context.Background(), nil, "alice", "full", event)
+	enriched, ok := enrichUserEvent(context.Background(), nil, "alice", nil, "full", event)
 	require.True(t, ok)
 	require.Equal(t, raw, enriched.Data)
 }

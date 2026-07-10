@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"reflect"
+	"sort"
 	"strings"
 	"time"
 
@@ -224,6 +225,14 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			var entry model.Entry
 			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, sourceConv.ConversationGroupID).First(&entry).Error; err != nil {
 				return nil, &NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
+			}
+			if entry.Channel != model.ChannelHistory && entry.Channel != model.ChannelJournal {
+				return nil, &ValidationError{Field: "forkedAtEntryId", Message: "can only fork at history or journal entries"}
+			}
+			if entry.Channel == model.ChannelJournal {
+				if clientID == "" || entry.ClientID == nil || *entry.ClientID != clientID {
+					return nil, &ForbiddenError{}
+				}
 			}
 		}
 		actualGroupID = sourceConv.ConversationGroupID
@@ -1095,7 +1104,7 @@ func (s *PostgresStore) DeleteTransfer(ctx context.Context, userID string, trans
 
 // --- Entries ---
 
-func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*registrystore.PagedEntries, error) {
 	var conv model.Conversation
 	result := s.db.WithContext(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
@@ -1119,10 +1128,10 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		effectiveChannel = *channel
 	}
 
-	if effectiveChannel == model.ChannelContext && clientID == nil {
+	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && clientID == nil {
 		return nil, &ForbiddenError{}
 	}
-	if effectiveChannel == model.ChannelContext && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
+	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
 		return nil, &ForbiddenError{}
 	}
 
@@ -1136,6 +1145,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		entries, err = registrystore.TrimEntriesToVisiblePrefix(entries, visible, upToEntryID)
 		if err != nil {
 			return nil, err
+		}
+		if fromSeq != nil {
+			entries = filterEntriesByFromSeq(entries, *fromSeq)
 		}
 		entries, cursor := paginateEntries(entries, afterEntryID, limit)
 		decryptEntries(s, entries)
@@ -1181,18 +1193,26 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err := ensureVisible(); err != nil {
 			return nil, err
 		}
-		if effectiveChannel == "" && clientID != nil {
-			// All channels (agent without filter): return all entries in ancestry order.
-			filtered = visible
+		if effectiveChannel == "" {
+			// All channels (agent without filter): include scoped channels
+			// only when they belong to the calling client.
+			filtered = filterEntriesForAllChannels(visible, clientID)
 		} else {
 			// Single channel filter (or default history).
 			filtered = visible
 			if effectiveChannel != "" {
 				tmp := make([]model.Entry, 0, len(filtered))
 				for _, entry := range filtered {
-					if entry.Channel == effectiveChannel {
-						tmp = append(tmp, entry)
+					if entry.Channel != effectiveChannel {
+						continue
 					}
+					// Journal entries are client-scoped: only return entries written by this client.
+					if effectiveChannel == model.ChannelJournal && clientID != nil {
+						if entry.ClientID == nil || *entry.ClientID != *clientID {
+							continue
+						}
+					}
+					tmp = append(tmp, entry)
 				}
 				filtered = tmp
 			}
@@ -1208,6 +1228,12 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 			return nil, err
 		}
 	}
+
+	// fromSeq: filter to seq >= fromSeq, exclude null-seq entries, sort by seq ASC.
+	if fromSeq != nil {
+		filtered = filterEntriesByFromSeq(filtered, *fromSeq)
+	}
+
 	filtered, cursor := paginateEntries(filtered, afterEntryID, limit)
 	decryptEntries(s, filtered)
 	return &registrystore.PagedEntries{Data: filtered, AfterCursor: cursor}, nil
@@ -1326,7 +1352,8 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 	}
 	if clientID != nil {
 		for _, req := range entries {
-			if model.Channel(strings.ToLower(req.Channel)) == model.ChannelContext && conv.ClientID != "" && conv.ClientID != *clientID {
+			ch := model.Channel(strings.ToLower(req.Channel))
+			if (ch == model.ChannelContext || ch == model.ChannelJournal) && conv.ClientID != "" && conv.ClientID != *clientID {
 				return nil, &ForbiddenError{}
 			}
 		}
@@ -1360,12 +1387,16 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			AgentID:             agentID,
 			Channel:             ch,
 			Epoch:               entryEpoch,
+			Seq:                 req.Seq,
 			ContentType:         req.ContentType,
 			Content:             encContent,
 			IndexedContent:      req.IndexedContent,
 			CreatedAt:           now,
 		}
 		if err := db.Create(&entry).Error; err != nil {
+			if _, ok := pgUniqueViolation(err); ok {
+				return nil, &ConflictError{Message: "duplicate seq value in this conversation"}
+			}
 			return nil, fmt.Errorf("failed to append entry: %w", err)
 		}
 		entry.Content = req.Content // return unencrypted
@@ -1549,12 +1580,16 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		AgentID:             agentID,
 		Channel:             model.ChannelContext,
 		Epoch:               &epochToUse,
+		Seq:                 entry.Seq,
 		ContentType:         entry.ContentType,
 		Content:             encContent,
 		IndexedContent:      entry.IndexedContent,
 		CreatedAt:           now,
 	}
 	if err := db.Create(&newEntry).Error; err != nil {
+		if _, ok := pgUniqueViolation(err); ok {
+			return nil, &ConflictError{Message: "duplicate seq value in this conversation"}
+		}
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
 	newEntry.Content = appendContent
@@ -2168,6 +2203,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 	if err != nil {
 		return nil, err
 	}
+	if query.FromSeq != nil {
+		filtered = filterEntriesByFromSeq(filtered, *query.FromSeq)
+	}
 
 	filtered, cursor := paginateEntries(filtered, query.AfterCursor, limit)
 	for i := range filtered {
@@ -2717,7 +2755,7 @@ func (s *PostgresStore) listEntriesForGroup(ctx context.Context, groupID uuid.UU
 	var entries []model.Entry
 	if err := s.dbFor(ctx).
 		Where("conversation_group_id = ?", groupID).
-		Order("created_at ASC").
+		Order("created_at ASC, seq ASC NULLS FIRST, id ASC").
 		Find(&entries).Error; err != nil {
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -2820,7 +2858,7 @@ func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore
 
 func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clientID *string, agentID *string, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
 	if channel == "" {
-		return entries
+		return filterEntriesForAllChannels(entries, clientID)
 	}
 
 	filtered := make([]model.Entry, 0, len(entries))
@@ -2828,7 +2866,7 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 		if entry.Channel != channel {
 			continue
 		}
-		if channel == model.ChannelContext && clientID != nil {
+		if (channel == model.ChannelContext || channel == model.ChannelJournal) && clientID != nil {
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
@@ -2837,7 +2875,7 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 	}
 
 	if channel != model.ChannelContext {
-		return filtered
+		return filtered // journal has no epoch semantics; return as-is
 	}
 
 	epoch := normalizeEpochFilter(epochFilter)
@@ -2955,6 +2993,19 @@ func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAnces
 	return result
 }
 
+func filterEntriesForAllChannels(entries []model.Entry, clientID *string) []model.Entry {
+	filtered := make([]model.Entry, 0, len(entries))
+	for _, entry := range entries {
+		if entry.Channel == model.ChannelContext || entry.Channel == model.ChannelJournal {
+			if clientID == nil || entry.ClientID == nil || *entry.ClientID != *clientID {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 func filterEntriesByEpoch(entries []model.Entry, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
 	epoch := normalizeEpochFilter(epochFilter)
 	result := make([]model.Entry, 0, len(entries))
@@ -2985,6 +3036,21 @@ func filterEntriesByEpoch(entries []model.Entry, epochFilter *registrystore.Memo
 		}
 	}
 	return result
+}
+
+// filterEntriesByFromSeq filters entries to those with seq >= fromSeq and sorts by seq ASC.
+// Entries without a seq (nil) are excluded.
+func filterEntriesByFromSeq(entries []model.Entry, fromSeq uint32) []model.Entry {
+	filtered := make([]model.Entry, 0, len(entries))
+	for _, e := range entries {
+		if e.Seq != nil && *e.Seq >= fromSeq {
+			filtered = append(filtered, e)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return *filtered[i].Seq < *filtered[j].Seq
+	})
+	return filtered
 }
 
 func paginateEntries(entries []model.Entry, afterEntryID *string, limit int) ([]model.Entry, *string) {

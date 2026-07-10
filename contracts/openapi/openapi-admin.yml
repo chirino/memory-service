@@ -754,6 +754,18 @@ paths:
             type: string
             enum: [none, all]
             default: none
+        - name: fromSeq
+          in: query
+          required: false
+          schema:
+            type: integer
+            minimum: 0
+            maximum: 4294967295
+            nullable: true
+          description: |-
+            When set, return only entries with seq >= fromSeq, ordered by seq ASC.
+            Entries without a seq value are excluded. When omitted, the default
+            ordering is created_at ASC, seq ASC NULLS FIRST, then id ASC.
       responses:
         '200':
           description: Entries.
@@ -2102,7 +2114,7 @@ components:
               format: uuid
               nullable: true
               description: >-
-                First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
+                First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
             forkedAtConversationId:
               type: string
               nullable: true
@@ -2136,6 +2148,7 @@ components:
       enum:
         - history
         - context
+        - journal
     Entry:
       type: object
       required:
@@ -2170,6 +2183,13 @@ components:
         content:
           type: array
           items: {}
+        seq:
+          type: integer
+          minimum: 0
+          nullable: true
+          description: |-
+            Optional client-assigned sequence number, unique within the conversation.
+          maximum: 4294967295
         createdAt:
           type: string
           format: date-time
@@ -2198,7 +2218,7 @@ components:
           format: uuid
           nullable: true
           description: >-
-            First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
+            First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for blank-slate forks that inherit no parent entries.
         forkedAtConversationId:
           type: string
           nullable: true

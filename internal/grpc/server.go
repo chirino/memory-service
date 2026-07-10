@@ -157,6 +157,8 @@ func mapChannel(ch model.Channel) pb.Channel {
 		return pb.Channel_HISTORY
 	case model.ChannelContext:
 		return pb.Channel_CONTEXT
+	case model.ChannelJournal:
+		return pb.Channel_JOURNAL
 	default:
 		return pb.Channel_CHANNEL_UNSPECIFIED
 	}
@@ -817,6 +819,8 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	switch req.GetChannel() {
 	case pb.Channel_CONTEXT:
 		channel = model.ChannelContext
+	case pb.Channel_JOURNAL:
+		channel = model.ChannelJournal
 	case pb.Channel_HISTORY, pb.Channel_CHANNEL_UNSPECIFIED:
 		channel = model.ChannelHistory
 	default:
@@ -831,12 +835,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	var agentIDPtr *string
 
 	var epochFilter *registrystore.MemoryEpochFilter
-	if channel == model.ChannelContext {
-		// Keep parity with REST list behavior: context reads without a client id
-		// degrade to history channel to avoid cross-agent context visibility.
-		if clientIDPtr == nil {
-			channel = model.ChannelHistory
-		}
+	// Explicit context/journal channel requests without a client id are forbidden.
+	if (channel == model.ChannelContext || channel == model.ChannelJournal) && clientIDPtr == nil {
+		return nil, status.Error(codes.PermissionDenied, "channel requires an authenticated client id")
 	}
 	if channel == model.ChannelContext {
 		filter, err := registrystore.ParseMemoryEpochFilter(req.GetEpochFilter())
@@ -847,9 +848,10 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	}
 
 	allForks := req.GetForks() == "all"
+	fromSeq := req.FromSeq
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, upToEntryID, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks)
+		return s.Store.GetEntries(txCtx, userID, convID, afterCursor, upToEntryID, limit, &channel, epochFilter, clientIDPtr, agentIDPtr, allForks, fromSeq)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -905,6 +907,9 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	case pb.Channel_CONTEXT:
 		ch := model.ChannelContext
 		query.Channel = &ch
+	case pb.Channel_JOURNAL:
+		ch := model.ChannelJournal
+		query.Channel = &ch
 	case pb.Channel_HISTORY:
 		ch := model.ChannelHistory
 		query.Channel = &ch
@@ -920,6 +925,7 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 		query.EpochFilter = filter
 	}
 	query.AllForks = req.GetForks() == "all"
+	query.FromSeq = req.FromSeq
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
 		return s.Store.AdminGetEntries(txCtx, convID, query)
@@ -1327,8 +1333,11 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		agentIDPtr = &value
 	}
 	ch := "history"
-	if entry.GetChannel() == pb.Channel_CONTEXT {
+	switch entry.GetChannel() {
+	case pb.Channel_CONTEXT:
 		ch = string(model.ChannelContext)
+	case pb.Channel_JOURNAL:
+		ch = string(model.ChannelJournal)
 	}
 
 	// Validate history channel entries
@@ -1371,12 +1380,15 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 			}
 			forkedAtEntryID = &id
 		}
-		// Try to create the fork conversation with the specified conversation ID
-		_, _ = withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
-			clientID := getClientID(ctx)
-			return s.Store.CreateConversationWithID(txCtx, userID, clientID, convID, "", nil, nil, &forkedAtConvID, forkedAtEntryID)
-		})
-		// Ignore error — conversation may already exist
+		if !convExistedBefore {
+			_, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+				clientID := getClientID(ctx)
+				return s.Store.CreateConversationWithID(txCtx, userID, clientID, convID, "", nil, nil, &forkedAtConvID, forkedAtEntryID)
+			})
+			if err != nil {
+				return nil, mapError(err)
+			}
+		}
 	}
 
 	var content json.RawMessage
@@ -1395,6 +1407,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 			ContentType:             entry.GetContentType(),
 			Channel:                 ch,
 			AgentID:                 agentIDPtr,
+			Seq:                     entry.Seq,
 			StartedByConversationID: optionalConversationID(entry.GetStartedByConversationId()),
 			StartedByEntryID:        uuidFromBytesPtr(entry.GetStartedByEntryId()),
 		}}, &clientID, agentIDPtr, nil)
@@ -1460,6 +1473,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 			ContentType: entry.GetContentType(),
 			Channel:     string(model.ChannelContext),
 			AgentID:     stringPtrIfNotEmpty(entry.GetAgentId()),
+			Seq:         entry.Seq,
 		}, clientID, stringPtrIfNotEmpty(entry.GetAgentId()))
 		if err != nil {
 			return nil, err
@@ -1547,6 +1561,10 @@ func entryToProto(e *model.Entry) *pb.Entry {
 	}
 	if e.Epoch != nil {
 		entry.Epoch = *e.Epoch
+	}
+	if e.Seq != nil {
+		v := *e.Seq
+		entry.Seq = &v
 	}
 	// Content is stored as encrypted bytes; try to parse as JSON values
 	if e.Content != nil {
@@ -4224,6 +4242,12 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 	}
 
+	grpcClientID := getClientID(stream.Context())
+	var grpcClientIDPtr *string
+	if grpcClientID != "" {
+		grpcClientIDPtr = &grpcClientID
+	}
+
 	// Parse kinds filter from request.
 	kindsFilter := make(map[string]bool)
 	for _, k := range req.GetKinds() {
@@ -4240,10 +4264,10 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		conversationFilter[id] = true
 	}
 	entryFilter := eventstream.NewEntryEventFilter(req.GetEntryChannels(), req.GetEntryContentTypes(), req.GetEntryRoles())
-	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
+	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
-			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
+			page, err := s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, grpcClientIDPtr, nil, true, nil)
 			if err != nil {
 				return err
 			}
@@ -4260,7 +4284,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 		return found, nil
 	}
-	adminEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
+	adminEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, _ *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
 			page, err := s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
@@ -4339,7 +4363,7 @@ streamLoop:
 			if adminScope {
 				outcome, err = s.replayGRPCAdminEvents(stream, outbox, sub, resumeCursor, detail, s.replayBatchSize(), kindsFilter, conversationFilter, entryFilter, adminEntryLoader, &lastCursor)
 			} else {
-				outcome, err = s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, s.replayBatchSize(), kindsFilter, conversationFilter, entryFilter, userEntryLoader, &lastCursor)
+				outcome, err = s.replayGRPCEvents(stream, outbox, sub, resumeCursor, detail, userID, grpcClientIDPtr, s.replayBatchSize(), kindsFilter, conversationFilter, entryFilter, userEntryLoader, &lastCursor)
 			}
 			if err != nil {
 				return err
@@ -4427,7 +4451,7 @@ streamLoop:
 				if adminScope {
 					enriched, enrichedOK, err = s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 				} else {
-					enriched, enrichedOK, err = s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+					enriched, enrichedOK, err = s.enrichGRPCEvent(stream.Context(), userID, grpcClientIDPtr, detail, event)
 				}
 				if err != nil {
 					return status.Error(codes.Internal, "failed to enrich event")
@@ -4479,7 +4503,7 @@ const (
 	replayGRPCRecover
 )
 
-func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, batchSize int, kindsFilter map[string]bool, conversationFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
+func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_SubscribeEventsServer, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, afterCursor, detail, userID string, clientID *string, batchSize int, kindsFilter map[string]bool, conversationFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayGRPCOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -4543,7 +4567,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if !matches {
 				continue
 			}
-			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
 			}
@@ -4587,7 +4611,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			if !matches {
 				continue
 			}
-			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, detail, event)
+			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
 				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
 			}
@@ -4720,7 +4744,7 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 	}
 }
 
-func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, clientID *string, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
 	if detail != "full" || event.Kind == "stream" {
 		return event, true, nil
 	}
@@ -4752,8 +4776,9 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID, detail 
 		if !ok {
 			return event, true, nil
 		}
+		channel := grpcChannelFromEventData(data)
 		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-			return s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
+			return s.Store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, clientID, nil, true, nil)
 		})
 		if err != nil {
 			return event, false, nil
@@ -4905,6 +4930,24 @@ func decodeGRPCConversationIDField(data map[string]any, field string) (string, b
 		return "", false
 	}
 	return string(id), true
+}
+
+func grpcChannelFromEventData(data map[string]any) *model.Channel {
+	raw, _ := data["entry_channel"].(string)
+	switch model.Channel(strings.ToLower(strings.TrimSpace(raw))) {
+	case model.ChannelHistory:
+		ch := model.ChannelHistory
+		return &ch
+	case model.ChannelContext:
+		ch := model.ChannelContext
+		return &ch
+	case model.ChannelJournal:
+		ch := model.ChannelJournal
+		return &ch
+	default:
+		ch := model.ChannelHistory
+		return &ch
+	}
 }
 
 func grpcMapKeys(items map[string]bool) []string {

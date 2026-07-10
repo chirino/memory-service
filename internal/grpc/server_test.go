@@ -17,7 +17,7 @@ func TestEnrichGRPCEventResponseFullKeepsSummaryPayload(t *testing.T) {
 		Data:  raw,
 	}
 
-	enriched, ok, err := (&EventStreamServer{}).enrichGRPCEvent(context.Background(), "alice", "full", event)
+	enriched, ok, err := (&EventStreamServer{}).enrichGRPCEvent(context.Background(), "alice", nil, "full", event)
 	require.NoError(t, err)
 	require.True(t, ok)
 	require.Equal(t, raw, enriched.Data)

@@ -173,6 +173,11 @@ func writeSSEPhaseEvent(c *gin.Context, phase string) {
 // HandleSSEEvents streams real-time events to an authenticated agent user via SSE.
 func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, cfg *config.Config) {
 	userID := security.GetUserID(c)
+	rawClientID := security.GetClientID(c)
+	var clientIDPtr *string
+	if rawClientID != "" {
+		clientIDPtr = &rawClientID
+	}
 	after := strings.TrimSpace(c.Query("after"))
 	if after != "" && !cfg.OutboxEnabled {
 		c.JSON(http.StatusNotImplemented, gin.H{
@@ -282,8 +287,8 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 		}
 	}
 	entryFilter := eventstream.EntryEventFilterFromQuery(c.Request.URL.Query())
-	entryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
-		return readEntryDetail(ctx, store, userID, conversationID, entryID)
+	entryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
+		return readEntryDetail(ctx, store, userID, clientIDPtr, conversationID, entryID, channel)
 	}
 
 	// Set SSE headers.
@@ -329,7 +334,7 @@ connectionLoop:
 
 		if resumeCursor != "" {
 			writeSSEPhaseEvent(c, "replay")
-			outcome := replaySSEEvents(c, store, userID, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, entryFilter, entryLoader, &lastCursor, func(event registryeventbus.Event) bool {
+			outcome := replaySSEEvents(c, store, userID, clientIDPtr, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, entryFilter, entryLoader, &lastCursor, func(event registryeventbus.Event) bool {
 				if event.Internal && event.Kind == "session" {
 					sessionTracker.handleSessionEvent(event)
 					return true
@@ -427,7 +432,7 @@ connectionLoop:
 				if event.OutboxCursor != "" {
 					lastCursor = event.OutboxCursor
 				}
-				if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, detail, event); ok {
+				if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, clientIDPtr, detail, event); ok {
 					writeSSEEvent(c, enriched)
 				}
 			}
@@ -435,7 +440,7 @@ connectionLoop:
 	}
 }
 
-func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) replayOutcome {
+func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID string, clientID *string, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) replayOutcome {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
@@ -500,7 +505,7 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, de
 			if !matches {
 				continue
 			}
-			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, detail, event); ok {
+			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, clientID, detail, event); ok {
 				writeSSEEvent(c, enriched)
 			}
 		}
@@ -535,7 +540,7 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID, de
 			if !matches {
 				continue
 			}
-			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, detail, event); ok {
+			if enriched, ok := enrichUserEvent(c.Request.Context(), store, userID, clientID, detail, event); ok {
 				writeSSEEvent(c, enriched)
 			}
 		default:
@@ -555,7 +560,7 @@ func mapKeys(items map[string]bool) []string {
 	return keys
 }
 
-func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userID, detail string, event registryeventbus.Event) (registryeventbus.Event, bool) {
+func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userID string, clientID *string, detail string, event registryeventbus.Event) (registryeventbus.Event, bool) {
 	if detail != "full" || event.Kind == "stream" {
 		return event, true
 	}
@@ -590,7 +595,8 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 		if !ok {
 			return event, true
 		}
-		entry, err := readEntryDetail(ctx, store, userID, conversationID, entryID)
+		channel := channelFromEventData(data)
+		entry, err := readEntryDetail(ctx, store, userID, clientID, conversationID, entryID, channel)
 		if err != nil {
 			return event, false
 		}
@@ -615,11 +621,11 @@ func readConversationDetail(ctx context.Context, store registrystore.MemoryStore
 	return conv, err
 }
 
-func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userID string, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
+func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userID string, clientID *string, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
-		result, err = store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, nil, nil, nil, nil, true)
+		result, err = store.GetEntries(txCtx, userID, conversationID, nil, nil, 5000, channel, nil, clientID, nil, true, nil)
 		return err
 	})
 	if err != nil {
@@ -685,6 +691,24 @@ func decodeConversationIDField(data map[string]any, field string) (string, bool)
 		return "", false
 	}
 	return string(value), true
+}
+
+func channelFromEventData(data map[string]any) *model.Channel {
+	raw, _ := data["entry_channel"].(string)
+	switch model.Channel(strings.ToLower(strings.TrimSpace(raw))) {
+	case model.ChannelHistory:
+		ch := model.ChannelHistory
+		return &ch
+	case model.ChannelContext:
+		ch := model.ChannelContext
+		return &ch
+	case model.ChannelJournal:
+		ch := model.ChannelJournal
+		return &ch
+	default:
+		ch := model.ChannelHistory
+		return &ch
+	}
 }
 
 func loadUserReplayGroups(ctx context.Context, store registrystore.MemoryStore, userID string) (map[uuid.UUID]bool, error) {

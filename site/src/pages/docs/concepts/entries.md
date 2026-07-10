@@ -10,11 +10,11 @@ Entries are the individual units of communication within a conversation. Memory 
 
 Entries are organized into logical channels within a conversation:
 
-| Channel      | Description                                               |
-| ------------ | --------------------------------------------------------- |
-| `history`    | User-visible conversation between users and agents        |
-| `context`    | Agent context entries, scoped to the calling client ID    |
-| `transcript` | Transcript index entries (not visible in agent API lists) |
+| Channel   | Description                                                            |
+| --------- | ---------------------------------------------------------------------- |
+| `history` | User-visible conversation between users and agents                     |
+| `context` | Agent context entries, scoped to the authenticated client ID and epoch |
+| `journal` | Opaque agent execution records, scoped to the authenticated client ID  |
 
 ## Entry Structure
 
@@ -28,6 +28,7 @@ Each entry contains:
   "channel": "history",
   "contentType": "history",
   "epoch": null,
+  "seq": 42,
   "content": [
     {
       "role": "USER",
@@ -38,16 +39,17 @@ Each entry contains:
 }
 ```
 
-| Property         | Description                                          |
-| ---------------- | ---------------------------------------------------- |
-| `id`             | Unique entry identifier                              |
-| `conversationId` | ID of the parent conversation                        |
-| `userId`         | Human user associated with the entry                 |
-| `channel`        | Logical channel (`history`, `context`, `transcript`) |
-| `contentType`    | Type of content (e.g., `history`, `history/lc4j`)    |
-| `epoch`          | Memory epoch number (for `context` channel entries)  |
-| `content`        | Array of content blocks (opaque, agent-defined)      |
-| `createdAt`      | Creation timestamp                                   |
+| Property         | Description                                                           |
+| ---------------- | --------------------------------------------------------------------- |
+| `id`             | Unique entry identifier                                               |
+| `conversationId` | ID of the parent conversation                                         |
+| `userId`         | Human user associated with the entry                                  |
+| `channel`        | Logical channel (`history`, `context`, or `journal`)                  |
+| `contentType`    | Type of content (e.g., `history`, `history/lc4j`, or `agent/step`)    |
+| `epoch`          | Context epoch number (for `context` channel entries)                  |
+| `seq`            | Optional sequence number, unique within the conversation when present |
+| `content`        | Array of content blocks (opaque, agent-defined)                       |
+| `createdAt`      | Creation timestamp                                                    |
 
 ## Adding Entries
 
@@ -78,7 +80,9 @@ Response:
 
 ## Entry Ordering
 
-Entries are returned ordered by creation time (`createdAt`). Use cursor-based pagination with the `after` parameter to retrieve entries in batches.
+Entries are returned ordered by creation time (`createdAt`). When multiple entries have the same timestamp, entries without `seq` sort first, followed by sequenced entries in ascending `seq`, then `id`. Use cursor-based pagination with the `after` parameter to retrieve entries in batches.
+
+Clients that need deterministic replay across channels can set `seq` when appending entries. `seq` values are unsigned 32-bit integers and must be unique within a conversation. When listing entries with `fromSeq`, Memory Service returns entries with `seq >= fromSeq`, excludes entries without `seq`, and orders the response by `seq` ascending.
 
 ## Retrieving Entries
 
@@ -110,8 +114,29 @@ Query parameters:
 
 - `limit` - Maximum entries to return (default: 50)
 - `after` - Cursor for pagination (entry ID)
-- `channel` - Filter by channel: `history` (default), `memory`, or `transcript`
+- `fromSeq` - Return sequenced entries with `seq >= fromSeq`
+- `channel` - Filter by channel: `history` (default for end-user reads), `context`, or `journal`
 - `epoch` - For `context` channel: `latest`, `all`, or a specific epoch number
+
+Explicit `channel=context` and `channel=journal` reads require an authenticated client identity. User-only requests without a client identity default to `history`.
+
+## Journal Entries
+
+Use `journal` for structured execution records that should not become user-visible chat history: tool calls, model calls, planner steps, or other replay/debug state. Journal entries are client-scoped like context entries, but they are not epoch-scoped.
+
+```bash
+curl -X POST http://localhost:8080/v1/conversations/{conversationId}/entries \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <agent-token>" \
+  -d '{
+    "channel": "journal",
+    "contentType": "agent/step",
+    "seq": 43,
+    "content": [{"stepType": "tool_call", "tool": "search"}]
+  }'
+```
+
+`indexedContent` is accepted only on `history` entries. Journal and context entries are not indexed for search.
 
 ## Context Epochs
 

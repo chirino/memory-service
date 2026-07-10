@@ -74,6 +74,7 @@ enum Channel {
   CHANNEL_UNSPECIFIED = 0;
   HISTORY = 1;
   CONTEXT = 2;
+  JOURNAL = 3;
 }
 
 message ConversationSummary {
@@ -113,7 +114,9 @@ message Conversation {
   string last_message_preview = 6;
   AccessLevel access_level = 7;
   reserved 8; // conversation_group_id removed
-  // First parent entry excluded by this fork (empty if root or blank-slate fork)
+  // First parent entry excluded by this fork. Fork anchors may be history
+  // entries or same-client-visible journal entries; context entries are
+  // invalid anchors. Empty if root or blank-slate fork.
   bytes forked_at_entry_id = 9;
   // Conversation ID from which this was forked (empty if root)
   string forked_at_conversation_id = 10;
@@ -136,7 +139,9 @@ message ConversationForkSummary {
   // Forked conversation identifier
   string conversation_id = 1;
   reserved 2; // conversation_group_id removed
-  // First parent entry excluded by this fork
+  // First parent entry excluded by this fork. Fork anchors may be history
+  // entries or same-client-visible journal entries; context entries are
+  // invalid anchors.
   bytes forked_at_entry_id = 3;
   // Conversation ID from which this was forked
   string forked_at_conversation_id = 4;
@@ -218,13 +223,17 @@ message CreateEntryRequest {
   optional string indexed_content = 6;
   // Fork metadata: if the target conversation doesn't exist yet, auto-create
   // it as a fork of forked_at_conversation_id. Optionally provide
-  // forked_at_entry_id to fork at a specific point. When unset, all source
-  // entries are excluded and the new entry become the first entry in the fork.
+  // forked_at_entry_id to fork at a specific point. Valid fork anchors are
+  // history entries and same-client-visible journal entries; context entries
+  // are invalid anchors. When unset, all source entries are excluded and the
+  // new entry becomes the first entry in the fork.
   optional string forked_at_conversation_id = 7;
   optional bytes forked_at_entry_id = 8;          // UUID as 16-byte big-endian
   optional string agent_id = 9;
   optional string started_by_conversation_id = 10;
   optional bytes started_by_entry_id = 11;
+  // Optional client-assigned sequence number, unique within the conversation.
+  optional uint32 seq = 12;
 }
 
 message SyncEntriesRequest {
@@ -262,6 +271,9 @@ message ListEntriesRequest {
   // Return entries at or before this entry in the caller-visible conversation order.
   // Useful with channel=CONTEXT and epoch_filter to reconstruct context as of a history entry.
   optional bytes up_to_entry_id = 6;
+  // When set, return only entries with seq >= from_seq, ordered by seq ASC.
+  // Entries without a seq value are excluded.
+  optional uint32 from_seq = 7;
 }
 
 message ListEntriesResponse {
@@ -280,6 +292,9 @@ message AdminListEntriesRequest {
   string forks = 5;
   // Return entries at or before this entry in the admin-visible conversation order.
   optional bytes up_to_entry_id = 6;
+  // When set, return only entries with seq >= from_seq, ordered by seq ASC.
+  // Entries without a seq value are excluded.
+  optional uint32 from_seq = 7;
 }
 
 message AdminGetConversationRequest {
@@ -432,6 +447,8 @@ message Entry {
   // contains text and role fields.
   repeated google.protobuf.Value content = 7;
   string created_at = 8;
+  // Optional client-assigned sequence number, unique within the conversation.
+  optional uint32 seq = 9;
 }
 
 message ListMembershipsRequest {

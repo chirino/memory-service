@@ -15,6 +15,7 @@ type Channel string
 const (
 	ChannelHistory Channel = "history"
 	ChannelContext Channel = "context"
+	ChannelJournal Channel = "journal"
 )
 
 // AccessLevel represents the level of access a user has to a conversation group.
@@ -116,6 +117,7 @@ type Entry struct {
 	AgentID             *string    `json:"agentId,omitempty"`
 	Channel             Channel    `json:"channel"                  gorm:"not null"`
 	Epoch               *int64     `json:"epoch,omitempty"`
+	Seq                 *uint32    `json:"seq,omitempty"`
 	ContentType         string     `json:"contentType"              gorm:"not null"`
 	Content             []byte     `json:"-"                        gorm:"type:bytea;not null"` // encrypted
 	IndexedContent      *string    `json:"indexedContent,omitempty"`

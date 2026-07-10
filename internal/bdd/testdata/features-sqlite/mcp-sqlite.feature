@@ -19,7 +19,7 @@ Feature: MCP server modes with SQLite
     And the sqlite database "embedded.db" should contain an entry with text "Saved through the embedded MCP server."
 
   Scenario: save_session_notes persists data through mcp remote
-    Given `memory-service mcp remote` is running against the scenario server with API key "test-key" and bearer token "alice"
+    Given `memory-service mcp remote` is running against the scenario server with API key "test-agent-key" and bearer token "alice"
     When I call the MCP tool "save_session_notes" with arguments:
     """
     {
@@ -34,7 +34,7 @@ Feature: MCP server modes with SQLite
     And the sqlite database "remote.db" should contain an entry with text "Saved through the remote MCP bridge."
 
   Scenario: mcp remote returns an auth failure when no bearer token is configured
-    Given `memory-service mcp remote` is running against the scenario server with API key "test-key"
+    Given `memory-service mcp remote` is running against the scenario server with API key "test-agent-key"
     When I call the MCP tool "list_sessions" with arguments:
     """
     {

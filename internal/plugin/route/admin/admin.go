@@ -434,6 +434,15 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		}
 		query.EpochFilter = filter
 	}
+	if fromSeqStr := c.Query("fromSeq"); fromSeqStr != "" {
+		parsed, err := strconv.ParseUint(fromSeqStr, 10, 32)
+		if err != nil || parsed > 4294967295 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fromSeq: must be an integer between 0 and 4294967295"})
+			return
+		}
+		v := uint32(parsed)
+		query.FromSeq = &v
+	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		result, err := store.AdminGetEntries(ctx, conversationID, query)

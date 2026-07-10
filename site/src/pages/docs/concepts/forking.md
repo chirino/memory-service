@@ -4,11 +4,11 @@ title: Conversation Forking
 description: Create branches in conversation history with forking.
 ---
 
-Conversation forking allows you to create a new conversation branch from any point in an existing conversation, preserving the original while exploring alternative paths.
+Conversation forking allows you to create a new conversation branch from an allowed entry boundary in an existing conversation, preserving the original while exploring alternative paths.
 
 ## What is Forking?
 
-Forking creates a copy of a conversation up to, but not including, the specified user entry. Forking allows you to:
+Forking creates a branch of a conversation up to, but not including, the specified fork-point entry. User-facing chat flows usually fork at a `history` entry. Trusted runtime clients can also fork at a client-visible `journal` entry for replay and debugging. Forking allows you to:
 
 - **Explore alternatives** - Try different responses or approaches
 - **Debug issues** - Isolate problematic conversation states
@@ -28,6 +28,13 @@ The forked conversation:
 A fork is created implicitly when you append the first entry to a new conversation with fork metadata. Include `forkedAtConversationId` and `forkedAtEntryId` in the entry request body — if the target conversation doesn't exist yet, the service auto-creates it as a fork.
 
 `forkedAtEntryId` is the first parent entry to exclude from the new branch. If you omit it, the fork is a blank slate that inherits no parent entries.
+
+Valid fork points are:
+
+- `history` entries, usually the user message a chat UI is replacing.
+- `journal` entries, when the authenticated client can read that journal entry.
+
+`context` entries are not valid fork points because they are derived, epoch-scoped state rather than replayable event boundaries.
 
 ### Using the REST API
 

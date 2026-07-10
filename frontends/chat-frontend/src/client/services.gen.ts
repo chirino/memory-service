@@ -183,6 +183,9 @@ export class ConversationsService {
    * are `latest`, `all`, or a numeric epoch identifier. Defaults to
    * `latest` when not provided. The epoch selection is scoped to the
    * calling client id.
+   * @param data.fromSeq When set, return only entries with `seq >= fromSeq`, ordered by `seq` ASC.
+   * Entries without a `seq` are excluded. When omitted the default
+   * ordering is `createdAt` ASC, `seq` ASC NULLS FIRST, then `id` ASC.
    * @param data.forks Controls which fork entries to include. `none` (default) follows the
    * fork ancestry path, returning entries from the target conversation
    * and its ancestors up to fork points. `all` returns entries from all
@@ -210,6 +213,7 @@ export class ConversationsService {
         limit: data.limit,
         channel: data.channel,
         epoch: data.epoch,
+        fromSeq: data.fromSeq,
         forks: data.forks,
       },
       errors: {
@@ -249,6 +253,7 @@ export class ConversationsService {
       mediaType: "application/json",
       errors: {
         404: "Resource not found",
+        409: "Error response",
       },
     });
   }

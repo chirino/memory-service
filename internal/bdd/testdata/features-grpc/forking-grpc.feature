@@ -81,6 +81,147 @@ Feature: Conversation Forking gRPC API
     And the gRPC response field "forkedAtEntryId" should be "${secondEntryId}"
     And the gRPC response field "forkedAtConversationId" should be "${parentConversationId}"
 
+  Scenario: Same client can fork at a journal entry via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: JOURNAL
+      content_type: "agent/step"
+      content {
+        struct_value {
+          fields {
+            key: "stepType"
+            value { string_value: "llm_call" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "journalEntryId" to the gRPC response field "id"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02" | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+          fields {
+            key: "text"
+            value { string_value: "Fork after journal step" }
+          }
+        }
+      }
+      forked_at_conversation_id: "${parentConversationId | uuid_to_hex_string}"
+      forked_at_entry_id: "${journalEntryId | uuid_to_hex_string}"
+    }
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "ConversationsService/GetConversation" with body:
+    """
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02" | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkedAtEntryId" should be "${journalEntryId}"
+    And the gRPC response field "forkedAtConversationId" should be "${parentConversationId}"
+
+  Scenario: Different client cannot fork at another client's journal entry via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: JOURNAL
+      content_type: "agent/step"
+      content {
+        struct_value {
+          fields {
+            key: "stepType"
+            value { string_value: "tool_call" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "journalEntryId" to the gRPC response field "id"
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee03" | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+          fields {
+            key: "text"
+            value { string_value: "Unauthorized fork" }
+          }
+        }
+      }
+      forked_at_conversation_id: "${parentConversationId | uuid_to_hex_string}"
+      forked_at_entry_id: "${journalEntryId | uuid_to_hex_string}"
+    }
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+
+  Scenario: Context entries cannot be fork anchors via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: CONTEXT
+      content_type: "test.v1"
+      content {
+        string_value: "Context fork point"
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "contextEntryId" to the gRPC response field "id"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee04" | uuid_to_hex_string}"
+    entry {
+      user_id: "alice"
+      channel: HISTORY
+      content_type: "history"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+          fields {
+            key: "text"
+            value { string_value: "Invalid context fork" }
+          }
+        }
+      }
+      forked_at_conversation_id: "${parentConversationId | uuid_to_hex_string}"
+      forked_at_entry_id: "${contextEntryId | uuid_to_hex_string}"
+    }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: List forks for a conversation via gRPC
     When I list entries for the conversation
     And set "secondEntryId" to the json response field "data[1].id"

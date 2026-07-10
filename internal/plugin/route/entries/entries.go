@@ -62,11 +62,9 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	upToEntryID := queryPtr(c, "upToEntryId")
 	limit := queryInt(c, "limit", 50)
 
-	clientIDParam := queryPtr(c, "clientId")
-	if clientIDParam == nil {
-		if clientID := security.GetClientID(c); clientID != "" {
-			clientIDParam = &clientID
-		}
+	var clientIDParam *string
+	if clientID := security.GetClientID(c); clientID != "" {
+		clientIDParam = &clientID
 	}
 	agentIDParam := queryPtr(c, "agentId")
 
@@ -75,7 +73,7 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	channelQueryRaw := strings.TrimSpace(strings.ToLower(c.Query("channel")))
 	if channelQueryRaw != "" {
 		switch model.Channel(channelQueryRaw) {
-		case model.ChannelHistory, model.ChannelContext:
+		case model.ChannelHistory, model.ChannelContext, model.ChannelJournal:
 			ch := model.Channel(channelQueryRaw)
 			channelPtr = &ch
 		default:
@@ -84,17 +82,18 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 
-	// Java parity: when no channel specified and no clientId, default to history only.
-	// When clientId is present (agent), show all channels (nil = no filter).
+	// Java parity: when no channel is specified and no authenticated client id
+	// exists, default to history only. Authenticated agent callers see all channels.
 	if channelPtr == nil && clientIDParam == nil {
 		ch := model.ChannelHistory
 		channelPtr = &ch
 	}
 
-	// Context channel access is client-scoped; without a client id, force to history.
-	if channelPtr != nil && *channelPtr == model.ChannelContext && clientIDParam == nil {
-		ch := model.ChannelHistory
-		channelPtr = &ch
+	// Explicit context/journal channel requests without a client id are forbidden.
+	// (The implicit default-to-history path above already handled the no-channel-no-client case.)
+	if channelPtr != nil && (*channelPtr == model.ChannelContext || *channelPtr == model.ChannelJournal) && clientIDParam == nil {
+		c.JSON(http.StatusForbidden, gin.H{"code": "forbidden", "error": "channel requires an authenticated client id"})
+		return
 	}
 	allForks := strings.EqualFold(c.DefaultQuery("forks", "none"), "all")
 
@@ -108,8 +107,20 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		epochFilter = filter
 	}
 
+	// Parse fromSeq parameter.
+	var fromSeq *uint32
+	if fromSeqStr := c.Query("fromSeq"); fromSeqStr != "" {
+		parsed, err := strconv.ParseUint(fromSeqStr, 10, 32)
+		if err != nil || parsed > 4294967295 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid fromSeq: must be an integer between 0 and 4294967295"})
+			return
+		}
+		v := uint32(parsed)
+		fromSeq = &v
+	}
+
 	if err := routetx.MemoryRead(c, store, func(context.Context) error {
-		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, upToEntryID, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks)
+		result, err := store.GetEntries(c.Request.Context(), userID, convID, afterCursor, upToEntryID, limit, channelPtr, epochFilter, clientIDParam, agentIDParam, allForks, fromSeq)
 		if err != nil {
 			return err
 		}
@@ -136,6 +147,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		Channel                 string          `json:"channel"`
 		Epoch                   *int64          `json:"epoch"`
 		IndexedContent          *string         `json:"indexedContent,omitempty"`
+		Seq                     *uint32         `json:"seq,omitempty"`
 		Role                    *string         `json:"role,omitempty"`
 		UserID                  *string         `json:"userId,omitempty"`
 		AgentID                 *string         `json:"agentId,omitempty"`
@@ -156,6 +168,7 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			ContentType:             req.ContentType,
 			Channel:                 req.Channel,
 			IndexedContent:          req.IndexedContent,
+			Seq:                     req.Seq,
 			Role:                    req.Role,
 			UserID:                  req.UserID,
 			AgentID:                 req.AgentID,
@@ -179,12 +192,9 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		}
 	}
 
-	clientID := queryPtr(c, "clientId")
-	if clientID == nil {
-		cid := security.GetClientID(c)
-		if cid != "" {
-			clientID = &cid
-		}
+	var clientID *string
+	if cid := security.GetClientID(c); cid != "" {
+		clientID = &cid
 	}
 	agentID := queryPtr(c, "agentId")
 
@@ -215,12 +225,12 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			agentID = entry.AgentID
 		}
 
-		// Context channel requires clientID.
-		if ch == model.ChannelContext && clientID == nil {
+		// Context and journal channels require clientID.
+		if (ch == model.ChannelContext || ch == model.ChannelJournal) && clientID == nil {
 			c.JSON(http.StatusForbidden, gin.H{
 				"code":    "forbidden",
-				"error":   "client id is required for context channel",
-				"details": gin.H{"message": "client id is required for context channel"},
+				"error":   "client id is required for context/journal channel",
+				"details": gin.H{"message": "client id is required for context/journal channel"},
 			})
 			return
 		}
@@ -239,8 +249,8 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 			return
 		}
 
-		// Context channel cannot have indexedContent.
-		if ch == model.ChannelContext && entry.IndexedContent != nil {
+		// Only history channel allows indexedContent.
+		if ch != model.ChannelHistory && entry.IndexedContent != nil {
 			c.JSON(http.StatusBadRequest, gin.H{
 				"error":   "validation_error",
 				"details": gin.H{"message": "indexedContent is only allowed on history channel"},

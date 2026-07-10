@@ -129,9 +129,9 @@ func (m *metricsStore) DeleteTransfer(ctx context.Context, userID string, transf
 	return m.inner.DeleteTransfer(ctx, userID, transferID)
 }
 
-func (m *metricsStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *store.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*store.PagedEntries, error) {
+func (m *metricsStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *store.MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*store.PagedEntries, error) {
 	defer observe("get_entries", time.Now())
-	return m.inner.GetEntries(ctx, userID, conversationID, afterEntryID, upToEntryID, limit, channel, epochFilter, clientID, agentID, allForks)
+	return m.inner.GetEntries(ctx, userID, conversationID, afterEntryID, upToEntryID, limit, channel, epochFilter, clientID, agentID, allForks, fromSeq)
 }
 
 func (m *metricsStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []store.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {

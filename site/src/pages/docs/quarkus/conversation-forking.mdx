@@ -35,6 +35,8 @@ Forks are created implicitly when the first entry is appended to a new conversat
 
 **Why**: Forking is initiated at the history entry level, not at the agent level. When the first entry in a new conversation includes `forkedAtConversationId` and `forkedAtEntryId` fields, the Memory Service automatically establishes the fork relationship and replays the parent conversation's memory up to the fork point.
 
+This guide keeps the example history-based. Trusted runtime clients can also fork at client-visible `journal` entries for replay/debug workflows; see [Forking](/docs/concepts/forking/) for the channel rules.
+
 ### Listing Forks
 
 Add this method to `ConversationsResource.java` to list forks for a conversation:

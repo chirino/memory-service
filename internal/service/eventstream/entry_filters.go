@@ -17,7 +17,7 @@ type EntryEventFilter struct {
 	roles        map[string]struct{}
 }
 
-type EntryDetailLoader func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error)
+type EntryDetailLoader func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error)
 
 func NewEntryEventFilter(channels, contentTypes, roles []string) EntryEventFilter {
 	filter := EntryEventFilter{
@@ -185,7 +185,27 @@ func loadEntryForEvent(ctx context.Context, event registryeventbus.Event, load E
 	if !ok {
 		return nil, nil
 	}
-	return load(ctx, conversationID, entryID)
+	return load(ctx, conversationID, entryID, channelFromEventData(data))
+}
+
+func channelFromEventData(data map[string]any) *model.Channel {
+	raw, _ := data["entry_channel"].(string)
+	switch model.Channel(strings.ToLower(strings.TrimSpace(raw))) {
+	case model.ChannelHistory:
+		ch := model.ChannelHistory
+		return &ch
+	case model.ChannelContext:
+		ch := model.ChannelContext
+		return &ch
+	case model.ChannelJournal:
+		ch := model.ChannelJournal
+		return &ch
+	default:
+		// Older entry events may lack channel metadata. Use the least-privileged
+		// channel so detail loading cannot accidentally expose scoped channels.
+		ch := model.ChannelHistory
+		return &ch
+	}
 }
 
 func decodeEventDataMap(raw any) (map[string]any, bool) {

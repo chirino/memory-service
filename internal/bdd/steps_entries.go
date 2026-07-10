@@ -1,6 +1,7 @@
 package bdd
 
 import (
+	"context"
 	"fmt"
 	"time"
 
@@ -18,6 +19,7 @@ func init() {
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)"$`, e.theConversationHasAnEntryInChannel)
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)" with contentType "([^"]*)"$`, e.theConversationHasAnEntryInChannelWithContentType)
 		ctx.Step(`^the conversation has a context entry "([^"]*)" with epoch (\d+) and contentType "([^"]*)"$`, e.theConversationHasAMemoryEntryWithEpochAndContentType)
+		ctx.Step(`^the conversation entries share the same createdAt timestamp$`, e.theConversationEntriesShareTheSameCreatedAtTimestamp)
 
 		// When steps - entry operations
 		ctx.Step(`^I list entries for the conversation$`, e.iListEntriesForTheConversation)
@@ -149,6 +151,14 @@ func (e *entrySteps) theConversationHasAMemoryEntryWithEpochAndContentType(conte
 	}
 	time.Sleep(2 * time.Millisecond)
 	return nil
+}
+
+func (e *entrySteps) theConversationEntriesShareTheSameCreatedAtTimestamp() error {
+	convID, err := e.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	return e.s.TestDB().SetConversationEntriesCreatedAt(context.Background(), convID, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
 }
 
 func (e *entrySteps) iListEntriesForTheConversation() error {

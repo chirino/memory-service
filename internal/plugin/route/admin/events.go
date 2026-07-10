@@ -98,7 +98,7 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 		}
 	}
 	entryFilter := eventstream.EntryEventFilterFromQuery(c.Request.URL.Query())
-	entryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID) (*model.Entry, error) {
+	entryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, _ *model.Channel) (*model.Entry, error) {
 		return readAdminEntryDetail(ctx, store, conversationID, entryID)
 	}
 

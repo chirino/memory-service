@@ -104,10 +104,17 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 		},
 		"entries": {
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "conversation_id", Value: 1}}},
-			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}}},
+			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "channel", Value: 1}}},
 			{Keys: bson.D{{Key: "indexed_at", Value: 1}}},
 			{Keys: bson.D{{Key: "indexed_content", Value: "text"}}},
+			{
+				Keys: bson.D{{Key: "conversation_id", Value: 1}, {Key: "seq", Value: 1}},
+				Options: options.Index().
+					SetUnique(true).
+					SetName("unique_entry_conversation_seq").
+					SetPartialFilterExpression(bson.M{"seq": bson.M{"$exists": true}}),
+			},
 		},
 		"conversation_ownership_transfers": {
 			{Keys: bson.D{{Key: "from_user_id", Value: 1}}},
@@ -157,6 +164,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 			}
 		}
 	}
+	_ = db.Collection("entries").Indexes().DropOne(ctx, "conversation_group_id_1_created_at_1")
 
 	log.Info("MongoDB schema migration complete")
 	return nil
@@ -252,6 +260,7 @@ type entryDoc struct {
 	AgentID             *string    `bson:"agent_id,omitempty"`
 	Channel             string     `bson:"channel"`
 	Epoch               *int64     `bson:"epoch,omitempty"`
+	Seq                 *uint32    `bson:"seq,omitempty"`
 	ContentType         string     `bson:"content_type"`
 	Content             []byte     `bson:"content"`
 	IndexedContent      *string    `bson:"indexed_content,omitempty"`
@@ -271,6 +280,7 @@ type entrySearchDoc struct {
 	AgentID             *string    `bson:"agent_id,omitempty"`
 	Channel             string     `bson:"channel"`
 	Epoch               *int64     `bson:"epoch,omitempty"`
+	Seq                 *uint32    `bson:"seq,omitempty"`
 	ContentType         string     `bson:"content_type"`
 	Content             []byte     `bson:"content"`
 	IndexedContent      *string    `bson:"indexed_content,omitempty"`
@@ -290,6 +300,7 @@ func (d entrySearchDoc) asEntryDoc() entryDoc {
 		AgentID:             d.AgentID,
 		Channel:             d.Channel,
 		Epoch:               d.Epoch,
+		Seq:                 d.Seq,
 		ContentType:         d.ContentType,
 		Content:             d.Content,
 		IndexedContent:      d.IndexedContent,
@@ -477,8 +488,14 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 			if err != nil {
 				return nil, &registrystore.NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
 			}
-			if model.Channel(entry.Channel) != model.ChannelHistory {
-				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "can only fork at HISTORY entries"}
+			entryChannel := model.Channel(entry.Channel)
+			if entryChannel != model.ChannelHistory && entryChannel != model.ChannelJournal {
+				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "can only fork at history or journal entries"}
+			}
+			if entryChannel == model.ChannelJournal {
+				if clientID == "" || entry.ClientID == nil || *entry.ClientID != clientID {
+					return nil, &registrystore.ForbiddenError{}
+				}
 			}
 		}
 		actualGroupID = sourceConv.ConversationGroupID
@@ -1394,7 +1411,7 @@ func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transfer
 
 // --- Entries ---
 
-func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool) (*registrystore.PagedEntries, error) {
+func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *registrystore.MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*registrystore.PagedEntries, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{"_id": string(conversationID)}).Decode(&conv)
 	if err != nil {
@@ -1413,10 +1430,10 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if channel != nil {
 		effectiveChannel = *channel
 	}
-	if effectiveChannel == model.ChannelContext && clientID == nil {
+	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && clientID == nil {
 		return nil, &registrystore.ForbiddenError{}
 	}
-	if effectiveChannel == model.ChannelContext && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
+	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
 		return nil, &registrystore.ForbiddenError{}
 	}
 
@@ -1429,6 +1446,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		filtered, err = trimEntryDocsToVisiblePrefix(filtered, docs, upToEntryID)
 		if err != nil {
 			return nil, err
+		}
+		if fromSeq != nil {
+			filtered = filterEntryDocsByFromSeq(filtered, *fromSeq)
 		}
 		filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 		entries := make([]model.Entry, len(filtered))
@@ -1445,7 +1465,7 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 
-	if effectiveChannel == model.ChannelContext && upToEntryID == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
+	if effectiveChannel == model.ChannelContext && upToEntryID == nil && fromSeq == nil && (epochFilter == nil || epochFilter.Mode == registrystore.MemoryEpochModeLatest) {
 		// Use cache for the common latest-epoch case.
 		cachedEntries, err := s.fetchLatestMemoryEntries(ctx, conv, ancestry, *clientID, valueOrEmpty(agentID))
 		if err != nil {
@@ -1468,16 +1488,25 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	var filtered []entryDoc
 	if effectiveChannel == model.ChannelContext {
 		filtered = filterMemoryEntriesWithEpochDocs(docs, ancestry, *clientID, valueOrEmpty(agentID), epochFilter)
-	} else if effectiveChannel == "" && clientID != nil {
-		filtered = visible
+	} else if effectiveChannel == "" {
+		// All channels (agent without filter): include scoped channels
+		// only when they belong to the calling client.
+		filtered = filterEntryDocsForAllChannels(visible, clientID)
 	} else {
 		filtered = visible
 		if effectiveChannel != "" {
 			tmp := make([]entryDoc, 0, len(filtered))
 			for _, entry := range filtered {
-				if strings.EqualFold(entry.Channel, string(effectiveChannel)) {
-					tmp = append(tmp, entry)
+				if !strings.EqualFold(entry.Channel, string(effectiveChannel)) {
+					continue
 				}
+				// Journal entries are client-scoped: only return entries written by this client.
+				if effectiveChannel == model.ChannelJournal && clientID != nil {
+					if entry.ClientID == nil || *entry.ClientID != *clientID {
+						continue
+					}
+				}
+				tmp = append(tmp, entry)
 			}
 			filtered = tmp
 		}
@@ -1485,6 +1514,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	filtered, err = trimEntryDocsToVisiblePrefix(filtered, visible, upToEntryID)
 	if err != nil {
 		return nil, err
+	}
+	if fromSeq != nil {
+		filtered = filterEntryDocsByFromSeq(filtered, *fromSeq)
 	}
 	filtered, nextCursor := paginateEntryDocs(filtered, afterEntryID, limit)
 	entries := make([]model.Entry, len(filtered))
@@ -1565,7 +1597,8 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 	}
 	if clientID != nil {
 		for _, req := range entries {
-			if model.Channel(strings.ToLower(req.Channel)) == model.ChannelContext && conv.ClientID != "" && conv.ClientID != *clientID {
+			ch := model.Channel(strings.ToLower(req.Channel))
+			if (ch == model.ChannelContext || ch == model.ChannelJournal) && conv.ClientID != "" && conv.ClientID != *clientID {
 				return nil, &registrystore.ForbiddenError{}
 			}
 		}
@@ -1599,6 +1632,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			AgentID:             agentID,
 			Channel:             ch,
 			Epoch:               entryEpoch,
+			Seq:                 req.Seq,
 			ContentType:         req.ContentType,
 			Content:             encContent,
 			IndexedContent:      req.IndexedContent,
@@ -1606,6 +1640,9 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			CreatedAt:           now,
 		}
 		if _, err := s.entries().InsertOne(ctx, doc); err != nil {
+			if mongo.IsDuplicateKeyError(err) {
+				return nil, &registrystore.ConflictError{Message: "duplicate seq value in this conversation"}
+			}
 			return nil, fmt.Errorf("failed to append entry: %w", err)
 		}
 		result[i] = model.Entry{
@@ -1617,6 +1654,7 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			AgentID:             agentID,
 			Channel:             model.Channel(ch),
 			Epoch:               entryEpoch,
+			Seq:                 req.Seq,
 			ContentType:         req.ContentType,
 			Content:             req.Content,
 			IndexedContent:      req.IndexedContent,
@@ -1782,12 +1820,16 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		AgentID:             agentID,
 		Channel:             string(model.ChannelContext),
 		Epoch:               &epochToUse,
+		Seq:                 entry.Seq,
 		ContentType:         entry.ContentType,
 		Content:             encContent,
 		IndexedContent:      entry.IndexedContent,
 		CreatedAt:           now,
 	}
 	if _, err := s.entries().InsertOne(ctx, doc); err != nil {
+		if mongo.IsDuplicateKeyError(err) {
+			return nil, &registrystore.ConflictError{Message: "duplicate seq value in this conversation"}
+		}
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
 	s.warmEntriesCache(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
@@ -2430,7 +2472,7 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		limit = 50
 	}
 
-	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(defaultEntryDocSort()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to get admin entries: %w", err)
 	}
@@ -2468,6 +2510,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 	filtered, err = trimEntryDocsToVisiblePrefix(filtered, visible, query.UpToEntryID)
 	if err != nil {
 		return nil, err
+	}
+	if query.FromSeq != nil {
+		filtered = filterEntryDocsByFromSeq(filtered, *query.FromSeq)
 	}
 
 	filtered, nextCursor := paginateEntryDocs(filtered, query.AfterCursor, limit)
@@ -3193,7 +3238,7 @@ func (s *MongoStore) entryVisibleInConversationAncestry(ctx context.Context, con
 	if err != nil {
 		return false, err
 	}
-	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": conv.ConversationGroupID}, options.Find().SetSort(defaultEntryDocSort()))
 	if err != nil {
 		return false, err
 	}
@@ -3343,7 +3388,7 @@ func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore
 
 func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, clientID *string, agentID *string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
 	if channel == "" {
-		return entries
+		return filterEntryDocsForAllChannels(entries, clientID)
 	}
 
 	filtered := make([]entryDoc, 0, len(entries))
@@ -3351,7 +3396,7 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 		if !strings.EqualFold(entry.Channel, string(channel)) {
 			continue
 		}
-		if channel == model.ChannelContext && clientID != nil {
+		if (channel == model.ChannelContext || channel == model.ChannelJournal) && clientID != nil {
 			if entry.ClientID == nil || *entry.ClientID != *clientID {
 				continue
 			}
@@ -3360,7 +3405,7 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 	}
 
 	if channel != model.ChannelContext {
-		return filtered
+		return filtered // journal has no epoch semantics; return as-is
 	}
 
 	epoch := normalizeEpochFilter(epochFilter)
@@ -3478,6 +3523,20 @@ func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAnce
 	return result
 }
 
+func filterEntryDocsForAllChannels(entries []entryDoc, clientID *string) []entryDoc {
+	filtered := make([]entryDoc, 0, len(entries))
+	for _, entry := range entries {
+		entryChannel := model.Channel(strings.ToLower(entry.Channel))
+		if entryChannel == model.ChannelContext || entryChannel == model.ChannelJournal {
+			if clientID == nil || entry.ClientID == nil || *entry.ClientID != *clientID {
+				continue
+			}
+		}
+		filtered = append(filtered, entry)
+	}
+	return filtered
+}
+
 func filterEntryDocsByEpoch(entries []entryDoc, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
 	epoch := normalizeEpochFilter(epochFilter)
 	result := make([]entryDoc, 0, len(entries))
@@ -3537,7 +3596,7 @@ func trimEntryDocsToVisiblePrefix(entries []entryDoc, visible []entryDoc, upToEn
 
 // loadEntriesForGroup fetches all entries for a conversation group from MongoDB.
 func (s *MongoStore) loadEntriesForGroup(ctx context.Context, groupID string) ([]entryDoc, error) {
-	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": groupID}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}))
+	cur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": groupID}, options.Find().SetSort(defaultEntryDocSort()))
 	if err != nil {
 		return nil, fmt.Errorf("failed to list entries: %w", err)
 	}
@@ -3546,6 +3605,14 @@ func (s *MongoStore) loadEntriesForGroup(ctx context.Context, groupID string) ([
 		return nil, fmt.Errorf("failed to decode entries: %w", err)
 	}
 	return docs, nil
+}
+
+func defaultEntryDocSort() bson.D {
+	return bson.D{
+		{Key: "created_at", Value: 1},
+		{Key: "seq", Value: 1},
+		{Key: "_id", Value: 1},
+	}
 }
 
 // fetchLatestMemoryEntries returns the latest-epoch context entries for the given
@@ -3706,6 +3773,21 @@ func isPrefixContent(existing, incoming []any) bool {
 	return true
 }
 
+// filterEntryDocsByFromSeq filters docs to those with seq >= fromSeq and sorts by seq ASC.
+// Docs without a seq (nil) are excluded.
+func filterEntryDocsByFromSeq(entries []entryDoc, fromSeq uint32) []entryDoc {
+	filtered := make([]entryDoc, 0, len(entries))
+	for _, e := range entries {
+		if e.Seq != nil && *e.Seq >= fromSeq {
+			filtered = append(filtered, e)
+		}
+	}
+	sort.Slice(filtered, func(i, j int) bool {
+		return *filtered[i].Seq < *filtered[j].Seq
+	})
+	return filtered
+}
+
 func paginateEntryDocs(entries []entryDoc, afterEntryID *string, limit int) ([]entryDoc, *string) {
 	start := 0
 	if afterEntryID != nil {
@@ -3763,6 +3845,7 @@ func (s *MongoStore) entryDocToModel(d entryDoc) model.Entry {
 		ClientID:            d.ClientID,
 		Channel:             model.Channel(d.Channel),
 		Epoch:               d.Epoch,
+		Seq:                 d.Seq,
 		ContentType:         d.ContentType,
 		Content:             d.Content,
 		IndexedContent:      d.IndexedContent,

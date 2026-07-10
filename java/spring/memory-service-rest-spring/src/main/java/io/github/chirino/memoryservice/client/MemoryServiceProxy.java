@@ -179,6 +179,7 @@ public class MemoryServiceProxy {
                                 limit,
                                 channel,
                                 epoch,
+                                null,
                                 forks),
                 HttpStatus.OK);
     }

@@ -440,3 +440,127 @@ Feature: Conversation Forking REST API
     And the response body field "data[1].content[1]" should be null
     And the response body field "data[2].content[1]" should be null
     And the response body field "data[3].content[1]" should be null
+
+  Scenario: Same client can fork at a journal entry
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "llm_call", "model": "test-model"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 200
+    And the response body "forkedAtEntryId" should be "${journalEntryId}"
+    And the response body "forkedAtConversationId" should be "${conversationId}"
+
+  Scenario: User without client identity cannot fork at a journal entry
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "tool_call"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    Given I am authenticated as user "alice"
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 403
+    And the response should contain error code "forbidden"
+
+  Scenario: Different client cannot fork at another client's journal entry
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "tool_call", "client": "a"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 403
+    And the response should contain error code "forbidden"
+
+  Scenario: Context entries cannot be fork anchors
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [{"type": "text", "text": "Context fork point"}]
+    }
+    """
+    Then the response status should be 201
+    And set "contextEntryId" to the json response field "id"
+    When I fork the conversation at entry "${contextEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 400
+    And the response should contain error code "validation_error"
+
+  Scenario: History listing honors a fork anchored at a journal entry
+    Given I am authenticated as user "alice"
+    And I have a conversation with title "Journal Fork Ordering"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "H1 before journal"}]
+    }
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "H2 after journal"}]
+    }
+    """
+    Then the response status should be 201
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 200
+    And set "journalForkConversationId" to "${forkedConversationId}"
+    Given I am authenticated as user "alice"
+    When I call GET "/v1/conversations/${journalForkConversationId}/entries?channel=HISTORY"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "H1 before journal"
+    And entry at index 1 should have content "Fork message"

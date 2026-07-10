@@ -84,7 +84,7 @@ This mode is intended for local agent processes. Browser apps cannot connect dir
 
 ### What is conversation forking?
 
-Conversation forking allows you to create a new conversation branch from any point in an existing conversation. This is useful for:
+Conversation forking allows you to create a new conversation branch from an allowed entry boundary in an existing conversation. Chat UIs usually fork at a `history` message; trusted runtime clients can also fork at client-visible `journal` entries for replay/debug workflows. This is useful for:
 
 - If you think that correcting or adding more context to a previous message would improve the response, you can fork the conversation at that message and add the new context to continue from that point instead of starting a fresh conversation.
 - Exploring alternative conversation paths
