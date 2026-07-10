@@ -669,7 +669,7 @@ export type SearchConversationsRequest = {
    */
   afterCursor?: string | null;
   /**
-   * Maximum number of results to return.
+   * Maximum number of results to return. The server-wide configured maximum defaults to 1000.
    */
   limit?: number;
   /**

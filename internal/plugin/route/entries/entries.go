@@ -10,6 +10,7 @@ import (
 	"strings"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
@@ -60,6 +61,12 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 
 	afterCursor := queryPtr(c, "afterCursor")
 	beforeCursor := queryPtr(c, "beforeCursor")
+	if beforeCursor != nil {
+		if _, err := uuid.Parse(*beforeCursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid beforeCursor: must be a UUID"})
+			return
+		}
+	}
 	var tail bool
 	if tailStr := strings.TrimSpace(c.Query("tail")); tailStr != "" {
 		var err error
@@ -773,11 +780,11 @@ func queryPtr(c *gin.Context, key string) *string {
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	i, err := strconv.Atoi(v)
 	if err != nil {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
-	return i
+	return config.ClampPageSize(c.Request.Context(), i)
 }

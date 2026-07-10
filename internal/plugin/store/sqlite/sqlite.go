@@ -2888,6 +2888,9 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 // across the ancestry stack, collecting at most limit+1 rows then reversing
 // to return a page in ascending order.
 func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []forkAncestor, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	if limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
 	need := limit + 1
 	collected := make([]model.Entry, 0, need)
 	startSegment := len(ancestry) - 1
@@ -2921,7 +2924,10 @@ func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []for
 		onPath := false
 		for i, a := range ancestry {
 			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID != nil {
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
 					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
 					if err != nil {
 						return nil, nil, nil, err

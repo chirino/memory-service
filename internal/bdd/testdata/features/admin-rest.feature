@@ -293,6 +293,10 @@ Feature: Admin REST API
     And entry at index 1 should have content "Entry 2"
     And the response should have an afterCursor
 
+  Scenario: Admin rejects a malformed beforeCursor
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?beforeCursor=not-a-uuid"
+    Then the response status should be 400
+
   # Serial today only because this feature shares the serial admin runner; this scenario reads context entries for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get context channel entries from any conversation
     # Create context entries as an agent (which sets clientId).

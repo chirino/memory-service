@@ -100,6 +100,27 @@ Feature: Entries gRPC API
     And the gRPC response field "entries[1].content[0].text" should be "Entry 3"
     And the gRPC response field "pageInfo.previousPageToken" should not be null
 
+  Scenario: User entry listing rejects a malformed backward token via gRPC
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    before_page_token: "not-a-uuid"
+    page { page_size: 2 }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin entry listing rejects a malformed backward token via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    before_page_token: "not-a-uuid"
+    page { page_size: 2 }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: List entries with channel filter via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has an entry "Memory entry" in channel "CONTEXT" with contentType "test.v1"

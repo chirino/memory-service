@@ -962,7 +962,7 @@ type SearchConversationsRequest struct {
 	// IncludeEntry Whether to include the full entry in results. Set to false to reduce response size when only metadata is needed.
 	IncludeEntry *bool `json:"includeEntry,omitempty"`
 
-	// Limit Maximum number of results to return.
+	// Limit Maximum number of results to return. The server-wide configured maximum defaults to 1000.
 	Limit *int `json:"limit,omitempty"`
 
 	// Query Natural language query.

@@ -116,6 +116,11 @@ Feature: Tail and backward pagination for conversation entries (REST)
     When I list entries with tail "tru" and limit 5
     Then the response status should be 400
 
+  Scenario: Malformed beforeCursor returns 400
+    Given the conversation has 1 entry
+    When I call GET "/v1/conversations/${conversationId}/entries?beforeCursor=not-a-uuid"
+    Then the response status should be 400
+
   Scenario: Exact limit at tail returns no beforeCursor
     Given the conversation has 3 entries
     When I list entries with tail enabled and limit 3
@@ -185,6 +190,25 @@ Feature: Tail and backward pagination for conversation entries (REST)
     When I list entries for the conversation
     And set "contextCursor" to the json response field "data[1].id"
     When I call GET "/v1/conversations/${conversationId}/entries?channel=history&beforeCursor=${contextCursor}"
+    Then the response status should be 400
+
+  Scenario: Backward pagination rejects an entry from a blank-slate ancestor
+    Given set "rootConversationId" to "${conversationId}"
+    And the conversation has an entry "Invisible parent entry"
+    When I list entries for the conversation
+    And set "invisibleParentEntryId" to the json response field "data[0].id"
+    And set "blankForkId" to "00000000-0000-0000-0000-000000000109"
+    When I call POST "/v1/conversations/${blankForkId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "forkedAtConversationId": "${rootConversationId}",
+      "content": [{"role": "USER", "text": "Blank-slate child entry"}]
+    }
+    """
+    Then the response status should be 201
+    When I call GET "/v1/conversations/${blankForkId}/entries?channel=history&beforeCursor=${invisibleParentEntryId}"
     Then the response status should be 400
 
   Scenario: Backward pagination preserves null seq before seq zero

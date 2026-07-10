@@ -3660,6 +3660,9 @@ func defaultEntryDocSort() bson.D {
 // entry docs across the ancestry stack, collecting at most limit+1 docs then
 // reversing to return a page in ascending order.
 func (s *MongoStore) boundedHistoryBackwardDocs(ctx context.Context, ancestry []forkAncestorDoc, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
+	if limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
 	need := limit + 1
 	collected := make([]entryDoc, 0, need)
 	startSegment := len(ancestry) - 1
@@ -3685,7 +3688,10 @@ func (s *MongoStore) boundedHistoryBackwardDocs(ctx context.Context, ancestry []
 		onPath := false
 		for i, a := range ancestry {
 			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID != nil {
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
 					var stopDoc entryDoc
 					if err := s.entries().FindOne(ctx, bson.M{"_id": *a.StopAtEntryID}).Decode(&stopDoc); err != nil {
 						return nil, nil, nil, err

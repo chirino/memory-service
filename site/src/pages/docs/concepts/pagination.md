@@ -38,26 +38,26 @@ All paginated endpoints share the same pattern but differ in defaults and parame
 
 ### Agent API
 
-| Endpoint                                 | Cursor Param          | Limit Param     | Default Limit | Max Limit |
-| ---------------------------------------- | --------------------- | --------------- | ------------- | --------- |
-| `GET /v1/conversations`                  | `afterCursor` (query) | `limit` (query) | 20            | 200       |
-| `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50 | 200 |
-| `GET /v1/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50            | 200       |
-| `GET /v1/conversations/{id}/forks`       | `afterCursor` (query) | `limit` (query) | 50            | 200       |
-| `POST /v1/conversations/search`          | `afterCursor` (body)  | `limit` (body)  | 20            | 200       |
-| `GET /v1/conversations/unindexed`        | `afterCursor` (query) | `limit` (query) | 100           | 200       |
-| `GET /v1/ownership-transfers`            | `afterCursor` (query) | `limit` (query) | 50            | 200       |
+| Endpoint                                 | Cursor Param                                    | Limit Param     | Default Limit | Max Limit |
+| ---------------------------------------- | ----------------------------------------------- | --------------- | ------------- | --------- |
+| `GET /v1/conversations`                  | `afterCursor` (query)                           | `limit` (query) | 20            | 200       |
+| `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50            | 200       |
+| `GET /v1/conversations/{id}/memberships` | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
+| `GET /v1/conversations/{id}/forks`       | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
+| `POST /v1/conversations/search`          | `afterCursor` (body)                            | `limit` (body)  | 20            | 200       |
+| `GET /v1/conversations/unindexed`        | `afterCursor` (query)                           | `limit` (query) | 100           | 200       |
+| `GET /v1/ownership-transfers`            | `afterCursor` (query)                           | `limit` (query) | 50            | 200       |
 
 ### Admin API
 
-| Endpoint                                       | Cursor Param          | Limit Param     | Default Limit | Max Limit |
-| ---------------------------------------------- | --------------------- | --------------- | ------------- | --------- |
-| `GET /v1/admin/conversations`                  | `afterCursor` (query) | `limit` (query) | 100           | 1000      |
-| `GET /v1/admin/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50 | 1000 |
-| `GET /v1/admin/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
-| `GET /v1/admin/conversations/{id}/forks`       | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
-| `POST /v1/admin/conversations/search`          | `afterCursor` (body)  | `limit` (body)  | 20            | 1000      |
-| `GET /v1/admin/attachments`                    | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
+| Endpoint                                       | Cursor Param                                    | Limit Param     | Default Limit | Max Limit |
+| ---------------------------------------------- | ----------------------------------------------- | --------------- | ------------- | --------- |
+| `GET /v1/admin/conversations`                  | `afterCursor` (query)                           | `limit` (query) | 100           | 1000      |
+| `GET /v1/admin/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50            | 1000      |
+| `GET /v1/admin/conversations/{id}/memberships` | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
+| `GET /v1/admin/conversations/{id}/forks`       | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
+| `POST /v1/admin/conversations/search`          | `afterCursor` (body)                            | `limit` (body)  | 20            | 1000      |
+| `GET /v1/admin/attachments`                    | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
 
 ## Listing Conversations
 
@@ -130,12 +130,12 @@ An `afterCursor` of `null` means there are no more results.
 Entry responses remain chronological, but they support navigation in both
 directions:
 
-| Control | Result |
-| ------- | ------ |
-| no cursor | The oldest page. |
-| `afterCursor={id}` | Entries strictly after the cursor. |
+| Control             | Result                                            |
+| ------------------- | ------------------------------------------------- |
+| no cursor           | The oldest page.                                  |
+| `afterCursor={id}`  | Entries strictly after the cursor.                |
 | `beforeCursor={id}` | Up to `limit` entries strictly before the cursor. |
-| `tail=true` | The newest `limit` entries. |
+| `tail=true`         | The newest `limit` entries.                       |
 
 `afterCursor`, `beforeCursor`, and `tail=true` are mutually exclusive. Invalid
 combinations or an invalid/invisible `beforeCursor` return `400 Bad Request`.
@@ -185,29 +185,64 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=2&af
   -H "Authorization: Bearer <token>"
 ```
 
-### Open at the newest entries
+### Last page
+
+To get the last page directly—without walking every forward page—set
+`tail=true`. The `limit` parameter controls the maximum number of entries in
+that last page. Results are still returned in chronological order.
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?tail=true&limit=2" \
   -H "Authorization: Bearer <token>"
 ```
 
-The tail response has `afterCursor: null`. When older entries exist,
+The last-page response has `afterCursor: null`. When older entries exist,
 `beforeCursor` is the ID of the first returned entry:
 
 ```json
 {
-  "data": [ ... ],
+  "data": [
+    {
+      "id": "ddd7b810-9dad-11d1-80b4-00c04fd430cb",
+      "content": [{ "role": "AI", "text": "Let me check that." }]
+    },
+    {
+      "id": "eee7b810-9dad-11d1-80b4-00c04fd430cc",
+      "content": [{ "role": "AI", "text": "Here is what I found." }]
+    }
+  ],
   "afterCursor": null,
   "beforeCursor": "ddd7b810-9dad-11d1-80b4-00c04fd430cb"
 }
 ```
 
-Pass that cursor back to load the adjacent older page:
+### Previous page
+
+Pass the last page's `beforeCursor` as the `beforeCursor` parameter to load the
+adjacent older page:
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?beforeCursor=ddd7b810-9dad-11d1-80b4-00c04fd430cb&limit=2" \
   -H "Authorization: Bearer <token>"
+```
+
+Response:
+
+```json
+{
+  "data": [
+    {
+      "id": "bbb7b810-9dad-11d1-80b4-00c04fd430c9",
+      "content": [{ "role": "AI", "text": "Hi there! How can I help?" }]
+    },
+    {
+      "id": "ccc7b810-9dad-11d1-80b4-00c04fd430ca",
+      "content": [{ "role": "USER", "text": "Can you look something up?" }]
+    }
+  ],
+  "afterCursor": "ccc7b810-9dad-11d1-80b4-00c04fd430ca",
+  "beforeCursor": "bbb7b810-9dad-11d1-80b4-00c04fd430c9"
+}
 ```
 
 A middle page can contain both cursors: use `beforeCursor` to continue toward

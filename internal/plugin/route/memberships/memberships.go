@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
@@ -304,11 +305,11 @@ func queryPtr(c *gin.Context, key string) *string {
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	var i int
 	if n, _ := fmt.Sscanf(v, "%d", &i); n == 1 {
-		return i
+		return config.ClampPageSize(c.Request.Context(), i)
 	}
-	return def
+	return config.ClampPageSize(c.Request.Context(), def)
 }

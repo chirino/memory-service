@@ -96,14 +96,10 @@ func searchConversationsInReadTx(c *gin.Context, store registrystore.MemoryStore
 		return
 	}
 
-	limit := 20
+	limit := config.ClampPageSize(c.Request.Context(), 20)
 	if req.Limit != nil {
-		if *req.Limit <= 0 {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "limit must be greater than 0"})
-			return
-		}
-		if *req.Limit > 200 {
-			c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "limit must be less than or equal to 200"})
+		if err := config.ValidatePageSize(c.Request.Context(), *req.Limit); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
 			return
 		}
 		limit = *req.Limit
@@ -660,7 +656,7 @@ func listUnindexed(c *gin.Context, store registrystore.MemoryStore) {
 			return nil
 		}
 
-		limit := 20
+		limit := config.ClampPageSize(c.Request.Context(), 20)
 		if v := c.Query("limit"); v != "" {
 			var l int
 			if _, err := fmt.Sscanf(v, "%d", &l); err == nil && l > 0 {

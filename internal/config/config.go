@@ -38,7 +38,42 @@ func FromContext(ctx context.Context) *Config {
 const (
 	ModeProd    = "prod"
 	ModeTesting = "testing"
+
+	DefaultMaxPageSize = 1000
 )
+
+// EffectiveMaxPageSize returns the configured listing limit, falling back to
+// the process default for tests and embedded callers that construct Config directly.
+func (c *Config) EffectiveMaxPageSize() int {
+	if c == nil || c.MaxPageSize <= 0 {
+		return DefaultMaxPageSize
+	}
+	return c.MaxPageSize
+}
+
+// MaxPageSizeFromContext returns the configured listing limit carried by ctx.
+func MaxPageSizeFromContext(ctx context.Context) int {
+	return FromContext(ctx).EffectiveMaxPageSize()
+}
+
+// ValidatePageSize checks a client-supplied, non-zero page size.
+func ValidatePageSize(ctx context.Context, size int) error {
+	max := MaxPageSizeFromContext(ctx)
+	if size <= 0 || size > max {
+		return fmt.Errorf("page size must be between 1 and %d", max)
+	}
+	return nil
+}
+
+// ClampPageSize keeps an endpoint default or already-validated request within
+// the configured server-wide ceiling.
+func ClampPageSize(ctx context.Context, size int) int {
+	max := MaxPageSizeFromContext(ctx)
+	if size > max {
+		return max
+	}
+	return size
+}
 
 // Config holds all configuration for the memory service.
 type Config struct {
@@ -207,6 +242,8 @@ type Config struct {
 
 	// Body size limit (bytes)
 	MaxBodySize int64
+	// Maximum number of items a client may request from any listing endpoint.
+	MaxPageSize int
 
 	// Attachments
 	AllowPrivateSourceURLs bool
@@ -309,6 +346,7 @@ func DefaultConfig() Config {
 			EnableTLS:       true,
 		},
 		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
+		MaxPageSize:                  DefaultMaxPageSize,
 		DrainTimeout:                 30,
 		DBMaxOpenConns:               25,
 		DBMaxIdleConns:               5,

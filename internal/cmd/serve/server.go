@@ -32,6 +32,8 @@ import (
 	"github.com/chirino/memory-service/internal/service"
 	"github.com/gin-gonic/gin"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 )
 
 // Server holds the running server and its subsystems.
@@ -195,6 +197,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	router.Use(security.MetricsMiddleware())
 	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
 	router.Use(maxBodySizeMiddleware(cfg.MaxBodySize))
+	router.Use(maxPageSizeMiddleware(cfg))
 	if cfg.CORSEnabled {
 		router.Use(corsMiddleware(cfg.CORSOrigins))
 	}
@@ -357,7 +360,10 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(
-		grpc.ChainUnaryInterceptor(security.GRPCUnaryInterceptor(resolver)),
+		grpc.ChainUnaryInterceptor(
+			security.GRPCUnaryInterceptor(resolver),
+			maxPageSizeUnaryInterceptor(cfg),
+		),
 		grpc.ChainStreamInterceptor(security.GRPCStreamInterceptor(resolver)),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
@@ -405,6 +411,34 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	builtServer.Router = router
 	builtServer.GRPCServer = grpcServer
 	return &builtServer, nil
+}
+
+type grpcPageRequest interface {
+	GetPage() *pb.PageRequest
+}
+
+type grpcLimitRequest interface {
+	GetLimit() int32
+}
+
+func maxPageSizeUnaryInterceptor(cfg *config.Config) grpc.UnaryServerInterceptor {
+	maxPageSize := cfg.EffectiveMaxPageSize()
+	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+		ctx = config.WithContext(ctx, cfg)
+		if paged, ok := req.(grpcPageRequest); ok && paged.GetPage() != nil {
+			requested := paged.GetPage().GetPageSize()
+			if requested < 0 || int64(requested) > int64(maxPageSize) {
+				return nil, status.Errorf(codes.InvalidArgument, "page size must be between 1 and %d", maxPageSize)
+			}
+		}
+		if limited, ok := req.(grpcLimitRequest); ok && limited.GetLimit() != 0 {
+			requested := limited.GetLimit()
+			if requested < 0 || int64(requested) > int64(maxPageSize) {
+				return nil, status.Errorf(codes.InvalidArgument, "page size must be between 1 and %d", maxPageSize)
+			}
+		}
+		return handler(ctx, req)
+	}
 }
 
 // StartServer initializes all subsystems and starts HTTP+gRPC on a single port.

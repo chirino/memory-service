@@ -393,7 +393,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 
 	var afterCursor *string
 	var query *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -563,7 +563,7 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -623,7 +623,7 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -797,7 +797,7 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil && req.GetPage().GetPageSize() > 0 {
 		limit = int(req.GetPage().GetPageSize())
 	}
@@ -825,6 +825,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	var beforeCursor *string
 	if req.GetBeforePageToken() != "" {
 		t := req.GetBeforePageToken()
+		if _, err := uuid.Parse(t); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid before_page_token")
+		}
 		beforeCursor = &t
 	}
 	tail := req.GetTail()
@@ -951,6 +954,9 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	}
 	if req.GetBeforePageToken() != "" {
 		t := req.GetBeforePageToken()
+		if _, err := uuid.Parse(t); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid before_page_token")
+		}
 		query.BeforeCursor = &t
 	}
 	query.Tail = req.GetTail()
@@ -1121,7 +1127,7 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1223,7 +1229,7 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1275,7 +1281,7 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1333,7 +1339,7 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1660,7 +1666,7 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -1823,7 +1829,7 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 	}
 
 	var afterCursor *string
-	limit := 20
+	limit := config.ClampPageSize(ctx, 20)
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
@@ -2017,7 +2023,7 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 20
+		limit = config.ClampPageSize(ctx, 20)
 	}
 	includeEntry := true
 	if req.IncludeEntry != nil {
@@ -2111,7 +2117,7 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 20
+		limit = config.ClampPageSize(ctx, 20)
 	}
 	var afterCursor *string
 	if req.Cursor != nil {
@@ -2392,8 +2398,8 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 
 	limit := int(req.GetLimit())
-	if limit <= 0 || limit > 100 {
-		limit = 10
+	if limit <= 0 {
+		limit = config.ClampPageSize(ctx, 10)
 	}
 
 	filter := map[string]interface{}{}
@@ -2576,10 +2582,7 @@ func (s *AdminMemoriesServer) ListMemories(ctx context.Context, req *pb.AdminLis
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 50
-	}
-	if limit > 200 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 200")
+		limit = config.ClampPageSize(ctx, 50)
 	}
 	query := registryepisodic.AdminMemoryQuery{
 		NamespacePrefix: prefix,
@@ -2684,10 +2687,7 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 10
-	}
-	if limit > 100 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 100")
+		limit = config.ClampPageSize(ctx, 10)
 	}
 	filter := map[string]interface{}{}
 	if req.GetFilter() != nil {
@@ -2806,10 +2806,7 @@ func (s *AdminMemoriesServer) ListNamespaces(ctx context.Context, req *pb.AdminL
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 200
-	}
-	if limit > 1000 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
+		limit = config.ClampPageSize(ctx, 200)
 	}
 	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (registryepisodic.AdminNamespacePage, error) {
 		return s.Store.AdminListNamespaces(txCtx, registryepisodic.AdminNamespaceQuery{
@@ -2909,10 +2906,7 @@ func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.Ad
 	}
 	limit := int(req.GetLimit())
 	if limit <= 0 {
-		limit = 100
-	}
-	if limit > 1000 {
-		return nil, status.Error(codes.InvalidArgument, "limit must be <= 1000")
+		limit = config.ClampPageSize(ctx, 100)
 	}
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.TopMemoryUsageItem, error) {
 		return s.Store.ListTopMemoryUsage(txCtx, registryepisodic.ListTopMemoryUsageRequest{

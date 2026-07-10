@@ -418,6 +418,12 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 
 	afterCursor := queryPtr(c, "afterCursor")
 	beforeCursor := queryPtr(c, "beforeCursor")
+	if beforeCursor != nil {
+		if _, err := uuid.Parse(*beforeCursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid beforeCursor: must be a UUID"})
+			return
+		}
+	}
 	var tail bool
 	if tailStr := strings.TrimSpace(c.Query("tail")); tailStr != "" {
 		var err error
@@ -706,10 +712,10 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 	if req.Limit <= 0 {
-		req.Limit = 20
+		req.Limit = config.ClampPageSize(c.Request.Context(), 20)
 	}
-	if req.Limit > 1000 {
-		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": "limit must be less than or equal to 1000"})
+	if err := config.ValidatePageSize(c.Request.Context(), req.Limit); err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
 		return
 	}
 	includeArchived := false
@@ -1234,11 +1240,11 @@ func queryPtr(c *gin.Context, key string) *string {
 func queryInt(c *gin.Context, key string, def int) int {
 	v := c.Query(key)
 	if v == "" {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
 	i, err := strconv.Atoi(v)
 	if err != nil {
-		return def
+		return config.ClampPageSize(c.Request.Context(), def)
 	}
-	return i
+	return config.ClampPageSize(c.Request.Context(), i)
 }

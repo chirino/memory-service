@@ -2887,6 +2887,9 @@ func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) 
 // When beforeEntryID is set the anchor must be on the ancestry path; we start
 // strictly before it. When tail=true we start from the newest entry.
 func (s *PostgresStore) boundedHistoryBackward(ctx context.Context, ancestry []forkAncestor, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
+	if limit > config.MaxPageSizeFromContext(ctx) {
+		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
+	}
 	need := limit + 1
 	collected := make([]model.Entry, 0, need)
 	startSegment := len(ancestry) - 1
@@ -2923,7 +2926,10 @@ func (s *PostgresStore) boundedHistoryBackward(ctx context.Context, ancestry []f
 		onPath := false
 		for i, a := range ancestry {
 			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID != nil {
+				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
+					return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
+				}
+				if i < len(ancestry)-1 {
 					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
 					if err != nil {
 						return nil, nil, nil, err

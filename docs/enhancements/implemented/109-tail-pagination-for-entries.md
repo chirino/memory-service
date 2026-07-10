@@ -71,6 +71,13 @@ Both cursors describe navigation relative to the returned page:
 - `afterCursor` is the ID of the last returned entry when a newer entry exists; otherwise it is null.
 - An empty page returns both cursors as null.
 
+All listing APIs share a configurable page-size ceiling. The server defaults to
+1000 items and exposes `--max-page-size` / `MEMORY_SERVICE_MAX_PAGE_SIZE` to
+change it. REST and gRPC reject larger requests before dispatch, and the bounded
+entry-store paths repeat the check before allocating their `limit + 1` probe.
+When the configured ceiling is below an endpoint's normal default, the implicit
+default is clamped to the ceiling rather than returning an oversized page.
+
 Consequently, an initial tail page has `afterCursor: null`. A middle page can contain both cursors. Cursor anchors are excluded from the adjacent page, so paging does not duplicate the boundary entry.
 
 Example for 120 entries and `limit=50`:
