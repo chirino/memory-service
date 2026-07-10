@@ -11,7 +11,6 @@ import (
 	"strings"
 	"time"
 
-	vec "github.com/asg017/sqlite-vec-go-bindings/cgo"
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
@@ -604,7 +603,7 @@ func (e *sqliteEpisodicStore) UpsertMemoryVectors(ctx context.Context, items []r
 	}
 	tx := e.writeDBFor(ctx, "sqlite episodic store upsert memory vectors")
 	for _, item := range items {
-		vectorBlob, err := vec.SerializeFloat32(item.Embedding)
+		vectorBlob, err := serializeSQLiteVector(item.Embedding)
 		if err != nil {
 			return fmt.Errorf("serialize memory vector %s/%s: %w", item.MemoryID, item.FieldName, err)
 		}
@@ -650,7 +649,7 @@ func (e *sqliteEpisodicStore) SearchMemoryVectors(ctx context.Context, namespace
 	if !e.localVectorEnabled() || limit <= 0 {
 		return nil, registryepisodic.ErrSemanticSearchUnavailable
 	}
-	queryVector, err := vec.SerializeFloat32(embedding)
+	queryVector, err := serializeSQLiteVector(embedding)
 	if err != nil {
 		return nil, fmt.Errorf("serialize query vector: %w", err)
 	}
