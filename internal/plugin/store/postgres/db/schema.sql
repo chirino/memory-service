@@ -459,3 +459,6 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
 DROP INDEX IF EXISTS idx_entries_group_created_at;
 CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
     ON entries (conversation_group_id, created_at ASC, seq ASC NULLS FIRST, id ASC);
+-- Branch/channel/order index for bounded backward and tail history reads (Enhancement 109).
+CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
+    ON entries (conversation_id, channel, created_at ASC, seq ASC NULLS FIRST, id ASC);

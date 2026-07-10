@@ -80,7 +80,7 @@ Response:
 
 ## Entry Ordering
 
-Entries are returned ordered by creation time (`createdAt`). When multiple entries have the same timestamp, entries without `seq` sort first, followed by sequenced entries in ascending `seq`, then `id`. Use cursor-based pagination with the `after` parameter to retrieve entries in batches.
+Entries are returned ordered by creation time (`createdAt`). When multiple entries have the same timestamp, entries without `seq` sort first, followed by sequenced entries in ascending `seq`, then `id`. Use `afterCursor` for forward pagination, `tail=true` to open at the newest page, and `beforeCursor` to load older pages. All returned pages remain chronological.
 
 Clients that need deterministic replay across channels can set `seq` when appending entries. `seq` values are unsigned 32-bit integers and must be unique within a conversation. When listing entries with `fromSeq`, Memory Service returns entries with `seq >= fromSeq`, excludes entries without `seq`, and orders the response by `seq` ascending.
 
@@ -90,6 +90,18 @@ Clients that need deterministic replay across channels can set `seq` when append
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=50&channel=history" \
   -H "Authorization: Bearer <token>"
 ```
+
+For a chat UI that opens at the bottom of history, request the tail and then
+follow `beforeCursor` while the user scrolls upward:
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?channel=history&tail=true&limit=50" \
+  -H "Authorization: Bearer <token>"
+```
+
+`afterCursor`, `beforeCursor`, and `tail=true` are mutually exclusive. Entry
+filters—including channel, fork ancestry, epoch, `upToEntryId`, and
+`fromSeq`—are applied before pagination.
 
 Response:
 

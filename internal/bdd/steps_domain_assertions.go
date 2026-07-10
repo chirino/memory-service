@@ -52,6 +52,9 @@ func init() {
 		ctx.Step(`^the entry should have channel "([^"]*)"$`, d.theEntryShouldHaveChannel)
 		ctx.Step(`^the entry should have contentType "([^"]*)"$`, d.theEntryShouldHaveContentType)
 		ctx.Step(`^the response should have an afterCursor$`, d.theResponseShouldHaveAnAfterCursor)
+		ctx.Step(`^the response should have a beforeCursor$`, d.theResponseShouldHaveABeforeCursor)
+		ctx.Step(`^the response should not have a beforeCursor$`, d.theResponseShouldNotHaveABeforeCursor)
+		ctx.Step(`^the response should not have an afterCursor$`, d.theResponseShouldNotHaveAnAfterCursor)
 		ctx.Step(`^the response should contain error code "([^"]*)"$`, d.theResponseShouldContainErrorCode)
 		ctx.Step(`^the response body should have field "([^"]*)" that is not null$`, d.theResponseBodyFieldShouldNotBeNull)
 
@@ -335,6 +338,45 @@ func (d *domainAssertionSteps) theResponseShouldHaveAnAfterCursor() error {
 	value := jsonPathGet(respJSON, "afterCursor")
 	if value == nil || value == "" {
 		return fmt.Errorf("response does not have an afterCursor. Response: %s", string(session.RespBytes))
+	}
+	return nil
+}
+
+func (d *domainAssertionSteps) theResponseShouldHaveABeforeCursor() error {
+	session := d.s.Session()
+	respJSON, err := session.RespJSON()
+	if err != nil {
+		return err
+	}
+	value := jsonPathGet(respJSON, "beforeCursor")
+	if value == nil || value == "" {
+		return fmt.Errorf("response does not have a beforeCursor. Response: %s", string(session.RespBytes))
+	}
+	return nil
+}
+
+func (d *domainAssertionSteps) theResponseShouldNotHaveABeforeCursor() error {
+	session := d.s.Session()
+	respJSON, err := session.RespJSON()
+	if err != nil {
+		return err
+	}
+	value := jsonPathGet(respJSON, "beforeCursor")
+	if value != nil && value != "" {
+		return fmt.Errorf("response should not have a beforeCursor but got: %v", value)
+	}
+	return nil
+}
+
+func (d *domainAssertionSteps) theResponseShouldNotHaveAnAfterCursor() error {
+	session := d.s.Session()
+	respJSON, err := session.RespJSON()
+	if err != nil {
+		return err
+	}
+	value := jsonPathGet(respJSON, "afterCursor")
+	if value != nil && value != "" {
+		return fmt.Errorf("response should not have an afterCursor but got: %v", value)
 	}
 	return nil
 }

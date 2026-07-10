@@ -548,10 +548,11 @@ func (x *PageRequest) GetPageSize() int32 {
 }
 
 type PageInfo struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	NextPageToken string                 `protobuf:"bytes,1,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state             protoimpl.MessageState `protogen:"open.v1"`
+	NextPageToken     string                 `protobuf:"bytes,1,opt,name=next_page_token,json=nextPageToken,proto3" json:"next_page_token,omitempty"`
+	PreviousPageToken string                 `protobuf:"bytes,2,opt,name=previous_page_token,json=previousPageToken,proto3" json:"previous_page_token,omitempty"` // Empty when no older page exists.
+	unknownFields     protoimpl.UnknownFields
+	sizeCache         protoimpl.SizeCache
 }
 
 func (x *PageInfo) Reset() {
@@ -587,6 +588,13 @@ func (*PageInfo) Descriptor() ([]byte, []int) {
 func (x *PageInfo) GetNextPageToken() string {
 	if x != nil {
 		return x.NextPageToken
+	}
+	return ""
+}
+
+func (x *PageInfo) GetPreviousPageToken() string {
+	if x != nil {
+		return x.PreviousPageToken
 	}
 	return ""
 }
@@ -1953,7 +1961,13 @@ type ListEntriesRequest struct {
 	UpToEntryId []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
 	// When set, return only entries with seq >= from_seq, ordered by seq ASC.
 	// Entries without a seq value are excluded.
-	FromSeq       *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
+	FromSeq *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
+	// Return up to page_size entries strictly before this token in the caller-visible order.
+	// Mutually exclusive with page.page_token and tail.
+	BeforePageToken *string `protobuf:"bytes,8,opt,name=before_page_token,json=beforePageToken,proto3,oneof" json:"before_page_token,omitempty"`
+	// When true, return the last page_size entries (newest page). Mutually exclusive with
+	// page.page_token and before_page_token.
+	Tail          *bool `protobuf:"varint,9,opt,name=tail,proto3,oneof" json:"tail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2037,6 +2051,20 @@ func (x *ListEntriesRequest) GetFromSeq() uint32 {
 	return 0
 }
 
+func (x *ListEntriesRequest) GetBeforePageToken() string {
+	if x != nil && x.BeforePageToken != nil {
+		return *x.BeforePageToken
+	}
+	return ""
+}
+
+func (x *ListEntriesRequest) GetTail() bool {
+	if x != nil && x.Tail != nil {
+		return *x.Tail
+	}
+	return false
+}
+
 type ListEntriesResponse struct {
 	state         protoimpl.MessageState `protogen:"open.v1"`
 	Entries       []*Entry               `protobuf:"bytes,1,rep,name=entries,proto3" json:"entries,omitempty"`
@@ -2103,7 +2131,13 @@ type AdminListEntriesRequest struct {
 	UpToEntryId []byte `protobuf:"bytes,6,opt,name=up_to_entry_id,json=upToEntryId,proto3,oneof" json:"up_to_entry_id,omitempty"`
 	// When set, return only entries with seq >= from_seq, ordered by seq ASC.
 	// Entries without a seq value are excluded.
-	FromSeq       *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
+	FromSeq *uint32 `protobuf:"varint,7,opt,name=from_seq,json=fromSeq,proto3,oneof" json:"from_seq,omitempty"`
+	// Return up to page_size entries strictly before this token in the admin-visible order.
+	// Mutually exclusive with page.page_token and tail.
+	BeforePageToken *string `protobuf:"bytes,8,opt,name=before_page_token,json=beforePageToken,proto3,oneof" json:"before_page_token,omitempty"`
+	// When true, return the last page_size entries (newest page). Mutually exclusive with
+	// page.page_token and before_page_token.
+	Tail          *bool `protobuf:"varint,9,opt,name=tail,proto3,oneof" json:"tail,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -2185,6 +2219,20 @@ func (x *AdminListEntriesRequest) GetFromSeq() uint32 {
 		return *x.FromSeq
 	}
 	return 0
+}
+
+func (x *AdminListEntriesRequest) GetBeforePageToken() string {
+	if x != nil && x.BeforePageToken != nil {
+		return *x.BeforePageToken
+	}
+	return ""
+}
+
+func (x *AdminListEntriesRequest) GetTail() bool {
+	if x != nil && x.Tail != nil {
+		return *x.Tail
+	}
+	return false
 }
 
 type AdminGetConversationRequest struct {
@@ -8428,9 +8476,10 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\vPageRequest\x12\x1d\n" +
 	"\n" +
 	"page_token\x18\x01 \x01(\tR\tpageToken\x12\x1b\n" +
-	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\"2\n" +
+	"\tpage_size\x18\x02 \x01(\x05R\bpageSize\"b\n" +
 	"\bPageInfo\x12&\n" +
-	"\x0fnext_page_token\x18\x01 \x01(\tR\rnextPageToken\"\x92\x03\n" +
+	"\x0fnext_page_token\x18\x01 \x01(\tR\rnextPageToken\x12.\n" +
+	"\x13previous_page_token\x18\x02 \x01(\tR\x11previousPageToken\"\x92\x03\n" +
 	"\x13ConversationSummary\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x14\n" +
 	"\x05title\x18\x02 \x01(\tR\x05title\x12\"\n" +
@@ -8553,7 +8602,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x06_entry\"r\n" +
 	"\x12AppendEntryRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x123\n" +
-	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\xba\x02\n" +
+	"\x05entry\x18\x02 \x01(\v2\x1d.memory.v1.CreateEntryRequestR\x05entry\"\xa3\x03\n" +
 	"\x12ListEntriesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
@@ -8561,12 +8610,16 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
 	"\x05forks\x18\x05 \x01(\tR\x05forks\x12(\n" +
 	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01\x12\x1e\n" +
-	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01B\x11\n" +
+	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01\x12/\n" +
+	"\x11before_page_token\x18\b \x01(\tH\x02R\x0fbeforePageToken\x88\x01\x01\x12\x17\n" +
+	"\x04tail\x18\t \x01(\bH\x03R\x04tail\x88\x01\x01B\x11\n" +
 	"\x0f_up_to_entry_idB\v\n" +
-	"\t_from_seq\"s\n" +
+	"\t_from_seqB\x14\n" +
+	"\x12_before_page_tokenB\a\n" +
+	"\x05_tail\"s\n" +
 	"\x13ListEntriesResponse\x12*\n" +
 	"\aentries\x18\x01 \x03(\v2\x10.memory.v1.EntryR\aentries\x120\n" +
-	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xbf\x02\n" +
+	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xa8\x03\n" +
 	"\x17AdminListEntriesRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12,\n" +
 	"\achannel\x18\x02 \x01(\x0e2\x12.memory.v1.ChannelR\achannel\x12!\n" +
@@ -8574,9 +8627,13 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x04page\x18\x04 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12\x14\n" +
 	"\x05forks\x18\x05 \x01(\tR\x05forks\x12(\n" +
 	"\x0eup_to_entry_id\x18\x06 \x01(\fH\x00R\vupToEntryId\x88\x01\x01\x12\x1e\n" +
-	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01B\x11\n" +
+	"\bfrom_seq\x18\a \x01(\rH\x01R\afromSeq\x88\x01\x01\x12/\n" +
+	"\x11before_page_token\x18\b \x01(\tH\x02R\x0fbeforePageToken\x88\x01\x01\x12\x17\n" +
+	"\x04tail\x18\t \x01(\bH\x03R\x04tail\x88\x01\x01B\x11\n" +
 	"\x0f_up_to_entry_idB\v\n" +
-	"\t_from_seq\"\x83\x01\n" +
+	"\t_from_seqB\x14\n" +
+	"\x12_before_page_tokenB\a\n" +
+	"\x05_tail\"\x83\x01\n" +
 	"\x1bAdminGetConversationRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
 	"\rjustification\x18\x02 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
