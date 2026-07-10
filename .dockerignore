@@ -73,3 +73,4 @@ nb-configuration.xml
 /prometheus.yml
 /build.log
 /air.toml
+/dist/

@@ -10,6 +10,32 @@ go build -o memory-service .
 CGO_ENABLED=0 go build -tags nosqlite -o memory-service .
 ```
 
+## Portable Linux Binary
+
+The normal production container image is UBI-based. To build a portable Linux
+binary for distribution outside a container, use the separate static musl image:
+
+```bash
+docker build -t memory-service-portable:local -f Dockerfile.portable .
+
+cid="$(docker create memory-service-portable:local)"
+docker cp "$cid":/memory-service ./memory-service-linux
+docker rm "$cid"
+chmod +x ./memory-service-linux
+
+file ./memory-service-linux
+ldd ./memory-service-linux
+```
+
+`file` should report a statically linked Linux executable, and `ldd` should report
+that it is not a dynamic executable. The default portable build includes SQLite,
+SQLite FTS5, SQLite JSON, and sqlite-vec support, plus the other default plugins.
+The same workflow is available as:
+
+```bash
+task dist:memory-service-linux
+```
+
 ## Plugin Exclusion Tags
 
 The binary includes all plugins by default. Use `no<name>` build tags to exclude optional plugins at compile time, reducing binary size, dependencies, and attack surface.
