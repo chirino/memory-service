@@ -84,7 +84,6 @@ Attachment content is buffered in plaintext to disk during ingestion and retriev
 |---------|-------|----------|
 | `memory-service-source-url-*` | HTTP source URL download | Deleted after store |
 | `memory-service-s3-upload-*` | S3 upload buffer | Deleted after upload |
-| `memory-service-mongo-gridfs-*` / `memory-service-mongo-attachment-*` | MongoDB GridFS | Deleted on close |
 | `memory-service-pg-upload-*` / `memory-service-pg-lo-*` / `memory-service-pg-attachment-*` | PostgreSQL LargeObject | Deleted on close |
 
 These files are transient (seconds), always deleted immediately after use, and represent far lower risk than the resumption files.

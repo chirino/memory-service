@@ -82,7 +82,7 @@ type Config struct {
 	CacheLocalBufferItems int64
 
 	// Attachment store type
-	AttachType string // "db", "postgres", "mongo", "s3", or "fs"
+	AttachType string // "db", "postgres", "s3", or "fs"
 	// AttachTypeExplicit records whether the attachment store was explicitly set by flag/env.
 	AttachTypeExplicit bool
 	// AttachFSDir overrides the local filesystem directory used by the "fs" attachment store.

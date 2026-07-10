@@ -82,7 +82,10 @@ docker run -d \
 ```bash
 MEMORY_SERVICE_DB_KIND=mongo
 MEMORY_SERVICE_DB_URL=mongodb://admin:password@localhost:27017/memoryservice
+MEMORY_SERVICE_ATTACHMENTS_KIND=s3
 ```
+
+MongoDB does not provide attachment blob storage. Use the S3 backend for durable deployments, or configure `MEMORY_SERVICE_ATTACHMENTS_KIND=fs` together with `MEMORY_SERVICE_ATTACHMENTS_FS_DIR` for a single-node deployment.
 
 ## SQLite
 

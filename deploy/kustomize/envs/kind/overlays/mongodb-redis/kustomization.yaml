@@ -14,7 +14,7 @@ patches:
     patch: |
       - op: add
         path: /data/MEMORY_SERVICE_ATTACHMENTS_KIND
-        value: db
+        value: s3
       - op: add
         path: /data/MEMORY_SERVICE_EMBEDDING_KIND
         value: openai

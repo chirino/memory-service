@@ -38,7 +38,8 @@ func TestFeaturesMongoOutbox(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "mongo"
-	cfg.AttachType = "mongo"
+	cfg.AttachType = "fs"
+	cfg.AttachFSDir = t.TempDir()
 	cfg.DBURL = mongoURL
 	cfg.CacheType = "redis"
 	cfg.RedisURL = redisURL

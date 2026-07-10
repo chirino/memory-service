@@ -1,7 +1,7 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
 
-# Production: MongoDB + Redis + Qdrant + Keycloak + Monitoring
+# Production: MongoDB + Redis + Qdrant + MinIO + Keycloak + Monitoring
 namespace: memory-service
 
 resources:
@@ -11,6 +11,7 @@ components:
   - ../../components/db/mongodb
   - ../../components/cache/redis
   - ../../components/vector/qdrant
+  - ../../components/storage/minio
   - ../../components/auth/keycloak
   - ../../components/monitoring/prometheus
   - ../../components/monitoring/grafana

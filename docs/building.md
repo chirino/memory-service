@@ -24,7 +24,7 @@ go build -tags '<tag1>,<tag2>,…' -o memory-service .
 |-----|-----------------|---------------------|
 | `nopostgresql` | `store/postgres`, `vector/pgvector`, `attach/pgstore` | PostgreSQL driver, pgvector |
 | `nosqlite` | `store/sqlite`, `vector/sqlitevec` | CGO sqlite bindings, sqlite-vec |
-| `nomongo` | `store/mongo`, `attach/mongostore` | MongoDB driver |
+| `nomongo` | `store/mongo` | MongoDB driver |
 | `noredis` | `cache/redis` | go-redis (unless infinispan is also enabled) |
 | `noinfinispan` | `cache/infinispan` | Infinispan RESP support |
 | `noqdrant` | `vector/qdrant` | Qdrant vector plugin |

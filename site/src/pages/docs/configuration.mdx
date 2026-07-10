@@ -373,7 +373,7 @@ Configure file attachment storage, size limits, and lifecycle.
 
 ### Attachment Storage: DB Configuration
 
-The default `db` backend stores attachments directly in the primary database (PostgreSQL or MongoDB). No additional configuration is required.
+The default `db` backend stores attachments directly in PostgreSQL. MongoDB does not support database-backed attachments; configure `s3` or `fs` with an explicit filesystem directory when using MongoDB.
 
 <ConfigBlock
   property={`# Use database storage (default)
