@@ -170,6 +170,36 @@ for (Entry entry : response.getEntriesList()) {
 }
 ```
 
+To open at the newest entries, set `tail` and then use
+`pageInfo.previousPageToken` to request the adjacent older page:
+
+```java
+ListEntriesResponse newest = entriesClient.listEntries(
+    ListEntriesRequest.newBuilder()
+        .setConversationId(conversationId)
+        .setChannel(Channel.HISTORY)
+        .setTail(true)
+        .setPage(PageRequest.newBuilder().setPageSize(50).build())
+        .build()
+);
+
+String olderToken = newest.getPageInfo().getPreviousPageToken();
+if (!olderToken.isEmpty()) {
+    ListEntriesResponse older = entriesClient.listEntries(
+        ListEntriesRequest.newBuilder()
+            .setConversationId(conversationId)
+            .setChannel(Channel.HISTORY)
+            .setBeforePageToken(olderToken)
+            .setPage(PageRequest.newBuilder().setPageSize(50).build())
+            .build()
+    );
+}
+```
+
+`previousPageToken` maps to REST `beforeCursor`; `nextPageToken` maps to REST
+`afterCursor`. `page.pageToken`, `beforePageToken`, and `tail=true` are mutually
+exclusive.
+
 ### Append Entry
 
 ```java

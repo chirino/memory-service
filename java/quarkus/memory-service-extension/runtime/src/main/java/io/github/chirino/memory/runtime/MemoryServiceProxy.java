@@ -56,6 +56,16 @@ public class MemoryServiceProxy {
         return s == null || s.isBlank() ? null : UUID.fromString(s);
     }
 
+    /** Stable entry-list options that avoid exposing generated-client parameter ordering. */
+    public record EntryListOptions(
+            String afterCursor,
+            String beforeCursor,
+            Boolean tail,
+            Integer limit,
+            Channel channel,
+            String epoch,
+            String forks) {}
+
     @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
     @Inject SecurityIdentity securityIdentity;
@@ -121,18 +131,26 @@ public class MemoryServiceProxy {
             Channel channel,
             String epoch,
             String forks) {
+        return listConversationEntries(
+                conversationId,
+                new EntryListOptions(afterCursor, null, null, limit, channel, epoch, forks));
+    }
+
+    public Response listConversationEntries(String conversationId, EntryListOptions options) {
         return execute(
                 () ->
                         conversationsApi()
                                 .listConversationEntries(
                                         conversationId,
-                                        toUuid(afterCursor),
+                                        toUuid(options.afterCursor()),
+                                        toUuid(options.beforeCursor()),
+                                        options.tail(),
                                         null,
-                                        limit,
-                                        channel,
-                                        epoch,
+                                        options.limit(),
+                                        options.channel(),
+                                        options.epoch(),
                                         null,
-                                        forks),
+                                        options.forks()),
                 OK,
                 "Error listing entries for history %s",
                 conversationId);

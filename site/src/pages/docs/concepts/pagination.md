@@ -8,7 +8,7 @@ Memory Service uses **cursor-based pagination** for all list endpoints. Instead 
 
 ## How It Works
 
-Every paginated endpoint returns a response with two fields:
+Forward-only paginated endpoints return a response with two fields:
 
 ```json
 {
@@ -29,6 +29,9 @@ To paginate through results:
 3. If `afterCursor` is not `null`, pass it as the `afterCursor` parameter in the next request
 4. Repeat until `afterCursor` is `null`
 
+Conversation entry endpoints also return `beforeCursor` and support opening at
+the newest page. Those entry-specific controls are described below.
+
 ## Paginated Endpoints
 
 All paginated endpoints share the same pattern but differ in defaults and parameter placement.
@@ -38,7 +41,7 @@ All paginated endpoints share the same pattern but differ in defaults and parame
 | Endpoint                                 | Cursor Param          | Limit Param     | Default Limit | Max Limit |
 | ---------------------------------------- | --------------------- | --------------- | ------------- | --------- |
 | `GET /v1/conversations`                  | `afterCursor` (query) | `limit` (query) | 20            | 200       |
-| `GET /v1/conversations/{id}/entries`     | `afterCursor` (query) | `limit` (query) | 50            | 200       |
+| `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50 | 200 |
 | `GET /v1/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50            | 200       |
 | `GET /v1/conversations/{id}/forks`       | `afterCursor` (query) | `limit` (query) | 50            | 200       |
 | `POST /v1/conversations/search`          | `afterCursor` (body)  | `limit` (body)  | 20            | 200       |
@@ -50,7 +53,7 @@ All paginated endpoints share the same pattern but differ in defaults and parame
 | Endpoint                                       | Cursor Param          | Limit Param     | Default Limit | Max Limit |
 | ---------------------------------------------- | --------------------- | --------------- | ------------- | --------- |
 | `GET /v1/admin/conversations`                  | `afterCursor` (query) | `limit` (query) | 100           | 1000      |
-| `GET /v1/admin/conversations/{id}/entries`     | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
+| `GET /v1/admin/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50 | 1000 |
 | `GET /v1/admin/conversations/{id}/memberships` | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
 | `GET /v1/admin/conversations/{id}/forks`       | `afterCursor` (query) | `limit` (query) | 50            | 1000      |
 | `POST /v1/admin/conversations/search`          | `afterCursor` (body)  | `limit` (body)  | 20            | 1000      |
@@ -124,7 +127,20 @@ An `afterCursor` of `null` means there are no more results.
 
 ## Listing Entries
 
-Entries within a conversation are paginated the same way, using `afterCursor` and `limit` query parameters.
+Entry responses remain chronological, but they support navigation in both
+directions:
+
+| Control | Result |
+| ------- | ------ |
+| no cursor | The oldest page. |
+| `afterCursor={id}` | Entries strictly after the cursor. |
+| `beforeCursor={id}` | Up to `limit` entries strictly before the cursor. |
+| `tail=true` | The newest `limit` entries. |
+
+`afterCursor`, `beforeCursor`, and `tail=true` are mutually exclusive. Invalid
+combinations or an invalid/invisible `beforeCursor` return `400 Bad Request`.
+Channel, fork ancestry, epoch, `upToEntryId`, and `fromSeq` filters are applied
+before the page is selected.
 
 ### First page
 
@@ -157,7 +173,8 @@ Response:
       "createdAt": "2025-01-10T14:40:15Z"
     }
   ],
-  "afterCursor": "bbb7b810-9dad-11d1-80b4-00c04fd430c9"
+  "afterCursor": "bbb7b810-9dad-11d1-80b4-00c04fd430c9",
+  "beforeCursor": null
 }
 ```
 
@@ -167,6 +184,35 @@ Response:
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=2&afterCursor=bbb7b810-9dad-11d1-80b4-00c04fd430c9" \
   -H "Authorization: Bearer <token>"
 ```
+
+### Open at the newest entries
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?tail=true&limit=2" \
+  -H "Authorization: Bearer <token>"
+```
+
+The tail response has `afterCursor: null`. When older entries exist,
+`beforeCursor` is the ID of the first returned entry:
+
+```json
+{
+  "data": [ ... ],
+  "afterCursor": null,
+  "beforeCursor": "ddd7b810-9dad-11d1-80b4-00c04fd430cb"
+}
+```
+
+Pass that cursor back to load the adjacent older page:
+
+```bash
+curl "http://localhost:8080/v1/conversations/{conversationId}/entries?beforeCursor=ddd7b810-9dad-11d1-80b4-00c04fd430cb&limit=2" \
+  -H "Authorization: Bearer <token>"
+```
+
+A middle page can contain both cursors: use `beforeCursor` to continue toward
+older entries and `afterCursor` to return toward newer entries. Cursor anchors
+are excluded, so adjacent pages do not duplicate their boundary entry.
 
 ## Search Results
 
@@ -245,6 +291,7 @@ If no `limit` is provided, the endpoint-specific default is used. Requesting a `
 2. **Use reasonable page sizes** — smaller pages (20–50) give faster individual responses; larger pages (100–200) reduce the number of round trips.
 3. **Don't store cursors long-term** — cursors are opaque position markers. They may become invalid if the underlying data changes (e.g., a conversation is deleted).
 4. **Paginate in loops** — for batch processing, loop until `afterCursor` is `null` rather than guessing when to stop.
+5. **Use entry cursors directionally** — on entry responses, follow `beforeCursor` toward older history and `afterCursor` toward newer history.
 
 ## Next Steps
 

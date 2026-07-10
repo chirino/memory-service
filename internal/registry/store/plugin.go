@@ -19,8 +19,9 @@ var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupporte
 
 // PagedEntries is a paginated list of entries.
 type PagedEntries struct {
-	Data        []model.Entry `json:"data"`
-	AfterCursor *string       `json:"afterCursor,omitempty"`
+	Data         []model.Entry `json:"data"`
+	AfterCursor  *string       `json:"afterCursor,omitempty"`
+	BeforeCursor *string       `json:"beforeCursor,omitempty"`
 }
 
 // SearchResult represents a single search result.
@@ -138,15 +139,32 @@ type AdminConversationQuery struct {
 	Limit          int
 }
 
+// EntryListQuery holds all parameters for user and admin entry listing.
+type EntryListQuery struct {
+	AfterCursor  *string
+	BeforeCursor *string
+	Tail         bool
+	UpToEntryID  *string
+	Limit        int
+	Channel      *model.Channel
+	EpochFilter  *MemoryEpochFilter
+	ClientID     *string
+	AgentID      *string
+	AllForks     bool
+	FromSeq      *uint32
+}
+
 // AdminMessageQuery holds parameters for admin entry listing.
 type AdminMessageQuery struct {
-	AfterCursor *string
-	UpToEntryID *string
-	Limit       int
-	Channel     *model.Channel
-	EpochFilter *MemoryEpochFilter
-	AllForks    bool
-	FromSeq     *uint32
+	AfterCursor  *string
+	BeforeCursor *string
+	Tail         bool
+	UpToEntryID  *string
+	Limit        int
+	Channel      *model.Channel
+	EpochFilter  *MemoryEpochFilter
+	AllForks     bool
+	FromSeq      *uint32
 }
 
 // AdminSearchQuery holds parameters for admin search.
@@ -278,7 +296,7 @@ type MemoryStore interface {
 	DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error
 
 	// Entries
-	GetEntries(ctx context.Context, userID string, conversationID string, afterEntryID *string, upToEntryID *string, limit int, channel *model.Channel, epochFilter *MemoryEpochFilter, clientID *string, agentID *string, allForks bool, fromSeq *uint32) (*PagedEntries, error)
+	GetEntries(ctx context.Context, userID string, conversationID string, query EntryListQuery) (*PagedEntries, error)
 	AppendEntries(ctx context.Context, userID string, conversationID string, entries []CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error)
 	GetEntryGroupID(ctx context.Context, entryID uuid.UUID) (uuid.UUID, error)
 	SyncAgentEntry(ctx context.Context, userID string, conversationID string, entry CreateEntryRequest, clientID string, agentID *string) (*SyncResult, error)

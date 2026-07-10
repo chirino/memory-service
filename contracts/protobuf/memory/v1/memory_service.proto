@@ -24,6 +24,7 @@ message PageRequest {
 
 message PageInfo {
   string next_page_token = 1;
+  string previous_page_token = 2; // Empty when no older page exists.
 }
 
 // ConversationListMode controls which conversations are returned from each fork tree.
@@ -274,6 +275,12 @@ message ListEntriesRequest {
   // When set, return only entries with seq >= from_seq, ordered by seq ASC.
   // Entries without a seq value are excluded.
   optional uint32 from_seq = 7;
+  // Return up to page_size entries strictly before this token in the caller-visible order.
+  // Mutually exclusive with page.page_token and tail.
+  optional string before_page_token = 8;
+  // When true, return the last page_size entries (newest page). Mutually exclusive with
+  // page.page_token and before_page_token.
+  optional bool tail = 9;
 }
 
 message ListEntriesResponse {
@@ -295,6 +302,12 @@ message AdminListEntriesRequest {
   // When set, return only entries with seq >= from_seq, ordered by seq ASC.
   // Entries without a seq value are excluded.
   optional uint32 from_seq = 7;
+  // Return up to page_size entries strictly before this token in the admin-visible order.
+  // Mutually exclusive with page.page_token and tail.
+  optional string before_page_token = 8;
+  // When true, return the last page_size entries (newest page). Mutually exclusive with
+  // page.page_token and before_page_token.
+  optional bool tail = 9;
 }
 
 message AdminGetConversationRequest {

@@ -1,10 +1,10 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 109: Tail Pagination for Conversation Entries
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
@@ -220,6 +220,12 @@ Both REST handlers parse and validate the new parameters before invoking the sto
 
 Generated REST proxy interfaces gain optional parameters when OpenAPI is regenerated. Stable Java proxy APIs covered by Enhancement 103 must add fields to their request/options objects without exposing new generated positional signatures to callers.
 
+The Quarkus and Spring proxies expose `EntryListOptions` records containing
+`afterCursor`, `beforeCursor`, `tail`, `limit`, `channel`, `epoch`, and `forks`.
+The original positional overloads remain for source compatibility and delegate
+to the options-based overload. Quarkus's Unix-domain-socket adapter maps every
+generated parameter explicitly so UDS requests have the same behavior as TCP.
+
 ## Testing
 
 ### Behavioral coverage
@@ -257,6 +263,12 @@ Scenario: Conflicting pagination controls are rejected
 
 Also cover an empty conversation, fewer entries than the limit, exact-limit results, malformed and non-visible backward anchors, channel filtering, and `limit=1`.
 
+Implemented BDD coverage includes user REST tail/backward navigation, fork-point
+exclusion, paging across child and parent segments, rejection of context
+cursors, `seq=null` versus `seq=0`, admin REST pagination, and user/admin gRPC
+cursor mapping. The common REST feature runs in the SQLite, PostgreSQL, and
+Mongo datastore matrices.
+
 ### Store and query coverage
 
 For Postgres, SQLite, and Mongo:
@@ -270,16 +282,20 @@ For Postgres, SQLite, and Mongo:
 
 ## Tasks
 
-- [ ] Update user and admin OpenAPI entry-list parameters, response cursors, and `400` responses.
-- [ ] Update protobuf entry-list request fields and `PageInfo.previous_page_token`.
-- [ ] Regenerate Go, Java, Python, and TypeScript artifacts affected by the contract workflow.
-- [ ] Introduce `EntryListQuery`; update `MemoryStore`, `AdminMessageQuery`, wrappers, mocks, and callers.
-- [ ] Share and test the in-memory bidirectional paginator.
-- [ ] Implement fork-aware bounded history reads in Postgres, SQLite, and Mongo.
-- [ ] Add the branch/channel/order indexes without removing existing indexes.
-- [ ] Map request and response cursors in user/admin REST and gRPC handlers.
-- [ ] Update stable Java entry-list option objects and examples if generated signature changes reach those modules.
-- [ ] Add BDD, handler/server, store-result, query-path, and migration coverage.
+- [x] Update user and admin OpenAPI entry-list parameters, response cursors, and `400` responses.
+- [x] Update protobuf entry-list request fields and `PageInfo.previous_page_token`.
+- [x] Regenerate Go, Java, Python, and TypeScript artifacts affected by the contract workflow.
+- [x] Introduce `EntryListQuery`; update `MemoryStore`, `AdminMessageQuery`, wrappers, mocks, and callers.
+- [x] Share and test the in-memory bidirectional paginator.
+- [x] Implement fork-aware bounded history reads in Postgres, SQLite, and Mongo.
+- [x] Add the branch/channel/order indexes without removing existing indexes.
+- [x] Map request and response cursors in user/admin REST and gRPC handlers.
+- [x] Use `strconv.ParseBool` for `tail` parameter validation; reject malformed values with HTTP 400.
+- [x] Add stable Quarkus/Spring `EntryListOptions` overloads and preserve the original positional overloads.
+- [x] Update the Quarkus Unix-domain-socket generated-client parameter mapping.
+- [x] Add user/admin REST and gRPC BDD coverage, including fork boundaries, cursor visibility, and null/zero sequence ordering.
+- [x] Add focused store tests for null/zero ordering and bounded `limit + 1` materialization.
+- [x] Update the site pagination, entries, and Quarkus gRPC client documentation.
 
 ## Files to Modify
 
@@ -294,7 +310,9 @@ For Postgres, SQLite, and Mongo:
 | gRPC servers | `internal/grpc/server.go` | Map user/admin request modes and `PageInfo` cursors. |
 | Generated bindings | `internal/generated/`, generated Java REST/proto sources, `python/`, `frontends/chat-frontend/` | Regenerate artifacts affected by OpenAPI and protobuf changes. |
 | Stable Java APIs | Quarkus/Spring REST wrappers and their tests | Extend entry-list option objects without leaking generated positional APIs. |
+| Quarkus UDS adapter | `java/quarkus/memory-service-extension/runtime/.../UnixSocketRestClientFactory.java` | Map the generated entry-list parameters to the correct query names and positions. |
 | BDD | `internal/bdd/` | Add REST/gRPC tail, backward, conflict, and fork scenarios. |
+| Site documentation | `site/src/pages/docs/concepts/pagination.md`, `site/src/pages/docs/concepts/entries.md`, `site/src/pages/docs/quarkus/grpc-client.mdx` | Document bidirectional REST and gRPC entry pagination. |
 
 ## Non-goals
 
@@ -310,7 +328,7 @@ For Postgres, SQLite, and Mongo:
 | Open at newest history page | `tail=true` / gRPC `tail`. |
 | Page backward without a forward scan | `beforeCursor` / `before_page_token` and response previous cursor. |
 | Equivalent REST and gRPC contracts | Explicit field mapping and shared cursor rules. |
-| Bounded Postgres, SQLite, and Mongo reads | Fork-aware segment queries plus supporting indexes and query-path tests. |
+| Bounded Postgres, SQLite, and Mongo reads | Fork-aware segment queries plus supporting indexes, datastore-matrix BDD coverage, and a focused SQLite `limit + 1` materialization assertion. |
 | Preserve fork ancestry | Optimized algorithm uses the existing ancestry stack and fork stop semantics. |
 | Tail, backward, and fork tests | BDD plus datastore result and bounded-query assertions. |
 
@@ -325,7 +343,7 @@ rg -n "ERROR|FAIL|panic|undefined:" build.log
 go test ./internal/plugin/store/postgres ./internal/plugin/store/sqlite ./internal/plugin/store/mongo -count=1 > store-test.log 2>&1
 rg -n "ERROR|FAIL|panic|--- FAIL:" store-test.log
 go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1 > test.log 2>&1
-go test ./internal/bdd -run TestFeaturesSQLite -count=1 >> test.log 2>&1
+go test -tags auth_testfixtures ./internal/bdd -run TestFeaturesSQLite -count=1 >> test.log 2>&1
 rg -n "ERROR|FAIL|panic|--- FAIL:" test.log
 ./java/mvnw -f java/pom.xml compile > java-build.log 2>&1
 rg -n "ERROR|FAILURE|BUILD FAILURE" java-build.log

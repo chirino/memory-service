@@ -63,7 +63,7 @@ func (p *PostgresTestDB) ResolveGroupID(ctx context.Context, conversationID stri
 
 	var groupID string
 	err = conn.QueryRow(ctx,
-		"SELECT conversation_group_id::text FROM conversations WHERE id = $1::uuid", conversationID).Scan(&groupID)
+		"SELECT conversation_group_id::text FROM conversations WHERE id = $1", conversationID).Scan(&groupID)
 	if err != nil {
 		return "", fmt.Errorf("could not resolve conversation group ID for %s: %w", conversationID, err)
 	}
@@ -81,7 +81,7 @@ func (p *PostgresTestDB) SetConversationEntriesCreatedAt(ctx context.Context, co
 		`UPDATE entries
 		 SET created_at = $1
 		 WHERE conversation_group_id = (
-		   SELECT conversation_group_id FROM conversations WHERE id = $2::uuid
+		   SELECT conversation_group_id FROM conversations WHERE id = $2
 		 )`,
 		createdAt, conversationID)
 	if err != nil {

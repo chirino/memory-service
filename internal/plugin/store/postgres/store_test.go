@@ -125,7 +125,7 @@ func TestAppendAndGetEntries(t *testing.T) {
 	assert.Len(t, entries, 2)
 
 	// Get entries
-	result, err := store.GetEntries(ctx, "user4", conv.ID, nil, nil, 10, nil, nil, nil, nil, false, nil)
+	result, err := store.GetEntries(ctx, "user4", conv.ID, registrystore.EntryListQuery{Limit: 10})
 	require.NoError(t, err)
 	assert.GreaterOrEqual(t, len(result.Data), 2)
 }

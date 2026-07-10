@@ -716,6 +716,20 @@ paths:
           schema:
             type: string
             format: uuid
+        - name: beforeCursor
+          in: query
+          required: false
+          description: Cursor for backward pagination; returns up to limit entries strictly before this entry in admin-visible order. Mutually exclusive with afterCursor and tail=true.
+          schema:
+            type: string
+            format: uuid
+        - name: tail
+          in: query
+          required: false
+          description: When true, returns the last limit entries (newest page). Mutually exclusive with afterCursor and beforeCursor.
+          schema:
+            type: boolean
+            default: false
         - name: limit
           in: query
           required: false
@@ -780,7 +794,16 @@ paths:
                       $ref: '#/components/schemas/Entry'
                   afterCursor:
                     type: string
+                    format: uuid
                     nullable: true
+                    description: Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
+                  beforeCursor:
+                    type: string
+                    format: uuid
+                    nullable: true
+                    description: Pass as beforeCursor to fetch the adjacent older page. Null when no older entries exist.
+        '400':
+          $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -1780,6 +1803,12 @@ components:
   responses:
     Error:
       description: Error response
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    BadRequest:
+      description: Bad request
       content:
         application/json:
           schema:

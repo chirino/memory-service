@@ -416,11 +416,40 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
+	afterCursor := queryPtr(c, "afterCursor")
+	beforeCursor := queryPtr(c, "beforeCursor")
+	var tail bool
+	if tailStr := strings.TrimSpace(c.Query("tail")); tailStr != "" {
+		var err error
+		tail, err = strconv.ParseBool(tailStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid tail value: must be true or false"})
+			return
+		}
+	}
+
+	paginationCount := 0
+	if afterCursor != nil {
+		paginationCount++
+	}
+	if beforeCursor != nil {
+		paginationCount++
+	}
+	if tail {
+		paginationCount++
+	}
+	if paginationCount > 1 {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "afterCursor, beforeCursor, and tail are mutually exclusive"})
+		return
+	}
+
 	query := registrystore.AdminMessageQuery{
-		Limit:       queryInt(c, "limit", 20),
-		AfterCursor: queryPtr(c, "afterCursor"),
-		UpToEntryID: queryPtr(c, "upToEntryId"),
-		AllForks:    forks == "all",
+		Limit:        queryInt(c, "limit", 20),
+		AfterCursor:  afterCursor,
+		BeforeCursor: beforeCursor,
+		Tail:         tail,
+		UpToEntryID:  queryPtr(c, "upToEntryId"),
+		AllForks:     forks == "all",
 	}
 	if ch := c.Query("channel"); ch != "" {
 		v := model.Channel(ch)
@@ -449,7 +478,7 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor})
+		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor, "beforeCursor": result.BeforeCursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -1176,6 +1205,7 @@ func handleError(c *gin.Context, err error) {
 	var forbidden *registrystore.ForbiddenError
 	var conflict *registrystore.ConflictError
 	var validation *registrystore.ValidationError
+	var badRequest *registrystore.BadRequestError
 	switch {
 	case errors.As(err, &notFound):
 		c.JSON(http.StatusNotFound, gin.H{"error": err.Error()})
@@ -1184,6 +1214,8 @@ func handleError(c *gin.Context, err error) {
 	case errors.As(err, &conflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.As(err, &validation):
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+	case errors.As(err, &badRequest):
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 	default:
 		log.Error("Admin API error", "err", err)

@@ -1120,6 +1120,9 @@ type UpdateMemoryRequest struct {
 	ExpectedRevision *int64 `json:"expected_revision,omitempty"`
 }
 
+// BadRequest defines model for BadRequest.
+type BadRequest = ErrorResponse
+
 // Error defines model for Error.
 type Error = ErrorResponse
 
@@ -1269,6 +1272,16 @@ type ListConversationChildrenParams struct {
 type ListConversationEntriesParams struct {
 	// AfterCursor Cursor for pagination; returns entries after this entry id (UUID format).
 	AfterCursor *openapi_types.UUID `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
+
+	// BeforeCursor Cursor for backward pagination; returns up to `limit` entries strictly
+	// before this entry in the caller-visible order. Results remain chronological
+	// (ascending). Mutually exclusive with `afterCursor` and `tail=true`.
+	BeforeCursor *openapi_types.UUID `form:"beforeCursor,omitempty" json:"beforeCursor,omitempty"`
+
+	// Tail When `true`, returns the last `limit` entries in the caller-visible order
+	// (newest page). Results remain chronological (ascending). Mutually exclusive
+	// with `afterCursor` and `beforeCursor`.
+	Tail *bool `form:"tail,omitempty" json:"tail,omitempty"`
 
 	// UpToEntryId Upper-bound entry id (UUID format). When set, only entries at or
 	// before this entry in the caller-visible conversation order are
@@ -3273,6 +3286,30 @@ func NewListConversationEntriesRequest(server string, conversationId string, par
 
 		}
 
+		if params.BeforeCursor != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "beforeCursor", *params.BeforeCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.Tail != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "tail", *params.Tail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "boolean", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.UpToEntryId != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "upToEntryId", *params.UpToEntryId, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "uuid"}); err != nil {
@@ -5221,9 +5258,14 @@ type ListConversationEntriesResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
 	JSON200      *struct {
-		AfterCursor *string  `json:"afterCursor,omitempty"`
-		Data        *[]Entry `json:"data,omitempty"`
+		// AfterCursor Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
+		AfterCursor *openapi_types.UUID `json:"afterCursor,omitempty"`
+
+		// BeforeCursor Pass as beforeCursor to fetch the adjacent older page. Null when no older entries exist.
+		BeforeCursor *openapi_types.UUID `json:"beforeCursor,omitempty"`
+		Data         *[]Entry            `json:"data,omitempty"`
 	}
+	JSON400     *BadRequest
 	JSON404     *NotFound
 	JSONDefault *Error
 }
@@ -6922,13 +6964,24 @@ func ParseListConversationEntriesResp(rsp *http.Response) (*ListConversationEntr
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
 		var dest struct {
-			AfterCursor *string  `json:"afterCursor,omitempty"`
-			Data        *[]Entry `json:"data,omitempty"`
+			// AfterCursor Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
+			AfterCursor *openapi_types.UUID `json:"afterCursor,omitempty"`
+
+			// BeforeCursor Pass as beforeCursor to fetch the adjacent older page. Null when no older entries exist.
+			BeforeCursor *openapi_types.UUID `json:"beforeCursor,omitempty"`
+			Data         *[]Entry            `json:"data,omitempty"`
 		}
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest BadRequest
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest NotFound

@@ -9,3 +9,4 @@ type NotFoundError = registrystore.NotFoundError
 type ValidationError = registrystore.ValidationError
 type ConflictError = registrystore.ConflictError
 type ForbiddenError = registrystore.ForbiddenError
+type BadRequestError = registrystore.BadRequestError
