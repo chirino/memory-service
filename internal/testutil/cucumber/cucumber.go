@@ -91,6 +91,8 @@ type TestDB interface {
 	ClearAll(ctx context.Context) error
 	// ResolveGroupID returns the conversation_group_id for a given conversation ID.
 	ResolveGroupID(ctx context.Context, conversationID string) (string, error)
+	// SetConversationEntriesCreatedAt forces all entries in a conversation group to the same created_at timestamp.
+	SetConversationEntriesCreatedAt(ctx context.Context, conversationID string, createdAt time.Time) error
 	// ExecSQL runs a raw SQL query and returns rows as maps. Non-SQL backends return (nil, nil) to skip assertions.
 	ExecSQL(ctx context.Context, query string) ([]map[string]interface{}, error)
 	// ExecMongoQuery runs a MongoDB query spec (JSON payload) and returns rows as maps.

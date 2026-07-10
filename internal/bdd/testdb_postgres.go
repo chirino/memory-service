@@ -70,6 +70,26 @@ func (p *PostgresTestDB) ResolveGroupID(ctx context.Context, conversationID stri
 	return groupID, nil
 }
 
+func (p *PostgresTestDB) SetConversationEntriesCreatedAt(ctx context.Context, conversationID string, createdAt time.Time) error {
+	conn, err := p.conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+
+	_, err = conn.Exec(ctx,
+		`UPDATE entries
+		 SET created_at = $1
+		 WHERE conversation_group_id = (
+		   SELECT conversation_group_id FROM conversations WHERE id = $2::uuid
+		 )`,
+		createdAt, conversationID)
+	if err != nil {
+		return fmt.Errorf("failed to set conversation entry timestamps for %s: %w", conversationID, err)
+	}
+	return nil
+}
+
 func (p *PostgresTestDB) ExecSQL(ctx context.Context, query string) ([]map[string]interface{}, error) {
 	conn, err := p.conn(ctx)
 	if err != nil {

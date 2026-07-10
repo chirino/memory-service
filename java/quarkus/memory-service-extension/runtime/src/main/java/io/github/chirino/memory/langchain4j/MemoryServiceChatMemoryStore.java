@@ -68,6 +68,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
                                     50,
                                     Channel.CONTEXT,
                                     null,
+                                    null,
                                     null);
         } catch (WebApplicationException e) {
             int status = e.getResponse() != null ? e.getResponse().getStatus() : -1;

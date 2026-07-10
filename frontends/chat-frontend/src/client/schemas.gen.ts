@@ -294,7 +294,7 @@ export const $Conversation = {
           format: "uuid",
           nullable: true,
           description:
-            "First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.",
+            "First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.",
         },
         forkedAtConversationId: {
           type: "string",
@@ -410,7 +410,7 @@ export const $ConversationForkSummary = {
       format: "uuid",
       nullable: true,
       description:
-        "First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.",
+        "First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for blank-slate forks that inherit no parent entries.",
     },
     forkedAtConversationId: {
       type: "string",
@@ -450,7 +450,7 @@ export const $ShareConversationRequest = {
 export const $Channel = {
   type: "string",
   description: "Logical channel of the entry within the conversation.",
-  enum: ["history", "context"],
+  enum: ["history", "context", "journal"],
 } as const;
 
 export const $PutMemoryRequest = {
@@ -981,6 +981,16 @@ For history channel entries (contentType: \`"history"\`), each block
 contains \`role\` and at least one of \`text\`, \`events\`, or \`attachments\`.`,
       items: {},
     },
+    seq: {
+      type: "integer",
+      minimum: 0,
+      nullable: true,
+      description: `Optional client-assigned sequence number, unique within the conversation.
+Default listing uses seq only as a createdAt tie-breaker, with entries
+without seq sorted before sequenced entries at the same timestamp. Gaps
+are permitted.`,
+      maximum: 4294967295,
+    },
     createdAt: {
       type: "string",
       format: "date-time",
@@ -1081,7 +1091,7 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
       type: "string",
       format: "uuid",
       description:
-        "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.",
+        "Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.",
     },
     startedByConversationId: {
       type: "string",
@@ -1092,6 +1102,16 @@ after creation. Returns 400 Bad Request if specified for non-history channels.`,
       type: "string",
       format: "uuid",
       description: "Optional parent entry that caused this child conversation to be started.",
+    },
+    seq: {
+      type: "integer",
+      minimum: 0,
+      nullable: true,
+      description: `Optional client-assigned sequence number. Must be unique within the
+conversation. Must be >= 0. Returns 409 Conflict if a duplicate seq is
+submitted. Returns 400 Bad Request if the value is negative or exceeds
+4294967295.`,
+      maximum: 4294967295,
     },
   },
   example: {

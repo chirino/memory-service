@@ -38,6 +38,8 @@ Keep the chat endpoint the same shape as Quarkus and Spring (`text/plain` input)
 
 **Why**: When fork parameters are present, the history middleware attaches them as fork metadata to the first entry it writes for this conversation. This tells the Memory Service that the new conversation branches off at a specific entry in another conversation, allowing the service to reconstruct the full lineage.
 
+This guide keeps the example history-based. Trusted runtime clients can also fork at client-visible `journal` entries for replay/debug workflows; see [Forking](/docs/concepts/forking/) for the channel rules.
+
 ### Listing Forks
 
 Expose a forks endpoint so frontend clients can discover branches from a conversation:

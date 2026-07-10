@@ -76,6 +76,7 @@ CREATE TABLE IF NOT EXISTS entries (
     agent_id          TEXT,
     channel           TEXT NOT NULL,
     epoch             BIGINT,
+    seq               BIGINT CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)),
     content_type      TEXT NOT NULL,
     content           BYTEA NOT NULL,
     indexed_content   TEXT,
@@ -118,9 +119,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_indexed_content_fts
 
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
     ON entries (conversation_id, created_at);
-
-CREATE INDEX IF NOT EXISTS idx_entries_group_created_at
-    ON entries (conversation_group_id, created_at);
 
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
     ON entries (conversation_id, channel, client_id, epoch, created_at);
@@ -439,3 +437,25 @@ CREATE TABLE IF NOT EXISTS knowledge_cluster_members (
 
 CREATE INDEX IF NOT EXISTS knowledge_members_source_idx
     ON knowledge_cluster_members (source_id);
+
+-- Schema reconciliation for entries table (Enhancement 108).
+-- ADD COLUMN must come before any index that references seq.
+ALTER TABLE entries ADD COLUMN IF NOT EXISTS seq BIGINT;
+DO $$
+BEGIN
+    IF NOT EXISTS (
+        SELECT 1 FROM pg_constraint
+        WHERE conname = 'entries_seq_range' AND conrelid = 'entries'::regclass
+    ) THEN
+        ALTER TABLE entries ADD CONSTRAINT entries_seq_range CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)) NOT VALID;
+    END IF;
+END
+$$;
+-- Unique index for client-assigned seq; placed after ADD COLUMN so it works on
+-- both fresh databases (where seq exists from CREATE TABLE) and existing databases
+-- that receive the column via the ALTER TABLE above.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
+    ON entries (conversation_group_id, conversation_id, seq) WHERE seq IS NOT NULL;
+DROP INDEX IF EXISTS idx_entries_group_created_at;
+CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
+    ON entries (conversation_group_id, created_at ASC, seq ASC NULLS FIRST, id ASC);

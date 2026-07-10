@@ -120,7 +120,7 @@ curl -N -H "Authorization: Bearer $(get-token)" \
 Typical frontend behavior:
 
 - Filter with `kinds=...` if you only need a subset.
-- Browser-facing streams should keep the default history-only entry behavior, or explicitly set `entry_channels=history`, so internal context-channel entries are not exposed to end users.
+- Browser-facing streams should keep the default history-only entry behavior, or explicitly set `entry_channels=history`, so internal `context` and `journal` entries are not exposed to end users.
 - On `conversation`, `entry`, `response`, or `membership`, invalidate the corresponding query cache and refetch.
 - On `stream/invalidate`, do a broad cache refresh.
 - On disconnect or `stream/evicted`, reconnect and refetch the visible data set.
@@ -165,11 +165,11 @@ Optional query parameters:
 - `kinds=conversation,entry,...` filters event kinds.
 - `detail=summary|full` controls payload enrichment.
 - `after=<cursor>` starts in replay mode and requires outbox support.
-- `entry_channels=history,context` filters `entry` events by channel. If omitted, entry events default to `history`.
+- `entry_channels=history,context,journal` filters `entry` events by channel. If omitted, entry events default to `history`.
 - `entry_content_types=history,history/lc4j` filters `entry` events by content type.
 - `entry_roles=USER,AI` filters `entry` events by role when the role can be derived from entry content.
 
-Entry filters apply only to `kind=entry` events. Non-entry events are delivered normally. The same filters are available on `/v1/admin/events`; admin streams still require admin or auditor access.
+Entry filters apply only to `kind=entry` events. Non-entry events are delivered normally. User streams require an authenticated client identity to receive or enrich `context` and `journal` entry details; admin streams are available on `/v1/admin/events` and still require admin or auditor access.
 
 Examples:
 
@@ -178,11 +178,18 @@ curl -N -H "Authorization: Bearer $(get-token)" \
   "http://localhost:9090/v1/events?kinds=conversation,entry"
 ```
 
-Subscribe to both user-visible history entries and trusted internal context entries:
+Subscribe to user-visible history entries and trusted internal context entries:
 
 ```bash
 curl -N -H "Authorization: Bearer $(get-token)" \
-  "http://localhost:9090/v1/events?kinds=entry&entry_channels=history,context"
+	  "http://localhost:9090/v1/events?kinds=entry&entry_channels=history,context"
+```
+
+Subscribe to trusted internal journal entries:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-agent-token)" \
+  "http://localhost:9090/v1/events?kinds=entry&entry_channels=journal"
 ```
 
 ```bash
@@ -323,7 +330,7 @@ Entry-channel filtering is not an authorization boundary by itself. Context-chan
 
 - Keep the frontend path simple: treat events as hints, not as your only source of truth.
 - Prefer `detail=summary` for browser clients.
-- Keep frontend event proxies history-only for `entry` notifications. Trusted processors can opt into `entry_channels=context` or `entry_channels=history,context`.
+- Keep frontend event proxies history-only for `entry` notifications. Trusted processors can opt into `entry_channels=context`, `entry_channels=journal`, or combined sets such as `entry_channels=history,context,journal`.
 - Only add durable cursor handling when you actually need replay guarantees.
 - If you proxy the event stream through your agent app, let the frontend own cache invalidation behavior, but keep server-side forwarding rules explicit for internal entry channels.
 

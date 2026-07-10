@@ -1,6 +1,6 @@
 # Entry Data Model
 
-This document explains how entries are stored and retrieved in the memory service, covering the core data structure, channels, memory epochs, conversation forking, and conversation-level identity.
+This document explains how entries are stored and retrieved in the memory service, covering the core data structure, channels, context epochs, sequence cursors, conversation forking, and conversation-level identity.
 
 ## Overview
 
@@ -33,8 +33,11 @@ erDiagram
         string conversationId FK
         UUID conversationGroupId FK
         string userId
+        string clientId
+        string agentId
         enum channel
         long epoch
+        uint32 seq
         string contentType
         bytes content
         timestamp createdAt
@@ -49,8 +52,11 @@ erDiagram
 | `conversationId` | string | The conversation this entry belongs to |
 | `conversationGroupId` | UUID | The conversation group (for efficient fork queries) |
 | `userId` | string | Human user who created the entry (null for agent entries) |
-| `channel` | enum | Logical channel: `HISTORY` or `MEMORY` |
-| `epoch` | long | Memory epoch number (only for MEMORY channel) |
+| `clientId` | string | Authenticated client that wrote the entry (internal/admin only) |
+| `agentId` | string | Optional logical agent associated with the entry |
+| `channel` | enum | Logical channel: `history`, `context`, or `journal` |
+| `epoch` | long | Context epoch number (only for `context` channel) |
+| `seq` | uint32 | Optional caller-supplied sequence number unique within the conversation |
 | `contentType` | string | Schema identifier describing the content format |
 | `content` | bytes | Encrypted JSON content array |
 | `createdAt` | timestamp | When the entry was created |
@@ -68,7 +74,7 @@ flowchart TB
             H3[User: What's 2+2?]
             H4[Agent: 4]
         end
-        subgraph "MEMORY Channel (per conversation)"
+        subgraph "CONTEXT Channel (per conversation/client)"
             subgraph "Epoch 1 (superseded)"
                 M1[context1, context2]
             end
@@ -76,28 +82,44 @@ flowchart TB
                 M2[summary, context3]
             end
         end
+        subgraph "JOURNAL Channel (per client)"
+            J1[tool call]
+            J2[model call]
+        end
     end
 ```
 
-**Typical interaction order**: User HISTORY → Agent MEMORY updates → Agent HISTORY response → *(repeat)*
+**Typical interaction order**: User `history` → agent `context` updates and optional `journal` records → agent `history` response → *(repeat)*
 
-### HISTORY Channel
+### `history` Channel
 
-The **HISTORY** channel contains the visible conversation between users and agents. These entries form the chat transcript that users see in the UI.
+The `history` channel contains the visible conversation between users and agents. These entries form the chat transcript that users see in the UI.
 
 - **Created by**: Users (via chat UI) or agents (responses)
 - **Visible to**: All participants in the conversation
 - **Epoch**: Always `null` (not epoch-scoped)
 - **Content**: Chat messages in a common format across frameworks
 
-### MEMORY Channel
+### `context` Channel
 
-The **MEMORY** channel stores agent-internal state that persists between interactions. This is the agent's "working memory" - context it needs to continue conversations coherently.
+The `context` channel stores agent-internal state that persists between interactions. This is the agent's working memory: context it needs to continue conversations coherently.
 
 - **Created by**: Agents only (via API key authentication)
 - **Visible to**: Callers whose authenticated client matches the conversation's stored `clientId`
-- **Epoch**: Required - memory entries are versioned by epoch
+- **Epoch**: Required - context entries are versioned by epoch
 - **Content**: Agent-specific format (e.g., `LC4J` for LangChain4j, `SpringAI` for Spring AI)
+
+### `journal` Channel
+
+The `journal` channel stores opaque execution records, such as tool calls, model calls, planner steps, or other replay/debug state that should not be part of user-visible history.
+
+- **Created by**: Agents only (via API key authentication)
+- **Visible to**: Callers whose authenticated client matches the entry's `clientId`
+- **Epoch**: Always `null` (not epoch-scoped)
+- **Search indexing**: Not supported; `indexedContent` is rejected for non-history channels
+- **Content**: Agent-defined JSON payloads
+
+End-user reads without a client identity default to `history`. Explicit reads of `context` or `journal` require an authenticated client identity. Event streams also default entry events to `history`; trusted consumers must opt into `entry_channels=context`, `entry_channels=journal`, or both.
 
 ## Conversation Identity
 
@@ -106,7 +128,7 @@ Each conversation stores:
 - `clientId`: required authenticated app/system identity derived at conversation creation time
 - `agentId`: optional logical agent associated with that conversation
 
-The public entry model no longer exposes `clientId` or `agentId`. Context isolation is conversation-scoped, and access to the `context` channel is authorized using the conversation's stored `clientId`.
+The public entry model no longer exposes `clientId` or `agentId`. Context and journal isolation are client-scoped. Access to the `context` channel is authorized using the conversation's stored `clientId`, and `journal` entries are filtered to the authenticated client that wrote them.
 
 ```mermaid
 flowchart LR
@@ -133,13 +155,19 @@ memory-service.api-keys.agent-a=key1,key2
 memory-service.api-keys.agent-b=key3
 ```
 
-When a caller queries the `context` channel, the service checks that the authenticated client matches the conversation's stored `clientId`. History entries continue to follow normal conversation membership rules.
+When a caller queries the `context` or `journal` channel, the service requires an authenticated client identity. History entries continue to follow normal conversation membership rules.
+
+## Entry Sequence Numbers
+
+Entries may include an optional `seq` value. Sequence numbers are caller-supplied unsigned 32-bit integers and must be unique within a conversation when present. They are useful for clients that need deterministic cross-channel replay across `history`, `context`, and `journal` entries.
+
+When listing entries, `fromSeq=N` returns entries with `seq >= N`, excludes entries without a sequence number, and orders the response by `seq` ascending. Without `fromSeq`, entries use the normal conversation order (`createdAt` ASC, `seq` ASC NULLS FIRST for timestamp ties, then `id` ASC) and cursor pagination.
 
 ---
 
 ## Memory Epochs
 
-Memory epochs enable agents to version their memory state. When an agent's context changes significantly (e.g., after summarization), it creates a new epoch.
+Context epochs enable agents to version their working context. When an agent's context changes significantly (e.g., after summarization), it creates a new epoch.
 
 ### How Epochs Work
 
@@ -169,9 +197,9 @@ sequenceDiagram
 | Incoming content **extends** existing (prefix match) | Append delta to current epoch |
 | Incoming content **diverges** from existing | Create new epoch with new content |
 
-### Retrieving Memory by Epoch
+### Retrieving Context by Epoch
 
-When querying memory entries:
+When querying context entries:
 
 - **`epoch=latest`** (default): Returns only entries from the highest epoch number
 - **`epoch=all`**: Returns entries from all epochs (for debugging)
@@ -192,7 +220,7 @@ flowchart TB
         end
     end
 
-    Query["GET ?channel=memory&epoch=latest"] --> E2M1
+    Query["GET ?channel=context&epoch=latest"] --> E2M1
     Query --> E2M2
     Query --> E2M3
 ```
@@ -215,7 +243,7 @@ A different conversation may have a different `clientId` and its own independent
 
 ## Conversation Forking
 
-Conversations can be forked to create alternative branches from any point. Forking is "cheap" - it doesn't copy entries, but instead uses metadata to define which parent entries are visible to the fork.
+Conversations can be forked to create alternative branches from allowed entry boundaries. Forking is "cheap" - it doesn't copy entries, but instead uses metadata to define which parent entries are visible to the fork.
 
 ### Fork Data Model
 
@@ -242,27 +270,34 @@ When we say "fork at entry X", it means **branch before X**. The fork sees all p
 
 A typical chat interaction follows this pattern:
 1. **User HISTORY message** - User asks a question
-2. **Agent MEMORY entries** - Agent stores/updates its working memory
+2. **Agent CONTEXT entries** - Agent stores/updates its working memory
 3. **Agent HISTORY message** - Agent responds to the user
 4. *(repeat)*
 
-Forks are typically requested at a **User HISTORY message** - the user wants to "try a different question" at that point in the conversation. The fork excludes the selected user message and includes everything before it.
+User-facing chat forks are typically requested at a **User HISTORY message** - the user wants to "try a different question" at that point in the conversation. Trusted runtime clients may also fork at **JOURNAL** entries for replay, rollback, and debugging. The fork excludes the selected history or journal entry and includes everything before it.
+
+Allowed fork anchors:
+
+- `history`: visible conversation entries, usually user messages in chat UIs.
+- `journal`: opaque execution records. The caller must authenticate as the same client that can read the journal entry.
+
+`context` entries cannot be fork anchors because they are derived, epoch-scoped state rather than append-only event boundaries.
 
 ```mermaid
 flowchart TB
     subgraph "Root Conversation"
         A[Entry A - HISTORY User]
-        B[Entry B - MEMORY Agent]
+        B[Entry B - CONTEXT Agent]
         C[Entry C - HISTORY Agent]
         D[Entry D - HISTORY User]
-        E[Entry E - MEMORY Agent]
+        E[Entry E - CONTEXT Agent]
         F[Entry F - HISTORY Agent]
     end
 
     subgraph "Fork requested at Entry D"
         FA[Fork sees: A, B, C]
         FI[Entry I - HISTORY User]
-        FJ[Entry J - MEMORY Agent]
+        FJ[Entry J - CONTEXT Agent]
         FK[Entry K - HISTORY Agent]
     end
 
@@ -273,8 +308,8 @@ flowchart TB
     style F fill:#ff9999
 ```
 
-When the user calls the fork API at entry D (a User HISTORY message):
-- The API call: `POST /v1/conversations/{id}/entries/D/fork`
+When the caller forks at entry D (a User HISTORY message in this example):
+- The first append to the forked conversation supplies `forkedAtConversationId` and `forkedAtEntryId = D`
 - The system stores `forkedAtEntryId = D` (the first parent entry to exclude)
 - Fork sees: A, B, C (from parent), then its own entries I, J, K
 - Fork does **NOT** see: D, E, F (the requested entry and everything after)
@@ -450,15 +485,15 @@ flowchart LR
 - Fork sees none of the parent's entries
 - Fork has its own independent entry sequence
 
-### 2. Fork with No Memory Entries
+### 2. Fork with No Context Entries
 
-A fork may not have any MEMORY entries of its own:
+A fork may not have any context entries of its own:
 
 ```mermaid
 flowchart LR
     subgraph Root
         R_A[A - HISTORY]
-        R_B["B - MEMORY (epoch=1)"]
+        R_B["B - CONTEXT (epoch=1)"]
         R_C[C - HISTORY]
     end
     subgraph Fork
@@ -467,7 +502,7 @@ flowchart LR
     R_C -.->|fork| F_D
 ```
 
-Querying MEMORY from the fork returns: B (inherited from parent at epoch=1)
+Querying `context` from the fork returns B (inherited from parent at epoch=1) when no newer fork context epoch supersedes it.
 
 ### 3. Child Or Forked Conversations Keep Independent Context
 
@@ -518,11 +553,11 @@ Entries are never deleted individually - they are only removed when the entire c
 
 ### 6. Empty Content Arrays
 
-A MEMORY entry can have an empty content array `[]` after all messages are removed. This is valid and represents "memory cleared":
+A `context` entry can have an empty content array `[]` after all messages are removed. This is valid and represents "context cleared":
 
 ```json
 {
-  "channel": "memory",
+  "channel": "context",
   "epoch": 3,
   "content": []
 }
@@ -538,11 +573,12 @@ The empty content at epoch 3 supersedes all entries from epochs 1 and 2.
 
 | Parameter | Description | Default |
 |-----------|-------------|---------|
-| `channel` | Filter by channel (`history`, `memory`) | All channels |
-| `epoch` | Epoch filter (`latest`, `all`, or specific number) | `latest` for MEMORY |
+| `channel` | Filter by channel (`history`, `context`, `journal`) | `history` for user-only reads; all visible channels for authenticated clients |
+| `epoch` | Epoch filter (`latest`, `all`, or specific number) | `latest` for `context` |
+| `fromSeq` | Return entries with `seq >= fromSeq`, ordered by sequence. When omitted, default ordering is `createdAt` ASC, `seq` ASC NULLS FIRST for timestamp ties, then `id` ASC. | None |
 | `afterEntryId` | Pagination cursor | None (start from beginning) |
 | `limit` | Maximum entries to return | 50 |
-| `allForks` | Return entries from all forks in the group | `false` |
+| `forks` | `none` for ancestry path, `all` for every fork in the group | `none` |
 
 ### Example Queries
 
@@ -551,7 +587,10 @@ The empty content at epoch 3 supersedes all entries from epochs 1 and 2.
 GET /v1/conversations/{id}/entries?channel=history
 
 # Get latest CONTEXT entries for a conversation
-GET /v1/conversations/{id}/entries?channel=memory&epoch=latest
+GET /v1/conversations/{id}/entries?channel=context&epoch=latest
+
+# Replay sequenced entries across channels
+GET /v1/conversations/{id}/entries?fromSeq=100
 
 # Get all entries across all forks (admin/debug)
 GET /v1/conversations/{id}/entries?forks=all
@@ -566,10 +605,12 @@ GET /v1/conversations/{id}/entries?afterEntryId={lastSeenId}&limit=50
 
 The entry data model supports:
 
-1. **Multiple channels** for different data types (HISTORY, MEMORY)
+1. **Multiple channels** for different data types (`history`, `context`, `journal`)
 2. **Conversation-scoped context** authorized by conversation `clientId`
-3. **Memory epochs** for versioning agent context with superseding semantics
-4. **Efficient forking** without copying data, using ancestry-based retrieval
-5. **Nested forks** with proper epoch handling across fork boundaries
+3. **Client-scoped journal records** for opaque execution/replay state
+4. **Context epochs** for versioning agent context with superseding semantics
+5. **Optional sequence numbers** for deterministic cross-channel replay
+6. **Efficient forking** without copying data, using ancestry-based retrieval
+7. **Nested forks** with proper epoch handling across fork boundaries
 
 The key insight for forked entry retrieval is the "fork point shifting" - each conversation in the ancestry chain uses its child's `forkedAtEntryId` to determine where to stop including entries.

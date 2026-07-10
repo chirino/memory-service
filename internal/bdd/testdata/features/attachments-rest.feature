@@ -139,7 +139,8 @@ Feature: Attachments REST API
     And set "inlineAttId" to the json response field "id"
     When I call GET "/v1/attachments/${inlineAttId}?disposition=inline" expecting binary
     Then the response status should be 200
-    And the response header "Content-Disposition" should be empty
+    And the response header "Content-Disposition" should contain "inline"
+    And the response header "Content-Disposition" should contain "filename="
 
   @direct-stream-only
   Scenario: Attachment download with disposition=attachment sets Content-Disposition header
@@ -182,8 +183,7 @@ Feature: Attachments REST API
     And the response header "ETag" should contain "${tokenCachedSha}"
     And the response header "Cache-Control" should contain "private"
     And the response header "Cache-Control" should contain "max-age="
-    And the response header "Content-Disposition" should contain "inline"
-    And the response header "Content-Disposition" should contain "filename="
+    And the response header "Content-Disposition" should be empty
 
   @direct-stream-only
   Scenario: Signed token download with disposition=attachment sets Content-Disposition header

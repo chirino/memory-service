@@ -38,6 +38,8 @@ Keep the chat endpoint the same shape (`text/plain` input). Fork creation is don
 
 **Why**: When three arguments are passed to `memory_service_scope`, the first history entry written in that scope is tagged with fork metadata (`forkedAtConversationId`, `forkedAtEntryId`). Memory Service uses that metadata to link the new conversation back to the branch point in the source conversation.
 
+This guide keeps the example history-based. Trusted runtime clients can also fork at client-visible `journal` entries for replay/debug workflows; see [Forking](/docs/concepts/forking/) for the channel rules.
+
 ### Listing Forks
 
 Expose a forks endpoint so frontend clients can discover branches from a conversation:

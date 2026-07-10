@@ -70,6 +70,29 @@ func (m *MongoTestDB) ResolveGroupID(ctx context.Context, conversationID string)
 	return doc.ConversationGroupID, nil
 }
 
+func (m *MongoTestDB) SetConversationEntriesCreatedAt(ctx context.Context, conversationID string, createdAt time.Time) error {
+	client, db, err := m.db(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+
+	var doc struct {
+		ConversationGroupID string `bson:"conversation_group_id"`
+	}
+	if err := db.Collection("conversations").FindOne(ctx, bson.M{"_id": conversationID}).Decode(&doc); err != nil {
+		return fmt.Errorf("could not resolve conversation group ID for %s: %w", conversationID, err)
+	}
+	_, err = db.Collection("entries").UpdateMany(ctx,
+		bson.M{"conversation_group_id": doc.ConversationGroupID},
+		bson.M{"$set": bson.M{"created_at": createdAt}},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set conversation entry timestamps for %s: %w", conversationID, err)
+	}
+	return nil
+}
+
 func (m *MongoTestDB) ExecSQL(_ context.Context, _ string) ([]map[string]interface{}, error) {
 	// Java parity: SQL verification queries are skipped for MongoDB backend.
 	// Return nil (not empty slice) to signal "skip" to assertion steps.

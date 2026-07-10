@@ -79,6 +79,26 @@ func (s *SQLiteTestDB) ResolveGroupID(ctx context.Context, conversationID string
 	return groupID, nil
 }
 
+func (s *SQLiteTestDB) SetConversationEntriesCreatedAt(ctx context.Context, conversationID string, createdAt time.Time) error {
+	db, err := s.conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer db.Close()
+
+	_, err = db.ExecContext(ctx,
+		`UPDATE entries
+		 SET created_at = ?
+		 WHERE conversation_group_id = (
+		   SELECT conversation_group_id FROM conversations WHERE id = ?
+		 )`,
+		createdAt, conversationID)
+	if err != nil {
+		return fmt.Errorf("failed to set conversation entry timestamps for %s: %w", conversationID, err)
+	}
+	return nil
+}
+
 func (s *SQLiteTestDB) ExecSQL(ctx context.Context, query string) ([]map[string]interface{}, error) {
 	db, err := s.conn(ctx)
 	if err != nil {

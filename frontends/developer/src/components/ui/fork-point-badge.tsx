@@ -221,7 +221,7 @@ export function ForkPointBadge({
         </DropdownMenuLabel>
         <DropdownMenuSeparator />
         {forksAtPoint.map((fork) => {
-          const label = forkLabels[fork.conversationId];
+          const label = forkLabels[fork.conversationId] || fork.label;
           const formattedLabel = label ? formatForkLabel(label) : undefined;
 
           return (

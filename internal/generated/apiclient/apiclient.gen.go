@@ -74,6 +74,7 @@ func (e AttachmentUploadResponseStatus) Valid() bool {
 const (
 	Context Channel = "context"
 	History Channel = "history"
+	Journal Channel = "journal"
 )
 
 // Valid indicates whether the value is a known member of the Channel enum.
@@ -82,6 +83,8 @@ func (e Channel) Valid() bool {
 	case Context:
 		return true
 	case History:
+		return true
+	case Journal:
 		return true
 	default:
 		return false
@@ -598,7 +601,7 @@ type Conversation struct {
 	// ForkedAtConversationId Conversation ID from which this conversation was forked.
 	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
-	// ForkedAtEntryId First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
+	// ForkedAtEntryId First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
 
 	// Id Unique identifier for the conversation.
@@ -624,7 +627,7 @@ type ConversationForkSummary struct {
 	// ForkedAtConversationId Conversation ID where the fork occurred.
 	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
-	// ForkedAtEntryId First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
+	// ForkedAtEntryId First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for blank-slate forks that inherit no parent entries.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
 	Title           *string             `json:"title,omitempty"`
 }
@@ -708,13 +711,19 @@ type CreateEntryRequest struct {
 	// ForkedAtConversationId If the target conversation doesn't exist yet, auto-create it as a fork of this conversation. Ignored when the conversation already exists.
 	ForkedAtConversationId *string `json:"forkedAtConversationId,omitempty"`
 
-	// ForkedAtEntryId Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
+	// ForkedAtEntryId Entry ID marking the fork point. Entries before this point are inherited; entries at and after this point are excluded. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Optional; when unset, all entries are excluded. New messages added will show up as the first message of the fork.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
 
 	// IndexedContent Optional text to index for search. Only valid for entries in the history
 	// channel. If provided, the entry will be indexed for search immediately
 	// after creation. Returns 400 Bad Request if specified for non-history channels.
 	IndexedContent *string `json:"indexedContent,omitempty"`
+
+	// Seq Optional client-assigned sequence number. Must be unique within the
+	// conversation. Must be >= 0. Returns 409 Conflict if a duplicate seq is
+	// submitted. Returns 400 Bad Request if the value is negative or exceeds
+	// 4294967295.
+	Seq *int `json:"seq,omitempty"`
 
 	// StartedByConversationId If the target conversation does not exist yet, auto-create it as a child conversation started from this parent conversation.
 	StartedByConversationId *string `json:"startedByConversationId,omitempty"`
@@ -796,6 +805,12 @@ type Entry struct {
 
 	// Id Unique identifier for the entry.
 	Id openapi_types.UUID `json:"id"`
+
+	// Seq Optional client-assigned sequence number, unique within the conversation.
+	// Default listing uses seq only as a createdAt tie-breaker, with entries
+	// without seq sorted before sequenced entries at the same timestamp. Gaps
+	// are permitted.
+	Seq *int `json:"seq,omitempty"`
 
 	// UserId Human user this entry is associated with.
 	// For history entries authored by a user, this is the sender.
@@ -1272,6 +1287,11 @@ type ListConversationEntriesParams struct {
 	// `latest` when not provided. The epoch selection is scoped to the
 	// calling client id.
 	Epoch *string `form:"epoch,omitempty" json:"epoch,omitempty"`
+
+	// FromSeq When set, return only entries with `seq >= fromSeq`, ordered by `seq` ASC.
+	// Entries without a `seq` are excluded. When omitted the default
+	// ordering is `createdAt` ASC, `seq` ASC NULLS FIRST, then `id` ASC.
+	FromSeq *int64 `form:"fromSeq,omitempty" json:"fromSeq,omitempty"`
 
 	// Forks Controls which fork entries to include. `none` (default) follows the
 	// fork ancestry path, returning entries from the target conversation
@@ -3301,6 +3321,18 @@ func NewListConversationEntriesRequest(server string, conversationId string, par
 
 		}
 
+		if params.FromSeq != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "fromSeq", *params.FromSeq, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: "int64"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
 		if params.Forks != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "forks", *params.Forks, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
@@ -5225,6 +5257,7 @@ type AppendConversationEntryResp struct {
 	HTTPResponse *http.Response
 	JSON201      *Entry
 	JSON404      *NotFound
+	JSON409      *Error
 	JSONDefault  *Error
 }
 
@@ -6943,6 +6976,13 @@ func ParseAppendConversationEntryResp(rsp *http.Response) (*AppendConversationEn
 			return nil, err
 		}
 		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error
