@@ -185,14 +185,18 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=2&af
   -H "Authorization: Bearer <token>"
 ```
 
-### Open at the newest entries
+### Get the last page of entries
+
+To get the last page directly—without walking every forward page—set
+`tail=true`. The `limit` parameter controls the maximum number of entries in
+that last page. Results are still returned in chronological order.
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?tail=true&limit=2" \
   -H "Authorization: Bearer <token>"
 ```
 
-The tail response has `afterCursor: null`. When older entries exist,
+The last-page response has `afterCursor: null`. When older entries exist,
 `beforeCursor` is the ID of the first returned entry:
 
 ```json

@@ -91,13 +91,18 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/entries?limit=50&c
   -H "Authorization: Bearer <token>"
 ```
 
-For a chat UI that opens at the bottom of history, request the tail and then
-follow `beforeCursor` while the user scrolls upward:
+### Get the last page
+
+Set `tail=true` to fetch the last page without first reading every older page.
+The response remains chronological, and `limit` controls the maximum page size:
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/entries?channel=history&tail=true&limit=50" \
   -H "Authorization: Bearer <token>"
 ```
+
+If more history exists, pass the returned `beforeCursor` to load the adjacent
+older page.
 
 `afterCursor`, `beforeCursor`, and `tail=true` are mutually exclusive. Entry
 filters—including channel, fork ancestry, epoch, `upToEntryId`, and
@@ -118,14 +123,17 @@ Response:
       "createdAt": "2025-01-10T14:40:12Z"
     }
   ],
-  "nextCursor": "entry_01HF8XJQWXYZ9876ABCD5433"
+  "afterCursor": null,
+  "beforeCursor": "entry_01HF8XJQWXYZ9876ABCD5432"
 }
 ```
 
 Query parameters:
 
 - `limit` - Maximum entries to return (default: 50)
-- `after` - Cursor for pagination (entry ID)
+- `afterCursor` - Return entries strictly after this entry ID
+- `beforeCursor` - Return up to `limit` entries strictly before this entry ID
+- `tail` - Set to `true` to return the last page
 - `fromSeq` - Return sequenced entries with `seq >= fromSeq`
 - `channel` - Filter by channel: `history` (default for end-user reads), `context`, or `journal`
 - `epoch` - For `context` channel: `latest`, `all`, or a specific epoch number
