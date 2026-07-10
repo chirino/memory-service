@@ -276,17 +276,17 @@ jobs:
         include:
           - platform: linux/amd64
             platform-key: linux-amd64
-            artifact-file: memory-service-linux-amd64.zip
+            artifact-name: memory-service-linux-amd64
             runner: ubuntu-latest
             build-kind: docker
           - platform: linux/arm64
             platform-key: linux-arm64
-            artifact-file: memory-service-linux-arm64.zip
+            artifact-name: memory-service-linux-arm64
             runner: ubuntu-24.04-arm
             build-kind: docker
           - platform: darwin/arm64
             platform-key: macos-arm64
-            artifact-file: memory-service-macos-arm64.zip
+            artifact-name: memory-service-macos-arm64
             runner: macos-26
             build-kind: go
     steps:
@@ -318,7 +318,6 @@ jobs:
           trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
           docker cp "$cid":/memory-service dist/memory-service
           chmod +x dist/memory-service
-          (cd dist && zip -q "${{ matrix.artifact-file }}" memory-service)
 
       - name: Set up Go
         if: matrix.build-kind == 'go'
@@ -341,13 +340,12 @@ jobs:
               -ldflags "-X main.Version=${{ needs.prepare.outputs.version }}" \
               -o dist/memory-service .
           chmod +x dist/memory-service
-          (cd dist && zip -q "${{ matrix.artifact-file }}" memory-service)
 
       - name: Upload binary artifact
         uses: actions/upload-artifact@v7
         with:
-          name: release-binary-${{ matrix.artifact-file }}
-          path: dist/${{ matrix.artifact-file }}
+          name: release-binary-${{ matrix.artifact-name }}
+          path: dist/memory-service
           if-no-files-found: error
 
   docker-manifest:
@@ -423,7 +421,7 @@ jobs:
         with:
           pattern: release-binary-*
           path: /tmp/release-binaries
-          merge-multiple: true
+          merge-multiple: false
 
       - name: Tag released version
         shell: bash
@@ -462,7 +460,18 @@ jobs:
           set -euo pipefail
           shopt -s nullglob
 
-          assets=(/tmp/release-binaries/*.zip)
+          mkdir -p /tmp/release-assets
+          for artifact_dir in /tmp/release-binaries/release-binary-*; do
+            [ -d "$artifact_dir" ] || continue
+            asset_name="${artifact_dir##*/release-binary-}.zip"
+            if [ ! -f "$artifact_dir/memory-service" ]; then
+              echo "Missing memory-service binary in $artifact_dir" >&2
+              exit 1
+            fi
+            (cd "$artifact_dir" && zip -q "/tmp/release-assets/$asset_name" memory-service)
+          done
+
+          assets=(/tmp/release-assets/*.zip)
           if [ "${#assets[@]}" -eq 0 ]; then
             echo "No binary artifacts found" >&2
             exit 1
