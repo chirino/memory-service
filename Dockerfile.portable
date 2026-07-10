@@ -1,0 +1,50 @@
+# Build a statically linked Linux binary that can be extracted from the image
+# and run across Linux distributions without requiring distro-shipped shared
+# libraries. The primary production container remains the UBI-based Dockerfile.
+FROM golang:1.25-alpine AS builder
+
+ENV PATH=/usr/local/go/bin:$PATH
+WORKDIR /src
+
+RUN apk add --no-cache \
+    build-base \
+    ca-certificates \
+    file \
+    sqlite-dev
+
+COPY go.mod go.sum ./
+RUN go mod download
+
+COPY . .
+
+ARG GO_BUILD_TAGS="netgo osusergo sqlite_fts5 sqlite_json"
+ARG VERSION=""
+
+# sqlite-vec v0.1.6 references BSD u_int* aliases that musl does not define.
+# These aliases keep sqlite-vec compiled in while preserving a static musl link.
+ARG CGO_CFLAGS="-Du_int8_t=uint8_t -Du_int16_t=uint16_t -Du_int64_t=uint64_t"
+
+RUN CGO_ENABLED=1 GOOS=linux CC=gcc CGO_CFLAGS="${CGO_CFLAGS}" \
+    go build \
+      -buildvcs=false \
+      -tags "${GO_BUILD_TAGS}" \
+      -ldflags "-linkmode external -extldflags -static -X main.Version=${VERSION}" \
+      -o /memory-service .
+
+RUN file /memory-service | grep -q "statically linked" \
+    && (ldd /memory-service 2>&1 || true) | grep -Eq "not a dynamic executable|Not a valid dynamic program"
+
+RUN mkdir -p /rootfs/app /rootfs/tmp && chmod 1777 /rootfs/tmp
+
+FROM scratch
+
+COPY --from=builder /memory-service /memory-service
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
+COPY --from=builder /rootfs/app /app
+COPY --from=builder /rootfs/tmp /tmp
+
+WORKDIR /app
+EXPOSE 8080
+
+ENTRYPOINT ["/memory-service"]
+CMD ["serve"]

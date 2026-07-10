@@ -28,6 +28,22 @@ tasks:
     cmds:
       - docker build -t ghcr.io/chirino/memory-service:latest -f Dockerfile .
 
+  image:memory-service-portable:
+    desc: Build the portable static Linux memory-service image
+    cmds:
+      - docker build -t ghcr.io/chirino/memory-service-portable:latest -f Dockerfile.portable .
+
+  dist:memory-service-linux:
+    desc: Extract the portable static Linux memory-service binary from its image
+    cmds:
+      - docker build -t memory-service-portable:local -f Dockerfile.portable .
+      - |
+        mkdir -p dist
+        cid="$(docker create memory-service-portable:local)"
+        trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+        docker cp "$cid":/memory-service dist/memory-service-linux
+        chmod +x dist/memory-service-linux
+
   image:chat-quarkus:
     desc: Build the chat-quarkus container image
     cmds:

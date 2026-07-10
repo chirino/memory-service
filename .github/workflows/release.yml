@@ -1,4 +1,4 @@
-name: Release Java and Docker
+name: Release Java, Docker, and Binaries
 
 on:
   workflow_dispatch:
@@ -267,6 +267,89 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  binary-artifact:
+    needs: prepare
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: true
+      matrix:
+        include:
+          - platform: linux/amd64
+            platform-key: linux-amd64
+            artifact-file: memory-service-linux-amd64.zip
+            runner: ubuntu-latest
+            build-kind: docker
+          - platform: linux/arm64
+            platform-key: linux-arm64
+            artifact-file: memory-service-linux-arm64.zip
+            runner: ubuntu-24.04-arm
+            build-kind: docker
+          - platform: darwin/arm64
+            platform-key: macos-arm64
+            artifact-file: memory-service-macos-arm64.zip
+            runner: macos-26
+            build-kind: go
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.prepare.outputs.checkout-ref }}
+
+      - name: Set up Docker Buildx
+        if: matrix.build-kind == 'docker'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build portable Linux binary artifact
+        if: matrix.build-kind == 'docker'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          image="memory-service-portable:${{ matrix.platform-key }}"
+          docker buildx build \
+            --load \
+            --platform "${{ matrix.platform }}" \
+            --build-arg "VERSION=${{ needs.prepare.outputs.version }}" \
+            -t "$image" \
+            -f Dockerfile.portable .
+
+          mkdir -p dist
+          cid="$(docker create "$image")"
+          trap 'docker rm -f "$cid" >/dev/null 2>&1 || true' EXIT
+          docker cp "$cid":/memory-service dist/memory-service
+          chmod +x dist/memory-service
+          (cd dist && zip -q "${{ matrix.artifact-file }}" memory-service)
+
+      - name: Set up Go
+        if: matrix.build-kind == 'go'
+        uses: actions/setup-go@v6.4.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Build macOS arm64 binary artifact
+        if: matrix.build-kind == 'go'
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          mkdir -p dist
+          CGO_ENABLED=1 GOOS=darwin GOARCH=arm64 \
+            go build \
+              -buildvcs=false \
+              -tags "sqlite_fts5 sqlite_json" \
+              -ldflags "-X main.Version=${{ needs.prepare.outputs.version }}" \
+              -o dist/memory-service .
+          chmod +x dist/memory-service
+          (cd dist && zip -q "${{ matrix.artifact-file }}" memory-service)
+
+      - name: Upload binary artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: release-binary-${{ matrix.artifact-file }}
+          path: dist/${{ matrix.artifact-file }}
+          if-no-files-found: error
+
   docker-manifest:
     needs:
       - prepare
@@ -325,6 +408,7 @@ jobs:
     needs:
       - prepare
       - docker-manifest
+      - binary-artifact
     runs-on: ubuntu-latest
     steps:
       - name: Checkout release ref
@@ -332,6 +416,14 @@ jobs:
         with:
           ref: ${{ needs.prepare.outputs.checkout-ref }}
           fetch-depth: 0
+
+      - name: Download binary artifacts
+        if: inputs.create_github_release
+        uses: actions/download-artifact@v8
+        with:
+          pattern: release-binary-*
+          path: /tmp/release-binaries
+          merge-multiple: true
 
       - name: Tag released version
         shell: bash
@@ -359,7 +451,24 @@ jobs:
           fi
           gh release create "${{ needs.prepare.outputs.tag }}" \
             --title "${{ needs.prepare.outputs.tag }}" \
-            --notes "Java artifacts and Docker images for ${{ needs.prepare.outputs.tag }}."
+            --notes "Java artifacts, Docker images, and native binary ZIPs for ${{ needs.prepare.outputs.tag }}."
+
+      - name: Upload GitHub Release binary artifacts
+        if: inputs.create_github_release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          shopt -s nullglob
+
+          assets=(/tmp/release-binaries/*.zip)
+          if [ "${#assets[@]}" -eq 0 ]; then
+            echo "No binary artifacts found" >&2
+            exit 1
+          fi
+
+          gh release upload "${{ needs.prepare.outputs.tag }}" "${assets[@]}" --clobber
 
       - name: Delete release branch
         shell: bash
