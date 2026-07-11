@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ApiError } from "@/client";
+import type { ApiError } from "@/client-compat";
 import { getAccessToken } from "@/lib/auth";
 
 /**

@@ -2,7 +2,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChildConversationSummary, Conversation, ConversationSummary } from "@/client";
-import { ApiError, ConversationsService, OpenAPI } from "@/client";
+import { ConversationsService } from "@/client";
+import { type ApiError, OpenAPI } from "@/client-compat";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ProfileContextPanel } from "@/components/profile-context-panel";
@@ -191,11 +192,11 @@ function App() {
 
     const children = selectedConversationChildrenQuery.data.map((child) => ({
       id: child.id,
-      title: child.title ?? null,
+      title: child.title,
       ownerUserId: child.ownerUserId,
       createdAt: child.createdAt,
       updatedAt: child.updatedAt,
-      lastMessagePreview: child.lastMessagePreview ?? null,
+      lastMessagePreview: child.lastMessagePreview,
       accessLevel: child.accessLevel,
     }));
 
@@ -345,7 +346,7 @@ function App() {
     mutationFn: async (conversationId: string) => {
       await ConversationsService.updateConversation({
         conversationId,
-        requestBody: {
+        updateConversationRequest: {
           archived: true,
         },
       });
@@ -381,7 +382,7 @@ function App() {
     mutationFn: async (conversationId: string) => {
       await ConversationsService.updateConversation({
         conversationId,
-        requestBody: {
+        updateConversationRequest: {
           archived: false,
         },
       });

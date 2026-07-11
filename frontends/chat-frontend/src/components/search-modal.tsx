@@ -86,7 +86,7 @@ export function SearchModal({ isOpen, onClose, onSelectConversation }: SearchMod
         return [];
       }
       const response = (await SearchService.searchConversations({
-        requestBody: {
+        searchConversationsRequest: {
           query: debouncedQuery,
           limit: 20,
           includeEntry: false,
