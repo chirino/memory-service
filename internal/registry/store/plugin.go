@@ -358,7 +358,7 @@ type MemoryStore interface {
 	AdminSetConversationArchived(ctx context.Context, conversationID string, archived bool) error
 	AdminGetEntries(ctx context.Context, conversationID string, query AdminMessageQuery) (*PagedEntries, error)
 	AdminListMemberships(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]model.ConversationMembership, *string, error)
-	AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
+	AdminListForks(ctx context.Context, conversationID string) (*ConversationForkNavigation, error)
 	AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
 	AdminSearchEntries(ctx context.Context, query AdminSearchQuery) (*SearchResults, error)
 	AdminListAttachments(ctx context.Context, query AdminAttachmentQuery) ([]AdminAttachment, *string, error)

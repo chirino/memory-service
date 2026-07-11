@@ -2359,54 +2359,16 @@ func (s *SQLiteStore) AdminListMemberships(ctx context.Context, conversationID s
 	return memberships, cursor, nil
 }
 
-func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string) (*registrystore.ConversationForkNavigation, error) {
 	var conv model.Conversation
-	if err := s.dbFor(ctx).Where("id = ?", conversationID).First(&conv).Error; err != nil {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
+	if result.Error != nil {
+		return nil, result.Error
 	}
-
-	tx := s.dbFor(ctx).
-		Table("conversations c").
-		Select("c.*").
-		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = c.conversation_group_id AND ca.descendant_conversation_id = c.id").
-		Where("ca.conversation_group_id = ? AND ca.ancestor_conversation_id = ? AND ca.depth = 1", conv.ConversationGroupID, conv.ID).
-		Order("c.created_at ASC, c.id ASC")
-
-	if afterCursor != nil {
-		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
+	if result.RowsAffected == 0 {
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-	tx = tx.Limit(limit + 1)
-
-	var convs []model.Conversation
-	if err := tx.Find(&convs).Error; err != nil {
-		return nil, nil, fmt.Errorf("failed to admin list forks: %w", err)
-	}
-
-	hasMore := len(convs) > limit
-	if hasMore {
-		convs = convs[:limit]
-	}
-
-	forks := make([]registrystore.ConversationForkSummary, len(convs))
-	for i, c := range convs {
-		if err := s.hydrateConversationFork(ctx, &c); err != nil {
-			return nil, nil, err
-		}
-		forks[i] = registrystore.ConversationForkSummary{
-			ID:                     c.ID,
-			Title:                  s.decryptString(c.Title),
-			ForkedAtEntryID:        c.ForkedAtEntryID,
-			ForkedAtConversationID: c.ForkedAtConversationID,
-			CreatedAt:              c.CreatedAt,
-		}
-	}
-
-	var cursor *string
-	if hasMore && len(forks) > 0 {
-		c := string(forks[len(forks)-1].ID)
-		cursor = &c
-	}
-	return forks, cursor, nil
+	return s.ListForks(ctx, conv.OwnerUserID, conversationID)
 }
 
 func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {

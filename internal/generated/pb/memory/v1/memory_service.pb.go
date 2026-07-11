@@ -2750,8 +2750,7 @@ func (x *AdminListMembershipsRequest) GetJustification() string {
 type AdminListForksRequest struct {
 	state protoimpl.MessageState `protogen:"open.v1"`
 	// Conversation identifier
-	ConversationId string       `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
-	Page           *PageRequest `protobuf:"bytes,2,opt,name=page,proto3" json:"page,omitempty"`
+	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// Optional: admin/auditor justification, logged for admin access.
 	Justification *string `protobuf:"bytes,3,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
 	unknownFields protoimpl.UnknownFields
@@ -2795,13 +2794,6 @@ func (x *AdminListForksRequest) GetConversationId() string {
 	return ""
 }
 
-func (x *AdminListForksRequest) GetPage() *PageRequest {
-	if x != nil {
-		return x.Page
-	}
-	return nil
-}
-
 func (x *AdminListForksRequest) GetJustification() string {
 	if x != nil && x.Justification != nil {
 		return *x.Justification
@@ -2810,11 +2802,11 @@ func (x *AdminListForksRequest) GetJustification() string {
 }
 
 type AdminListForksResponse struct {
-	state         protoimpl.MessageState     `protogen:"open.v1"`
-	Forks         []*ConversationForkSummary `protobuf:"bytes,1,rep,name=forks,proto3" json:"forks,omitempty"`
-	PageInfo      *PageInfo                  `protobuf:"bytes,2,opt,name=page_info,json=pageInfo,proto3" json:"page_info,omitempty"`
-	unknownFields protoimpl.UnknownFields
-	sizeCache     protoimpl.SizeCache
+	state           protoimpl.MessageState   `protogen:"open.v1"`
+	ConversationIds []string                 `protobuf:"bytes,1,rep,name=conversation_ids,json=conversationIds,proto3" json:"conversation_ids,omitempty"`
+	ForkPoints      []*ConversationForkPoint `protobuf:"bytes,2,rep,name=fork_points,json=forkPoints,proto3" json:"fork_points,omitempty"`
+	unknownFields   protoimpl.UnknownFields
+	sizeCache       protoimpl.SizeCache
 }
 
 func (x *AdminListForksResponse) Reset() {
@@ -2847,16 +2839,16 @@ func (*AdminListForksResponse) Descriptor() ([]byte, []int) {
 	return file_memory_v1_memory_service_proto_rawDescGZIP(), []int{32}
 }
 
-func (x *AdminListForksResponse) GetForks() []*ConversationForkSummary {
+func (x *AdminListForksResponse) GetConversationIds() []string {
 	if x != nil {
-		return x.Forks
+		return x.ConversationIds
 	}
 	return nil
 }
 
-func (x *AdminListForksResponse) GetPageInfo() *PageInfo {
+func (x *AdminListForksResponse) GetForkPoints() []*ConversationForkPoint {
 	if x != nil {
-		return x.PageInfo
+		return x.ForkPoints
 	}
 	return nil
 }
@@ -8805,15 +8797,15 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
-	"\x0e_justification\"\xa9\x01\n" +
+	"\x0e_justification\"\x83\x01\n" +
 	"\x15AdminListForksRequest\x12'\n" +
-	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
-	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
+	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
-	"\x0e_justification\"\x84\x01\n" +
-	"\x16AdminListForksResponse\x128\n" +
-	"\x05forks\x18\x01 \x03(\v2\".memory.v1.ConversationForkSummaryR\x05forks\x120\n" +
-	"\tpage_info\x18\x02 \x01(\v2\x13.memory.v1.PageInfoR\bpageInfo\"\xb6\x01\n" +
+	"\x0e_justificationJ\x04\b\x02\x10\x03\"\x86\x01\n" +
+	"\x16AdminListForksResponse\x12)\n" +
+	"\x10conversation_ids\x18\x01 \x03(\tR\x0fconversationIds\x12A\n" +
+	"\vfork_points\x18\x02 \x03(\v2 .memory.v1.ConversationForkPointR\n" +
+	"forkPoints\"\xb6\x01\n" +
 	"\"AdminListChildConversationsRequest\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12*\n" +
 	"\x04page\x18\x02 \x01(\v2\x16.memory.v1.PageRequestR\x04page\x12)\n" +
@@ -9649,203 +9641,201 @@ var file_memory_v1_memory_service_proto_depIdxs = []int32{
 	44,  // 33: memory.v1.AdminListConversationsResponse.conversations:type_name -> memory.v1.AdminConversationSummary
 	10,  // 34: memory.v1.AdminListConversationsResponse.page_info:type_name -> memory.v1.PageInfo
 	9,   // 35: memory.v1.AdminListMembershipsRequest.page:type_name -> memory.v1.PageRequest
-	9,   // 36: memory.v1.AdminListForksRequest.page:type_name -> memory.v1.PageRequest
-	15,  // 37: memory.v1.AdminListForksResponse.forks:type_name -> memory.v1.ConversationForkSummary
-	10,  // 38: memory.v1.AdminListForksResponse.page_info:type_name -> memory.v1.PageInfo
-	9,   // 39: memory.v1.AdminListChildConversationsRequest.page:type_name -> memory.v1.PageRequest
-	45,  // 40: memory.v1.AdminListChildConversationsResponse.children:type_name -> memory.v1.AdminChildConversationSummary
-	10,  // 41: memory.v1.AdminListChildConversationsResponse.page_info:type_name -> memory.v1.PageInfo
-	4,   // 42: memory.v1.AdminConversationSummary.access_level:type_name -> memory.v1.AccessLevel
-	4,   // 43: memory.v1.AdminChildConversationSummary.access_level:type_name -> memory.v1.AccessLevel
-	4,   // 44: memory.v1.AdminConversation.access_level:type_name -> memory.v1.AccessLevel
-	128, // 45: memory.v1.AdminConversation.metadata:type_name -> google.protobuf.Struct
-	5,   // 46: memory.v1.Entry.channel:type_name -> memory.v1.Channel
-	129, // 47: memory.v1.Entry.content:type_name -> google.protobuf.Value
-	9,   // 48: memory.v1.ListMembershipsRequest.page:type_name -> memory.v1.PageRequest
-	14,  // 49: memory.v1.ListMembershipsResponse.memberships:type_name -> memory.v1.ConversationMembership
-	10,  // 50: memory.v1.ListMembershipsResponse.page_info:type_name -> memory.v1.PageInfo
-	4,   // 51: memory.v1.ShareConversationRequest.access_level:type_name -> memory.v1.AccessLevel
-	4,   // 52: memory.v1.UpdateMembershipRequest.access_level:type_name -> memory.v1.AccessLevel
-	6,   // 53: memory.v1.ListOwnershipTransfersRequest.role:type_name -> memory.v1.TransferRole
-	9,   // 54: memory.v1.ListOwnershipTransfersRequest.page:type_name -> memory.v1.PageRequest
-	53,  // 55: memory.v1.ListOwnershipTransfersResponse.transfers:type_name -> memory.v1.OwnershipTransfer
-	10,  // 56: memory.v1.ListOwnershipTransfersResponse.page_info:type_name -> memory.v1.PageInfo
-	62,  // 57: memory.v1.SearchEntriesResponse.results:type_name -> memory.v1.SearchResult
-	47,  // 58: memory.v1.SearchResult.entry:type_name -> memory.v1.Entry
-	64,  // 59: memory.v1.IndexConversationsRequest.entries:type_name -> memory.v1.IndexEntryRequest
-	68,  // 60: memory.v1.ListUnindexedEntriesResponse.entries:type_name -> memory.v1.UnindexedEntry
-	47,  // 61: memory.v1.UnindexedEntry.entry:type_name -> memory.v1.Entry
-	128, // 62: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
-	126, // 63: memory.v1.PutMemoryRequest.index:type_name -> memory.v1.PutMemoryRequest.IndexEntry
-	78,  // 64: memory.v1.PutMemoryRequest.actor:type_name -> memory.v1.RequestActor
-	128, // 65: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
-	2,   // 66: memory.v1.GetMemoryRequest.archived:type_name -> memory.v1.ArchiveFilter
-	78,  // 67: memory.v1.GetMemoryRequest.actor:type_name -> memory.v1.RequestActor
-	78,  // 68: memory.v1.UpdateMemoryRequest.actor:type_name -> memory.v1.RequestActor
-	128, // 69: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
-	128, // 70: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
-	82,  // 71: memory.v1.MemoryItem.usage:type_name -> memory.v1.MemoryUsage
-	128, // 72: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
-	2,   // 73: memory.v1.SearchMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
-	78,  // 74: memory.v1.SearchMemoriesRequest.actor:type_name -> memory.v1.RequestActor
-	73,  // 75: memory.v1.SearchMemoriesRequest.queries:type_name -> memory.v1.MemorySearchQuery
-	74,  // 76: memory.v1.SearchMemoriesResponse.items:type_name -> memory.v1.MemoryItem
-	2,   // 77: memory.v1.ListMemoryNamespacesRequest.archived:type_name -> memory.v1.ArchiveFilter
-	78,  // 78: memory.v1.ListMemoryNamespacesRequest.actor:type_name -> memory.v1.RequestActor
-	79,  // 79: memory.v1.ListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
-	130, // 80: memory.v1.MemoryUsage.last_fetched_at:type_name -> google.protobuf.Timestamp
-	82,  // 81: memory.v1.TopMemoryUsageItem.usage:type_name -> memory.v1.MemoryUsage
-	83,  // 82: memory.v1.ListTopMemoryUsageResponse.items:type_name -> memory.v1.TopMemoryUsageItem
-	2,   // 83: memory.v1.AdminListMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
-	130, // 84: memory.v1.AdminListMemoriesRequest.created_after:type_name -> google.protobuf.Timestamp
-	130, // 85: memory.v1.AdminListMemoriesRequest.created_before:type_name -> google.protobuf.Timestamp
-	130, // 86: memory.v1.AdminListMemoriesRequest.expires_before:type_name -> google.protobuf.Timestamp
-	128, // 87: memory.v1.AdminPutMemoryRequest.value:type_name -> google.protobuf.Struct
-	127, // 88: memory.v1.AdminPutMemoryRequest.index:type_name -> memory.v1.AdminPutMemoryRequest.IndexEntry
-	7,   // 89: memory.v1.AdminListTopMemoryUsageRequest.sort:type_name -> memory.v1.MemoryUsageSort
-	128, // 90: memory.v1.AdminSearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
-	2,   // 91: memory.v1.AdminSearchMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
-	73,  // 92: memory.v1.AdminSearchMemoriesRequest.queries:type_name -> memory.v1.MemorySearchQuery
-	2,   // 93: memory.v1.AdminListMemoryNamespacesRequest.archived:type_name -> memory.v1.ArchiveFilter
-	128, // 94: memory.v1.AdminMemoryItem.value:type_name -> google.protobuf.Struct
-	128, // 95: memory.v1.AdminMemoryItem.attributes:type_name -> google.protobuf.Struct
-	130, // 96: memory.v1.AdminMemoryItem.created_at:type_name -> google.protobuf.Timestamp
-	130, // 97: memory.v1.AdminMemoryItem.expires_at:type_name -> google.protobuf.Timestamp
-	130, // 98: memory.v1.AdminMemoryItem.archived_at:type_name -> google.protobuf.Timestamp
-	82,  // 99: memory.v1.AdminMemoryItem.usage:type_name -> memory.v1.MemoryUsage
-	95,  // 100: memory.v1.AdminListMemoriesResponse.items:type_name -> memory.v1.AdminMemoryItem
-	95,  // 101: memory.v1.AdminSearchMemoriesResponse.items:type_name -> memory.v1.AdminMemoryItem
-	79,  // 102: memory.v1.AdminListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
-	100, // 103: memory.v1.CapabilitiesResponse.tech:type_name -> memory.v1.CapabilitiesTech
-	101, // 104: memory.v1.CapabilitiesResponse.features:type_name -> memory.v1.CapabilitiesFeatures
-	102, // 105: memory.v1.CapabilitiesResponse.auth:type_name -> memory.v1.CapabilitiesAuth
-	103, // 106: memory.v1.CapabilitiesResponse.security:type_name -> memory.v1.CapabilitiesSecurity
-	8,   // 107: memory.v1.RecordResponse.status:type_name -> memory.v1.RecordStatus
-	115, // 108: memory.v1.UploadAttachmentRequest.metadata:type_name -> memory.v1.UploadMetadata
-	118, // 109: memory.v1.DownloadAttachmentResponse.metadata:type_name -> memory.v1.AttachmentInfo
-	129, // 110: memory.v1.PutCheckpointRequest.value:type_name -> google.protobuf.Value
-	129, // 111: memory.v1.AdminCheckpoint.value:type_name -> google.protobuf.Value
-	130, // 112: memory.v1.AdminCheckpoint.updated_at:type_name -> google.protobuf.Timestamp
-	3,   // 113: memory.v1.SubscribeEventsRequest.scope:type_name -> memory.v1.EventScope
-	131, // 114: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
-	131, // 115: memory.v1.SystemService.GetCapabilities:input_type -> google.protobuf.Empty
-	17,  // 116: memory.v1.ConversationsService.ListConversations:input_type -> memory.v1.ListConversationsRequest
-	16,  // 117: memory.v1.ConversationsService.CreateConversation:input_type -> memory.v1.CreateConversationRequest
-	19,  // 118: memory.v1.ConversationsService.GetConversation:input_type -> memory.v1.GetConversationRequest
-	20,  // 119: memory.v1.ConversationsService.UpdateConversation:input_type -> memory.v1.UpdateConversationRequest
-	21,  // 120: memory.v1.ConversationsService.ListForks:input_type -> memory.v1.ListForksRequest
-	25,  // 121: memory.v1.ConversationsService.ListChildConversations:input_type -> memory.v1.ListChildConversationsRequest
-	48,  // 122: memory.v1.ConversationMembershipsService.ListMemberships:input_type -> memory.v1.ListMembershipsRequest
-	50,  // 123: memory.v1.ConversationMembershipsService.ShareConversation:input_type -> memory.v1.ShareConversationRequest
-	51,  // 124: memory.v1.ConversationMembershipsService.UpdateMembership:input_type -> memory.v1.UpdateMembershipRequest
-	52,  // 125: memory.v1.ConversationMembershipsService.DeleteMembership:input_type -> memory.v1.DeleteMembershipRequest
-	54,  // 126: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:input_type -> memory.v1.ListOwnershipTransfersRequest
-	56,  // 127: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:input_type -> memory.v1.GetOwnershipTransferRequest
-	57,  // 128: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:input_type -> memory.v1.CreateOwnershipTransferRequest
-	58,  // 129: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:input_type -> memory.v1.AcceptOwnershipTransferRequest
-	59,  // 130: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:input_type -> memory.v1.DeleteOwnershipTransferRequest
-	31,  // 131: memory.v1.EntriesService.ListEntries:input_type -> memory.v1.ListEntriesRequest
-	30,  // 132: memory.v1.EntriesService.AppendEntry:input_type -> memory.v1.AppendEntryRequest
-	28,  // 133: memory.v1.EntriesService.SyncEntries:input_type -> memory.v1.SyncEntriesRequest
-	33,  // 134: memory.v1.AdminEntriesService.ListEntries:input_type -> memory.v1.AdminListEntriesRequest
-	35,  // 135: memory.v1.AdminEntriesService.GetEntry:input_type -> memory.v1.AdminGetEntryRequest
-	34,  // 136: memory.v1.AdminConversationsService.GetConversation:input_type -> memory.v1.AdminGetConversationRequest
-	36,  // 137: memory.v1.AdminConversationsService.ListConversations:input_type -> memory.v1.AdminListConversationsRequest
-	38,  // 138: memory.v1.AdminConversationsService.UpdateConversation:input_type -> memory.v1.AdminUpdateConversationRequest
-	39,  // 139: memory.v1.AdminConversationsService.ListMemberships:input_type -> memory.v1.AdminListMembershipsRequest
-	40,  // 140: memory.v1.AdminConversationsService.ListForks:input_type -> memory.v1.AdminListForksRequest
-	42,  // 141: memory.v1.AdminConversationsService.ListChildConversations:input_type -> memory.v1.AdminListChildConversationsRequest
-	60,  // 142: memory.v1.SearchService.SearchConversations:input_type -> memory.v1.SearchEntriesRequest
-	63,  // 143: memory.v1.SearchService.IndexConversations:input_type -> memory.v1.IndexConversationsRequest
-	66,  // 144: memory.v1.SearchService.ListUnindexedEntries:input_type -> memory.v1.ListUnindexedEntriesRequest
-	69,  // 145: memory.v1.MemoriesService.PutMemory:input_type -> memory.v1.PutMemoryRequest
-	71,  // 146: memory.v1.MemoriesService.GetMemory:input_type -> memory.v1.GetMemoryRequest
-	72,  // 147: memory.v1.MemoriesService.UpdateMemory:input_type -> memory.v1.UpdateMemoryRequest
-	75,  // 148: memory.v1.MemoriesService.SearchMemories:input_type -> memory.v1.SearchMemoriesRequest
-	77,  // 149: memory.v1.MemoriesService.ListMemoryNamespaces:input_type -> memory.v1.ListMemoryNamespacesRequest
-	85,  // 150: memory.v1.AdminMemoriesService.ListMemories:input_type -> memory.v1.AdminListMemoriesRequest
-	86,  // 151: memory.v1.AdminMemoriesService.GetMemory:input_type -> memory.v1.AdminGetMemoryRequest
-	93,  // 152: memory.v1.AdminMemoriesService.SearchMemories:input_type -> memory.v1.AdminSearchMemoriesRequest
-	94,  // 153: memory.v1.AdminMemoriesService.ListNamespaces:input_type -> memory.v1.AdminListMemoryNamespacesRequest
-	89,  // 154: memory.v1.AdminMemoriesService.DeleteMemory:input_type -> memory.v1.AdminDeleteMemoryRequest
-	90,  // 155: memory.v1.AdminMemoriesService.GetMemoryUsage:input_type -> memory.v1.AdminGetMemoryUsageRequest
-	91,  // 156: memory.v1.AdminMemoriesService.ListTopMemoryUsage:input_type -> memory.v1.AdminListTopMemoryUsageRequest
-	92,  // 157: memory.v1.AdminMemoriesService.GetMemoryIndexStatus:input_type -> memory.v1.AdminGetMemoryIndexStatusRequest
-	87,  // 158: memory.v1.AdminMemoriesService.PutMemory:input_type -> memory.v1.AdminPutMemoryRequest
-	88,  // 159: memory.v1.AdminMemoriesService.UpdateMemory:input_type -> memory.v1.AdminUpdateMemoryRequest
-	105, // 160: memory.v1.ResponseRecorderService.Record:input_type -> memory.v1.RecordRequest
-	107, // 161: memory.v1.ResponseRecorderService.Replay:input_type -> memory.v1.ReplayRequest
-	109, // 162: memory.v1.ResponseRecorderService.Cancel:input_type -> memory.v1.CancelRecordRequest
-	131, // 163: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
-	112, // 164: memory.v1.ResponseRecorderService.CheckRecordings:input_type -> memory.v1.CheckRecordingsRequest
-	114, // 165: memory.v1.AttachmentsService.UploadAttachment:input_type -> memory.v1.UploadAttachmentRequest
-	117, // 166: memory.v1.AttachmentsService.GetAttachment:input_type -> memory.v1.GetAttachmentRequest
-	119, // 167: memory.v1.AttachmentsService.DownloadAttachment:input_type -> memory.v1.DownloadAttachmentRequest
-	124, // 168: memory.v1.EventStreamService.SubscribeEvents:input_type -> memory.v1.SubscribeEventsRequest
-	121, // 169: memory.v1.AdminCheckpointService.GetCheckpoint:input_type -> memory.v1.GetCheckpointRequest
-	122, // 170: memory.v1.AdminCheckpointService.PutCheckpoint:input_type -> memory.v1.PutCheckpointRequest
-	99,  // 171: memory.v1.SystemService.GetHealth:output_type -> memory.v1.HealthResponse
-	104, // 172: memory.v1.SystemService.GetCapabilities:output_type -> memory.v1.CapabilitiesResponse
-	18,  // 173: memory.v1.ConversationsService.ListConversations:output_type -> memory.v1.ListConversationsResponse
-	13,  // 174: memory.v1.ConversationsService.CreateConversation:output_type -> memory.v1.Conversation
-	13,  // 175: memory.v1.ConversationsService.GetConversation:output_type -> memory.v1.Conversation
-	13,  // 176: memory.v1.ConversationsService.UpdateConversation:output_type -> memory.v1.Conversation
-	22,  // 177: memory.v1.ConversationsService.ListForks:output_type -> memory.v1.ListForksResponse
-	26,  // 178: memory.v1.ConversationsService.ListChildConversations:output_type -> memory.v1.ListChildConversationsResponse
-	49,  // 179: memory.v1.ConversationMembershipsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
-	14,  // 180: memory.v1.ConversationMembershipsService.ShareConversation:output_type -> memory.v1.ConversationMembership
-	14,  // 181: memory.v1.ConversationMembershipsService.UpdateMembership:output_type -> memory.v1.ConversationMembership
-	131, // 182: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
-	55,  // 183: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:output_type -> memory.v1.ListOwnershipTransfersResponse
-	53,  // 184: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
-	53,  // 185: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
-	131, // 186: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
-	131, // 187: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
-	32,  // 188: memory.v1.EntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
-	47,  // 189: memory.v1.EntriesService.AppendEntry:output_type -> memory.v1.Entry
-	29,  // 190: memory.v1.EntriesService.SyncEntries:output_type -> memory.v1.SyncEntriesResponse
-	32,  // 191: memory.v1.AdminEntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
-	47,  // 192: memory.v1.AdminEntriesService.GetEntry:output_type -> memory.v1.Entry
-	46,  // 193: memory.v1.AdminConversationsService.GetConversation:output_type -> memory.v1.AdminConversation
-	37,  // 194: memory.v1.AdminConversationsService.ListConversations:output_type -> memory.v1.AdminListConversationsResponse
-	46,  // 195: memory.v1.AdminConversationsService.UpdateConversation:output_type -> memory.v1.AdminConversation
-	49,  // 196: memory.v1.AdminConversationsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
-	41,  // 197: memory.v1.AdminConversationsService.ListForks:output_type -> memory.v1.AdminListForksResponse
-	43,  // 198: memory.v1.AdminConversationsService.ListChildConversations:output_type -> memory.v1.AdminListChildConversationsResponse
-	61,  // 199: memory.v1.SearchService.SearchConversations:output_type -> memory.v1.SearchEntriesResponse
-	65,  // 200: memory.v1.SearchService.IndexConversations:output_type -> memory.v1.IndexConversationsResponse
-	67,  // 201: memory.v1.SearchService.ListUnindexedEntries:output_type -> memory.v1.ListUnindexedEntriesResponse
-	70,  // 202: memory.v1.MemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
-	74,  // 203: memory.v1.MemoriesService.GetMemory:output_type -> memory.v1.MemoryItem
-	131, // 204: memory.v1.MemoriesService.UpdateMemory:output_type -> google.protobuf.Empty
-	76,  // 205: memory.v1.MemoriesService.SearchMemories:output_type -> memory.v1.SearchMemoriesResponse
-	80,  // 206: memory.v1.MemoriesService.ListMemoryNamespaces:output_type -> memory.v1.ListMemoryNamespacesResponse
-	96,  // 207: memory.v1.AdminMemoriesService.ListMemories:output_type -> memory.v1.AdminListMemoriesResponse
-	95,  // 208: memory.v1.AdminMemoriesService.GetMemory:output_type -> memory.v1.AdminMemoryItem
-	97,  // 209: memory.v1.AdminMemoriesService.SearchMemories:output_type -> memory.v1.AdminSearchMemoriesResponse
-	98,  // 210: memory.v1.AdminMemoriesService.ListNamespaces:output_type -> memory.v1.AdminListMemoryNamespacesResponse
-	131, // 211: memory.v1.AdminMemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
-	82,  // 212: memory.v1.AdminMemoriesService.GetMemoryUsage:output_type -> memory.v1.MemoryUsage
-	84,  // 213: memory.v1.AdminMemoriesService.ListTopMemoryUsage:output_type -> memory.v1.ListTopMemoryUsageResponse
-	81,  // 214: memory.v1.AdminMemoriesService.GetMemoryIndexStatus:output_type -> memory.v1.MemoryIndexStatusResponse
-	70,  // 215: memory.v1.AdminMemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
-	131, // 216: memory.v1.AdminMemoriesService.UpdateMemory:output_type -> google.protobuf.Empty
-	106, // 217: memory.v1.ResponseRecorderService.Record:output_type -> memory.v1.RecordResponse
-	108, // 218: memory.v1.ResponseRecorderService.Replay:output_type -> memory.v1.ReplayResponse
-	110, // 219: memory.v1.ResponseRecorderService.Cancel:output_type -> memory.v1.CancelRecordResponse
-	111, // 220: memory.v1.ResponseRecorderService.IsEnabled:output_type -> memory.v1.IsEnabledResponse
-	113, // 221: memory.v1.ResponseRecorderService.CheckRecordings:output_type -> memory.v1.CheckRecordingsResponse
-	116, // 222: memory.v1.AttachmentsService.UploadAttachment:output_type -> memory.v1.UploadAttachmentResponse
-	118, // 223: memory.v1.AttachmentsService.GetAttachment:output_type -> memory.v1.AttachmentInfo
-	120, // 224: memory.v1.AttachmentsService.DownloadAttachment:output_type -> memory.v1.DownloadAttachmentResponse
-	125, // 225: memory.v1.EventStreamService.SubscribeEvents:output_type -> memory.v1.EventNotification
-	123, // 226: memory.v1.AdminCheckpointService.GetCheckpoint:output_type -> memory.v1.AdminCheckpoint
-	123, // 227: memory.v1.AdminCheckpointService.PutCheckpoint:output_type -> memory.v1.AdminCheckpoint
-	171, // [171:228] is the sub-list for method output_type
-	114, // [114:171] is the sub-list for method input_type
-	114, // [114:114] is the sub-list for extension type_name
-	114, // [114:114] is the sub-list for extension extendee
-	0,   // [0:114] is the sub-list for field type_name
+	23,  // 36: memory.v1.AdminListForksResponse.fork_points:type_name -> memory.v1.ConversationForkPoint
+	9,   // 37: memory.v1.AdminListChildConversationsRequest.page:type_name -> memory.v1.PageRequest
+	45,  // 38: memory.v1.AdminListChildConversationsResponse.children:type_name -> memory.v1.AdminChildConversationSummary
+	10,  // 39: memory.v1.AdminListChildConversationsResponse.page_info:type_name -> memory.v1.PageInfo
+	4,   // 40: memory.v1.AdminConversationSummary.access_level:type_name -> memory.v1.AccessLevel
+	4,   // 41: memory.v1.AdminChildConversationSummary.access_level:type_name -> memory.v1.AccessLevel
+	4,   // 42: memory.v1.AdminConversation.access_level:type_name -> memory.v1.AccessLevel
+	128, // 43: memory.v1.AdminConversation.metadata:type_name -> google.protobuf.Struct
+	5,   // 44: memory.v1.Entry.channel:type_name -> memory.v1.Channel
+	129, // 45: memory.v1.Entry.content:type_name -> google.protobuf.Value
+	9,   // 46: memory.v1.ListMembershipsRequest.page:type_name -> memory.v1.PageRequest
+	14,  // 47: memory.v1.ListMembershipsResponse.memberships:type_name -> memory.v1.ConversationMembership
+	10,  // 48: memory.v1.ListMembershipsResponse.page_info:type_name -> memory.v1.PageInfo
+	4,   // 49: memory.v1.ShareConversationRequest.access_level:type_name -> memory.v1.AccessLevel
+	4,   // 50: memory.v1.UpdateMembershipRequest.access_level:type_name -> memory.v1.AccessLevel
+	6,   // 51: memory.v1.ListOwnershipTransfersRequest.role:type_name -> memory.v1.TransferRole
+	9,   // 52: memory.v1.ListOwnershipTransfersRequest.page:type_name -> memory.v1.PageRequest
+	53,  // 53: memory.v1.ListOwnershipTransfersResponse.transfers:type_name -> memory.v1.OwnershipTransfer
+	10,  // 54: memory.v1.ListOwnershipTransfersResponse.page_info:type_name -> memory.v1.PageInfo
+	62,  // 55: memory.v1.SearchEntriesResponse.results:type_name -> memory.v1.SearchResult
+	47,  // 56: memory.v1.SearchResult.entry:type_name -> memory.v1.Entry
+	64,  // 57: memory.v1.IndexConversationsRequest.entries:type_name -> memory.v1.IndexEntryRequest
+	68,  // 58: memory.v1.ListUnindexedEntriesResponse.entries:type_name -> memory.v1.UnindexedEntry
+	47,  // 59: memory.v1.UnindexedEntry.entry:type_name -> memory.v1.Entry
+	128, // 60: memory.v1.PutMemoryRequest.value:type_name -> google.protobuf.Struct
+	126, // 61: memory.v1.PutMemoryRequest.index:type_name -> memory.v1.PutMemoryRequest.IndexEntry
+	78,  // 62: memory.v1.PutMemoryRequest.actor:type_name -> memory.v1.RequestActor
+	128, // 63: memory.v1.MemoryWriteResult.attributes:type_name -> google.protobuf.Struct
+	2,   // 64: memory.v1.GetMemoryRequest.archived:type_name -> memory.v1.ArchiveFilter
+	78,  // 65: memory.v1.GetMemoryRequest.actor:type_name -> memory.v1.RequestActor
+	78,  // 66: memory.v1.UpdateMemoryRequest.actor:type_name -> memory.v1.RequestActor
+	128, // 67: memory.v1.MemoryItem.value:type_name -> google.protobuf.Struct
+	128, // 68: memory.v1.MemoryItem.attributes:type_name -> google.protobuf.Struct
+	82,  // 69: memory.v1.MemoryItem.usage:type_name -> memory.v1.MemoryUsage
+	128, // 70: memory.v1.SearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
+	2,   // 71: memory.v1.SearchMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
+	78,  // 72: memory.v1.SearchMemoriesRequest.actor:type_name -> memory.v1.RequestActor
+	73,  // 73: memory.v1.SearchMemoriesRequest.queries:type_name -> memory.v1.MemorySearchQuery
+	74,  // 74: memory.v1.SearchMemoriesResponse.items:type_name -> memory.v1.MemoryItem
+	2,   // 75: memory.v1.ListMemoryNamespacesRequest.archived:type_name -> memory.v1.ArchiveFilter
+	78,  // 76: memory.v1.ListMemoryNamespacesRequest.actor:type_name -> memory.v1.RequestActor
+	79,  // 77: memory.v1.ListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
+	130, // 78: memory.v1.MemoryUsage.last_fetched_at:type_name -> google.protobuf.Timestamp
+	82,  // 79: memory.v1.TopMemoryUsageItem.usage:type_name -> memory.v1.MemoryUsage
+	83,  // 80: memory.v1.ListTopMemoryUsageResponse.items:type_name -> memory.v1.TopMemoryUsageItem
+	2,   // 81: memory.v1.AdminListMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
+	130, // 82: memory.v1.AdminListMemoriesRequest.created_after:type_name -> google.protobuf.Timestamp
+	130, // 83: memory.v1.AdminListMemoriesRequest.created_before:type_name -> google.protobuf.Timestamp
+	130, // 84: memory.v1.AdminListMemoriesRequest.expires_before:type_name -> google.protobuf.Timestamp
+	128, // 85: memory.v1.AdminPutMemoryRequest.value:type_name -> google.protobuf.Struct
+	127, // 86: memory.v1.AdminPutMemoryRequest.index:type_name -> memory.v1.AdminPutMemoryRequest.IndexEntry
+	7,   // 87: memory.v1.AdminListTopMemoryUsageRequest.sort:type_name -> memory.v1.MemoryUsageSort
+	128, // 88: memory.v1.AdminSearchMemoriesRequest.filter:type_name -> google.protobuf.Struct
+	2,   // 89: memory.v1.AdminSearchMemoriesRequest.archived:type_name -> memory.v1.ArchiveFilter
+	73,  // 90: memory.v1.AdminSearchMemoriesRequest.queries:type_name -> memory.v1.MemorySearchQuery
+	2,   // 91: memory.v1.AdminListMemoryNamespacesRequest.archived:type_name -> memory.v1.ArchiveFilter
+	128, // 92: memory.v1.AdminMemoryItem.value:type_name -> google.protobuf.Struct
+	128, // 93: memory.v1.AdminMemoryItem.attributes:type_name -> google.protobuf.Struct
+	130, // 94: memory.v1.AdminMemoryItem.created_at:type_name -> google.protobuf.Timestamp
+	130, // 95: memory.v1.AdminMemoryItem.expires_at:type_name -> google.protobuf.Timestamp
+	130, // 96: memory.v1.AdminMemoryItem.archived_at:type_name -> google.protobuf.Timestamp
+	82,  // 97: memory.v1.AdminMemoryItem.usage:type_name -> memory.v1.MemoryUsage
+	95,  // 98: memory.v1.AdminListMemoriesResponse.items:type_name -> memory.v1.AdminMemoryItem
+	95,  // 99: memory.v1.AdminSearchMemoriesResponse.items:type_name -> memory.v1.AdminMemoryItem
+	79,  // 100: memory.v1.AdminListMemoryNamespacesResponse.namespaces:type_name -> memory.v1.MemoryNamespace
+	100, // 101: memory.v1.CapabilitiesResponse.tech:type_name -> memory.v1.CapabilitiesTech
+	101, // 102: memory.v1.CapabilitiesResponse.features:type_name -> memory.v1.CapabilitiesFeatures
+	102, // 103: memory.v1.CapabilitiesResponse.auth:type_name -> memory.v1.CapabilitiesAuth
+	103, // 104: memory.v1.CapabilitiesResponse.security:type_name -> memory.v1.CapabilitiesSecurity
+	8,   // 105: memory.v1.RecordResponse.status:type_name -> memory.v1.RecordStatus
+	115, // 106: memory.v1.UploadAttachmentRequest.metadata:type_name -> memory.v1.UploadMetadata
+	118, // 107: memory.v1.DownloadAttachmentResponse.metadata:type_name -> memory.v1.AttachmentInfo
+	129, // 108: memory.v1.PutCheckpointRequest.value:type_name -> google.protobuf.Value
+	129, // 109: memory.v1.AdminCheckpoint.value:type_name -> google.protobuf.Value
+	130, // 110: memory.v1.AdminCheckpoint.updated_at:type_name -> google.protobuf.Timestamp
+	3,   // 111: memory.v1.SubscribeEventsRequest.scope:type_name -> memory.v1.EventScope
+	131, // 112: memory.v1.SystemService.GetHealth:input_type -> google.protobuf.Empty
+	131, // 113: memory.v1.SystemService.GetCapabilities:input_type -> google.protobuf.Empty
+	17,  // 114: memory.v1.ConversationsService.ListConversations:input_type -> memory.v1.ListConversationsRequest
+	16,  // 115: memory.v1.ConversationsService.CreateConversation:input_type -> memory.v1.CreateConversationRequest
+	19,  // 116: memory.v1.ConversationsService.GetConversation:input_type -> memory.v1.GetConversationRequest
+	20,  // 117: memory.v1.ConversationsService.UpdateConversation:input_type -> memory.v1.UpdateConversationRequest
+	21,  // 118: memory.v1.ConversationsService.ListForks:input_type -> memory.v1.ListForksRequest
+	25,  // 119: memory.v1.ConversationsService.ListChildConversations:input_type -> memory.v1.ListChildConversationsRequest
+	48,  // 120: memory.v1.ConversationMembershipsService.ListMemberships:input_type -> memory.v1.ListMembershipsRequest
+	50,  // 121: memory.v1.ConversationMembershipsService.ShareConversation:input_type -> memory.v1.ShareConversationRequest
+	51,  // 122: memory.v1.ConversationMembershipsService.UpdateMembership:input_type -> memory.v1.UpdateMembershipRequest
+	52,  // 123: memory.v1.ConversationMembershipsService.DeleteMembership:input_type -> memory.v1.DeleteMembershipRequest
+	54,  // 124: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:input_type -> memory.v1.ListOwnershipTransfersRequest
+	56,  // 125: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:input_type -> memory.v1.GetOwnershipTransferRequest
+	57,  // 126: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:input_type -> memory.v1.CreateOwnershipTransferRequest
+	58,  // 127: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:input_type -> memory.v1.AcceptOwnershipTransferRequest
+	59,  // 128: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:input_type -> memory.v1.DeleteOwnershipTransferRequest
+	31,  // 129: memory.v1.EntriesService.ListEntries:input_type -> memory.v1.ListEntriesRequest
+	30,  // 130: memory.v1.EntriesService.AppendEntry:input_type -> memory.v1.AppendEntryRequest
+	28,  // 131: memory.v1.EntriesService.SyncEntries:input_type -> memory.v1.SyncEntriesRequest
+	33,  // 132: memory.v1.AdminEntriesService.ListEntries:input_type -> memory.v1.AdminListEntriesRequest
+	35,  // 133: memory.v1.AdminEntriesService.GetEntry:input_type -> memory.v1.AdminGetEntryRequest
+	34,  // 134: memory.v1.AdminConversationsService.GetConversation:input_type -> memory.v1.AdminGetConversationRequest
+	36,  // 135: memory.v1.AdminConversationsService.ListConversations:input_type -> memory.v1.AdminListConversationsRequest
+	38,  // 136: memory.v1.AdminConversationsService.UpdateConversation:input_type -> memory.v1.AdminUpdateConversationRequest
+	39,  // 137: memory.v1.AdminConversationsService.ListMemberships:input_type -> memory.v1.AdminListMembershipsRequest
+	40,  // 138: memory.v1.AdminConversationsService.ListForks:input_type -> memory.v1.AdminListForksRequest
+	42,  // 139: memory.v1.AdminConversationsService.ListChildConversations:input_type -> memory.v1.AdminListChildConversationsRequest
+	60,  // 140: memory.v1.SearchService.SearchConversations:input_type -> memory.v1.SearchEntriesRequest
+	63,  // 141: memory.v1.SearchService.IndexConversations:input_type -> memory.v1.IndexConversationsRequest
+	66,  // 142: memory.v1.SearchService.ListUnindexedEntries:input_type -> memory.v1.ListUnindexedEntriesRequest
+	69,  // 143: memory.v1.MemoriesService.PutMemory:input_type -> memory.v1.PutMemoryRequest
+	71,  // 144: memory.v1.MemoriesService.GetMemory:input_type -> memory.v1.GetMemoryRequest
+	72,  // 145: memory.v1.MemoriesService.UpdateMemory:input_type -> memory.v1.UpdateMemoryRequest
+	75,  // 146: memory.v1.MemoriesService.SearchMemories:input_type -> memory.v1.SearchMemoriesRequest
+	77,  // 147: memory.v1.MemoriesService.ListMemoryNamespaces:input_type -> memory.v1.ListMemoryNamespacesRequest
+	85,  // 148: memory.v1.AdminMemoriesService.ListMemories:input_type -> memory.v1.AdminListMemoriesRequest
+	86,  // 149: memory.v1.AdminMemoriesService.GetMemory:input_type -> memory.v1.AdminGetMemoryRequest
+	93,  // 150: memory.v1.AdminMemoriesService.SearchMemories:input_type -> memory.v1.AdminSearchMemoriesRequest
+	94,  // 151: memory.v1.AdminMemoriesService.ListNamespaces:input_type -> memory.v1.AdminListMemoryNamespacesRequest
+	89,  // 152: memory.v1.AdminMemoriesService.DeleteMemory:input_type -> memory.v1.AdminDeleteMemoryRequest
+	90,  // 153: memory.v1.AdminMemoriesService.GetMemoryUsage:input_type -> memory.v1.AdminGetMemoryUsageRequest
+	91,  // 154: memory.v1.AdminMemoriesService.ListTopMemoryUsage:input_type -> memory.v1.AdminListTopMemoryUsageRequest
+	92,  // 155: memory.v1.AdminMemoriesService.GetMemoryIndexStatus:input_type -> memory.v1.AdminGetMemoryIndexStatusRequest
+	87,  // 156: memory.v1.AdminMemoriesService.PutMemory:input_type -> memory.v1.AdminPutMemoryRequest
+	88,  // 157: memory.v1.AdminMemoriesService.UpdateMemory:input_type -> memory.v1.AdminUpdateMemoryRequest
+	105, // 158: memory.v1.ResponseRecorderService.Record:input_type -> memory.v1.RecordRequest
+	107, // 159: memory.v1.ResponseRecorderService.Replay:input_type -> memory.v1.ReplayRequest
+	109, // 160: memory.v1.ResponseRecorderService.Cancel:input_type -> memory.v1.CancelRecordRequest
+	131, // 161: memory.v1.ResponseRecorderService.IsEnabled:input_type -> google.protobuf.Empty
+	112, // 162: memory.v1.ResponseRecorderService.CheckRecordings:input_type -> memory.v1.CheckRecordingsRequest
+	114, // 163: memory.v1.AttachmentsService.UploadAttachment:input_type -> memory.v1.UploadAttachmentRequest
+	117, // 164: memory.v1.AttachmentsService.GetAttachment:input_type -> memory.v1.GetAttachmentRequest
+	119, // 165: memory.v1.AttachmentsService.DownloadAttachment:input_type -> memory.v1.DownloadAttachmentRequest
+	124, // 166: memory.v1.EventStreamService.SubscribeEvents:input_type -> memory.v1.SubscribeEventsRequest
+	121, // 167: memory.v1.AdminCheckpointService.GetCheckpoint:input_type -> memory.v1.GetCheckpointRequest
+	122, // 168: memory.v1.AdminCheckpointService.PutCheckpoint:input_type -> memory.v1.PutCheckpointRequest
+	99,  // 169: memory.v1.SystemService.GetHealth:output_type -> memory.v1.HealthResponse
+	104, // 170: memory.v1.SystemService.GetCapabilities:output_type -> memory.v1.CapabilitiesResponse
+	18,  // 171: memory.v1.ConversationsService.ListConversations:output_type -> memory.v1.ListConversationsResponse
+	13,  // 172: memory.v1.ConversationsService.CreateConversation:output_type -> memory.v1.Conversation
+	13,  // 173: memory.v1.ConversationsService.GetConversation:output_type -> memory.v1.Conversation
+	13,  // 174: memory.v1.ConversationsService.UpdateConversation:output_type -> memory.v1.Conversation
+	22,  // 175: memory.v1.ConversationsService.ListForks:output_type -> memory.v1.ListForksResponse
+	26,  // 176: memory.v1.ConversationsService.ListChildConversations:output_type -> memory.v1.ListChildConversationsResponse
+	49,  // 177: memory.v1.ConversationMembershipsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
+	14,  // 178: memory.v1.ConversationMembershipsService.ShareConversation:output_type -> memory.v1.ConversationMembership
+	14,  // 179: memory.v1.ConversationMembershipsService.UpdateMembership:output_type -> memory.v1.ConversationMembership
+	131, // 180: memory.v1.ConversationMembershipsService.DeleteMembership:output_type -> google.protobuf.Empty
+	55,  // 181: memory.v1.OwnershipTransfersService.ListOwnershipTransfers:output_type -> memory.v1.ListOwnershipTransfersResponse
+	53,  // 182: memory.v1.OwnershipTransfersService.GetOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
+	53,  // 183: memory.v1.OwnershipTransfersService.CreateOwnershipTransfer:output_type -> memory.v1.OwnershipTransfer
+	131, // 184: memory.v1.OwnershipTransfersService.AcceptOwnershipTransfer:output_type -> google.protobuf.Empty
+	131, // 185: memory.v1.OwnershipTransfersService.DeleteOwnershipTransfer:output_type -> google.protobuf.Empty
+	32,  // 186: memory.v1.EntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
+	47,  // 187: memory.v1.EntriesService.AppendEntry:output_type -> memory.v1.Entry
+	29,  // 188: memory.v1.EntriesService.SyncEntries:output_type -> memory.v1.SyncEntriesResponse
+	32,  // 189: memory.v1.AdminEntriesService.ListEntries:output_type -> memory.v1.ListEntriesResponse
+	47,  // 190: memory.v1.AdminEntriesService.GetEntry:output_type -> memory.v1.Entry
+	46,  // 191: memory.v1.AdminConversationsService.GetConversation:output_type -> memory.v1.AdminConversation
+	37,  // 192: memory.v1.AdminConversationsService.ListConversations:output_type -> memory.v1.AdminListConversationsResponse
+	46,  // 193: memory.v1.AdminConversationsService.UpdateConversation:output_type -> memory.v1.AdminConversation
+	49,  // 194: memory.v1.AdminConversationsService.ListMemberships:output_type -> memory.v1.ListMembershipsResponse
+	41,  // 195: memory.v1.AdminConversationsService.ListForks:output_type -> memory.v1.AdminListForksResponse
+	43,  // 196: memory.v1.AdminConversationsService.ListChildConversations:output_type -> memory.v1.AdminListChildConversationsResponse
+	61,  // 197: memory.v1.SearchService.SearchConversations:output_type -> memory.v1.SearchEntriesResponse
+	65,  // 198: memory.v1.SearchService.IndexConversations:output_type -> memory.v1.IndexConversationsResponse
+	67,  // 199: memory.v1.SearchService.ListUnindexedEntries:output_type -> memory.v1.ListUnindexedEntriesResponse
+	70,  // 200: memory.v1.MemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
+	74,  // 201: memory.v1.MemoriesService.GetMemory:output_type -> memory.v1.MemoryItem
+	131, // 202: memory.v1.MemoriesService.UpdateMemory:output_type -> google.protobuf.Empty
+	76,  // 203: memory.v1.MemoriesService.SearchMemories:output_type -> memory.v1.SearchMemoriesResponse
+	80,  // 204: memory.v1.MemoriesService.ListMemoryNamespaces:output_type -> memory.v1.ListMemoryNamespacesResponse
+	96,  // 205: memory.v1.AdminMemoriesService.ListMemories:output_type -> memory.v1.AdminListMemoriesResponse
+	95,  // 206: memory.v1.AdminMemoriesService.GetMemory:output_type -> memory.v1.AdminMemoryItem
+	97,  // 207: memory.v1.AdminMemoriesService.SearchMemories:output_type -> memory.v1.AdminSearchMemoriesResponse
+	98,  // 208: memory.v1.AdminMemoriesService.ListNamespaces:output_type -> memory.v1.AdminListMemoryNamespacesResponse
+	131, // 209: memory.v1.AdminMemoriesService.DeleteMemory:output_type -> google.protobuf.Empty
+	82,  // 210: memory.v1.AdminMemoriesService.GetMemoryUsage:output_type -> memory.v1.MemoryUsage
+	84,  // 211: memory.v1.AdminMemoriesService.ListTopMemoryUsage:output_type -> memory.v1.ListTopMemoryUsageResponse
+	81,  // 212: memory.v1.AdminMemoriesService.GetMemoryIndexStatus:output_type -> memory.v1.MemoryIndexStatusResponse
+	70,  // 213: memory.v1.AdminMemoriesService.PutMemory:output_type -> memory.v1.MemoryWriteResult
+	131, // 214: memory.v1.AdminMemoriesService.UpdateMemory:output_type -> google.protobuf.Empty
+	106, // 215: memory.v1.ResponseRecorderService.Record:output_type -> memory.v1.RecordResponse
+	108, // 216: memory.v1.ResponseRecorderService.Replay:output_type -> memory.v1.ReplayResponse
+	110, // 217: memory.v1.ResponseRecorderService.Cancel:output_type -> memory.v1.CancelRecordResponse
+	111, // 218: memory.v1.ResponseRecorderService.IsEnabled:output_type -> memory.v1.IsEnabledResponse
+	113, // 219: memory.v1.ResponseRecorderService.CheckRecordings:output_type -> memory.v1.CheckRecordingsResponse
+	116, // 220: memory.v1.AttachmentsService.UploadAttachment:output_type -> memory.v1.UploadAttachmentResponse
+	118, // 221: memory.v1.AttachmentsService.GetAttachment:output_type -> memory.v1.AttachmentInfo
+	120, // 222: memory.v1.AttachmentsService.DownloadAttachment:output_type -> memory.v1.DownloadAttachmentResponse
+	125, // 223: memory.v1.EventStreamService.SubscribeEvents:output_type -> memory.v1.EventNotification
+	123, // 224: memory.v1.AdminCheckpointService.GetCheckpoint:output_type -> memory.v1.AdminCheckpoint
+	123, // 225: memory.v1.AdminCheckpointService.PutCheckpoint:output_type -> memory.v1.AdminCheckpoint
+	169, // [169:226] is the sub-list for method output_type
+	112, // [112:169] is the sub-list for method input_type
+	112, // [112:112] is the sub-list for extension type_name
+	112, // [112:112] is the sub-list for extension extendee
+	0,   // [0:112] is the sub-list for field type_name
 }
 
 func init() { file_memory_v1_memory_service_proto_init() }

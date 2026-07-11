@@ -97,10 +97,16 @@ function ConversationDetailPage() {
     adminListChildConversationsOptions({ path: { id: conversationId } }),
   );
 
-  // Fetch entries from the entire fork lineage (parent entries + current entries)
-  const { entries: allEntries, isLoading: entriesLoading } = useLineageEntries({
+  // Fetch the newest selected-ancestry page, then page backward; sibling entries stay unloaded.
+  const {
+    entries: allEntries,
+    isLoading: entriesLoading,
+    hasOlderEntries,
+    isLoadingOlderEntries,
+    loadOlderEntries,
+  } = useLineageEntries({
     conversationId,
-    forkSummaries: forksData?.data || [],
+    forkPoints: forksData?.forkPoints || [],
   });
 
   const memberships = membershipsData?.data || [];
@@ -137,10 +143,10 @@ function ConversationDetailPage() {
     [navigate, selectWithoutScroll],
   );
 
-  // Transform API fork summaries to ForkTreeItem format for UI
+  // Transform the complete navigation snapshot to the sidebar's flat group list.
   const forkTree: ForkTreeItem[] = React.useMemo(() => {
-    const forks = forksData?.data || [];
-    if (forks.length === 0 && conversation) {
+    const conversationIds = forksData?.conversationIds || [];
+    if (conversationIds.length === 0 && conversation) {
       // Fallback if no forks returned
       return [
         {
@@ -151,15 +157,22 @@ function ConversationDetailPage() {
         },
       ];
     }
-    return forks.map((fork) => ({
-      id: fork.conversationId || "",
-      title: fork.title || "Untitled",
-      isRoot: !fork.forkedAtEntryId,
-      forkedAtEntryId: fork.forkedAtEntryId,
-      parentConversationId: fork.forkedAtConversationId,
-      updatedAt: fork.createdAt || new Date().toISOString(),
-    }));
-  }, [forksData?.data, conversation, conversationId]);
+    const optionsByConversation = new Map(
+      (forksData?.forkPoints || []).flatMap((point) =>
+        point.options.map((option) => [option.conversationId, option] as const),
+      ),
+    );
+    return conversationIds.map((id, index) => {
+      const option = optionsByConversation.get(id);
+      return {
+        id,
+        title: option?.title || (id === conversationId ? conversation?.title : undefined) || "Untitled",
+        isRoot: index === 0,
+        forkedAtEntryId: option?.entryId,
+        updatedAt: option?.createdAt || conversation?.updatedAt || new Date().toISOString(),
+      };
+    });
+  }, [forksData?.conversationIds, forksData?.forkPoints, conversation, conversationId]);
 
   const childConversations = childrenData?.data || [];
 
@@ -388,6 +401,18 @@ function ConversationDetailPage() {
 
             {/* Entries List */}
             <div className="space-y-4">
+              {hasOlderEntries && (
+                <div className="flex justify-center pb-1">
+                  <button
+                    type="button"
+                    onClick={() => void loadOlderEntries()}
+                    disabled={isLoadingOlderEntries}
+                    className="console-panel rounded-lg px-4 py-2 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isLoadingOlderEntries ? "Loading older entries..." : "Load older entries"}
+                  </button>
+                </div>
+              )}
               {renderItems.map((item, i) =>
                 item.type === "entry" ? (
                   <EntryCard

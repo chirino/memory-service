@@ -7,6 +7,8 @@ status: implemented
 > **Status**: Implemented.
 >
 > **Superseded note:** Conversation IDs no longer follow this UUID contract. Current REST, gRPC, stores, caches, and vector payloads treat conversation IDs as arbitrary non-empty strings; entry IDs, memory IDs, attachment IDs, transfer IDs, task IDs, and internal conversation group IDs remain UUIDs.
+>
+> **Current fork API note:** User fork navigation now uses `ConversationForkNavigation`, `ConversationForkPoint`, and `ConversationForkOption`; `ConversationForkSummary` remains relevant to the separate admin direct-child listing. References below describe the contract at the time of this enhancement.
 
 ## Overview
 

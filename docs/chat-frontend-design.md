@@ -295,6 +295,8 @@ flowchart TB
 - No complex ID mapping between frontend-generated and backend-assigned IDs
 - Auto-cleanup ensures no stale streaming messages remain
 - `/entries` is the single source of truth for message history
+- Existing conversations initially load the newest ancestry-visible page with `tail=true` and prepend older `beforeCursor` pages as the user scrolls upward.
+- `/forks` supplies a separate `{conversationIds, forkPoints}` navigation index, so rendering branch controls never requires loading sibling-branch entries.
 
 ### Why Content-Based User Echo Detection?
 - Backends may not echo client-generated IDs for user messages

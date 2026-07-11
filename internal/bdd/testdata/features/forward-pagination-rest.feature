@@ -82,6 +82,43 @@ Feature: Forward pagination for conversation entries (REST)
     And the response should not have an afterCursor
     And the response should have a beforeCursor
 
+  Scenario: Explicit forks none excludes later parent entries and sibling branches
+    Given the conversation has an entry "Before fork"
+    And the conversation has an entry "Fork point"
+    And the conversation has an entry "Later parent entry"
+    And set "rootConversationId" to "${conversationId}"
+    When I list entries for the conversation
+    And set "explicitNoneForkPointId" to the json response field "data[1].id"
+    And set "explicitNoneSiblingId" to "00000000-0000-4000-8000-000000000301"
+    When I call POST "/v1/conversations/${explicitNoneSiblingId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "forkedAtConversationId": "${rootConversationId}",
+      "forkedAtEntryId": "${explicitNoneForkPointId}",
+      "content": [{"role": "USER", "text": "Sibling branch entry"}]
+    }
+    """
+    Then the response status should be 201
+    And set "explicitNoneSelectedId" to "00000000-0000-4000-8000-000000000302"
+    When I call POST "/v1/conversations/${explicitNoneSelectedId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "forkedAtConversationId": "${rootConversationId}",
+      "forkedAtEntryId": "${explicitNoneForkPointId}",
+      "content": [{"role": "USER", "text": "Selected branch entry"}]
+    }
+    """
+    Then the response status should be 201
+    When I call GET "/v1/conversations/${explicitNoneSelectedId}/entries?channel=history&forks=none&tail=true&limit=50"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Before fork"
+    And entry at index 1 should have content "Selected branch entry"
+
   Scenario: Forward pagination cursor crossing ancestor segment boundary
     Given the conversation has an entry "Root 1"
     And the conversation has an entry "Root 2"

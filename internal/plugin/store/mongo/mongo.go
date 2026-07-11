@@ -3281,65 +3281,13 @@ func (s *MongoStore) AdminListMemberships(ctx context.Context, conversationID st
 	return result, nextCursor, nil
 }
 
-func (s *MongoStore) AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *MongoStore) AdminListForks(ctx context.Context, conversationID string) (*registrystore.ConversationForkNavigation, error) {
 	var conv convDoc
 	err := s.conversations().FindOne(ctx, bson.M{"_id": string(conversationID)}).Decode(&conv)
 	if err != nil {
-		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-
-	childIDs, err := s.directForkChildIDs(ctx, conv.ConversationGroupID, conv.ID)
-	if err != nil {
-		return nil, nil, err
-	}
-	if len(childIDs) == 0 {
-		return []registrystore.ConversationForkSummary{}, nil, nil
-	}
-	filter := bson.M{
-		"conversation_group_id": conv.ConversationGroupID,
-		"_id":                   bson.M{"$in": childIDs},
-	}
-	if afterCursor != nil {
-		var cursorDoc convDoc
-		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
-		if err == nil {
-			filter["$or"] = bson.A{
-				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
-				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
-			}
-		}
-	}
-
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
-	cur, err := s.conversations().Find(ctx, filter, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to admin list forks: %w", err)
-	}
-	var docs []convDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode forks: %w", err)
-	}
-
-	hasMore := len(docs) > limit
-	if hasMore {
-		docs = docs[:limit]
-	}
-
-	forks := make([]registrystore.ConversationForkSummary, len(docs))
-	for i, d := range docs {
-		fork, err := s.conversationForkSummaryFromDoc(ctx, d)
-		if err != nil {
-			return nil, nil, err
-		}
-		forks[i] = fork
-	}
-
-	var nextCursor *string
-	if hasMore && len(forks) > 0 {
-		c := string(forks[len(forks)-1].ID)
-		nextCursor = &c
-	}
-	return forks, nextCursor, nil
+	return s.ListForks(ctx, conv.OwnerUserID, conversationID)
 }
 
 func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore.AdminSearchQuery) (*registrystore.SearchResults, error) {

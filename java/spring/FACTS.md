@@ -35,3 +35,5 @@ so they do not inherit `java/spring/pom.xml` dependency management. If
 Spring Boot manages, those checkpoint POMs need their own `protobuf-java`
 dependency-management override or runtime will fail with Protobuf
 gencode/runtime version mismatches.
+
+**Entry-list proxy signature drift**: `memory-service-rest-spring` manually maps `MemoryServiceProxy.EntryListOptions` to the generated REST client. Keep every `listConversationEntries` query parameter represented and forwarded when the OpenAPI operation changes.

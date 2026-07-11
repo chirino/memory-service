@@ -1272,50 +1272,29 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	var afterCursor *string
-	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
-	if err != nil {
-		return nil, err
-	}
-	if req.GetPage() != nil {
-		if req.GetPage().GetPageToken() != "" {
-			t := req.GetPage().GetPageToken()
-			afterCursor = &t
-		}
-	}
-
-	forks, cursor, err := func() ([]registrystore.ConversationForkSummary, *string, error) {
-		type result struct {
-			forks  []registrystore.ConversationForkSummary
-			cursor *string
-		}
-		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
-			forks, cursor, err := s.Store.AdminListForks(txCtx, convID, afterCursor, limit)
-			return result{forks: forks, cursor: cursor}, err
-		})
-		return out.forks, out.cursor, err
-	}()
+	forks, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationForkNavigation, error) {
+		return s.Store.AdminListForks(txCtx, convID)
+	})
 	if err != nil {
 		return nil, mapError(err)
 	}
 
-	resp := &pb.AdminListForksResponse{PageInfo: &pb.PageInfo{}}
-	for _, f := range forks {
-		fork := &pb.ConversationForkSummary{
-			ConversationId: string(f.ID),
-			Title:          f.Title,
-			CreatedAt:      f.CreatedAt.Format("2006-01-02T15:04:05Z"),
+	resp := &pb.AdminListForksResponse{ConversationIds: forks.ConversationIDs}
+	for _, point := range forks.ForkPoints {
+		protoPoint := &pb.ConversationForkPoint{EntryId: uuidToBytes(point.EntryID)}
+		for _, option := range point.Options {
+			protoOption := &pb.ConversationForkOption{
+				ConversationId: option.ConversationID,
+				Title:          option.Title,
+				Preview:        option.Preview,
+				CreatedAt:      option.CreatedAt.Format("2006-01-02T15:04:05Z"),
+			}
+			if option.EntryID != nil {
+				protoOption.EntryId = uuidToBytes(*option.EntryID)
+			}
+			protoPoint.Options = append(protoPoint.Options, protoOption)
 		}
-		if f.ForkedAtEntryID != nil {
-			fork.ForkedAtEntryId = uuidToBytes(*f.ForkedAtEntryID)
-		}
-		if f.ForkedAtConversationID != nil {
-			fork.ForkedAtConversationId = string(*f.ForkedAtConversationID)
-		}
-		resp.Forks = append(resp.Forks, fork)
-	}
-	if cursor != nil {
-		resp.PageInfo.NextPageToken = *cursor
+		resp.ForkPoints = append(resp.ForkPoints, protoPoint)
 	}
 	return resp, nil
 }

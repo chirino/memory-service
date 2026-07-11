@@ -10,6 +10,8 @@ supersedes:
 > [001](../partial/001-conversation-forking-design.md).
 >
 > **Current Contract Note**: Conversation archival is now defined by [094](./094-archive-operations.md). References below to conversation `DELETE` endpoints should be read as archive behavior now exposed through conversation `PATCH` with the synthetic `archived` field.
+>
+> User and admin `GET .../conversations/{id}/forks` endpoints now return `{conversationIds, forkPoints}` rather than `ConversationForkSummary` rows. Fork-response descriptions below are historical.
 
 ## Summary
 

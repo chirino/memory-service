@@ -381,14 +381,14 @@ message AdminListMembershipsRequest {
 message AdminListForksRequest {
   // Conversation identifier
   string conversation_id = 1;
-  PageRequest page = 2;
+  reserved 2; // pagination removed; navigation snapshots are complete
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 3;
 }
 
 message AdminListForksResponse {
-  repeated ConversationForkSummary forks = 1;
-  PageInfo page_info = 2;
+  repeated string conversation_ids = 1;
+  repeated ConversationForkPoint fork_points = 2;
 }
 
 message AdminListChildConversationsRequest {

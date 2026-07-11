@@ -1,107 +1,104 @@
 import { useMemo } from "react";
-import { useQuery } from "@tanstack/react-query";
-import { adminGetEntriesOptions } from "@/api/client";
-import type { Entry, ConversationForkSummary } from "@/api/generated/types.gen";
-import { createForkView, type ForkOption } from "@/lib/conversation";
+import { useInfiniteQuery } from "@tanstack/react-query";
+import { adminGetEntries } from "@/api/generated/sdk.gen";
+import { adminGetEntriesQueryKey } from "@/api/generated/@tanstack/react-query.gen";
+import type { ConversationForkPoint, Entry } from "@/api/generated/types.gen";
+import type { ForkOption } from "@/lib/conversation";
 
-// Re-export ForkOption from conversation.ts for backward compatibility
 export type { ForkOption };
 
-// Extended entry type with fork point information (for UI display)
 export interface EntryWithForkPoint extends Entry {
-	isForkPoint?: boolean;
-	/** The conversation this entry originally belongs to */
-	sourceConversationId?: string;
-	/** List of forks that diverge at this fork point */
-	forksAtPoint?: ForkOption[];
+  isForkPoint?: boolean;
+  /** The conversation that owns the stored entry. */
+  sourceConversationId?: string;
+  /** Continuation alternatives supplied by the fork-navigation snapshot. */
+  forksAtPoint?: ForkOption[];
 }
 
 interface UseLineageEntriesOptions {
-	/** The current conversation ID */
-	conversationId: string;
-	/** Fork summaries from adminListForksOptions (contains full fork tree) */
-	forkSummaries: ConversationForkSummary[];
+  conversationId: string;
+  forkPoints: ConversationForkPoint[];
 }
 
 interface UseLineageEntriesResult {
-	/** Combined entries from the entire lineage with fork points marked */
-	entries: EntryWithForkPoint[];
-	/** Whether any lineage entries are still loading */
-	isLoading: boolean;
+  entries: EntryWithForkPoint[];
+  isLoading: boolean;
+  hasOlderEntries: boolean;
+  isLoadingOlderEntries: boolean;
+  loadOlderEntries: () => Promise<unknown>;
 }
+
+const pageSize = 50;
 
 /**
- * Hook to fetch and combine entries from a conversation's fork lineage.
- *
- * Uses createForkView to process entries and fork summaries, providing
- * a unified view of the conversation with fork points annotated.
- *
- * Algorithm:
- * 1. Fetch all entries with forks: "all" to get entries from all related conversations
- * 2. Use createForkView to build the fork view with proper lineage handling
- * 3. Transform EntryAndForkInfo to EntryWithForkPoint for backward compatibility
+ * Loads the newest page of the selected conversation's visible ancestry path,
+ * then pages backward through older entries.
+ * Sibling-fork entries are never requested; navigation options from the
+ * admin fork snapshot are attached to their visible display entries.
  */
-export function useLineageEntries({
-	conversationId,
-	forkSummaries,
-}: UseLineageEntriesOptions): UseLineageEntriesResult {
-	// Fetch all entries for the conversation (with forks: "all" to get entire fork tree)
-	const { data: entriesData, isLoading } = useQuery({
-		...adminGetEntriesOptions({
-			path: { id: conversationId },
-			query: { forks: "all" },
-		}),
-	});
+export function useLineageEntries({ conversationId, forkPoints }: UseLineageEntriesOptions): UseLineageEntriesResult {
+  const initialOptions = {
+    path: { id: conversationId },
+    query: { forks: "none" as const, limit: pageSize, tail: true },
+  };
+  const entriesQuery = useInfiniteQuery({
+    queryKey: adminGetEntriesQueryKey(initialOptions),
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const { data } = await adminGetEntries({
+        path: { id: conversationId },
+        query: {
+          forks: "none",
+          limit: pageSize,
+          tail: pageParam === null ? true : undefined,
+          beforeCursor: pageParam ?? undefined,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+    getNextPageParam: (lastPage) => lastPage.beforeCursor ?? undefined,
+  });
 
-	// Build a map of fork conversationId -> fork summary for title lookup
-	const forkMetaById = useMemo(() => {
-		const map = new Map<string, ConversationForkSummary>();
-		for (const fork of forkSummaries) {
-			if (fork.conversationId) {
-				map.set(fork.conversationId, fork);
-			}
-		}
-		return map;
-	}, [forkSummaries]);
+  const forksByEntryId = useMemo(() => {
+    const result = new Map<string, ForkOption[]>();
+    for (const point of forkPoints) {
+      result.set(
+        point.entryId,
+        point.options.map((option) => ({
+          conversationId: option.conversationId,
+          entryId: option.entryId,
+          createdAt: option.createdAt,
+          label: option.preview || option.title,
+          title: option.title,
+          isActive: option.entryId === point.entryId,
+        })),
+      );
+    }
+    return result;
+  }, [forkPoints]);
 
-	// Use createForkView to process entries and get the combined view
-	const combinedEntries = useMemo((): EntryWithForkPoint[] => {
-		const entries = entriesData?.data || [];
-		if (entries.length === 0) {
-			return [];
-		}
+  const entries = useMemo<EntryWithForkPoint[]>(() => {
+    const pages = entriesQuery.data?.pages ?? [];
+    return [...pages]
+      .reverse()
+      .flatMap((page) => page.data ?? [])
+      .map((entry) => {
+        const forksAtPoint = forksByEntryId.get(entry.id);
+        return {
+          ...entry,
+          sourceConversationId: entry.conversationId,
+          isForkPoint: Boolean(forksAtPoint?.length),
+          forksAtPoint,
+        };
+      });
+  }, [entriesQuery.data, forksByEntryId]);
 
-		const forkView = createForkView(entries, forkSummaries);
-		const entryAndForkInfos = forkView.entries(conversationId);
-
-		// Transform EntryAndForkInfo to EntryWithForkPoint for backward compatibility
-		return entryAndForkInfos.map((item) => {
-			const result: EntryWithForkPoint = {
-				...item.entry,
-				sourceConversationId: item.entry.conversationId,
-			};
-
-			if (item.forks && item.forks.length > 0) {
-				result.isForkPoint = true;
-				// Enrich fork options with title and isActive from forkSummaries
-				result.forksAtPoint = item.forks.map((fork) => {
-					const meta = forkMetaById.get(fork.conversationId);
-					return {
-						...fork,
-						title: meta?.title || fork.label,
-						isActive: fork.conversationId === conversationId,
-					};
-				});
-			}
-
-			return result;
-		});
-	}, [entriesData?.data, forkSummaries, conversationId, forkMetaById]);
-
-	return {
-		entries: combinedEntries,
-		isLoading,
-	};
+  return {
+    entries,
+    isLoading: entriesQuery.isLoading,
+    hasOlderEntries: entriesQuery.hasNextPage,
+    isLoadingOlderEntries: entriesQuery.isFetchingNextPage,
+    loadOlderEntries: entriesQuery.fetchNextPage,
+  };
 }
-
-// Made with Bob

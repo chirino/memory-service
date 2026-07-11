@@ -47,10 +47,10 @@ Expose a forks endpoint so frontend clients can discover branches from a convers
 <CodeFromFile
   file="python/examples/langchain/doc-checkpoints/04-conversation-forking/app.py"
   lang="python"
-  lines="103-110"
+  lines="110-113"
 />
 
-**Why**: The Memory Service returns both the root conversation and all conversations that branched from it, ordered by creation time, making it straightforward for a frontend to render a conversation tree. Pagination parameters (`afterCursor`, `limit`) are forwarded directly so the response can be paged for conversations with many branches.
+**Why**: The Memory Service returns a complete navigation snapshot: `conversationIds` identifies the accessible fork group, while `forkPoints` maps entries visible in the requested conversation to their alternative continuations. Entries can then be paged independently in either direction.
 
 ## Try It With Curl
 
@@ -129,7 +129,7 @@ List forks for the source conversation through the Python proxy endpoint:
 Then the response status should be 200
 And the response should contain "16de0661-0dcf-4df2-9964-7f23c4de5fc6"
 And the response should contain "bb745717-236b-4c81-bc0a-766d10622e19"
-`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6"},{"conversationId":"bb745717-236b-4c81-bc0a-766d10622e19"}],"afterCursor":null}`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationIds":["16de0661-0dcf-4df2-9964-7f23c4de5fc6","bb745717-236b-4c81-bc0a-766d10622e19"],"forkPoints":[{"entryId":"8f02ad1b-63f5-45a4-952d-71f42fc0d388","options":[{"conversationId":"16de0661-0dcf-4df2-9964-7f23c4de5fc6","entryId":"8f02ad1b-63f5-45a4-952d-71f42fc0d388","title":"A conversation","createdAt":"2026-07-10T14:00:00Z"},{"conversationId":"bb745717-236b-4c81-bc0a-766d10622e19","entryId":"5c1b7093-cfac-46a8-91be-a5e660e7166c","title":"Forked conversation","createdAt":"2026-07-10T14:01:00Z"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/16de0661-0dcf-4df2-9964-7f23c4de5fc6/forks \
