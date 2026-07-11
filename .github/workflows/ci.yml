@@ -53,7 +53,7 @@ jobs:
 
       - name: Set up Go
         if: contains('verify-generated test-go test-site', matrix.job)
-        uses: actions/setup-go@v6.4.0
+        uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -63,7 +63,7 @@ jobs:
 
       - name: Set up Java
         if: contains('verify-generated test-java test-site', matrix.job)
-        uses: actions/setup-java@v5.3.0
+        uses: actions/setup-java@v5.4.0
         with:
           distribution: temurin
           java-version: '21'
@@ -110,7 +110,7 @@ jobs:
 
       - name: Install uv
         if: contains('test-site', matrix.job)
-        uses: astral-sh/setup-uv@v7
+        uses: astral-sh/setup-uv@v8.2.0
         with:
           enable-cache: true
 
@@ -358,7 +358,7 @@ jobs:
 
       - name: Set up Go for macOS artifact
         if: matrix.job == 'artifact-memory-service-macos-arm64'
-        uses: actions/setup-go@v6.4.0
+        uses: actions/setup-go@v6.5.0
         with:
           go-version-file: go.mod
           cache: true
