@@ -68,20 +68,20 @@ When you fork a conversation, the new conversation has:
 
 When you create a conversation, the service internally groups it with any future forks. When you fork a conversation, the new fork is linked to the original. All conversations that share a common ancestor belong to the same fork tree.
 
-You don't need to know about this grouping directly. Use the `/forks` endpoint on any conversation to discover all related conversations in the tree.
+Use the `/forks` endpoint on any conversation to obtain all accessible conversation IDs in the group and the fork controls relevant to that conversation's visible history.
 
 Deleting any conversation in a fork tree deletes the entire tree (root and all forks), along with associated entries and memberships.
 
 ### Querying Related Conversations
 
-To retrieve all conversations in a fork tree, use the `/forks` endpoint on any conversation in the tree:
+To retrieve fork navigation, use the `/forks` endpoint on the conversation being displayed:
 
 ```bash
 curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-This returns all conversations in the same fork tree.
+The `conversationIds` array contains the accessible group membership. Each `forkPoints` item identifies an entry visible in the requested conversation and the alternative conversation/entry options at that position.
 
 ## Use Cases
 
@@ -106,7 +106,7 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-This returns all conversations in the same fork tree.
+This returns the complete group ID list and the fork points relevant to the requested conversation. It is intentionally not paginated so clients can index fork controls before paging entries in either direction.
 
 ## Limitations
 

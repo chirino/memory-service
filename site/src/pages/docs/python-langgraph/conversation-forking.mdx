@@ -50,7 +50,7 @@ Expose a forks endpoint so frontend clients can discover branches from a convers
   lines="109-116"
 />
 
-**Why**: Frontend apps need to know what branches exist off a given conversation so they can display a fork tree or let users navigate to a branched conversation. The endpoint forwards optional `afterCursor` and `limit` parameters to support paginated listing of forks.
+**Why**: Frontend apps need a complete navigation index before they page conversation entries. The endpoint returns all accessible group conversation IDs and the fork points visible in the requested conversation.
 
 ## Try It With Curl
 

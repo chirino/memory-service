@@ -108,10 +108,6 @@ async def list_conversations(request: Request):
 
 
 @app.get("/v1/conversations/{conversation_id}/forks")
-async def list_conversation_forks(conversation_id: str, request: Request):
-    response = await proxy.list_conversation_forks(
-        conversation_id,
-        after_cursor=request.query_params.get("afterCursor"),
-        limit=int(limit) if (limit := request.query_params.get("limit")) is not None else None,
-    )
+async def list_conversation_forks(conversation_id: str):
+    response = await proxy.list_conversation_forks(conversation_id)
     return to_fastapi_response(response)

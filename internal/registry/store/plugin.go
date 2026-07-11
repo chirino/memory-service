@@ -69,6 +69,43 @@ type ConversationForkSummary struct {
 	CreatedAt              time.Time  `json:"createdAt"`
 }
 
+// ConversationForkOption is one continuation available at a visible fork point.
+type ConversationForkOption struct {
+	ConversationID string     `json:"conversationId"`
+	EntryID        *uuid.UUID `json:"entryId,omitempty"`
+	Title          string     `json:"title"`
+	Preview        *string    `json:"preview,omitempty"`
+	CreatedAt      time.Time  `json:"createdAt"`
+}
+
+// ConversationForkPoint describes alternatives attached to one entry in the
+// requested conversation's visible history. The option whose EntryID matches
+// EntryID is the active continuation.
+type ConversationForkPoint struct {
+	EntryID uuid.UUID                `json:"entryId"`
+	Options []ConversationForkOption `json:"options"`
+}
+
+// ConversationForkNavigation is the complete fork-navigation snapshot for a
+// requested conversation.
+type ConversationForkNavigation struct {
+	ConversationIDs []string                `json:"conversationIds"`
+	ForkPoints      []ConversationForkPoint `json:"forkPoints"`
+}
+
+// ForkNavigationConversation is the datastore-neutral input used to assemble
+// fork navigation after a store has resolved lineage and decrypted labels.
+type ForkNavigationConversation struct {
+	ID                     string
+	Title                  string
+	ForkedAtConversationID *string
+	ForkedAtEntryID        *uuid.UUID
+	FirstEntryID           *uuid.UUID
+	FirstEntryPreview      *string
+	FirstEntryCreatedAt    *time.Time
+	CreatedAt              time.Time
+}
+
 // ConversationDetail is the full conversation for get/create/update.
 type ConversationDetail struct {
 	ConversationSummary
@@ -285,7 +322,7 @@ type MemoryStore interface {
 	GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error)
 
 	// Forks
-	ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]ConversationForkSummary, *string, error)
+	ListForks(ctx context.Context, userID string, conversationID string) (*ConversationForkNavigation, error)
 	ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
 
 	// Ownership Transfers

@@ -43,7 +43,6 @@ All paginated endpoints share the same pattern but differ in defaults and parame
 | `GET /v1/conversations`                  | `afterCursor` (query)                           | `limit` (query) | 20            | 1000      |
 | `GET /v1/conversations/{id}/entries`     | `afterCursor` / `beforeCursor` / `tail` (query) | `limit` (query) | 50            | 1000      |
 | `GET /v1/conversations/{id}/memberships` | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
-| `GET /v1/conversations/{id}/forks`       | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |
 | `POST /v1/conversations/search`          | `afterCursor` (body)                            | `limit` (body)  | 20            | 1000      |
 | `GET /v1/conversations/unindexed`        | `afterCursor` (query)                           | `limit` (query) | 100           | 1000      |
 | `GET /v1/ownership-transfers`            | `afterCursor` (query)                           | `limit` (query) | 50            | 1000      |

@@ -156,10 +156,9 @@ public class MemoryServiceProxy {
                 conversationId);
     }
 
-    public Response listConversationForks(
-            String conversationId, String afterCursor, Integer limit) {
+    public Response listConversationForks(String conversationId) {
         return execute(
-                () -> conversationsApi().listConversationForks(conversationId, afterCursor, limit),
+                () -> conversationsApi().listConversationForks(conversationId),
                 OK,
                 "Error listing forks for history %s",
                 conversationId);

@@ -94,9 +94,9 @@ func (m *metricsStore) GetGroupMemberUserIDs(ctx context.Context, conversationGr
 	return m.inner.GetGroupMemberUserIDs(ctx, conversationGroupID)
 }
 
-func (m *metricsStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]store.ConversationForkSummary, *string, error) {
+func (m *metricsStore) ListForks(ctx context.Context, userID string, conversationID string) (*store.ConversationForkNavigation, error) {
 	defer observe("list_forks", time.Now())
-	return m.inner.ListForks(ctx, userID, conversationID, afterCursor, limit)
+	return m.inner.ListForks(ctx, userID, conversationID)
 }
 
 func (m *metricsStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]store.ConversationSummary, *string, error) {

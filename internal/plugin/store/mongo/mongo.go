@@ -1567,70 +1567,116 @@ func (s *MongoStore) GetGroupMemberUserIDs(ctx context.Context, conversationGrou
 
 // --- Forks ---
 
-func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationForkNavigation, error) {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"_id": string(conversationID),
 	}).Decode(&doc)
 	if err != nil {
-		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, doc.ConversationGroupID, model.AccessLevelReader); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	childIDs, err := s.directForkChildIDs(ctx, doc.ConversationGroupID, doc.ID)
+	cur, err := s.conversations().Find(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID}, options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}))
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if len(childIDs) == 0 {
-		return []registrystore.ConversationForkSummary{}, nil, nil
+	var conversations []convDoc
+	if err := cur.All(ctx, &conversations); err != nil {
+		return nil, err
 	}
-	filter := bson.M{
-		"conversation_group_id": doc.ConversationGroupID,
-		"_id":                   bson.M{"$in": childIDs},
+	ancestryCur, err := s.conversationAncestry().Find(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID})
+	if err != nil {
+		return nil, err
 	}
-	if afterCursor != nil {
-		var cursorDoc convDoc
-		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
-		if err == nil {
-			filter["$or"] = bson.A{
-				bson.M{"created_at": bson.M{"$gt": cursorDoc.CreatedAt}},
-				bson.M{"created_at": cursorDoc.CreatedAt, "_id": bson.M{"$gt": cursorDoc.ID}},
+	var ancestryDocs []conversationAncestryDoc
+	if err := ancestryCur.All(ctx, &ancestryDocs); err != nil {
+		return nil, err
+	}
+	directByChild := map[string]conversationAncestryDoc{}
+	var requested conversationAncestryDoc
+	for _, row := range ancestryDocs {
+		directByChild[row.ID] = row
+		if row.ID == conversationID {
+			requested = row
+		}
+	}
+	ancestry := make([]model.ConversationAncestry, 0, len(requested.Ancestors))
+	entryIDStrings := []string{}
+	for _, row := range requested.Ancestors {
+		item := model.ConversationAncestry{ConversationGroupID: strToUUID(doc.ConversationGroupID), DescendantConversationID: conversationID, AncestorConversationID: row.ConversationID, Depth: row.Depth}
+		if row.BeforeEntryID != nil {
+			id := strToUUID(*row.BeforeEntryID)
+			item.BeforeEntryID = &id
+			entryIDStrings = append(entryIDStrings, *row.BeforeEntryID)
+		}
+		ancestry = append(ancestry, item)
+	}
+	for _, row := range ancestryDocs {
+		if row.ForkedAtEntryID != nil {
+			entryIDStrings = append(entryIDStrings, *row.ForkedAtEntryID)
+		}
+	}
+	entryMap := map[uuid.UUID]model.Entry{}
+	if len(entryIDStrings) > 0 {
+		entryCur, err := s.entries().Find(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID, "_id": bson.M{"$in": entryIDStrings}})
+		if err != nil {
+			return nil, err
+		}
+		var entryDocs []entryDoc
+		if err := entryCur.All(ctx, &entryDocs); err != nil {
+			return nil, err
+		}
+		for _, entry := range entryDocs {
+			value := s.entryDocToModel(entry)
+			if decrypted, err := s.decrypt(value.Content); err == nil {
+				value.Content = decrypted
+			}
+			entryMap[value.ID] = value
+		}
+	}
+	pipeline := mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"conversation_group_id": doc.ConversationGroupID, "channel": string(model.ChannelHistory)}}},
+		{{Key: "$sort", Value: bson.D{{Key: "conversation_id", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}}},
+		{{Key: "$group", Value: bson.M{"_id": "$conversation_id", "entry": bson.M{"$first": "$$ROOT"}}}},
+	}
+	firstCur, err := s.entries().Aggregate(ctx, pipeline)
+	if err != nil {
+		return nil, err
+	}
+	var firstRows []struct {
+		Entry entryDoc `bson:"entry"`
+	}
+	if err := firstCur.All(ctx, &firstRows); err != nil {
+		return nil, err
+	}
+	firstByConversation := map[string]model.Entry{}
+	for _, row := range firstRows {
+		entry := s.entryDocToModel(row.Entry)
+		if decrypted, err := s.decrypt(entry.Content); err == nil {
+			entry.Content = decrypted
+		}
+		entryMap[entry.ID] = entry
+		firstByConversation[entry.ConversationID] = entry
+	}
+	records := make([]registrystore.ForkNavigationConversation, 0, len(conversations))
+	for _, conversation := range conversations {
+		record := registrystore.ForkNavigationConversation{ID: conversation.ID, Title: s.decryptString(conversation.Title), CreatedAt: conversation.CreatedAt}
+		if direct := directByChild[conversation.ID]; direct.ParentConversationID != nil {
+			record.ForkedAtConversationID = direct.ParentConversationID
+			if direct.ForkedAtEntryID != nil {
+				id := strToUUID(*direct.ForkedAtEntryID)
+				record.ForkedAtEntryID = &id
 			}
 		}
-	}
-
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}).SetLimit(int64(limit + 1))
-	cur, err := s.conversations().Find(ctx, filter, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list forks: %w", err)
-	}
-	var docs []convDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode forks: %w", err)
-	}
-
-	hasMore := len(docs) > limit
-	if hasMore {
-		docs = docs[:limit]
-	}
-
-	forks := make([]registrystore.ConversationForkSummary, len(docs))
-	for i, d := range docs {
-		fork, err := s.conversationForkSummaryFromDoc(ctx, d)
-		if err != nil {
-			return nil, nil, err
+		if entry, ok := firstByConversation[conversation.ID]; ok {
+			id, at := entry.ID, entry.CreatedAt
+			record.FirstEntryID, record.FirstEntryCreatedAt, record.FirstEntryPreview = &id, &at, registrystore.ForkEntryPreview(entry.Content)
 		}
-		forks[i] = fork
+		records = append(records, record)
 	}
-
-	var nextCursor *string
-	if hasMore && len(forks) > 0 {
-		c := string(forks[len(forks)-1].ID)
-		nextCursor = &c
-	}
-	return forks, nextCursor, nil
+	return registrystore.BuildForkNavigation(records, ancestry, entryMap)
 }
 
 // --- Ownership Transfers ---

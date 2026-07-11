@@ -234,7 +234,8 @@ Feature: Conversation Forking gRPC API
     conversation_id: "${parentConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "forks" should not be null
+    And the gRPC response field "conversationIds" should not be null
+    And the gRPC response field "forkPoints" should not be null
 
   Scenario: List forks for non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/ListForks" with body:

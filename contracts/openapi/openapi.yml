@@ -465,12 +465,11 @@ paths:
       tags: [Conversations]
       summary: List forks for a conversation
       description: |-
-        Returns all forked conversations that share the same root conversation as the
-        given conversation. Each fork entry includes the message id at which it forked
-        and the timestamp when the forked conversation was created.
-
-        This is intended for UIs that want to fetch all fork points once per conversation
-        and then decide how to render branch navigation (e.g., which is the oldest fork).
+        Returns a complete, authorization-filtered navigation snapshot for the
+        requested conversation's fork group. `conversationIds` contains every
+        accessible conversation in the group. `forkPoints` contains only entries
+        visible in the requested conversation that have alternative continuations.
+        The option whose `entryId` matches the fork point `entryId` is active.
       operationId: listConversationForks
       parameters:
         - name: conversationId
@@ -479,36 +478,13 @@ paths:
           description: Conversation identifier.
           schema:
             type: string
-        - name: afterCursor
-          in: query
-          required: false
-          description: Cursor for pagination; returns items after this conversation id.
-          schema:
-            type: string
-            nullable: true
-        - name: limit
-          in: query
-          required: false
-          description: Maximum number of forks to return.
-          schema:
-            type: integer
-            default: 50
-            minimum: 1
       responses:
         '200':
-          description: Forked conversations related to this conversation's root.
+          description: Fork navigation for the requested conversation.
           content:
             application/json:
               schema:
-                type: object
-                properties:
-                  data:
-                    type: array
-                    items:
-                      $ref: '#/components/schemas/ConversationForkSummary'
-                  afterCursor:
-                    type: string
-                    nullable: true
+                $ref: '#/components/schemas/ConversationForkNavigation'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -2062,6 +2038,49 @@ components:
           nullable: true
           description: Conversation ID where the fork occurred.
         title:
+          type: string
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
+    ConversationForkNavigation:
+      type: object
+      required: [conversationIds, forkPoints]
+      properties:
+        conversationIds:
+          type: array
+          items:
+            type: string
+        forkPoints:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationForkPoint'
+    ConversationForkPoint:
+      type: object
+      required: [entryId, options]
+      properties:
+        entryId:
+          type: string
+          format: uuid
+          description: Visible entry in the requested conversation where the fork selector is rendered.
+        options:
+          type: array
+          items:
+            $ref: '#/components/schemas/ConversationForkOption'
+    ConversationForkOption:
+      type: object
+      required: [conversationId, title, createdAt]
+      properties:
+        conversationId:
+          type: string
+        entryId:
+          type: string
+          format: uuid
+          nullable: true
+          description: Equivalent display entry for this continuation; null for an empty fork.
+        title:
+          type: string
+        preview:
           type: string
           nullable: true
         createdAt:

@@ -316,7 +316,7 @@ func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ string) {
 func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ string) {
 	routeentries.HandleSyncMemory(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ string, _ generatedapi.ListConversationForksParams) {
+func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ string) {
 	routeconversations.HandleListForks(c, p.store)
 }
 func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ string, _ generatedapi.ListConversationChildrenParams) {

@@ -56,9 +56,8 @@ Feature: Conversation Forking REST API
     And set "fork2Id" to "${forkedConversationId}"
     When I list forks for the conversation
     Then the response status should be 200
-    And the response should contain at least 2 conversations
-    # Fork listing returns direct fork children only; the original conversation is not included.
-    And the response body should contain "forkedAtEntryId"
+    And the response body field "forkPoints[0].entryId" should be "${secondEntryId}"
+    And the response body should contain "${conversationId}"
     And the response body should contain "${fork1Id}"
     And the response body should contain "${fork2Id}"
 
@@ -77,10 +76,8 @@ Feature: Conversation Forking REST API
     Then the response status should be 201
     When I list forks for the conversation
     Then the response status should be 200
-    And the response should contain at least 1 conversations
-    And the response body field "data[0].conversationId" should be "${forkWithoutEntryConversationId}"
-    And the response body field "data[0].forkedAtConversationId" should be "${conversationId}"
-    And the response body field "data[0].forkedAtEntryId" should be null
+    And the response body should contain "${forkWithoutEntryConversationId}"
+    And the response body field "forkPoints" should not be null
     When I call GET "/v1/conversations/${forkWithoutEntryConversationId}/entries"
     Then the response status should be 200
     And the response should contain 1 entry

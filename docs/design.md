@@ -145,9 +145,9 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 #### List Forks
 
 - `GET /v1/conversations/{conversationId}/forks`
-  - Returns direct fork children of the given conversation.
-  - Response: list of `ConversationForkSummary` with:
-    - `conversationId`, `forkedAtEntryId`, `forkedAtConversationId`, `title`, `createdAt`.
+  - Returns a complete navigation snapshot for the requested conversation.
+  - `conversationIds` lists every accessible conversation in the fork group.
+  - `forkPoints` is keyed by visible entry ID and lists the alternative conversation/entry pairs available at that position. The option whose entry ID matches the fork point is active.
 
 See [Conversation Forking Design](conversation-forking-design.md) and [Entry Data Model](entry-data-model.md) for detailed data model and fork-aware entry retrieval.
 

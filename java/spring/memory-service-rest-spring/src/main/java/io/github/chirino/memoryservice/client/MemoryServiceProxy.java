@@ -203,11 +203,8 @@ public class MemoryServiceProxy {
                 HttpStatus.OK);
     }
 
-    public ResponseEntity<?> listConversationForks(
-            String conversationId, String afterCursor, Integer limit) {
-        return execute(
-                api -> api.listConversationForksWithHttpInfo(conversationId, afterCursor, limit),
-                HttpStatus.OK);
+    public ResponseEntity<?> listConversationForks(String conversationId) {
+        return execute(api -> api.listConversationForksWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
     public ResponseEntity<?> shareConversation(String conversationId, String body) {

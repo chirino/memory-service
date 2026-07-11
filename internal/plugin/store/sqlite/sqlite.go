@@ -812,61 +812,85 @@ func (s *SQLiteStore) GetGroupMemberUserIDs(ctx context.Context, conversationGro
 
 // --- Forks ---
 
-func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationForkSummary, *string, error) {
+func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationForkNavigation, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
-		return nil, nil, result.Error
+		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-
-	tx := s.dbFor(ctx).
-		Table("conversations c").
-		Select("c.*").
-		Joins("JOIN conversation_ancestry ca ON ca.conversation_group_id = c.conversation_group_id AND ca.descendant_conversation_id = c.id").
-		Where("ca.conversation_group_id = ? AND ca.ancestor_conversation_id = ? AND ca.depth = 1", conv.ConversationGroupID, conv.ID).
-		Order("c.created_at ASC, c.id ASC")
-
-	if afterCursor != nil {
-		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
-	}
-	tx = tx.Limit(limit + 1)
-
+	db := s.dbFor(ctx)
 	var convs []model.Conversation
-	if err := tx.Find(&convs).Error; err != nil {
-		return nil, nil, fmt.Errorf("failed to list forks: %w", err)
+	if err := db.Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC, id ASC").Find(&convs).Error; err != nil {
+		return nil, err
 	}
-
-	hasMore := len(convs) > limit
-	if hasMore {
-		convs = convs[:limit]
+	var directRows []model.ConversationAncestry
+	if err := db.Where("conversation_group_id = ? AND depth = 1", conv.ConversationGroupID).Find(&directRows).Error; err != nil {
+		return nil, err
 	}
-
-	forks := make([]registrystore.ConversationForkSummary, len(convs))
-	for i, c := range convs {
-		if err := s.hydrateConversationFork(ctx, &c); err != nil {
-			return nil, nil, err
+	directByChild := map[string]model.ConversationAncestry{}
+	for _, row := range directRows {
+		directByChild[row.DescendantConversationID] = row
+	}
+	var ancestry []model.ConversationAncestry
+	if err := db.Where("conversation_group_id = ? AND descendant_conversation_id = ?", conv.ConversationGroupID, conversationID).Find(&ancestry).Error; err != nil {
+		return nil, err
+	}
+	entryIDs := []uuid.UUID{}
+	for _, row := range directRows {
+		if row.ForkedAtEntryID != nil {
+			entryIDs = append(entryIDs, *row.ForkedAtEntryID)
 		}
-		forks[i] = registrystore.ConversationForkSummary{
-			ID:                     c.ID,
-			Title:                  s.decryptString(c.Title),
-			ForkedAtEntryID:        c.ForkedAtEntryID,
-			ForkedAtConversationID: c.ForkedAtConversationID,
-			CreatedAt:              c.CreatedAt,
+	}
+	for _, row := range ancestry {
+		if row.BeforeEntryID != nil {
+			entryIDs = append(entryIDs, *row.BeforeEntryID)
 		}
 	}
-
-	var cursor *string
-	if hasMore && len(forks) > 0 {
-		c := string(forks[len(forks)-1].ID)
-		cursor = &c
+	var entries []model.Entry
+	if len(entryIDs) > 0 {
+		if err := db.Where("conversation_group_id = ? AND id IN ?", conv.ConversationGroupID, entryIDs).Find(&entries).Error; err != nil {
+			return nil, err
+		}
 	}
-	return forks, cursor, nil
+	decryptEntries(s, entries)
+	var firstEntries []model.Entry
+	if err := db.Raw(`SELECT * FROM (
+		SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.conversation_id ORDER BY e.created_at ASC, CASE WHEN e.seq IS NULL THEN 0 ELSE 1 END ASC, e.seq ASC, e.id ASC) AS fork_row
+		FROM entries e WHERE e.conversation_group_id = ? AND e.channel = ?
+	) ranked WHERE fork_row = 1`, conv.ConversationGroupID, model.ChannelHistory).Scan(&firstEntries).Error; err != nil {
+		return nil, err
+	}
+	decryptEntries(s, firstEntries)
+	entryMap := map[uuid.UUID]model.Entry{}
+	for _, entry := range entries {
+		entryMap[entry.ID] = entry
+	}
+	firstByConversation := map[string]model.Entry{}
+	for _, entry := range firstEntries {
+		entryMap[entry.ID] = entry
+		firstByConversation[entry.ConversationID] = entry
+	}
+	records := make([]registrystore.ForkNavigationConversation, 0, len(convs))
+	for _, c := range convs {
+		record := registrystore.ForkNavigationConversation{ID: c.ID, Title: s.decryptString(c.Title), CreatedAt: c.CreatedAt}
+		if direct, ok := directByChild[c.ID]; ok {
+			parent := direct.AncestorConversationID
+			record.ForkedAtConversationID = &parent
+			record.ForkedAtEntryID = direct.ForkedAtEntryID
+		}
+		if entry, ok := firstByConversation[c.ID]; ok {
+			id, at := entry.ID, entry.CreatedAt
+			record.FirstEntryID, record.FirstEntryCreatedAt, record.FirstEntryPreview = &id, &at, registrystore.ForkEntryPreview(entry.Content)
+		}
+		records = append(records, record)
+	}
+	return registrystore.BuildForkNavigation(records, ancestry, entryMap)
 }
 
 func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {

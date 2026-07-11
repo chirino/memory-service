@@ -197,19 +197,10 @@ class MemoryServiceProxy:
     async def list_conversation_forks(
         self,
         conversation_id: str,
-        *,
-        after_cursor: str | None = None,
-        limit: int | None = None,
     ) -> httpx.Response:
         return await self._request(
             "GET",
             f"/v1/conversations/{self._path(conversation_id)}/forks",
-            params=self._compact_params(
-                {
-                    "afterCursor": after_cursor,
-                    "limit": limit,
-                }
-            ),
         )
 
     async def search_conversations(self, payload: dict[str, Any]) -> httpx.Response:
