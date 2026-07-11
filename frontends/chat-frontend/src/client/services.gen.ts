@@ -310,17 +310,14 @@ export class ConversationsService {
 
   /**
    * List forks for a conversation
-   * Returns all forked conversations that share the same root conversation as the
-   * given conversation. Each fork entry includes the message id at which it forked
-   * and the timestamp when the forked conversation was created.
-   *
-   * This is intended for UIs that want to fetch all fork points once per conversation
-   * and then decide how to render branch navigation (e.g., which is the oldest fork).
+   * Returns a complete, authorization-filtered navigation snapshot for the
+   * requested conversation's fork group. `conversationIds` contains every
+   * accessible conversation in the group. `forkPoints` contains only entries
+   * visible in the requested conversation that have alternative continuations.
+   * The option whose `entryId` matches the fork point `entryId` is active.
    * @param data The data for the request.
    * @param data.conversationId Conversation identifier.
-   * @param data.afterCursor Cursor for pagination; returns items after this conversation id.
-   * @param data.limit Maximum number of forks to return.
-   * @returns unknown Forked conversations related to this conversation's root.
+   * @returns ConversationForkNavigation Fork navigation for the requested conversation.
    * @returns ErrorResponse Error response
    * @throws ApiError
    */
@@ -335,10 +332,6 @@ export class ConversationsService {
       url: "/v1/conversations/{conversationId}/forks",
       path: {
         conversationId: data.conversationId,
-      },
-      query: {
-        afterCursor: data.afterCursor,
-        limit: data.limit,
       },
       errors: {
         404: "Resource not found",

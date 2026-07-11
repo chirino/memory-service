@@ -731,11 +731,11 @@ export const adminListForksQueryKey = (options: Options<AdminListForksData>) =>
   createQueryKey("adminListForks", options);
 
 /**
- * List forks for any conversation (admin/auditor)
+ * Get fork navigation for any conversation (admin/auditor)
  *
- * Returns all forked conversations that share the same root conversation as the
- * given conversation. Each fork entry includes the message id at which it forked
- * and the timestamp when the forked conversation was created.
+ * Returns the complete fork-navigation snapshot for the requested conversation:
+ * all conversation ids in its fork group and the alternatives at each fork point
+ * visible along the requested conversation's ancestry path.
  *
  * This endpoint provides admin access to fork information for any conversation,
  * regardless of ownership. Requires auditor or admin role.

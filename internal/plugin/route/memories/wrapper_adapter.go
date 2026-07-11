@@ -75,7 +75,7 @@ func (a *apiServerAdapter) AppendConversationEntry(c *gin.Context, _ string) {
 func (a *apiServerAdapter) SyncConversationContext(c *gin.Context, _ string) {
 	notImplemented(c)
 }
-func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ string, _ generatedapi.ListConversationForksParams) {
+func (a *apiServerAdapter) ListConversationForks(c *gin.Context, _ string) {
 	notImplemented(c)
 }
 func (a *apiServerAdapter) ListConversationChildren(c *gin.Context, _ string, _ generatedapi.ListConversationChildrenParams) {

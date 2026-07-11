@@ -58,7 +58,7 @@ public class ConversationsResource {
     @Path("/{conversationId}/forks")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
-        return proxy.listConversationForks(conversationId, null, null);
+        return proxy.listConversationForks(conversationId);
     }
 
     // Membership management endpoints

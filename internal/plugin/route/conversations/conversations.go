@@ -377,15 +377,12 @@ func listForks(c *gin.Context, store registrystore.MemoryStore) {
 		return
 	}
 
-	afterCursor := queryPtr(c, "afterCursor")
-	limit := queryInt(c, "limit", 20)
-
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		forks, cursor, err := store.ListForks(ctx, userID, convID, afterCursor, limit)
+		forks, err := store.ListForks(ctx, userID, convID)
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": forks, "afterCursor": cursor})
+		c.JSON(http.StatusOK, forks)
 		return nil
 	}); err != nil {
 		handleError(c, err)

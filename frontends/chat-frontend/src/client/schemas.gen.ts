@@ -428,6 +428,70 @@ export const $ConversationForkSummary = {
   },
 } as const;
 
+export const $ConversationForkNavigation = {
+  type: "object",
+  required: ["conversationIds", "forkPoints"],
+  properties: {
+    conversationIds: {
+      type: "array",
+      items: {
+        type: "string",
+      },
+    },
+    forkPoints: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/ConversationForkPoint",
+      },
+    },
+  },
+} as const;
+
+export const $ConversationForkPoint = {
+  type: "object",
+  required: ["entryId", "options"],
+  properties: {
+    entryId: {
+      type: "string",
+      format: "uuid",
+      description: "Visible entry in the requested conversation where the fork selector is rendered.",
+    },
+    options: {
+      type: "array",
+      items: {
+        $ref: "#/components/schemas/ConversationForkOption",
+      },
+    },
+  },
+} as const;
+
+export const $ConversationForkOption = {
+  type: "object",
+  required: ["conversationId", "title", "createdAt"],
+  properties: {
+    conversationId: {
+      type: "string",
+    },
+    entryId: {
+      type: "string",
+      format: "uuid",
+      nullable: true,
+      description: "Equivalent display entry for this continuation; null for an empty fork.",
+    },
+    title: {
+      type: "string",
+    },
+    preview: {
+      type: "string",
+      nullable: true,
+    },
+    createdAt: {
+      type: "string",
+      format: "date-time",
+    },
+  },
+} as const;
+
 export const $ShareConversationRequest = {
   type: "object",
   required: ["userId", "accessLevel"],

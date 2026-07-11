@@ -52,7 +52,7 @@ Add this method to the `MemoryServiceProxyController` to list forks for a conver
 
 **What changed**: A new `GET /{conversationId}/forks` endpoint is added to `MemoryServiceProxyController`, delegating to `proxy.listConversationForks()`.
 
-**Why**: Frontend UIs need to discover all conversations that branched off from a given point so they can render a fork tree or allow users to navigate between branches. Exposing this as a proxied endpoint keeps the Memory Service behind your Spring Boot app while giving the frontend everything it needs to build a branching conversation UI.
+**Why**: Frontend UIs receive all accessible group IDs plus fork points keyed to entries visible in the requested conversation. Exposing the snapshot through the Spring proxy keeps Memory Service behind the application while entries are paged separately.
 
 ## Try It With Curl
 
@@ -123,7 +123,7 @@ List forks for the source conversation through the Spring proxy endpoint:
 Then the response status should be 200
 And the response should contain "a8391789-592d-4273-90df-7349b08b5d3d"
 And the response should contain "6dcb8f3f-bd21-459f-9127-96e5a94d276c"
-`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"a8391789-592d-4273-90df-7349b08b5d3d"},{"conversationId":"6dcb8f3f-bd21-459f-9127-96e5a94d276c"}],"afterCursor":null}`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationIds":["a8391789-592d-4273-90df-7349b08b5d3d","6dcb8f3f-bd21-459f-9127-96e5a94d276c"],"forkPoints":[{"entryId":"6a2f66b8-6d31-41ee-9c17-0c592af6ef8f","options":[{"conversationId":"a8391789-592d-4273-90df-7349b08b5d3d","entryId":"6a2f66b8-6d31-41ee-9c17-0c592af6ef8f","title":"A conversation","createdAt":"2026-07-10T14:00:00Z"},{"conversationId":"6dcb8f3f-bd21-459f-9127-96e5a94d276c","entryId":"4884589c-c68a-4e13-a73d-f51715be6e33","title":"Forked conversation","createdAt":"2026-07-10T14:01:00Z"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/a8391789-592d-4273-90df-7349b08b5d3d/forks \

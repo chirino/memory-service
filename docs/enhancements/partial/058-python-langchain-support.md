@@ -5,6 +5,8 @@ status: partial
 # Enhancement 058: Python LangGraph/LangChain Support
 
 > **Status**: Partial.
+>
+> **Current fork API note**: Python proxy fork listing now forwards the complete, unpaginated `{conversationIds, forkPoints}` navigation snapshot. Any pagination or conversation-summary fork response described below is historical.
 
 ## Summary
 

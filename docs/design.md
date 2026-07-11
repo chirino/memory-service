@@ -145,9 +145,9 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 #### List Forks
 
 - `GET /v1/conversations/{conversationId}/forks`
-  - Returns direct fork children of the given conversation.
-  - Response: list of `ConversationForkSummary` with:
-    - `conversationId`, `forkedAtEntryId`, `forkedAtConversationId`, `title`, `createdAt`.
+  - Returns a complete navigation snapshot for the requested conversation.
+  - `conversationIds` lists every accessible conversation in the fork group.
+  - `forkPoints` is keyed by visible entry ID and lists the alternative conversation/entry pairs available at that position. The option whose entry ID matches the fork point is active.
 
 See [Conversation Forking Design](conversation-forking-design.md) and [Entry Data Model](entry-data-model.md) for detailed data model and fork-aware entry retrieval.
 
@@ -275,7 +275,7 @@ Key endpoints:
 - `PATCH /v1/admin/conversations/{id}` - Archive or unarchive a conversation.
 - `GET /v1/admin/conversations/{id}/entries` - Get entries from any conversation.
 - `GET /v1/admin/conversations/{id}/memberships` - Get memberships for any conversation.
-- `GET /v1/admin/conversations/{id}/forks` - List forks for any conversation.
+- `GET /v1/admin/conversations/{id}/forks` - Return the complete `{conversationIds, forkPoints}` navigation snapshot for any conversation.
 - `POST /v1/admin/conversations/search` - System-wide semantic search with userId filter.
 - `POST /v1/admin/evict` - Hard-delete resources past retention period.
 - `GET /admin/v1/memories` - List latest episodic memory rows across users.
@@ -330,7 +330,7 @@ Forking a conversation:
   - Each fork has its own `conversation_id` and stores its own entries.
   - When fetching entries for a forked conversation, the service returns entries from the entire parent chain up to the fork points, plus the fork's own entries.
   - The UI loads entries for the active conversation, which transparently includes inherited parent entries.
-  - To show fork choices, the UI uses the `/forks` endpoint to discover related conversations.
+  - To show fork choices, the UI loads the complete `{conversationIds, forkPoints}` navigation index from `/forks` and pages the selected ancestry path independently through `/entries?forks=none`.
 
 See [Conversation Forking Design](conversation-forking-design.md) and [Entry Data Model](entry-data-model.md) for detailed data model, implementation, and fork-aware entry retrieval.
 

@@ -5,6 +5,8 @@ status: implemented
 # Enhancement 061: Consistent Pagination Across All List Endpoints
 
 > **Status**: Implemented.
+>
+> **Current fork API note**: User and admin `GET .../conversations/{id}/forks` endpoints are now intentionally unpaginated `{conversationIds, forkPoints}` navigation snapshots. Fork-pagination details below are historical.
 
 ## Summary
 

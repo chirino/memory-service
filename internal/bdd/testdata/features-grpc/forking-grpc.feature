@@ -234,7 +234,22 @@ Feature: Conversation Forking gRPC API
     conversation_id: "${parentConversationId | uuid_to_hex_string}"
     """
     Then the gRPC response should not have an error
-    And the gRPC response field "forks" should not be null
+    And the gRPC response field "conversationIds" should not be null
+    And the gRPC response field "forkPoints" should not be null
+
+  Scenario: Admin list forks matches user fork navigation via gRPC
+    When I list entries for the conversation
+    And set "secondEntryId" to the json response field "data[1].id"
+    When I fork the conversation at entry "${secondEntryId}"
+    And set "adminForkId" to "${forkedConversationId}"
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListForks" with body:
+    """
+    conversation_id: "${adminForkId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversationIds" should not be null
+    And the gRPC response field "forkPoints" should not be null
 
   Scenario: List forks for non-existent conversation via gRPC
     When I send gRPC request "ConversationsService/ListForks" with body:

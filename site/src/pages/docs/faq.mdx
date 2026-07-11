@@ -103,7 +103,7 @@ No hard depth limit is enforced today. Fork ancestry is built iteratively (not r
 
 ### Can clients see message provenance across parent and child forks?
 
-Yes. Entries include `conversationId`, and you can call `/v1/conversations/{conversationId}/forks` to get fork metadata (`forkedAtConversationId`, `forkedAtEntryId`) and reconstruct/visualize the tree.
+Yes. Entries include `conversationId`, and `/v1/conversations/{conversationId}/forks` returns all accessible group IDs plus fork points keyed to entries visible in the requested conversation.
 
 ### How does semantic search work?
 

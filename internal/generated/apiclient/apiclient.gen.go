@@ -618,6 +618,30 @@ type Conversation struct {
 	UpdatedAt        *time.Time          `json:"updatedAt,omitempty"`
 }
 
+// ConversationForkNavigation defines model for ConversationForkNavigation.
+type ConversationForkNavigation struct {
+	ConversationIds []string                `json:"conversationIds"`
+	ForkPoints      []ConversationForkPoint `json:"forkPoints"`
+}
+
+// ConversationForkOption defines model for ConversationForkOption.
+type ConversationForkOption struct {
+	ConversationId string    `json:"conversationId"`
+	CreatedAt      time.Time `json:"createdAt"`
+
+	// EntryId Equivalent display entry for this continuation; null for an empty fork.
+	EntryId *openapi_types.UUID `json:"entryId,omitempty"`
+	Preview *string             `json:"preview,omitempty"`
+	Title   string              `json:"title"`
+}
+
+// ConversationForkPoint defines model for ConversationForkPoint.
+type ConversationForkPoint struct {
+	// EntryId Visible entry in the requested conversation where the fork selector is rendered.
+	EntryId openapi_types.UUID       `json:"entryId"`
+	Options []ConversationForkOption `json:"options"`
+}
+
 // ConversationForkSummary Summary of a forked conversation originating at a given entry.
 type ConversationForkSummary struct {
 	// ConversationId Unique identifier for the forked conversation.
@@ -1319,15 +1343,6 @@ type ListConversationEntriesParams struct {
 // ListConversationEntriesParamsForks defines parameters for ListConversationEntries.
 type ListConversationEntriesParamsForks string
 
-// ListConversationForksParams defines parameters for ListConversationForks.
-type ListConversationForksParams struct {
-	// AfterCursor Cursor for pagination; returns items after this conversation id.
-	AfterCursor *string `form:"afterCursor,omitempty" json:"afterCursor,omitempty"`
-
-	// Limit Maximum number of forks to return.
-	Limit *int `form:"limit,omitempty" json:"limit,omitempty"`
-}
-
 // ListConversationMembershipsParams defines parameters for ListConversationMemberships.
 type ListConversationMembershipsParams struct {
 	// AfterCursor Cursor for pagination; returns items after this user id.
@@ -1689,7 +1704,7 @@ type ClientInterface interface {
 	SyncConversationContext(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationForks request
-	ListConversationForks(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+	ListConversationForks(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// ListConversationMemberships request
 	ListConversationMemberships(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -2055,8 +2070,8 @@ func (c *Client) SyncConversationContext(ctx context.Context, conversationId str
 	return c.Client.Do(req)
 }
 
-func (c *Client) ListConversationForks(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
-	req, err := NewListConversationForksRequest(c.Server, conversationId, params)
+func (c *Client) ListConversationForks(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewListConversationForksRequest(c.Server, conversationId)
 	if err != nil {
 		return nil, err
 	}
@@ -3493,7 +3508,7 @@ func NewSyncConversationContextRequestWithBody(server string, conversationId str
 }
 
 // NewListConversationForksRequest generates requests for ListConversationForks
-func NewListConversationForksRequest(server string, conversationId string, params *ListConversationForksParams) (*http.Request, error) {
+func NewListConversationForksRequest(server string, conversationId string) (*http.Request, error) {
 	var err error
 
 	var pathParam0 string
@@ -3516,45 +3531,6 @@ func NewListConversationForksRequest(server string, conversationId string, param
 	queryURL, err := serverURL.Parse(operationPath)
 	if err != nil {
 		return nil, err
-	}
-
-	if params != nil {
-		// queryValues collects non-styled parameters (passthrough, JSON)
-		// that are safe to round-trip through url.Values.Encode().
-		queryValues := queryURL.Query()
-		// rawQueryFragments collects pre-encoded query fragments from
-		// styled parameters, preserving literal commas as delimiters
-		// per the OpenAPI spec (e.g. "color=blue,black,brown").
-		var rawQueryFragments []string
-
-		if params.AfterCursor != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "afterCursor", *params.AfterCursor, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if params.Limit != nil {
-
-			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "limit", *params.Limit, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "integer", Format: ""}); err != nil {
-				return nil, err
-			} else {
-				for _, qp := range strings.Split(queryFrag, "&") {
-					rawQueryFragments = append(rawQueryFragments, qp)
-				}
-			}
-
-		}
-
-		if encoded := queryValues.Encode(); encoded != "" {
-			rawQueryFragments = append(rawQueryFragments, encoded)
-		}
-		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -4705,7 +4681,7 @@ type ClientWithResponsesInterface interface {
 	SyncConversationContextWithResponse(ctx context.Context, conversationId string, body SyncConversationContextJSONRequestBody, reqEditors ...RequestEditorFn) (*SyncConversationContextResp, error)
 
 	// ListConversationForksWithResponse request
-	ListConversationForksWithResponse(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error)
+	ListConversationForksWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error)
 
 	// ListConversationMembershipsWithResponse request
 	ListConversationMembershipsWithResponse(ctx context.Context, conversationId string, params *ListConversationMembershipsParams, reqEditors ...RequestEditorFn) (*ListConversationMembershipsResp, error)
@@ -5364,12 +5340,9 @@ func (r SyncConversationContextResp) ContentType() string {
 type ListConversationForksResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
-	JSON200      *struct {
-		AfterCursor *string                    `json:"afterCursor,omitempty"`
-		Data        *[]ConversationForkSummary `json:"data,omitempty"`
-	}
-	JSON404     *NotFound
-	JSONDefault *Error
+	JSON200      *ConversationForkNavigation
+	JSON404      *NotFound
+	JSONDefault  *Error
 }
 
 // Status returns HTTPResponse.Status
@@ -6163,8 +6136,8 @@ func (c *ClientWithResponses) SyncConversationContextWithResponse(ctx context.Co
 }
 
 // ListConversationForksWithResponse request returning *ListConversationForksResp
-func (c *ClientWithResponses) ListConversationForksWithResponse(ctx context.Context, conversationId string, params *ListConversationForksParams, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error) {
-	rsp, err := c.ListConversationForks(ctx, conversationId, params, reqEditors...)
+func (c *ClientWithResponses) ListConversationForksWithResponse(ctx context.Context, conversationId string, reqEditors ...RequestEditorFn) (*ListConversationForksResp, error) {
+	rsp, err := c.ListConversationForks(ctx, conversationId, reqEditors...)
 	if err != nil {
 		return nil, err
 	}
@@ -7106,10 +7079,7 @@ func ParseListConversationForksResp(rsp *http.Response) (*ListConversationForksR
 
 	switch {
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
-		var dest struct {
-			AfterCursor *string                    `json:"afterCursor,omitempty"`
-			Data        *[]ConversationForkSummary `json:"data,omitempty"`
-		}
+		var dest ConversationForkNavigation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

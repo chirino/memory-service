@@ -30,6 +30,17 @@ export type AdminCheckpointPutRequest = {
   value: unknown;
 };
 
+export type AdminMemorySearchQuery = {
+  /**
+   * The search string for this query. Must be non-empty.
+   */
+  text: string;
+  /**
+   * Human-readable label used as attribution in matchedQueries. Defaults to text when absent.
+   */
+  purpose?: string;
+};
+
 export type AdminMemoryItem = {
   id?: string;
   namespace?: Array<string>;
@@ -41,6 +52,10 @@ export type AdminMemoryItem = {
     [key: string]: unknown;
   };
   score?: number;
+  /**
+   * Attribution — purposes (or texts) of all queries that matched this item. Present only in multi-query responses.
+   */
+  matchedQueries?: Array<string>;
   createdAt?: string;
   expiresAt?: string;
   archivedAt?: string;
@@ -57,12 +72,26 @@ export type AdminListMemoriesResponse = {
 export type AdminSearchMemoriesRequest = {
   namespace_prefix?: Array<string>;
   key_prefix?: string;
+  /**
+   * Single semantic search string. Mutually exclusive with queries.
+   */
   query?: string;
+  /**
+   * Batch of semantic search strings for multi-query retrieval. Mutually exclusive with query.
+   */
+  queries?: Array<AdminMemorySearchQuery>;
+  /**
+   * Per-query vector search budget. Defaults to limit when absent.
+   */
+  per_query_limit?: number;
   filter?: {
     [key: string]: unknown;
   };
   archived?: "exclude" | "include" | "only";
   include_usage?: boolean;
+  /**
+   * Maximum number of results to return. The server may enforce a lower configured maximum.
+   */
   limit?: number;
   justification?: string;
   as_user_id?: string;
@@ -179,7 +208,7 @@ export type AdminChildConversationSummary = {
 
 export type AdminConversation = AdminConversationSummary & {
   /**
-   * First parent entry excluded by this fork. Null for root conversations and blank-slate forks that inherit no parent entries.
+   * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
   forkedAtEntryId?: string;
   /**
@@ -207,7 +236,7 @@ export type AdminUpdateConversationRequest = AdminActionRequest & {
 /**
  * Logical channel of the entry within the conversation.
  */
-export type Channel = "history" | "context";
+export type Channel = "history" | "context" | "journal";
 
 export type Entry = {
   /**
@@ -227,6 +256,10 @@ export type Entry = {
    */
   contentType: string;
   content: Array<unknown>;
+  /**
+   * Optional client-assigned sequence number, unique within the conversation.
+   */
+  seq?: number;
   createdAt: string;
 };
 
@@ -249,7 +282,7 @@ export type ConversationForkSummary = {
    */
   conversationId?: string;
   /**
-   * First parent entry excluded by this fork. Null for blank-slate forks that inherit no parent entries.
+   * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for blank-slate forks that inherit no parent entries.
    */
   forkedAtEntryId?: string;
   /**
@@ -258,6 +291,30 @@ export type ConversationForkSummary = {
   forkedAtConversationId?: string;
   title?: string;
   createdAt?: string;
+};
+
+export type ConversationForkNavigation = {
+  conversationIds: Array<string>;
+  forkPoints: Array<ConversationForkPoint>;
+};
+
+export type ConversationForkPoint = {
+  /**
+   * Visible entry in the requested conversation where the fork selector is rendered.
+   */
+  entryId: string;
+  options: Array<ConversationForkOption>;
+};
+
+export type ConversationForkOption = {
+  conversationId: string;
+  /**
+   * Equivalent display entry for this continuation; null for an empty fork.
+   */
+  entryId?: string;
+  title: string;
+  preview?: string;
+  createdAt: string;
 };
 
 export type AdminSearchEntriesRequest = {
@@ -270,7 +327,7 @@ export type AdminSearchEntriesRequest = {
    */
   afterCursor?: string;
   /**
-   * Maximum number of results to return.
+   * Maximum number of results to return. The server may enforce a lower configured maximum.
    */
   limit?: number;
   /**
@@ -1161,6 +1218,14 @@ export type AdminGetEntriesData = {
      */
     afterCursor?: string;
     /**
+     * Cursor for backward pagination; returns up to limit entries strictly before this entry in admin-visible order. Mutually exclusive with afterCursor and tail=true.
+     */
+    beforeCursor?: string;
+    /**
+     * When true, returns the last limit entries (newest page). Mutually exclusive with afterCursor and beforeCursor.
+     */
+    tail?: boolean;
+    /**
      * Maximum number of entries to return.
      */
     limit?: number;
@@ -1181,11 +1246,21 @@ export type AdminGetEntriesData = {
      * the fork ancestry path. `all` returns entries from all forks.
      */
     forks?: "none" | "all";
+    /**
+     * When set, return only entries with seq >= fromSeq, ordered by seq ASC.
+     * Entries without a seq value are excluded. When omitted, the default
+     * ordering is created_at ASC, seq ASC NULLS FIRST, then id ASC.
+     */
+    fromSeq?: number;
   };
   url: "/v1/admin/conversations/{id}/entries";
 };
 
 export type AdminGetEntriesErrors = {
+  /**
+   * Bad request
+   */
+  400: ErrorResponse;
   /**
    * Resource not found
    */
@@ -1204,7 +1279,14 @@ export type AdminGetEntriesResponses = {
    */
   200: {
     data?: Array<Entry>;
+    /**
+     * Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
+     */
     afterCursor?: string;
+    /**
+     * Pass as beforeCursor to fetch the adjacent older page. Null when no older entries exist.
+     */
+    beforeCursor?: string;
   };
 };
 
@@ -1270,14 +1352,6 @@ export type AdminListForksData = {
   };
   query?: {
     /**
-     * Cursor for pagination; returns items after this conversation id.
-     */
-    afterCursor?: string;
-    /**
-     * Maximum number of forks to return.
-     */
-    limit?: number;
-    /**
      * Reason for this admin action (for audit log).
      */
     justification?: string;
@@ -1300,12 +1374,9 @@ export type AdminListForksError = AdminListForksErrors[keyof AdminListForksError
 
 export type AdminListForksResponses = {
   /**
-   * Forked conversations related to this conversation's root.
+   * Complete fork-navigation snapshot.
    */
-  200: {
-    data?: Array<ConversationForkSummary>;
-    afterCursor?: string;
-  };
+  200: ConversationForkNavigation;
 };
 
 export type AdminListForksResponse = AdminListForksResponses[keyof AdminListForksResponses];
@@ -1572,7 +1643,7 @@ export type AdminListAttachmentsData = {
      */
     afterCursor?: string;
     /**
-     * Maximum number of attachments to return (max 200).
+     * Maximum number of attachments to return. The server may enforce a lower configured maximum.
      */
     limit?: number;
     /**

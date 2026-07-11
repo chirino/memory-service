@@ -61,10 +61,23 @@ public class MemoryServiceProxy {
             String afterCursor,
             String beforeCursor,
             Boolean tail,
+            String upToEntryId,
             Integer limit,
             Channel channel,
             String epoch,
-            String forks) {}
+            Long fromSeq,
+            String forks) {
+        public EntryListOptions(
+                String afterCursor,
+                String beforeCursor,
+                Boolean tail,
+                Integer limit,
+                Channel channel,
+                String epoch,
+                String forks) {
+            this(afterCursor, beforeCursor, tail, null, limit, channel, epoch, null, forks);
+        }
+    }
 
     @Inject MemoryServiceApiBuilder memoryServiceApiBuilder;
 
@@ -145,21 +158,20 @@ public class MemoryServiceProxy {
                                         toUuid(options.afterCursor()),
                                         toUuid(options.beforeCursor()),
                                         options.tail(),
-                                        null,
+                                        toUuid(options.upToEntryId()),
                                         options.limit(),
                                         options.channel(),
                                         options.epoch(),
-                                        null,
+                                        options.fromSeq(),
                                         options.forks()),
                 OK,
                 "Error listing entries for history %s",
                 conversationId);
     }
 
-    public Response listConversationForks(
-            String conversationId, String afterCursor, Integer limit) {
+    public Response listConversationForks(String conversationId) {
         return execute(
-                () -> conversationsApi().listConversationForks(conversationId, afterCursor, limit),
+                () -> conversationsApi().listConversationForks(conversationId),
                 OK,
                 "Error listing forks for history %s",
                 conversationId);

@@ -47,10 +47,10 @@ Expose a forks endpoint so frontend clients can discover branches from a convers
 <CodeFromFile
   file="python/examples/langgraph/doc-checkpoints/04-conversation-forking/app.py"
   lang="python"
-  lines="109-116"
+  lines="109-112"
 />
 
-**Why**: Frontend apps need to know what branches exist off a given conversation so they can display a fork tree or let users navigate to a branched conversation. The endpoint forwards optional `afterCursor` and `limit` parameters to support paginated listing of forks.
+**Why**: Frontend apps need a complete navigation index before they page conversation entries. The endpoint returns all accessible group conversation IDs and the fork points visible in the requested conversation.
 
 ## Try It With Curl
 
@@ -129,7 +129,7 @@ List forks for the source conversation through the Python proxy endpoint:
 Then the response status should be 200
 And the response should contain "43b16f9d-a995-40e2-8538-c010ea2276ac"
 And the response should contain "bdb74451-1164-47f5-823e-b71cff4b7855"
-`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"43b16f9d-a995-40e2-8538-c010ea2276ac"},{"conversationId":"bdb74451-1164-47f5-823e-b71cff4b7855"}],"afterCursor":null}`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationIds":["43b16f9d-a995-40e2-8538-c010ea2276ac","bdb74451-1164-47f5-823e-b71cff4b7855"],"forkPoints":[{"entryId":"ac75d08c-e4f0-4e09-ad94-1cbe00c9ac67","options":[{"conversationId":"43b16f9d-a995-40e2-8538-c010ea2276ac","entryId":"ac75d08c-e4f0-4e09-ad94-1cbe00c9ac67","title":"A conversation","createdAt":"2026-07-10T14:00:00Z"},{"conversationId":"bdb74451-1164-47f5-823e-b71cff4b7855","entryId":"0c42c6e6-4593-46f6-a599-2f66ebf68c12","title":"Forked conversation","createdAt":"2026-07-10T14:01:00Z"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/43b16f9d-a995-40e2-8538-c010ea2276ac/forks \

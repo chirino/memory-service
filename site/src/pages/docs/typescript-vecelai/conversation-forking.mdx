@@ -83,7 +83,7 @@ This guide keeps the example history-based. Trusted runtime clients can also for
 
 **What changed**: Adds a small query coercion helper for paging params.
 
-**Why needed**: Query values arrive as strings; the proxy API expects numeric `limit` or `null`.
+**Why needed**: The application exposes the complete fork-navigation snapshot without exposing Memory Service credentials to the browser.
 
 <CodeFromFile
   file="typescript/examples/vecelai/doc-checkpoints/04-conversation-forking/src/app.ts"
@@ -93,7 +93,7 @@ This guide keeps the example history-based. Trusted runtime clients can also for
   after={7}
 />
 
-**What changed**: Exposes `GET /v1/conversations/:conversationId/forks` and forwards pagination args.
+**What changed**: Exposes `GET /v1/conversations/:conversationId/forks` and forwards the complete navigation snapshot.
 
 **Why needed**: Clients can discover and render branch trees without calling Memory Service directly.
 
@@ -167,7 +167,7 @@ List forks through the proxied endpoint:
 Then the response status should be 200
 And the response should contain "c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111"
 And the response should contain "e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"
-`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111"},{"conversationId":"e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"}],"afterCursor":null}`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationIds":["c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222"],"forkPoints":[{"entryId":"6c089ab2-9f2a-49cd-a26a-6124da0d4fe9","options":[{"conversationId":"c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111","entryId":"6c089ab2-9f2a-49cd-a26a-6124da0d4fe9","title":"A conversation","createdAt":"2026-07-10T14:00:00Z"},{"conversationId":"e5b9c1d2-8a4e-4c1a-b8d1-1d7f8e2a9222","entryId":"dd38fd91-8606-4d9f-aeea-223df04be80f","title":"Forked conversation","createdAt":"2026-07-10T14:01:00Z"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/c4d8a5f1-2f7b-4a6b-9e03-3a2f66e3b111/forks \

@@ -658,12 +658,17 @@ Feature: Admin REST API
     And set "fork2Id" to "${forkedConversationId}"
     # Now switch back to admin to test the admin API
     Given I am authenticated as admin user "alice"
-    When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
+    # Request a leaf: the snapshot must still include the complete group and
+    # fork points visible along this selected path.
+    When I call GET "/v1/admin/conversations/${fork1Id}/forks"
     Then the response status should be 200
-    # Should return the original conversation plus the 2 forks
-    And the response should contain at least 3 conversations
-    # Results are ordered by conversation ID (ASC) for cursor-based pagination
+    And the response body "conversationIds" should have 3 items
+    And the response body "forkPoints" should have 1 item
+    And the response body field "forkPoints[0].entryId" should not be null
+    And the response body "forkPoints[0].options" should have 3 items
     And the response body should contain "${bobConversationId}"
+    And the response body should contain "${fork1Id}"
+    And the response body should contain "${fork2Id}"
 
   # Serial today only because this feature shares the serial admin runner; this scenario lists forks for one scenario-local conversation tree and appears parallel-safe.
   Scenario: Auditor can list forks for any conversation
@@ -685,7 +690,8 @@ Feature: Admin REST API
     Given I am authenticated as auditor user "charlie"
     When I call GET "/v1/admin/conversations/${bobConversationId}/forks"
     Then the response status should be 200
-    And the response should contain at least 2 conversations
+    And the response body "conversationIds" should have 2 items
+    And the response body "forkPoints" should have 1 item
 
   # Serial today only because this feature shares the serial admin runner; this scenario is a pure authorization check and appears parallel-safe.
   Scenario: Non-admin user receives 403 Forbidden on admin forks endpoint

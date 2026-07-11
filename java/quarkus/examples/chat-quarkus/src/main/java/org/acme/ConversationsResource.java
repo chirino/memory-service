@@ -62,16 +62,27 @@ public class ConversationsResource {
     public Response listConversationEntries(
             @PathParam("conversationId") String conversationId,
             @QueryParam("afterCursor") String afterCursor,
-            @QueryParam("limit") Integer limit) {
+            @QueryParam("beforeCursor") String beforeCursor,
+            @QueryParam("tail") Boolean tail,
+            @QueryParam("limit") Integer limit,
+            @QueryParam("forks") String forks) {
         return proxy.listConversationEntries(
-                conversationId, afterCursor, limit, Channel.HISTORY, null, "all");
+                conversationId,
+                new MemoryServiceProxy.EntryListOptions(
+                        afterCursor,
+                        beforeCursor,
+                        tail,
+                        limit,
+                        Channel.HISTORY,
+                        null,
+                        forks == null || forks.isBlank() ? "none" : forks));
     }
 
     @GET
     @Path("/{conversationId}/forks")
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversationForks(@PathParam("conversationId") String conversationId) {
-        return proxy.listConversationForks(conversationId, null, null);
+        return proxy.listConversationForks(conversationId);
     }
 
     @GET

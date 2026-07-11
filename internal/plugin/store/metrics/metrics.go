@@ -94,9 +94,9 @@ func (m *metricsStore) GetGroupMemberUserIDs(ctx context.Context, conversationGr
 	return m.inner.GetGroupMemberUserIDs(ctx, conversationGroupID)
 }
 
-func (m *metricsStore) ListForks(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]store.ConversationForkSummary, *string, error) {
+func (m *metricsStore) ListForks(ctx context.Context, userID string, conversationID string) (*store.ConversationForkNavigation, error) {
 	defer observe("list_forks", time.Now())
-	return m.inner.ListForks(ctx, userID, conversationID, afterCursor, limit)
+	return m.inner.ListForks(ctx, userID, conversationID)
 }
 
 func (m *metricsStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]store.ConversationSummary, *string, error) {
@@ -218,9 +218,9 @@ func (m *metricsStore) AdminListMemberships(ctx context.Context, conversationID 
 	return m.inner.AdminListMemberships(ctx, conversationID, afterCursor, limit)
 }
 
-func (m *metricsStore) AdminListForks(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]store.ConversationForkSummary, *string, error) {
+func (m *metricsStore) AdminListForks(ctx context.Context, conversationID string) (*store.ConversationForkNavigation, error) {
 	defer observe("admin_list_forks", time.Now())
-	return m.inner.AdminListForks(ctx, conversationID, afterCursor, limit)
+	return m.inner.AdminListForks(ctx, conversationID)
 }
 
 func (m *metricsStore) AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]store.ConversationSummary, *string, error) {

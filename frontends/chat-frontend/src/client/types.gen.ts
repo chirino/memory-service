@@ -183,6 +183,30 @@ export type ConversationForkSummary = {
   createdAt?: string;
 };
 
+export type ConversationForkNavigation = {
+  conversationIds: Array<string>;
+  forkPoints: Array<ConversationForkPoint>;
+};
+
+export type ConversationForkPoint = {
+  /**
+   * Visible entry in the requested conversation where the fork selector is rendered.
+   */
+  entryId: string;
+  options: Array<ConversationForkOption>;
+};
+
+export type ConversationForkOption = {
+  conversationId: string;
+  /**
+   * Equivalent display entry for this continuation; null for an empty fork.
+   */
+  entryId?: string | null;
+  title: string;
+  preview?: string | null;
+  createdAt: string;
+};
+
 export type ShareConversationRequest = {
   userId: string;
   accessLevel: AccessLevel;
@@ -1003,17 +1027,9 @@ export type $OpenApiTs = {
     get: {
       req: {
         /**
-         * Cursor for pagination; returns items after this conversation id.
-         */
-        afterCursor?: string | null;
-        /**
          * Conversation identifier.
          */
         conversationId: string;
-        /**
-         * Maximum number of forks to return.
-         */
-        limit?: number;
       };
       res: {
         /**

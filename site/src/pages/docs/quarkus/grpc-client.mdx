@@ -143,10 +143,19 @@ ListForksResponse forks = conversationsClient.listForks(
         .build()
 );
 
-for (ConversationForkSummary fork : forks.getForksList()) {
-    System.out.println("Fork: " + fork.getTitle());
+for (String groupConversationId : forks.getConversationIdsList()) {
+    System.out.println("Group conversation: " + groupConversationId);
+}
+
+for (ConversationForkPoint point : forks.getForkPointsList()) {
+    System.out.println("Fork selector entry bytes: " + point.getEntryId());
+    for (ConversationForkOption option : point.getOptionsList()) {
+        System.out.println("  Option: " + option.getTitle());
+    }
 }
 ```
+
+The response is a complete navigation snapshot. Page the requested conversation's entries separately with `ListEntries`.
 
 ## Entries API
 

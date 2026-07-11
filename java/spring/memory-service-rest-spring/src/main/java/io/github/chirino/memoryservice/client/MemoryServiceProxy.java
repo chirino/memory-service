@@ -63,10 +63,23 @@ public class MemoryServiceProxy {
             String afterCursor,
             String beforeCursor,
             Boolean tail,
+            String upToEntryId,
             Integer limit,
             Channel channel,
             String epoch,
-            String forks) {}
+            Long fromSeq,
+            String forks) {
+        public EntryListOptions(
+                String afterCursor,
+                String beforeCursor,
+                Boolean tail,
+                Integer limit,
+                Channel channel,
+                String epoch,
+                String forks) {
+            this(afterCursor, beforeCursor, tail, null, limit, channel, epoch, null, forks);
+        }
+    }
 
     private final MemoryServiceClientProperties properties;
     private final WebClient.Builder webClientBuilder;
@@ -194,20 +207,17 @@ public class MemoryServiceProxy {
                                 toUuid(options.afterCursor()),
                                 toUuid(options.beforeCursor()),
                                 options.tail(),
-                                null,
+                                toUuid(options.upToEntryId()),
                                 options.limit(),
                                 options.channel(),
                                 options.epoch(),
-                                null,
+                                options.fromSeq(),
                                 options.forks()),
                 HttpStatus.OK);
     }
 
-    public ResponseEntity<?> listConversationForks(
-            String conversationId, String afterCursor, Integer limit) {
-        return execute(
-                api -> api.listConversationForksWithHttpInfo(conversationId, afterCursor, limit),
-                HttpStatus.OK);
+    public ResponseEntity<?> listConversationForks(String conversationId) {
+        return execute(api -> api.listConversationForksWithHttpInfo(conversationId), HttpStatus.OK);
     }
 
     public ResponseEntity<?> shareConversation(String conversationId, String body) {

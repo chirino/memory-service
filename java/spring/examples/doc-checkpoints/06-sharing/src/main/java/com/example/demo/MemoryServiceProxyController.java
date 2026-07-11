@@ -52,7 +52,7 @@ class MemoryServiceProxyController {
 
     @GetMapping("/{conversationId}/forks")
     public ResponseEntity<?> listConversationForks(@PathVariable String conversationId) {
-        return proxy.listConversationForks(conversationId, null, null);
+        return proxy.listConversationForks(conversationId);
     }
 
     // Membership management endpoints

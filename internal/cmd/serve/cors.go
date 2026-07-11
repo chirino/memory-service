@@ -20,7 +20,7 @@ func corsMiddleware(originsCSV string) gin.HandlerFunc {
 			c.Header("Access-Control-Allow-Methods", "GET, POST, PATCH, DELETE, OPTIONS")
 		}
 		if c.Request.Method == http.MethodOptions {
-			c.Status(http.StatusNoContent)
+			c.AbortWithStatus(http.StatusNoContent)
 			return
 		}
 		c.Next()

@@ -86,10 +86,7 @@ app.post("/chat/:conversationId", async (req, res) => {
 
 app.get("/v1/conversations/:conversationId/forks", async (req, res) => {
   await withProxy(req, res, memoryServiceConfig, (proxy) =>
-    proxy.listConversationForks(req.params.conversationId, {
-      afterCursor: (req.query.afterCursor as string | undefined) ?? null,
-      limit: asNumber(req.query.limit),
-    }),
+    proxy.listConversationForks(req.params.conversationId),
   );
 });
 

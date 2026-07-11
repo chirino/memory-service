@@ -49,7 +49,7 @@ Add this method to `ConversationsResource.java` to list forks for a conversation
   match="public Response listConversationForks"
 />
 
-**What changed**: Added a `listConversationForks` endpoint at `GET /{conversationId}/forks` that calls `proxy.listConversationForks`. **Why**: Frontends need to discover all branches stemming from a conversation so users can navigate between them. The endpoint returns the root conversation and all its forks in a flat list, each annotated with its `forkedAtConversationId` so the UI can reconstruct the branch tree.
+**What changed**: Added a `listConversationForks` endpoint at `GET /{conversationId}/forks` that calls `proxy.listConversationForks`. **Why**: Frontends receive all accessible group IDs plus fork points keyed to entries visible in the requested conversation, without loading entries from sibling branches.
 
 ## Try It With Curl
 
@@ -120,7 +120,7 @@ List forks for the source conversation through the Quarkus proxy endpoint:
 Then the response status should be 200
 And the response should contain "88a1db4c-ce91-4391-a6c1-baf9bcc65a86"
 And the response should contain "d517e108-28f0-49a1-93cc-d0f48ebedf42"
-`} exampleOutputLang="json" exampleOutput={`{"data":[{"conversationId":"88a1db4c-ce91-4391-a6c1-baf9bcc65a86"},{"conversationId":"d517e108-28f0-49a1-93cc-d0f48ebedf42"}],"afterCursor":null}`}>
+`} exampleOutputLang="json" exampleOutput={`{"conversationIds":["88a1db4c-ce91-4391-a6c1-baf9bcc65a86","d517e108-28f0-49a1-93cc-d0f48ebedf42"],"forkPoints":[{"entryId":"482d2e0c-1677-4ec5-91f2-fb3cf31deeda","options":[{"conversationId":"88a1db4c-ce91-4391-a6c1-baf9bcc65a86","entryId":"482d2e0c-1677-4ec5-91f2-fb3cf31deeda","title":"A conversation","createdAt":"2026-07-10T14:00:00Z"},{"conversationId":"d517e108-28f0-49a1-93cc-d0f48ebedf42","entryId":"dd56872d-dba2-4275-be85-dc431169737f","title":"Forked conversation","createdAt":"2026-07-10T14:01:00Z"}]}]}`}>
 
 ```bash
 curl -sSfX GET http://localhost:9090/v1/conversations/88a1db4c-ce91-4391-a6c1-baf9bcc65a86/forks \

@@ -275,14 +275,10 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
         options,
       );
     },
-    listConversationForks(
-      conversationId: string,
-      query: { afterCursor?: string | null; limit?: number | null } = {},
-    ): Promise<Response> {
-      const qs = compactQuery(query);
+    listConversationForks(conversationId: string): Promise<Response> {
       return memoryServiceRequest(
         "GET",
-        `/v1/conversations/${encodeURIComponent(conversationId)}/forks${qs}`,
+        `/v1/conversations/${encodeURIComponent(conversationId)}/forks`,
         options,
       );
     },

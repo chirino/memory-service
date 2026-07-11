@@ -10,6 +10,8 @@ superseded-by:
 > **Status**: Partial. Conversation groups hidden from public API by
 > [017](../implemented/017-hide-conversation-groups.md). Fork creation simplified to auto-create on first entry by
 > [046](../implemented/046-simpler-forking.md).
+>
+> **Current fork API note**: The user-facing `GET /v1/conversations/{id}/forks` no longer returns conversation summaries. It returns a complete `{conversationIds, forkPoints}` navigation snapshot. See the current OpenAPI/protobuf contracts and `docs/design.md`; the API shapes below are historical.
 
 ## Goals
 - Support many messages per conversation and allow forking at any message.
