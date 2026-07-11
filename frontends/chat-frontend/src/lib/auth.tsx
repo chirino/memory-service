@@ -1,7 +1,7 @@
 import * as React from "react";
 import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams } from "react-oidc-context";
 import { WebStorageStateStore, type User } from "oidc-client-ts";
-import { OpenAPI } from "@/client";
+import { OpenAPI } from "@/client-compat";
 
 // Frontend config fetched from the backend at /config.json
 interface FrontendConfig {
@@ -351,12 +351,12 @@ export function RequireAuth({ children, fallback }: RequireAuthProps) {
   React.useLayoutEffect(() => {
     if (auth.isAuthenticated && auth.accessToken) {
       currentAccessToken = auth.accessToken;
-      OpenAPI.TOKEN = tokenResolver;
+      OpenAPI.setConfig({ auth: tokenResolver });
       setTokenConfigured(true);
     } else {
       // Clear token on logout or when not authenticated
       clearAuthState();
-      OpenAPI.TOKEN = undefined;
+      OpenAPI.setConfig({ auth: undefined });
       setTokenConfigured(false);
     }
   }, [auth.isAuthenticated, auth.accessToken]);

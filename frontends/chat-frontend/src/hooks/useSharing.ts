@@ -46,7 +46,7 @@ export function useShareConversation() {
     }) => {
       return SharingService.shareConversation({
         conversationId,
-        requestBody: { userId, accessLevel },
+        shareConversationRequest: { userId, accessLevel },
       });
     },
     onSuccess: (_data, variables) => {
@@ -76,7 +76,7 @@ export function useUpdateMembership() {
       return SharingService.updateConversationMembership({
         conversationId,
         userId,
-        requestBody: { accessLevel },
+        accessLevel,
       });
     },
     onSuccess: (_data, variables) => {
@@ -146,7 +146,7 @@ export function useCreateTransfer() {
   return useMutation({
     mutationFn: async ({ conversationId, newOwnerUserId }: { conversationId: string; newOwnerUserId: string }) => {
       return SharingService.createOwnershipTransfer({
-        requestBody: { conversationId, newOwnerUserId },
+        createOwnershipTransferRequest: { conversationId, newOwnerUserId },
       });
     },
     onSuccess: () => {

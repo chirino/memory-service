@@ -14,7 +14,8 @@ import {
   useConversationStreaming,
 } from "@/components/conversation";
 import { ConversationsUI } from "@/components/conversations-ui";
-import type { ApiError, Conversation as ApiConversation, ConversationForkNavigation, Entry } from "@/client";
+import type { Conversation as ApiConversation, ConversationForkNavigation, Entry } from "@/client";
+import type { ApiError } from "@/client-compat";
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamAttachmentRef, StreamStartParams } from "@/hooks/useStreamTypes";
@@ -862,7 +863,9 @@ function ChatPanelContent({
                     if (conversationId) {
                       ConversationsService.updateConversation({
                         conversationId,
-                        requestBody: { title: newTitle },
+                        // The contract allows null here, but the upgraded generator ignores
+                        // OpenAPI 3.0-style nullable metadata in the 3.1 document.
+                        updateConversationRequest: { title: newTitle as unknown as string },
                       }).then(() => {
                         void queryClient.invalidateQueries({ queryKey: ["conversation", conversationId] });
                         void queryClient.invalidateQueries({ queryKey: ["conversations"] });
@@ -1242,7 +1245,7 @@ export function ChatPanel({
         channel: "history",
         forks: "none",
         tail: pageParam === null,
-        beforeCursor: pageParam,
+        beforeCursor: pageParam ?? undefined,
       })) as unknown as ListUserEntriesResponse;
     },
     getNextPageParam: (lastPage) => lastPage.beforeCursor ?? undefined,
