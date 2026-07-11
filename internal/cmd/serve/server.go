@@ -99,6 +99,9 @@ func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
 
 // BuildServer initializes all subsystems without binding any network listeners.
 func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	if err := resolveUnixSocketAuth(cfg); err != nil {
+		return nil, err
+	}
 	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,
 		"httpSocket", strings.TrimSpace(cfg.Listener.UnixSocket),

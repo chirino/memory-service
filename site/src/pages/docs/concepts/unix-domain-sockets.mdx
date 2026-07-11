@@ -25,12 +25,19 @@ memory-service serve \
   --db-url=file:$HOME/.local/share/memory-service/memory.db \
   --vector-kind=sqlite \
   --cache-kind=local \
-  --unix-socket=$HOME/.local/run/memory-service/api.sock
+  --unix-socket=$HOME/.local/run/memory-service/api.sock \
+  --unix-socket-auth=local
 ```
 
 These options keep the local stack self-contained. `db-kind=sqlite` and `vector-kind=sqlite` keep both the primary datastore and vector index in local files instead of requiring Postgres, MongoDB, or Qdrant; `cache-kind=local` keeps caching in-process instead of requiring Redis or Infinispan; `db-url=file:$HOME/.local/share/...` stores persistent data in the user's home directory; and `--unix-socket=$HOME/.local/run/...` keeps the live socket out of `/tmp`, where other local users are more likely to discover and probe it.
 
 The server creates the socket parent directory with `0700` permissions and the socket file with `0600` permissions, so only the owning user can connect by default.
+
+With `--unix-socket-auth=local`, access to that socket is the authentication boundary. REST and gRPC calls do not need bearer tokens or API keys; both are authorized as the current OS username with client ID `local-agent`. Override those values with `--local-user-id` and `--local-client-id` when the application needs stable IDs that differ from the defaults. The local principal receives no admin, auditor, or indexer role unless you explicitly grant one through the normal role configuration.
+
+> **Security boundary:** Any process running as the Unix user that owns the socket can act as this local principal. Use the default `--unix-socket-auth=credentials` mode if applications running under the same OS account should not trust one another.
+
+Local authentication is rejected unless the main API is exposed exclusively through `--unix-socket`. A separate TCP management listener may still expose health and metrics endpoints because it does not expose the authenticated API.
 
 The framework guides reuse that same server shape. They only change the client-side configuration.
 

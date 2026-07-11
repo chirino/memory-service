@@ -68,7 +68,8 @@ Yes. The Go server supports Unix domain sockets for local single-machine deploym
 ```bash
 memory-service serve \
   --db-url=postgresql://postgres:postgres@localhost:5432/memoryservice \
-  --unix-socket="$HOME/.local/run/memory-service/api.sock"
+  --unix-socket="$HOME/.local/run/memory-service/api.sock" \
+  --unix-socket-auth=local
 ```
 
 Then access it with tools that support Unix sockets:
@@ -78,7 +79,7 @@ curl --unix-socket "$HOME/.local/run/memory-service/api.sock" \
   http://localhost/ready
 ```
 
-This mode is intended for local agent processes. Browser apps cannot connect directly to a Unix socket.
+In local authentication mode, REST and gRPC calls use the current OS username and the `local-agent` client ID without application credentials. Any process running as the socket-owning Unix user is trusted as that principal. Omit `--unix-socket-auth=local` to retain normal bearer-token or API-key authentication. Browser apps cannot connect directly to a Unix socket.
 
 ## Features
 

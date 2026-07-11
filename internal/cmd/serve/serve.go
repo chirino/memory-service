@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os/user"
 	"strconv"
 	"strings"
 	"time"
@@ -305,6 +306,11 @@ func listenerFlags(cfg *config.Config) []cli.Flag {
 	}
 	flags = append(flags, tcpListenerFlags(cfg)...)
 	flags = append(flags, udsListenerFlags(cfg)...)
+	flags = append(flags,
+		&cli.StringFlag{Name: "unix-socket-auth", Category: "Network Listener:", Sources: cli.EnvVars("MEMORY_SERVICE_UNIX_SOCKET_AUTH"), Destination: &cfg.UnixSocketAuth, Value: cfg.UnixSocketAuth, Usage: "Unix socket authentication mode (credentials|local)"},
+		&cli.StringFlag{Name: "local-user-id", Category: "Network Listener:", Sources: cli.EnvVars("MEMORY_SERVICE_LOCAL_USER_ID"), Destination: &cfg.LocalUserID, Usage: "User ID for local Unix socket authentication (defaults to the OS username)"},
+		&cli.StringFlag{Name: "local-client-id", Category: "Network Listener:", Sources: cli.EnvVars("MEMORY_SERVICE_LOCAL_CLIENT_ID"), Destination: &cfg.LocalClientID, Value: cfg.LocalClientID, Usage: "Client ID for local Unix socket authentication"},
+	)
 	return flags
 }
 
@@ -857,7 +863,40 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	if err := validateListenerSelections(*cfg, selections); err != nil {
 		return err
 	}
+	if err := resolveUnixSocketAuth(cfg); err != nil {
+		return err
+	}
 	cfg.ManagementListenerEnabled = selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit
+	return nil
+}
+
+var currentOSUser = user.Current
+
+func resolveUnixSocketAuth(cfg *config.Config) error {
+	mode := strings.TrimSpace(cfg.UnixSocketAuth)
+	if mode == "" {
+		mode = "credentials"
+	}
+	if mode != "credentials" && mode != "local" {
+		return fmt.Errorf("--unix-socket-auth must be credentials or local")
+	}
+	cfg.UnixSocketAuth = mode
+	if mode != "local" {
+		return nil
+	}
+	if strings.TrimSpace(cfg.Listener.UnixSocket) == "" {
+		return fmt.Errorf("--unix-socket-auth=local requires the API to be exposed exclusively through --unix-socket")
+	}
+	if strings.TrimSpace(cfg.LocalClientID) == "" {
+		cfg.LocalClientID = "local-agent"
+	}
+	if strings.TrimSpace(cfg.LocalUserID) == "" {
+		u, err := currentOSUser()
+		if err != nil || u == nil || strings.TrimSpace(u.Username) == "" {
+			return fmt.Errorf("resolve OS username for --unix-socket-auth=local: set --local-user-id explicitly")
+		}
+		cfg.LocalUserID = u.Username
+	}
 	return nil
 }
 

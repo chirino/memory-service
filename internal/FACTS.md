@@ -34,6 +34,8 @@
 **Wrapper auth middleware gotcha**: Wrapper-native endpoints must run auth (and for memories, client-id) as wrapper middlewares in `internal/cmd/serve/wrapper_routes.go`; otherwise role checks can fail even when tokens are valid.
 **Unix-socket listener validation**: Listener selection conflicts must use explicit flag/env detection (`cmd.IsSet(...)`), not non-zero resolved port values, otherwise the default port `8080` falsely conflicts with `--unix-socket`. When a Unix-socket parent directory is missing, the serve layer creates it as `0700`; if it already exists and is group/world accessible, startup must fail fast instead of chmod-ing it.
 
+**Unix-socket local auth boundary**: `--unix-socket-auth=local` is valid only with an exclusive main UDS listener. It supplies the same configured local user/client identity to REST and gRPC without credentials; management listener selection does not broaden the API transport. Any process able to access the socket as its owning Unix user is inside this trust boundary.
+
 **TLS self-signed certificate opt-in**: Omitting `MEMORY_SERVICE_TLS_CERT_FILE` and `MEMORY_SERVICE_TLS_KEY_FILE` only generates an ephemeral self-signed certificate when `MEMORY_SERVICE_TLS_SELF_SIGNED=true` / `--tls-self-signed` is set. Dev launch surfaces that enable TLS without cert files must set this explicitly.
 **OIDC self-signed issuer opt-in**: `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY=true` / `--oidc-tls-insecure-skip-verify` only affects outbound OIDC discovery and JWKS fetches in `internal/security/auth.go`; it does not change listener TLS or general HTTP client behavior.
 

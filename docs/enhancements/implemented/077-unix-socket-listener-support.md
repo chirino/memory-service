@@ -73,6 +73,19 @@ Add new flags and env vars:
 | Main | `--unix-socket` | `MEMORY_SERVICE_UNIX_SOCKET` | Absolute path to the main HTTP/gRPC Unix socket |
 | Management | `--management-unix-socket` | `MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET` | Absolute path to the dedicated management Unix socket |
 
+The main listener also supports trusted local authentication with
+`--unix-socket-auth=local` (`MEMORY_SERVICE_UNIX_SOCKET_AUTH=local`). This mode is
+accepted only when the API listener uses `--unix-socket`; it cannot be combined
+with a TCP API listener. Requests are authenticated as `--local-user-id` (the
+current OS username by default) and `--local-client-id` (`local-agent` by default)
+for both REST and gRPC. The identity receives no roles unless the normal role
+configuration explicitly grants them.
+
+Socket permissions are the authentication boundary in local mode. Any process
+running as the Unix user that owns and can access the socket is trusted as the
+configured local principal. Use the default `credentials` mode when processes
+running as that user must remain isolated from one another.
+
 Validation rules:
 
 1. `--port` and `--unix-socket` are mutually exclusive for the same listener when both are explicitly provided by the user via CLI flag or env var.
