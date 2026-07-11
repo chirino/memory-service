@@ -52,7 +52,8 @@ const (
 	CredentialBearerAPIKey CredentialKind = "bearer-api-key"
 	// CredentialEmbeddedMCP — in-process embedded MCP synthetic identity.
 	// Accepted only when RequestCredentials.Transport == "embedded-mcp"; never from network traffic.
-	CredentialEmbeddedMCP CredentialKind = "embedded-mcp"
+	CredentialEmbeddedMCP     CredentialKind = "embedded-mcp"
+	CredentialLocalUnixSocket CredentialKind = "local-unix-socket"
 	// CredentialTesting — raw bearer user accepted only in testing mode with auth_testfixtures build tag.
 	CredentialTesting CredentialKind = "testing-bearer-user"
 )
@@ -244,6 +245,8 @@ type TokenResolver struct {
 	// to CredentialEmbeddedMCP without touching the bearer/API-key paths.
 	embeddedMCPUserID   string
 	embeddedMCPClientID string
+	localUserID         string
+	localClientID       string
 }
 
 // NewTokenResolver creates a TokenResolver from the application config. It performs
@@ -255,7 +258,7 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 	oidcIssuer := cfg.OIDCIssuer
 
 	// Fail closed in production: no auth mechanism configured at all.
-	if cfg.Mode != config.ModeTesting && oidcIssuer == "" && len(cfg.APIKeys) == 0 {
+	if cfg.Mode != config.ModeTesting && cfg.UnixSocketAuth != "local" && oidcIssuer == "" && len(cfg.APIKeys) == 0 {
 		return nil, fmt.Errorf("no authentication mechanism configured: set MEMORY_SERVICE_OIDC_ISSUER and/or MEMORY_SERVICE_API_KEYS_<CLIENT_ID>")
 	}
 
@@ -335,6 +338,8 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 		auditorClients:  splitCSV(cfg.AuditorClients),
 		indexerClients:  splitCSV(cfg.IndexerClients),
 		testingMode:     cfg.Mode == config.ModeTesting,
+		localUserID:     strings.TrimSpace(cfg.LocalUserID),
+		localClientID:   strings.TrimSpace(cfg.LocalClientID),
 	}, nil
 }
 
@@ -354,6 +359,11 @@ var (
 // Resolve resolves a RequestCredentials into a caller Identity.
 // It applies all configured credential policies based on the deployment configuration.
 func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (*Identity, error) {
+	if r.localUserID != "" {
+		roles := r.rolesForClient(r.localClientID)
+		r.addUserRoles(roles, r.localUserID)
+		return newIdentity(r.localUserID, r.localClientID, roles, CredentialLocalUnixSocket), nil
+	}
 	// Embedded MCP in-process transport: resolve synthetic identity without bearer/API-key paths.
 	// The Transport value is injected only by the in-process client; remote listeners strip the
 	// header that sets it, so this branch is unreachable from network traffic.
@@ -752,6 +762,12 @@ func EffectiveAdminRole(c *gin.Context) string {
 // when no Authorization header is present.
 func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 	return func(c *gin.Context) {
+		if resolver.localUserID != "" {
+			id, _ := resolver.Resolve(c.Request.Context(), RequestCredentials{})
+			setGinIdentity(c, id)
+			c.Next()
+			return
+		}
 		auth := c.GetHeader("Authorization")
 		apiKey := c.GetHeader("X-API-Key")
 		clientIDHeader := c.GetHeader("X-Client-ID")
@@ -826,6 +842,16 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 	}
 }
 
+func setGinIdentity(c *gin.Context, id *Identity) {
+	c.Set(ContextKeyUserID, id.UserID)
+	if id.ClientID != "" {
+		c.Set(ContextKeyClientID, id.ClientID)
+	}
+	c.Set(ContextKeyIdentity, id)
+	c.Set(ContextKeyRoles, id.Roles)
+	c.Set(ContextKeyIsAdmin, id.IsAdmin)
+}
+
 // RequireUser requires a non-empty authenticated user principal.
 // Client-only (API-key-only) identities are rejected with 401.
 // This should be applied to all normal user/agent endpoints.
@@ -898,6 +924,10 @@ func grpcMetadataValue(ctx context.Context, key string) string {
 
 // resolveGRPCIdentity extracts auth headers from gRPC metadata and resolves identity.
 func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.Context {
+	if resolver.localUserID != "" {
+		id, _ := resolver.Resolve(ctx, RequestCredentials{})
+		return context.WithValue(ctx, grpcIdentityKey{}, id)
+	}
 	auth := grpcMetadataValue(ctx, "authorization")
 	apiKey := grpcMetadataValue(ctx, "x-api-key")
 

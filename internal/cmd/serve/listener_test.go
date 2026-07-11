@@ -5,9 +5,11 @@ package serve
 import (
 	"context"
 	"crypto/tls"
+	"fmt"
 	"net"
 	"net/http"
 	"os"
+	"os/user"
 	"path/filepath"
 	"testing"
 	"time"
@@ -20,6 +22,39 @@ import (
 	"google.golang.org/grpc/credentials/insecure"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
+
+func TestResolveUnixSocketAuth(t *testing.T) {
+	t.Run("rejects local auth on TCP", func(t *testing.T) {
+		cfg := config.DefaultConfig()
+		cfg.UnixSocketAuth = "local"
+		err := resolveUnixSocketAuth(&cfg)
+		require.EqualError(t, err, "--unix-socket-auth=local requires the API to be exposed exclusively through --unix-socket")
+	})
+
+	t.Run("defaults local identity", func(t *testing.T) {
+		original := currentOSUser
+		currentOSUser = func() (*user.User, error) { return &user.User{Username: "socket-owner"}, nil }
+		defer func() { currentOSUser = original }()
+		cfg := config.DefaultConfig()
+		cfg.Listener.UnixSocket = "/tmp/memory-service.sock"
+		cfg.UnixSocketAuth = "local"
+		cfg.LocalClientID = ""
+		require.NoError(t, resolveUnixSocketAuth(&cfg))
+		require.Equal(t, "socket-owner", cfg.LocalUserID)
+		require.Equal(t, "local-agent", cfg.LocalClientID)
+	})
+
+	t.Run("requires resolvable username", func(t *testing.T) {
+		original := currentOSUser
+		currentOSUser = func() (*user.User, error) { return nil, fmt.Errorf("unknown user") }
+		defer func() { currentOSUser = original }()
+		cfg := config.DefaultConfig()
+		cfg.Listener.UnixSocket = "/tmp/memory-service.sock"
+		cfg.UnixSocketAuth = "local"
+		err := resolveUnixSocketAuth(&cfg)
+		require.EqualError(t, err, "resolve OS username for --unix-socket-auth=local: set --local-user-id explicitly")
+	})
+}
 
 func TestValidateListenerSelections(t *testing.T) {
 	t.Run("allows unix socket with default port when port not explicitly set", func(t *testing.T) {

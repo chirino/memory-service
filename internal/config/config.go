@@ -203,6 +203,9 @@ type Config struct {
 	ManagementAccessLog bool
 	CORSEnabled         bool
 	CORSOrigins         string
+	UnixSocketAuth      string
+	LocalUserID         string
+	LocalClientID       string
 
 	// Security
 	// APIKeys maps API key values to client IDs (Java parity: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=<key>).
@@ -345,6 +348,8 @@ func DefaultConfig() Config {
 			EnablePlainText: true,
 			EnableTLS:       true,
 		},
+		UnixSocketAuth:               "credentials",
+		LocalClientID:                "local-agent",
 		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
 		MaxPageSize:                  DefaultMaxPageSize,
 		DrainTimeout:                 30,
