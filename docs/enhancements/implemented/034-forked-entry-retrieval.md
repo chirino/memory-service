@@ -6,6 +6,8 @@ status: implemented
 
 > **Status**: Implemented.
 
+> **Note**: Enhancement [110](../110-conversation-ancestry-closure.md) supersedes this document's original group-load implementation approach. Current stores keep public fork semantics but persist lineage in `conversation_ancestry` and use bounded datastore queries for entry listing.
+
 ## Problem Statement
 
 When fetching entries for a forked conversation, the current implementation only returns entries that belong to the specific conversation being queried. It does not include entries from parent conversations up to the fork point.

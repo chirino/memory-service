@@ -200,6 +200,16 @@ func mapError(err error) error {
 	}
 }
 
+func grpcPageSize(ctx context.Context, requested int32, defaultSize int) (int, error) {
+	if requested == 0 {
+		return config.ClampPageSize(ctx, defaultSize), nil
+	}
+	if err := config.ValidatePageSize(ctx, int(requested)); err != nil {
+		return 0, status.Error(codes.InvalidArgument, err.Error())
+	}
+	return int(requested), nil
+}
+
 func withMemoryRead[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
 	var out T
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
@@ -393,14 +403,14 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 
 	var afterCursor *string
 	var query *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 	if req.GetQuery() != "" {
@@ -563,14 +573,14 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -623,14 +633,14 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 	children, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
@@ -797,9 +807,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	limit := config.ClampPageSize(ctx, 20)
-	if req.GetPage() != nil && req.GetPage().GetPageSize() > 0 {
-		limit = int(req.GetPage().GetPageSize())
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
 	}
 
 	// Validate mutually exclusive pagination controls.
@@ -820,6 +830,9 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	var afterCursor *string
 	if req.GetPage() != nil && req.GetPage().GetPageToken() != "" {
 		t := req.GetPage().GetPageToken()
+		if _, err := uuid.Parse(t); err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid page.page_token")
+		}
 		afterCursor = &t
 	}
 	var beforeCursor *string
@@ -942,14 +955,18 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 		return nil, status.Error(codes.InvalidArgument, "page.page_token, before_page_token, and tail are mutually exclusive")
 	}
 
-	query := registrystore.AdminMessageQuery{Limit: 20}
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
+	query := registrystore.AdminMessageQuery{Limit: limit}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
+			if _, err := uuid.Parse(t); err != nil {
+				return nil, status.Error(codes.InvalidArgument, "invalid page.page_token")
+			}
 			query.AfterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			query.Limit = int(req.GetPage().GetPageSize())
 		}
 	}
 	if req.GetBeforePageToken() != "" {
@@ -1127,14 +1144,14 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -1229,14 +1246,14 @@ func (s *AdminConversationsServer) ListMemberships(ctx context.Context, req *pb.
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -1281,14 +1298,14 @@ func (s *AdminConversationsServer) ListForks(ctx context.Context, req *pb.AdminL
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -1339,14 +1356,14 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -1666,14 +1683,14 @@ func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMem
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -1829,14 +1846,14 @@ func (s *TransfersServer) ListOwnershipTransfers(ctx context.Context, req *pb.Li
 	}
 
 	var afterCursor *string
-	limit := config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	if err != nil {
+		return nil, err
+	}
 	if req.GetPage() != nil {
 		if req.GetPage().GetPageToken() != "" {
 			t := req.GetPage().GetPageToken()
 			afterCursor = &t
-		}
-		if req.GetPage().GetPageSize() > 0 {
-			limit = int(req.GetPage().GetPageSize())
 		}
 	}
 
@@ -2021,9 +2038,9 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 		return nil, status.Error(codes.Unavailable, "full-text search is disabled")
 	}
 
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 20)
+	if err != nil {
+		return nil, err
 	}
 	includeEntry := true
 	if req.IncludeEntry != nil {
@@ -2115,9 +2132,9 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 		return nil, err
 	}
 
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 20)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 20)
+	if err != nil {
+		return nil, err
 	}
 	var afterCursor *string
 	if req.Cursor != nil {
@@ -2397,9 +2414,9 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 10)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 10)
+	if err != nil {
+		return nil, err
 	}
 
 	filter := map[string]interface{}{}
@@ -2580,9 +2597,9 @@ func (s *AdminMemoriesServer) ListMemories(ctx context.Context, req *pb.AdminLis
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 50)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 50)
+	if err != nil {
+		return nil, err
 	}
 	query := registryepisodic.AdminMemoryQuery{
 		NamespacePrefix: prefix,
@@ -2685,9 +2702,9 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 	}
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 10)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 10)
+	if err != nil {
+		return nil, err
 	}
 	filter := map[string]interface{}{}
 	if req.GetFilter() != nil {
@@ -2804,9 +2821,9 @@ func (s *AdminMemoriesServer) ListNamespaces(ctx context.Context, req *pb.AdminL
 	if maxDepth < 0 || (s.maxDepth() > 0 && maxDepth > s.maxDepth()) {
 		return nil, status.Error(codes.InvalidArgument, "max_depth out of range")
 	}
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 200)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 200)
+	if err != nil {
+		return nil, err
 	}
 	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (registryepisodic.AdminNamespacePage, error) {
 		return s.Store.AdminListNamespaces(txCtx, registryepisodic.AdminNamespaceQuery{
@@ -2904,9 +2921,9 @@ func (s *AdminMemoriesServer) ListTopMemoryUsage(ctx context.Context, req *pb.Ad
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid sort")
 	}
-	limit := int(req.GetLimit())
-	if limit <= 0 {
-		limit = config.ClampPageSize(ctx, 100)
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 100)
+	if err != nil {
+		return nil, err
 	}
 	items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.TopMemoryUsageItem, error) {
 		return s.Store.ListTopMemoryUsage(txCtx, registryepisodic.ListTopMemoryUsageRequest{
@@ -3396,7 +3413,7 @@ func protoMemorySearchQuerySpecs(queries []*pb.MemorySearchQuery) ([]memorySearc
 
 func protoPerQueryLimit(raw int32, limit int) (int, error) {
 	if raw == 0 {
-		return limit, nil
+		return min(limit, 100), nil
 	}
 	if raw < 1 || raw > 100 {
 		return 0, fmt.Errorf("per_query_limit must be between 1 and 100")
@@ -4323,12 +4340,8 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
-			page, err := s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
-				Limit:    5000,
-				Channel:  channel,
-				ClientID: grpcClientIDPtr,
-				AllForks: true,
-			})
+			txCtx = config.WithContext(txCtx, s.Config)
+			page, err := s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryLookupQuery(entryID, channel, grpcClientIDPtr))
 			if err != nil {
 				return err
 			}
@@ -4348,10 +4361,8 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	adminEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, _ *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
-			page, err := s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
-				Limit:    5000,
-				AllForks: true,
-			})
+			txCtx = config.WithContext(txCtx, s.Config)
+			page, err := s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminEntryLookupQuery(entryID))
 			if err != nil {
 				return err
 			}
@@ -4839,12 +4850,8 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 		}
 		channel := grpcChannelFromEventData(data)
 		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-			return s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
-				Limit:    5000,
-				Channel:  channel,
-				ClientID: clientID,
-				AllForks: true,
-			})
+			txCtx = config.WithContext(txCtx, s.Config)
+			return s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryLookupQuery(entryID, channel, clientID))
 		})
 		if err != nil {
 			return event, false, nil
@@ -4896,10 +4903,8 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 			return event, true, nil
 		}
 		page, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
-			return s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminMessageQuery{
-				Limit:    5000,
-				AllForks: true,
-			})
+			txCtx = config.WithContext(txCtx, s.Config)
+			return s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminEntryLookupQuery(entryID))
 		})
 		if err != nil || page == nil {
 			return event, false, nil

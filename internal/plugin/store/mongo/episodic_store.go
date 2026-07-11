@@ -19,7 +19,6 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
-	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -65,125 +64,6 @@ func init() {
 			return s, nil
 		},
 	})
-
-	registrymigrate.Register(registrymigrate.Plugin{Order: 110, Migrator: &mongoEpisodicMigrator{}})
-}
-
-// mongoEpisodicMigrator creates the memories collection and its indexes.
-type mongoEpisodicMigrator struct{}
-
-func (m *mongoEpisodicMigrator) Name() string { return "mongo-episodic-schema" }
-
-func (m *mongoEpisodicMigrator) Migrate(ctx context.Context) error {
-	cfg := config.FromContext(ctx)
-	if cfg == nil || !cfg.DatastoreMigrateAtStart {
-		return nil
-	}
-	if cfg.DatastoreType != "mongo" {
-		return nil
-	}
-
-	log.Info("Running migration", "name", m.Name())
-	client, err := mongo.Connect(options.Client().ApplyURI(cfg.DBURL))
-	if err != nil {
-		return fmt.Errorf("mongo episodic migration: connect: %w", err)
-	}
-	defer client.Disconnect(ctx)
-
-	db := client.Database("memory_service")
-	db.CreateCollection(ctx, "memories") // idempotent: fails silently if exists
-	db.CreateCollection(ctx, "memory_usage_stats")
-	db.CreateCollection(ctx, "memory_vectors")
-
-	indexes := []mongo.IndexModel{
-		{Keys: bson.D{
-			{Key: "namespace", Value: 1},
-			{Key: "key", Value: 1},
-			{Key: "archived_at", Value: 1},
-		}},
-		{
-			Keys:    bson.D{{Key: "expires_at", Value: 1}},
-			Options: options.Index().SetSparse(true),
-		},
-		{
-			Keys:    bson.D{{Key: "indexed_at", Value: 1}},
-			Options: options.Index().SetSparse(true),
-		},
-		{Keys: bson.D{
-			{Key: "namespace", Value: 1},
-			{Key: "key", Value: 1},
-			{Key: "revision", Value: 1},
-		}},
-		// Event timeline — write events (kind IN (0,1))
-		{
-			Keys: bson.D{
-				{Key: "namespace", Value: 1},
-				{Key: "created_at", Value: 1},
-				{Key: "_id", Value: 1},
-			},
-			Options: options.Index().SetPartialFilterExpression(bson.M{"kind": bson.M{"$in": bson.A{0, 1}}}),
-		},
-		// Event timeline — delete/expire events (deleted_reason IN (1,2))
-		{
-			Keys: bson.D{
-				{Key: "namespace", Value: 1},
-				{Key: "archived_at", Value: 1},
-				{Key: "_id", Value: 1},
-			},
-			Options: options.Index().SetPartialFilterExpression(bson.M{"deleted_reason": bson.M{"$in": bson.A{1, 2}}}),
-		},
-	}
-	if _, err := db.Collection("memories").Indexes().CreateMany(ctx, indexes); err != nil {
-		return fmt.Errorf("mongo episodic migration: create indexes: %w", err)
-	}
-	usageIndexes := []mongo.IndexModel{
-		{
-			Keys: bson.D{
-				{Key: "namespace", Value: 1},
-				{Key: "key", Value: 1},
-			},
-			Options: options.Index().SetUnique(true),
-		},
-		{Keys: bson.D{{Key: "fetch_count", Value: -1}}},
-		{Keys: bson.D{{Key: "last_fetched_at", Value: -1}}},
-	}
-	if _, err := db.Collection("memory_usage_stats").Indexes().CreateMany(ctx, usageIndexes); err != nil {
-		return fmt.Errorf("mongo episodic migration: create usage indexes: %w", err)
-	}
-	vectorIndexes := []mongo.IndexModel{
-		{
-			Keys: bson.D{
-				{Key: "memory_id", Value: 1},
-				{Key: "field_name", Value: 1},
-			},
-			Options: options.Index().SetUnique(true),
-		},
-		{Keys: bson.D{{Key: "namespace", Value: 1}}},
-		{
-			Keys:    bson.D{{Key: "policy_attributes", Value: 1}},
-			Options: options.Index().SetSparse(true),
-		},
-	}
-	if _, err := db.Collection("memory_vectors").Indexes().CreateMany(ctx, vectorIndexes); err != nil {
-		return fmt.Errorf("mongo episodic migration: create vector indexes: %w", err)
-	}
-
-	// Schema reconciliation for existing documents.
-	if _, err := db.Collection("memories").UpdateMany(ctx,
-		bson.M{"indexed_content": bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{"indexed_content": bson.M{}}},
-	); err != nil {
-		return fmt.Errorf("mongo episodic migration: init indexed_content: %w", err)
-	}
-	if _, err := db.Collection("memories").UpdateMany(ctx,
-		bson.M{},
-		bson.M{"$unset": bson.M{"attributes": "", "index_fields": "", "index_disabled": ""}},
-	); err != nil {
-		return fmt.Errorf("mongo episodic migration: remove legacy fields: %w", err)
-	}
-
-	log.Info("MongoDB episodic schema migration complete")
-	return nil
 }
 
 // mongoEpisodicStore implements registryepisodic.EpisodicStore using MongoDB.
@@ -508,9 +388,7 @@ func (s *mongoEpisodicStore) ListTopMemoryUsage(ctx context.Context, req registr
 	if limit <= 0 {
 		limit = 100
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	filter := bson.M{}
 	if len(req.Prefix) > 0 {
@@ -1035,9 +913,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	// Decode cursor.
 	var cursorOccurredAt time.Time
@@ -1342,9 +1218,7 @@ func (s *mongoEpisodicStore) AdminListMemories(ctx context.Context, query regist
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	pipeline, err := adminLatestMemoryPipeline(query.NamespacePrefix)
 	if err != nil {
 		return registryepisodic.AdminMemoryPage{}, err
@@ -1400,9 +1274,7 @@ func (s *mongoEpisodicStore) AdminSearchMemories(ctx context.Context, query regi
 	if limit <= 0 {
 		limit = 10
 	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	pipeline, err := adminLatestMemoryPipeline(query.NamespacePrefix)
 	if err != nil {
 		return nil, err
@@ -1451,9 +1323,7 @@ func (s *mongoEpisodicStore) AdminListNamespaces(ctx context.Context, query regi
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	offset := decodeAdminOffsetCursor(query.AfterCursor)
 	namespaces, err := s.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
 		Prefix:   query.NamespacePrefix,

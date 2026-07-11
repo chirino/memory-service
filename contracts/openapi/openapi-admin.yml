@@ -1249,7 +1249,7 @@ paths:
         - name: limit
           in: query
           required: false
-          description: Maximum number of attachments to return. The server-wide configured maximum defaults to 1000.
+          description: Maximum number of attachments to return. The server may enforce a lower configured maximum.
           schema:
             type: integer
             default: 50
@@ -1946,7 +1946,7 @@ components:
         limit:
           type: integer
           minimum: 1
-          maximum: 100
+          description: Maximum number of results to return. The server may enforce a lower configured maximum.
         justification:
           type: string
         as_user_id:
@@ -2268,7 +2268,7 @@ components:
           type: integer
           default: 20
           minimum: 1
-          description: Maximum number of results to return. The server-wide configured maximum defaults to 1000.
+          description: Maximum number of results to return. The server may enforce a lower configured maximum.
         userId:
           type: string
           nullable: true

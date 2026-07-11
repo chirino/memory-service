@@ -60,6 +60,12 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	afterCursor := queryPtr(c, "afterCursor")
+	if afterCursor != nil {
+		if _, err := uuid.Parse(*afterCursor); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid afterCursor: must be a UUID"})
+			return
+		}
+	}
 	beforeCursor := queryPtr(c, "beforeCursor")
 	if beforeCursor != nil {
 		if _, err := uuid.Parse(*beforeCursor); err != nil {
@@ -77,6 +83,12 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		}
 	}
 	upToEntryID := queryPtr(c, "upToEntryId")
+	if upToEntryID != nil {
+		if _, err := uuid.Parse(*upToEntryID); err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid upToEntryId: must be a UUID"})
+			return
+		}
+	}
 	limit := queryInt(c, "limit", 50)
 
 	// Mutually exclusive pagination controls.

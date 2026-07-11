@@ -111,7 +111,7 @@ parameters:
       type: integer
       default: 20
       minimum: 1
-      maximum: 200
+      description: Capped by the server-configured maximum (default 1000).
 responses:
   '200':
     schema:

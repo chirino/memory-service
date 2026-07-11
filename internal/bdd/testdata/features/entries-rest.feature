@@ -108,6 +108,21 @@ Feature: Entries REST API
     }
     """
 
+  Scenario: Epoch is rejected for non-context entries
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation exists
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "history",
+      "epoch": 2,
+      "contentType": "history",
+      "content": [{"role": "USER", "text": "History cannot have an epoch"}]
+    }
+    """
+    Then the response status should be 400
+    And the response body field "error" should contain "epoch can only be set for context entries"
+
   Scenario: User cannot append context entries by forging clientId query parameter
     Given I am authenticated as user "alice"
     And the conversation exists
@@ -158,6 +173,27 @@ Feature: Entries REST API
     Then the response status should be 200
     And the response should contain 1 entry
     And entry at index 0 should have content "Context before bound"
+
+  Scenario: Agent can bound forked context entries by ancestor entry id
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has a context entry "Inherited context before bound" with epoch 1 and contentType "test.v1"
+    And the conversation has an entry "Inherited history bound"
+    And the conversation has an entry "Inherited fork point"
+    When I list entries for the conversation with channel "HISTORY"
+    Then the response status should be 200
+    And set "ancestorBoundEntryId" to the json response field "data[0].id"
+    And set "forkPointEntryId" to the json response field "data[1].id"
+    And I fork the conversation at entry "${forkPointEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 200
+    And set "conversationId" to "${forkedConversationId}"
+    And the conversation has a context entry "Fork context after bound" with epoch 1 and contentType "test.v1"
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=CONTEXT&epoch=1&upToEntryId=${ancestorBoundEntryId}"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Inherited context before bound"
 
   Scenario: Sync context entries is no-op when there are no changes
     Given I am authenticated as agent with API key "test-agent-key"

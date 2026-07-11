@@ -297,6 +297,21 @@ Feature: Admin REST API
     When I call GET "/v1/admin/conversations/${bobConversationId}/entries?beforeCursor=not-a-uuid"
     Then the response status should be 400
 
+  Scenario: Admin rejects a malformed afterCursor
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?afterCursor=not-a-uuid"
+    Then the response status should be 400
+    And the response body field "error" should contain "afterCursor"
+
+  Scenario: Admin rejects a malformed upToEntryId
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?upToEntryId=not-a-uuid"
+    Then the response status should be 400
+    And the response body field "error" should contain "upToEntryId"
+
+  Scenario: Admin rejects an invalid entry channel
+    When I call GET "/v1/admin/conversations/${bobConversationId}/entries?channel=invalid"
+    Then the response status should be 400
+    And the response body field "error" should be "invalid channel"
+
   # Serial today only because this feature shares the serial admin runner; this scenario reads context entries for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin can get context channel entries from any conversation
     # Create context entries as an agent (which sets clientId).

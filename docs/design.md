@@ -32,7 +32,7 @@ The HTTP API is defined in `openapi.yml` (OpenAPI 3.1) for the main API and `ope
 - Authentication: `BearerAuth` (JWT bearer token) via the `Authorization` header.
 - Resources:
   - Conversations
-  - Entries (with channels: HISTORY, MEMORY)
+  - Entries (with channels: history, context, journal)
   - Conversation memberships (sharing)
   - Ownership transfers
   - Semantic search and indexing
@@ -145,7 +145,7 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 #### List Forks
 
 - `GET /v1/conversations/{conversationId}/forks`
-  - Returns all forks in the same fork tree as the given conversation.
+  - Returns direct fork children of the given conversation.
   - Response: list of `ConversationForkSummary` with:
     - `conversationId`, `forkedAtEntryId`, `forkedAtConversationId`, `title`, `createdAt`.
 
@@ -287,14 +287,14 @@ Key endpoints:
 
 ## Data Model
 
-The Memory Service supports multiple data stores (PostgreSQL, MongoDB) with schemas defined in `schema.sql` and equivalent MongoDB collections. The data model uses conversation groups internally to enable efficient forking, with access control and ownership scoped to groups rather than individual conversations.
+The Memory Service supports multiple data stores (PostgreSQL, MongoDB) with schemas defined in `schema.sql` and equivalent MongoDB collections. The data model uses conversation groups internally as the access-control, archive, eviction, and `forks=all` boundary. Fork lineage is stored separately in a conversation ancestry closure so entry listing can query visible ancestor segments directly.
 
 Key concepts:
 
-- **Entries**: The fundamental unit of stored data in a conversation. Entries represent chat messages, agent memory snapshots, tool results, or any structured data. Each entry has a `channel` (HISTORY or MEMORY), `contentType`, and `content`.
-- **Channels**: Entries are organized into logical channels - HISTORY for visible conversation and MEMORY for agent-internal state.
+- **Entries**: The fundamental unit of stored data in a conversation. Entries represent chat messages, agent context snapshots, journal records, tool results, or any structured data. Each entry has a `channel`, `contentType`, and `content`.
+- **Channels**: Entries are organized into logical channels: `history`, `context`, and `journal`.
 - **Memory Epochs**: Context entries use epochs for versioning within a conversation. When an agent's context changes significantly, it creates a new epoch that supersedes previous ones for that conversation.
-- **Fork Trees**: All forks of a conversation share the same internal group, enabling shared access control. The `conversationGroupId` is not exposed in the API.
+- **Fork Trees**: All forks of a conversation share the same internal group, enabling shared access control. A `conversation_ancestry` closure records direct and transitive fork lineage; `conversationGroupId` is not exposed in the API.
 - **Vector Embeddings**: Optional vector store integration for semantic search (pgvector, Qdrant).
 
 For detailed data model specifications, see:
@@ -322,10 +322,10 @@ For detailed data model specifications, see:
 
 Forking a conversation:
 
-- When `POST /v1/conversations/{conversationId}/entries/{entryId}/fork` is called:
+- Forks are created implicitly on the first append to a new conversation ID by passing `forkedAtConversationId` and optional `forkedAtEntryId`.
   - A new conversation is created in the same internal fork tree as the original.
-  - Fork metadata (`forked_at_conversation_id`, `forked_at_entry_id`) is set on the new conversation.
-  - No entries are copied; fork creation is O(1) writes.
+  - Direct and transitive fork metadata is written to the conversation ancestry closure.
+  - No entries are copied; fork creation is O(1) conversation plus ancestry writes.
 - Replay (view semantics):
   - Each fork has its own `conversation_id` and stores its own entries.
   - When fetching entries for a forked conversation, the service returns entries from the entire parent chain up to the fork points, plus the fork's own entries.

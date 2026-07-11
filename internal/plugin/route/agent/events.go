@@ -625,12 +625,7 @@ func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userI
 	var result *registrystore.PagedEntries
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
-		result, err = store.GetEntries(txCtx, userID, conversationID, registrystore.EntryListQuery{
-			Limit:    5000,
-			Channel:  channel,
-			ClientID: clientID,
-			AllForks: true,
-		})
+		result, err = store.GetEntries(txCtx, userID, conversationID, registrystore.EntryLookupQuery(entryID, channel, clientID))
 		return err
 	})
 	if err != nil {
@@ -639,11 +634,9 @@ func readEntryDetail(ctx context.Context, store registrystore.MemoryStore, userI
 	if result == nil {
 		return nil, fmt.Errorf("entry not found")
 	}
-	for i := range result.Data {
-		if result.Data[i].ID == entryID {
-			entry := result.Data[i]
-			return &entry, nil
-		}
+	if len(result.Data) == 1 && result.Data[0].ID == entryID {
+		entry := result.Data[0]
+		return &entry, nil
 	}
 	return nil, fmt.Errorf("entry not found")
 }

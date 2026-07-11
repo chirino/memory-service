@@ -10,6 +10,16 @@
 -- Conversations & ownership
 -------------------------------------------------------------
 
+CREATE TABLE IF NOT EXISTS schema_metadata (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+INSERT INTO schema_metadata (key, value)
+VALUES ('core_schema_version', '110')
+ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value, updated_at = NOW();
+
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id              UUID PRIMARY KEY,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -25,8 +35,6 @@ CREATE TABLE IF NOT EXISTS conversations (
     agent_id        TEXT,
     metadata        JSONB NOT NULL DEFAULT '{}'::JSONB,
     conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
-    forked_at_entry_id UUID,
-    forked_at_conversation_id TEXT REFERENCES conversations (id) ON DELETE CASCADE,
     started_by_conversation_id TEXT REFERENCES conversations (id) ON DELETE CASCADE,
     started_by_entry_id UUID,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
@@ -34,6 +42,51 @@ CREATE TABLE IF NOT EXISTS conversations (
     vectorized_at   TIMESTAMPTZ,
     archived_at     TIMESTAMPTZ
 );
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_group_id_id
+    ON conversations (conversation_group_id, id);
+
+CREATE TABLE IF NOT EXISTS conversation_ancestry (
+    conversation_group_id UUID NOT NULL REFERENCES conversation_groups (id) ON DELETE CASCADE,
+    descendant_conversation_id TEXT NOT NULL,
+    ancestor_conversation_id TEXT NOT NULL,
+    depth INTEGER NOT NULL CHECK (depth >= 0),
+    before_entry_id UUID,
+    forked_at_entry_id UUID,
+    PRIMARY KEY (conversation_group_id, descendant_conversation_id, ancestor_conversation_id),
+    UNIQUE (conversation_group_id, descendant_conversation_id, depth),
+    FOREIGN KEY (conversation_group_id, descendant_conversation_id)
+        REFERENCES conversations (conversation_group_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_group_id, ancestor_conversation_id)
+        REFERENCES conversations (conversation_group_id, id) ON DELETE CASCADE,
+    CHECK (
+        (
+            depth = 0
+            AND descendant_conversation_id = ancestor_conversation_id
+            AND before_entry_id IS NULL
+            AND forked_at_entry_id IS NULL
+        )
+        OR
+        (
+            depth = 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+        )
+        OR
+        (
+            depth > 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+            AND forked_at_entry_id IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_ancestry_ancestor
+    ON conversation_ancestry (
+        conversation_group_id,
+        ancestor_conversation_id,
+        depth,
+        descendant_conversation_id
+    );
 
 -- Per-user access to conversations.
 -- Exactly one row per conversation with access_level = 'owner'.
@@ -75,7 +128,7 @@ CREATE TABLE IF NOT EXISTS entries (
     client_id         TEXT,
     agent_id          TEXT,
     channel           TEXT NOT NULL,
-    epoch             BIGINT,
+    epoch             BIGINT CHECK (channel = 'context' OR epoch IS NULL),
     seq               BIGINT CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)),
     content_type      TEXT NOT NULL,
     content           BYTEA NOT NULL,
@@ -128,12 +181,6 @@ CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_c
 
 CREATE INDEX IF NOT EXISTS idx_conversations_group
     ON conversations (conversation_group_id);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_conversation
-    ON conversations (forked_at_conversation_id);
-
-CREATE INDEX IF NOT EXISTS idx_conversations_forked_at_entry
-    ON conversations (forked_at_entry_id);
 
 CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation
     ON conversations (started_by_conversation_id, created_at, id);
@@ -459,6 +506,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
 DROP INDEX IF EXISTS idx_entries_group_created_at;
 CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
     ON entries (conversation_group_id, created_at ASC, seq ASC NULLS FIRST, id ASC);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_created_seq_id
+    ON entries (conversation_group_id, channel, created_at ASC, seq ASC NULLS FIRST, id ASC);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_seq_id
+    ON entries (conversation_group_id, channel, seq ASC, id ASC) WHERE seq IS NOT NULL;
 -- Branch/channel/order index for bounded backward and tail history reads (Enhancement 109).
 CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
     ON entries (conversation_id, channel, created_at ASC, seq ASC NULLS FIRST, id ASC);

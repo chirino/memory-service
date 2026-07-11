@@ -351,9 +351,7 @@ func (e *postgresEpisodicStore) ListTopMemoryUsage(ctx context.Context, req regi
 	if limit <= 0 {
 		limit = 100
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	q := e.db.WithContext(ctx).Table("memory_usage_stats")
 	if len(req.Prefix) > 0 {
@@ -756,9 +754,7 @@ func (e *postgresEpisodicStore) ListMemoryEvents(ctx context.Context, req regist
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	// Decode cursor.
 	var cursorOccurredAt time.Time
@@ -974,9 +970,7 @@ func (e *postgresEpisodicStore) AdminListMemories(ctx context.Context, query reg
 	if limit <= 0 {
 		limit = 50
 	}
-	if limit > 200 {
-		limit = 200
-	}
+	limit = config.ClampPageSize(ctx, limit)
 
 	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
 	if err != nil {
@@ -1014,9 +1008,7 @@ func (e *postgresEpisodicStore) AdminSearchMemories(ctx context.Context, query r
 	if limit <= 0 {
 		limit = 10
 	}
-	if limit > 100 {
-		limit = 100
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	q, err := e.adminLatestMemoryQuery(ctx, query.NamespacePrefix)
 	if err != nil {
 		return nil, err
@@ -1054,9 +1046,7 @@ func (e *postgresEpisodicStore) AdminListNamespaces(ctx context.Context, query r
 	if limit <= 0 {
 		limit = 200
 	}
-	if limit > 1000 {
-		limit = 1000
-	}
+	limit = config.ClampPageSize(ctx, limit)
 	offset := decodeAdminOffsetCursor(query.AfterCursor)
 	namespaces, err := e.ListNamespaces(ctx, registryepisodic.ListNamespacesRequest{
 		Prefix:   query.NamespacePrefix,

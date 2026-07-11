@@ -359,13 +359,10 @@ func searchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		perQueryLimit := limit
-		if req.PerQueryLimit != nil {
-			if *req.PerQueryLimit <= 0 || *req.PerQueryLimit > 100 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "per_query_limit must be between 1 and 100"})
-				return
-			}
-			perQueryLimit = *req.PerQueryLimit
+		perQueryLimit, err := effectivePerQueryLimit(limit, req.PerQueryLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 		if embedder == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
@@ -910,13 +907,10 @@ func HandleAdminSearchMemories(c *gin.Context, store registryepisodic.EpisodicSt
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		perQueryLimit := limit
-		if req.PerQueryLimit != nil {
-			if *req.PerQueryLimit <= 0 || *req.PerQueryLimit > 100 {
-				c.JSON(http.StatusBadRequest, gin.H{"error": "per_query_limit must be between 1 and 100"})
-				return
-			}
-			perQueryLimit = *req.PerQueryLimit
+		perQueryLimit, err := effectivePerQueryLimit(limit, req.PerQueryLimit)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+			return
 		}
 		if embedder == nil {
 			c.JSON(http.StatusServiceUnavailable, gin.H{"error": "semantic search unavailable"})
@@ -1721,6 +1715,18 @@ func multiQuerySemanticSearch(
 		results = append(results, item)
 	}
 	return results, nil
+}
+
+const maxPerQueryLimit = 100
+
+func effectivePerQueryLimit(limit int, requested *int) (int, error) {
+	if requested != nil {
+		if *requested <= 0 || *requested > maxPerQueryLimit {
+			return 0, fmt.Errorf("per_query_limit must be between 1 and %d", maxPerQueryLimit)
+		}
+		return *requested, nil
+	}
+	return min(limit, maxPerQueryLimit), nil
 }
 
 func queryInt(c *gin.Context, key string, def int) int {

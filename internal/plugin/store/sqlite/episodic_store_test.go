@@ -49,6 +49,43 @@ func TestSQLiteEpisodicStoreRequiresScope(t *testing.T) {
 	)
 }
 
+func TestSQLiteEpisodicStoreUsesConfiguredPageLimit(t *testing.T) {
+	t.Parallel()
+
+	store, ctx := newSQLiteEpisodicStore(t)
+	err := store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		for _, key := range []string{"first", "second"} {
+			if _, err := store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{
+				Namespace: []string{"users", "alice"},
+				Key:       key,
+				Value:     map[string]interface{}{"key": key},
+			}); err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	require.NoError(t, err)
+
+	err = store.InReadTx(ctx, func(readCtx context.Context) error {
+		limitedCtx := config.WithContext(readCtx, &config.Config{MaxPageSize: 1})
+
+		events, err := store.ListMemoryEvents(limitedCtx, registryepisodic.ListEventsRequest{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, events.Events, 1)
+
+		page, err := store.AdminListMemories(limitedCtx, registryepisodic.AdminMemoryQuery{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, page.Items, 1)
+
+		items, err := store.AdminSearchMemories(limitedCtx, registryepisodic.AdminMemorySearchQuery{Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, items, 1)
+		return nil
+	})
+	require.NoError(t, err)
+}
+
 func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 	t.Parallel()
 
