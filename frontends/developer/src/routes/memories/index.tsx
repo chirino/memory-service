@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { ChevronRight, Eye } from "lucide-react";
-import { useAdminMemories } from "@/hooks/useAdminApi";
+import { useAdminMemoriesInfinite } from "@/hooks/useAdminApi";
 import { formatRelativeTime, truncate, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 import {
@@ -25,13 +25,24 @@ function MemoriesPage() {
   const [namespaceFilter, setNamespaceFilter] = useState<string[]>([]);
   const [keyPrefixFilter, setKeyPrefixFilter] = useState("");
 
-  const { data, isLoading, error } = useAdminMemories({
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useAdminMemoriesInfinite({
     namespacePrefix: namespaceFilter.length > 0 ? namespaceFilter : undefined,
     keyPrefix: keyPrefixFilter || undefined,
     limit: 50,
   });
 
-  const rawMemories = data?.items || [];
+  const rawMemories = useMemo(() => {
+    const pages = data?.pages ?? [];
+    return pages.flatMap((page) => page.items ?? []);
+  }, [data]);
+
   const memories = rawMemories.filter((memory) => {
     if (archiveFilter === "include") return true;
     if (archiveFilter === "only") return memory.archived;
@@ -294,9 +305,23 @@ function MemoriesPage() {
           )}
 
           {!isLoading && !error && memories.length > 0 && (
-            <div className="mt-4 text-center text-sm text-muted-foreground">
-              Showing {memories.length} memor{memories.length !== 1 ? "ies" : "y"}
-            </div>
+            <>
+              {hasNextPage && (
+                <div className="mt-6 flex justify-center">
+                  <button
+                    type="button"
+                    onClick={() => void fetchNextPage()}
+                    disabled={isFetchingNextPage}
+                    className="console-panel rounded-lg px-6 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+                  >
+                    {isFetchingNextPage ? "Loading more memories..." : "Load more memories"}
+                  </button>
+                </div>
+              )}
+              <div className="mt-4 text-center text-sm text-muted-foreground">
+                Showing {memories.length} memor{memories.length !== 1 ? "ies" : "y"}
+              </div>
+            </>
           )}
         </div>
       </div>
