@@ -201,8 +201,13 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err := router.SetTrustedProxies(trustedProxies); err != nil {
 		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
 	}
+	rateLimiter, err := security.NewRateLimiter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("rate limit configuration error: %w", err)
+	}
 	router.Use(security.RequestIDMiddleware())
 	router.Use(security.ErrorEnvelopeMiddleware())
+	router.Use(security.SourceRateLimitMiddleware(rateLimiter))
 	router.Use(gin.Recovery())
 	router.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
@@ -287,7 +292,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("auth configuration error: %w", err)
 	}
-	auth := security.AuthMiddleware(resolver)
+	auth := security.AuthMiddlewareWithRateLimiter(resolver, rateLimiter)
 	// Store resolver on Server so callers like embedded MCP can configure it after build.
 	var builtServer Server
 	builtServer.TokenResolver = resolver
@@ -379,12 +384,16 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			security.GRPCRequestIDUnaryInterceptor(),
-			security.GRPCUnaryInterceptor(resolver),
+			security.GRPCSourceRateLimitUnaryInterceptor(rateLimiter),
+			security.GRPCUnaryInterceptorWithRateLimiter(resolver, rateLimiter),
+			security.GRPCIdentityRateLimitUnaryInterceptor(rateLimiter),
 			maxPageSizeUnaryInterceptor(cfg),
 		),
 		grpc.ChainStreamInterceptor(
 			security.GRPCRequestIDStreamInterceptor(),
-			security.GRPCStreamInterceptor(resolver),
+			security.GRPCSourceRateLimitStreamInterceptor(rateLimiter),
+			security.GRPCStreamInterceptorWithRateLimiter(resolver, rateLimiter),
+			security.GRPCIdentityRateLimitStreamInterceptor(rateLimiter),
 		),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})

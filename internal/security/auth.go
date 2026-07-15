@@ -779,10 +779,17 @@ func EffectiveAdminRole(c *gin.Context) string {
 // using the provided TokenResolver. Allows X-API-Key-only requests (for admin service principals)
 // when no Authorization header is present.
 func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
+	return AuthMiddlewareWithRateLimiter(resolver, nil)
+}
+
+func AuthMiddlewareWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if resolver.localUserID != "" {
 			id, _ := resolver.Resolve(c.Request.Context(), RequestCredentials{})
 			setGinIdentity(c, id)
+			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -797,16 +804,14 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			creds := RequestCredentials{Transport: EmbeddedMCPTransport}
 			id, err := resolver.Resolve(c.Request.Context(), creds)
 			if err != nil {
+				consumeHTTPAuthFailure(c, limiter)
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 				return
 			}
-			c.Set(ContextKeyUserID, id.UserID)
-			if id.ClientID != "" {
-				c.Set(ContextKeyClientID, id.ClientID)
+			setGinIdentity(c, id)
+			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+				return
 			}
-			c.Set(ContextKeyIdentity, id)
-			c.Set(ContextKeyRoles, id.Roles)
-			c.Set(ContextKeyIsAdmin, id.IsAdmin)
 			c.Next()
 			return
 		}
@@ -817,6 +822,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			bearerToken = strings.TrimPrefix(auth, "Bearer ")
 			if bearerToken == auth {
 				log.Info("Auth rejected: invalid Authorization header; expected Bearer token", "method", c.Request.Method, "path", c.Request.URL.Path)
+				consumeHTTPAuthFailure(c, limiter)
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid Authorization header; expected Bearer token"})
 				return
 			}
@@ -825,6 +831,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 		// Reject requests with no credentials (no bearer token, no API key, no test client ID).
 		if bearerToken == "" && strings.TrimSpace(apiKey) == "" && strings.TrimSpace(clientIDHeader) == "" {
 			log.Info("Auth rejected: missing credentials", "method", c.Request.Method, "path", c.Request.URL.Path)
+			consumeHTTPAuthFailure(c, limiter)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
 			return
 		}
@@ -838,6 +845,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 		id, err := resolver.Resolve(c.Request.Context(), creds)
 		if err != nil {
 			log.Info("Auth rejected", "method", c.Request.Method, "path", c.Request.URL.Path, "err", err)
+			consumeHTTPAuthFailure(c, limiter)
 			// Return 403 for allowed-client/audience violations; 401 for other auth failures.
 			status := http.StatusUnauthorized
 			errStr := err.Error()
@@ -849,13 +857,10 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(ContextKeyUserID, id.UserID)
-		if id.ClientID != "" {
-			c.Set(ContextKeyClientID, id.ClientID)
+		setGinIdentity(c, id)
+		if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+			return
 		}
-		c.Set(ContextKeyIdentity, id)
-		c.Set(ContextKeyRoles, id.Roles)
-		c.Set(ContextKeyIsAdmin, id.IsAdmin)
 		c.Next()
 	}
 }
@@ -942,6 +947,10 @@ func grpcMetadataValue(ctx context.Context, key string) string {
 
 // resolveGRPCIdentity extracts auth headers from gRPC metadata and resolves identity.
 func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.Context {
+	return resolveGRPCIdentityWithRateLimiter(ctx, resolver, nil)
+}
+
+func resolveGRPCIdentityWithRateLimiter(ctx context.Context, resolver *TokenResolver, limiter *RateLimiter) context.Context {
 	if resolver.localUserID != "" {
 		id, _ := resolver.Resolve(ctx, RequestCredentials{})
 		return context.WithValue(ctx, grpcIdentityKey{}, id)
@@ -957,6 +966,7 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 			// so a valid API key cannot silently succeed alongside a malformed auth header.
 			// Do not log the header value — it may contain Basic credentials or other secrets.
 			log.Debug("gRPC auth: non-Bearer authorization header rejected")
+			consumeGRPCAuthFailure(ctx, limiter)
 			return ctx
 		}
 	}
@@ -974,6 +984,7 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 	id, err := resolver.Resolve(ctx, creds)
 	if err != nil {
 		log.Debug("gRPC auth: token resolution failed", "err", err)
+		consumeGRPCAuthFailure(ctx, limiter)
 		return ctx
 	}
 	return context.WithValue(ctx, grpcIdentityKey{}, id)
@@ -981,18 +992,30 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 
 // GRPCUnaryInterceptor returns a gRPC unary server interceptor that resolves caller identity.
 func GRPCUnaryInterceptor(resolver *TokenResolver) grpc.UnaryServerInterceptor {
+	return GRPCUnaryInterceptorWithRateLimiter(resolver, nil)
+}
+
+// GRPCUnaryInterceptorWithRateLimiter returns a gRPC unary server interceptor that resolves
+// caller identity and charges invalid credentials against the auth-failure bucket.
+func GRPCUnaryInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		return handler(resolveGRPCIdentity(ctx, resolver), req)
+		return handler(resolveGRPCIdentityWithRateLimiter(ctx, resolver, limiter), req)
 	}
 }
 
 // GRPCStreamInterceptor returns a gRPC stream server interceptor that resolves caller identity.
 func GRPCStreamInterceptor(resolver *TokenResolver) grpc.StreamServerInterceptor {
+	return GRPCStreamInterceptorWithRateLimiter(resolver, nil)
+}
+
+// GRPCStreamInterceptorWithRateLimiter returns a gRPC stream server interceptor that resolves
+// caller identity and charges invalid credentials against the auth-failure bucket.
+func GRPCStreamInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) grpc.StreamServerInterceptor {
 	return func(
 		srv any,
 		ss grpc.ServerStream,
@@ -1001,7 +1024,7 @@ func GRPCStreamInterceptor(resolver *TokenResolver) grpc.StreamServerInterceptor
 	) error {
 		wrapped := &wrappedServerStream{
 			ServerStream: ss,
-			ctx:          resolveGRPCIdentity(ss.Context(), resolver),
+			ctx:          resolveGRPCIdentityWithRateLimiter(ss.Context(), resolver, limiter),
 		}
 		return handler(srv, wrapped)
 	}

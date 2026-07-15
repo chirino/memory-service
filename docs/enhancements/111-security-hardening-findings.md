@@ -1295,7 +1295,13 @@ Feature: authenticated and browser-safe attachments
   `Unavailable`. The Agent/Admin OpenAPI schemas and generated Go bindings now require the
   shared `code`, `error`, and `requestId` fields, retain optional safe `details`, and mark
   search/ownership compatibility aliases as deprecated.
-- [ ] F-M4: Add the five-class process-local token-bucket policy and telemetry.
+- [x] F-M4: Add the five-class process-local token-bucket policy and telemetry.
+  Process-local source, identity, auth-failure, expensive-operation, and stream-open token
+  buckets are configurable through the documented CLI/env settings, validated at startup,
+  and wired into main-listener REST plus gRPC. Dedicated management routes remain exempt;
+  REST rejections return `429` with `Retry-After` and stable `rate_limited` details, while
+  gRPC rejections return `ResourceExhausted` with `RetryInfo`. Metrics now record bounded
+  accepted/rejected limiter decisions and `rate_limits_off` unsafe-config opt-out telemetry.
 - [x] F-M6/F-M7/F-L8: Pin actions, minimize token permissions, and repair path filters.
   Actions are commit-pinned and CI path filters no longer skip workflow/devcontainer changes;
   release, Pages, and snapshot jobs use narrower permissions. CI now splits verify, test,

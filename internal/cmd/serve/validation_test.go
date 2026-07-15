@@ -421,6 +421,14 @@ func TestValidateNetworkTransportRejectsDualManagementTCPTransports(t *testing.T
 	require.ErrorContains(t, err, "management listener cannot enable both plaintext and TLS")
 }
 
+func TestValidateStartupConfigRejectsInvalidRateLimitSyntax(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.RateLimitSource = "0/1m,burst=1"
+
+	err := validateStartupConfig(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_RATE_LIMIT_SOURCE")
+}
+
 func validationTestConfig() config.Config {
 	cfg := config.DefaultConfig()
 	cfg.EncryptionAllowPlain = true

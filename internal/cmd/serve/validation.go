@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/security"
 )
 
 func validateStartupConfig(cfg *config.Config) error {
@@ -45,6 +46,9 @@ func validateStartupConfig(cfg *config.Config) error {
 	}
 	if cfg.AttachmentBodyReadTimeout < 0 {
 		problems = append(problems, fmt.Errorf("MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT must not be negative"))
+	}
+	if err := security.ValidateRateLimitConfig(cfg); err != nil {
+		problems = append(problems, err)
 	}
 
 	if cfg.DeveloperFrontendEnabled {

@@ -44,6 +44,12 @@ var (
 
 	// EventBusSubscriberEvictionsTotal counts total slow subscribers evicted.
 	EventBusSubscriberEvictionsTotal prometheus.Counter
+
+	// RateLimitRequestsTotal counts process-local rate-limit decisions by bounded class/outcome labels.
+	RateLimitRequestsTotal *prometheus.CounterVec
+
+	// SecurityUnsafeConfig records explicit operator acknowledgements for unsafe settings.
+	SecurityUnsafeConfig *prometheus.GaugeVec
 )
 
 var validLabelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -156,6 +162,22 @@ func initMetricsInner(constLabels prometheus.Labels) {
 		Name: "memory_service_eventbus_subscriber_evictions_total",
 		Help: "Total number of slow subscribers evicted",
 	})
+
+	RateLimitRequestsTotal = f.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "memory_service_rate_limit_requests_total",
+			Help: "Total number of process-local rate-limit decisions",
+		},
+		[]string{"class", "outcome"},
+	)
+
+	SecurityUnsafeConfig = f.NewGaugeVec(
+		prometheus.GaugeOpts{
+			Name: "memory_service_security_unsafe_config",
+			Help: "Explicitly acknowledged unsafe security configuration",
+		},
+		[]string{"reason"},
+	)
 }
 
 // MetricsMiddleware records HTTP request metrics for Prometheus.

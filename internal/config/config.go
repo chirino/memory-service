@@ -220,6 +220,14 @@ type Config struct {
 	LocalUserID         string
 	LocalClientID       string
 
+	// Process-local rate limiting.
+	RateLimitMode        string
+	RateLimitSource      string
+	RateLimitIdentity    string
+	RateLimitAuthFailure string
+	RateLimitExpensive   string
+	RateLimitStreamOpen  string
+
 	// Security
 	// APIKeys maps API key values to client IDs (Java parity: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=<key>).
 	APIKeys         map[string]string // key value → clientId
@@ -379,6 +387,12 @@ func DefaultConfig() Config {
 		},
 		UnixSocketAuth:               "credentials",
 		LocalClientID:                "local-agent",
+		RateLimitMode:                "local",
+		RateLimitSource:              "600/1m,burst=100",
+		RateLimitIdentity:            "1200/1m,burst=200",
+		RateLimitAuthFailure:         "30/1m,burst=10",
+		RateLimitExpensive:           "60/1m,burst=10",
+		RateLimitStreamOpen:          "30/1m,burst=5",
 		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
 		BodyReadTimeout:              30 * time.Second,
 		AttachmentBodyReadTimeout:    5 * time.Minute,

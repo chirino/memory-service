@@ -286,6 +286,54 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Destination: &cfg.TrustedProxyCIDRs,
 			Usage:       "Comma-separated trusted TCP proxy IPs/CIDRs for client-IP resolution; empty trusts no proxies",
 		},
+		&cli.StringFlag{
+			Name:        "rate-limit-mode",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_MODE"),
+			Destination: &cfg.RateLimitMode,
+			Value:       cfg.RateLimitMode,
+			Usage:       "Process-local rate limiting mode: local or off",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-source",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_SOURCE"),
+			Destination: &cfg.RateLimitSource,
+			Value:       cfg.RateLimitSource,
+			Usage:       "Source admission rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-identity",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_IDENTITY"),
+			Destination: &cfg.RateLimitIdentity,
+			Value:       cfg.RateLimitIdentity,
+			Usage:       "Authenticated identity rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-auth-failure",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_AUTH_FAILURE"),
+			Destination: &cfg.RateLimitAuthFailure,
+			Value:       cfg.RateLimitAuthFailure,
+			Usage:       "Authentication-failure rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-expensive",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_EXPENSIVE"),
+			Destination: &cfg.RateLimitExpensive,
+			Value:       cfg.RateLimitExpensive,
+			Usage:       "Expensive-operation rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-stream-open",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_STREAM_OPEN"),
+			Destination: &cfg.RateLimitStreamOpen,
+			Value:       cfg.RateLimitStreamOpen,
+			Usage:       "Stream-open rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
 	}
 }
 
@@ -954,6 +1002,9 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	cfg.AttachTypeExplicit = cmd.IsSet("attachments-kind")
 	if cfg.MaxPageSize <= 0 {
 		return fmt.Errorf("max-page-size must be greater than zero")
+	}
+	if err := security.ValidateRateLimitConfig(cfg); err != nil {
+		return err
 	}
 
 	if !validateListeners {

@@ -68,6 +68,20 @@ index material, and administrative metadata.
 - Disable wildcard credentialed CORS; list exact browser origins.
 - Keep admin APIs on a separate network path when possible.
 
+## Errors and Rate Limits
+
+- Propagate `X-Request-ID` in support workflows. REST error bodies include the same
+  `requestId`; gRPC returns `x-request-id` metadata.
+- Branch clients on the stable `code` field rather than parsing the human-readable `error`
+  message.
+- Keep local process rate limits enabled unless an ingress or gateway limiter already covers
+  the same boundary. `MEMORY_SERVICE_RATE_LIMIT_MODE=off` is an explicit unsafe opt-out and
+  exports `memory_service_security_unsafe_config{reason="rate_limits_off"} 1`.
+- Treat local limits as per-replica protection. In multi-replica deployments, enforce
+  cluster-wide quotas at the ingress, gateway, or service mesh.
+- Handle REST `429` responses by honoring `Retry-After`; handle gRPC `ResourceExhausted`
+  responses by honoring `google.rpc.RetryInfo` when present.
+
 ## Attachments
 
 - Use S3-compatible storage for durable multi-node deployments.
@@ -96,6 +110,8 @@ index material, and administrative metadata.
 - Keep compatibility flags such as
   `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` enabled only for the documented
   migration window, then remove them after verification.
+- After upgrading, verify that legacy-read and unsafe-config metrics remain at zero before
+  removing compatibility flags or retiring the pre-upgrade backup.
 
 ## Local Development
 
