@@ -83,7 +83,7 @@ func TestBodyReadTimeoutMiddleware_TimesOutOrdinaryBody(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusRequestTimeout, rec.Code)
-	require.JSONEq(t, `{"code":"request_timeout","error":"request_timeout"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":"request_timeout","error":"request body read timeout"}`, rec.Body.String())
 }
 
 func TestBodyReadTimeoutMiddleware_UsesAttachmentTimeout(t *testing.T) {
@@ -100,7 +100,7 @@ func TestBodyReadTimeoutMiddleware_UsesAttachmentTimeout(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusRequestTimeout, rec.Code)
-	require.JSONEq(t, `{"code":"request_timeout","error":"request_timeout"}`, rec.Body.String())
+	require.JSONEq(t, `{"code":"request_timeout","error":"request body read timeout"}`, rec.Body.String())
 }
 
 func TestBodyReadTimeoutMiddleware_SkipsRequestsWithoutBody(t *testing.T) {

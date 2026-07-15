@@ -5,31 +5,31 @@ name: memory-service
 # ============================================================================
 
 x-langfuse-common-env: &langfuse-common-env
-  DATABASE_URL: postgresql://postgres:${POSTGRES_PASSWORD:?run task dev:compose:env}@postgres:5432/langfuse
+  DATABASE_URL: postgresql://postgres:postgres@postgres:5432/langfuse
   NEXTAUTH_URL: http://localhost:3002
-  NEXTAUTH_SECRET: ${LANGFUSE_NEXTAUTH_SECRET:?run task dev:compose:env}
-  SALT: ${LANGFUSE_SALT:?run task dev:compose:env}
-  ENCRYPTION_KEY: ${LANGFUSE_ENCRYPTION_KEY:?run task dev:compose:env}
+  NEXTAUTH_SECRET: memory-service-langfuse-nextauth-secret
+  SALT: memory-service-langfuse-salt
+  ENCRYPTION_KEY: "0000000000000000000000000000000000000000000000000000000000000000"
   TELEMETRY_ENABLED: "false"
   CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
   CLICKHOUSE_URL: http://clickhouse:8123
   CLICKHOUSE_USER: clickhouse
-  CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run task dev:compose:env}
+  CLICKHOUSE_PASSWORD: clickhouse
   CLICKHOUSE_CLUSTER_ENABLED: "false"
   REDIS_HOST: redis
   REDIS_PORT: 6379
   REDIS_TLS_ENABLED: "false"
   LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
   LANGFUSE_S3_EVENT_UPLOAD_REGION: us-east-1
-  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run task dev:compose:env}
-  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
+  LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: minioadmin
   LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
   LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
   LANGFUSE_S3_EVENT_UPLOAD_PREFIX: events/
   LANGFUSE_S3_MEDIA_UPLOAD_BUCKET: langfuse
   LANGFUSE_S3_MEDIA_UPLOAD_REGION: us-east-1
-  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run task dev:compose:env}
-  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
+  LANGFUSE_S3_MEDIA_UPLOAD_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_MEDIA_UPLOAD_SECRET_ACCESS_KEY: minioadmin
   LANGFUSE_S3_MEDIA_UPLOAD_ENDPOINT: http://localhost:9000
   LANGFUSE_S3_MEDIA_UPLOAD_FORCE_PATH_STYLE: "true"
   LANGFUSE_S3_MEDIA_UPLOAD_PREFIX: media/
@@ -39,15 +39,15 @@ x-langfuse-common-env: &langfuse-common-env
   LANGFUSE_S3_BATCH_EXPORT_REGION: us-east-1
   LANGFUSE_S3_BATCH_EXPORT_ENDPOINT: http://minio:9000
   LANGFUSE_S3_BATCH_EXPORT_EXTERNAL_ENDPOINT: http://localhost:9000
-  LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run task dev:compose:env}
-  LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
+  LANGFUSE_S3_BATCH_EXPORT_ACCESS_KEY_ID: minioadmin
+  LANGFUSE_S3_BATCH_EXPORT_SECRET_ACCESS_KEY: minioadmin
   LANGFUSE_S3_BATCH_EXPORT_FORCE_PATH_STYLE: "true"
   LANGFUSE_INGESTION_QUEUE_DELAY_MS: "1000"
   LANGFUSE_INGESTION_CLICKHOUSE_WRITE_INTERVAL_MS: "1000"
 
 services:
   postgres:
-    image: pgvector/pgvector:pg18@sha256:12a379b47ad65289572ea0756efc11b7c241a6662833e8af7038cd3b73d647e0
+    image: pgvector/pgvector:pg18
     command:
       - postgres
       - -c
@@ -57,11 +57,11 @@ services:
       - -c
       - max_wal_senders=8
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:5432:5432"
+      - "5432:5432"
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?run task dev:compose:env}
+      POSTGRES_PASSWORD: postgres
     volumes:
       # Init script mount (read-only); data lives on tmpfs below so it disappears with the container
       - ./deploy/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
@@ -76,14 +76,14 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:v1.18.2@sha256:75eab8c4ba42096724fdcfde8b4de0b5713d529dde32f285a1f86fdcb2c9e50c
+    image: qdrant/qdrant:v1.18.2
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6333:6333"   # HTTP/REST
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6334:6334"   # gRPC
+      - "6333:6333"   # HTTP/REST
+      - "6334:6334"   # gRPC
     tmpfs:
       - /qdrant/storage
     environment:
-      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:?run task dev:compose:env}"
+      QDRANT__SERVICE__API_KEY: "${QDRANT_API_KEY:-change-me}"
     healthcheck:
       test: ["CMD-SHELL", "bash -c 'exec 3<>/dev/tcp/localhost/6333'"]
       interval: 10s
@@ -91,9 +91,9 @@ services:
       retries: 10
 
   redis:
-    image: redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
+    image: redis:8-alpine
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6379:6379"
+      - "6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
     tmpfs:
       # Keep Redis data in-memory and drop it with the container
@@ -105,12 +105,12 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.2.1@sha256:6866aed19264787674be7ac44ee5f1d726093a08dd538959c90a3fc5c7fa43f4
+    image: quay.io/infinispan/server:16.2.1
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:11222:11222"
+      - "11222:11222"
     environment:
-      USER: ${INFINISPAN_USERNAME:?run task dev:compose:env}
-      PASS: ${INFINISPAN_PASSWORD:?run task dev:compose:env}
+      USER: admin
+      PASS: password
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:11222/rest/v3/container/health/status"]
       interval: 10s
@@ -118,16 +118,16 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.4@sha256:0aae0de7fca85525f727d3354df17896092de8bb26ae4c12d89c77e5df8cbce4
+    image: quay.io/keycloak/keycloak:26.6.4
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: ${KEYCLOAK_ADMIN_PASSWORD:?run task dev:compose:env}
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
       KC_DB: postgres
       KC_DB_URL_HOST: postgres
       KC_DB_URL_DATABASE: keycloak
       KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: ${KEYCLOAK_DB_PASSWORD:?run task dev:compose:env}
+      KC_DB_PASSWORD: keycloak
       KC_HTTP_RELATIVE_PATH: /
       KC_HEALTH_ENABLED: "true"
       # External hostname for browser redirects (configurable via env var)
@@ -140,7 +140,7 @@ services:
       postgres:
         condition: service_healthy
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8081:8080"
+      - "8081:8080"
     healthcheck:
       test: ["CMD-SHELL", "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'"]
       interval: 10s
@@ -150,9 +150,9 @@ services:
 
   memory-service:
 
-    image: memory-service:dev-local
+    image: ghcr.io/chirino/memory-service:latest
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8082:8080"
+      - 8082:8080
     build:
       context: .
       dockerfile: Dockerfile
@@ -160,11 +160,10 @@ services:
       - ./deploy/episodic-policies/cognition:/etc/memory-service/episodic-policy:ro
 
     ### <dev-mode> Uncomment below and Comment above to enable dev mode ###
-    # For local dev images, prefer a locally loaded tag or a release tag plus digest.
-    # image: ghcr.io/chirino/memory-service-dev:<version>@sha256:<digest>
+    # image: ghcr.io/chirino/memory-service-dev:latest
     # ports:
-    #   - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8082:8080"
-    #   - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:2345:2345" # go debug port
+    #   - 8082:8080
+    #   - 2345:2345 # go debug port
     # volumes:
     #   - type: bind
     #     source: .
@@ -178,7 +177,7 @@ services:
     environment:
 
       # ── Datastore ──────────────────────────────────────────────
-      MEMORY_SERVICE_DB_URL: postgres://postgres:${POSTGRES_PASSWORD:?run task dev:compose:env}@postgres:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@postgres:5432/memory_service?sslmode=disable
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
 
       # ── Cache ──────────────────────────────────────────────────
@@ -196,9 +195,9 @@ services:
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-      MEMORY_SERVICE_API_KEYS_AGENT: ${MEMORY_SERVICE_API_KEY_AGENT:?run task dev:compose:env},${MEMORY_SERVICE_API_KEY_AGENT_2:?run task dev:compose:env}
-      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: ${MEMORY_SERVICE_API_KEY_TURN_TRACES_PROCESSOR:?run task dev:compose:env}
-      MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: ${MEMORY_SERVICE_API_KEY_COGNITION_PROCESSOR:?run task dev:compose:env}
+      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
+      MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
       MEMORY_SERVICE_EPISODIC_POLICY_DIR: /etc/memory-service/episodic-policy
 
       # ── CORS ───────────────────────────────────────────────────
@@ -221,15 +220,15 @@ services:
       # Dev key — replace with a securely generated value in production.
       # Enables at-rest encryption for conversations, memories, and attchments.
       MEMORY_SERVICE_ENCRYPTION_KIND: dek
-      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:?run task dev:compose:env}
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
       MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true" # needed for minio
       AWS_ENDPOINT_URL: http://minio:9000
-      AWS_ACCESS_KEY_ID: ${MINIO_ROOT_USER:?run task dev:compose:env}
-      AWS_SECRET_ACCESS_KEY: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
+      AWS_ACCESS_KEY_ID: minioadmin
+      AWS_SECRET_ACCESS_KEY: minioadmin
       AWS_REGION: us-east-1
 
       # ── Vector search ──────────────────────────────────────────
@@ -241,11 +240,11 @@ services:
       MEMORY_SERVICE_VECTOR_KIND: ${MEMORY_SERVICE_VECTOR_KIND:-qdrant}
       MEMORY_SERVICE_VECTOR_QDRANT_HOST: qdrant
       MEMORY_SERVICE_VECTOR_QDRANT_PORT: 6334
-      MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: ${QDRANT_API_KEY:?run task dev:compose:env}
+      MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: change-me
       ## To enable Infinispan vector search
       MEMORY_SERVICE_VECTOR_INFINISPAN_URL: ${MEMORY_SERVICE_VECTOR_INFINISPAN_URL:-http://infinispan:11222}
-      MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME: ${MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME:-${INFINISPAN_USERNAME:?run task dev:compose:env}}
-      MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD: ${MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD:-${INFINISPAN_PASSWORD:?run task dev:compose:env}}
+      MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME: ${MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME:-admin}
+      MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD: ${MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD:-password}
 
       # ── Embeddings ─────────────────────────────────────────────
       #MEMORY_SERVICE_EMBEDDING_KIND: none
@@ -277,7 +276,7 @@ services:
       retries: 12
 
   prometheus:
-    image: prom/prometheus:latest@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
+    image: prom/prometheus:latest
     volumes:
       - ./deploy/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
@@ -285,7 +284,7 @@ services:
       - '--storage.tsdb.path=/prometheus'
       - '--storage.tsdb.retention.time=15d'
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:9092:9090"
+      - "9092:9090"
     healthcheck:
       test: ["CMD", "wget", "-q", "--spider", "http://localhost:9090/-/healthy"]
       interval: 10s
@@ -293,25 +292,26 @@ services:
       retries: 5
 
   grafana:
-    image: grafana/grafana:latest@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
+    image: grafana/grafana:latest
     environment:
-      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run task dev:compose:env}
-      GF_AUTH_ANONYMOUS_ENABLED: "false"
+      GF_SECURITY_ADMIN_PASSWORD: admin
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:3001:3000"
+      - "3001:3000"
     depends_on:
       prometheus:
         condition: service_healthy
 
   minio:
-    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
+    image: minio/minio:latest
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?run task dev:compose:env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:9000:9000"   # S3 API
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:9001:9001"   # Web console
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # Web console
     tmpfs:
       - /data
     healthcheck:
@@ -322,10 +322,10 @@ services:
       start_period: 10s
 
   minio-init:
-    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    image: minio/mc:latest
     entrypoint: >
       /bin/sh -c "
-      until mc alias set minio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+      until mc alias set minio http://minio:9000 minioadmin minioadmin; do
         echo 'Waiting for MinIO...'; sleep 2;
       done;
       mc mb --ignore-existing minio/memory-service-attachments;
@@ -336,25 +336,23 @@ services:
       "
     environment:
       LANGFUSE_ENABLED: "${LANGFUSE_ENABLED:-false}"
-      MINIO_ROOT_USER: ${MINIO_ROOT_USER:?run task dev:compose:env}
-      MINIO_ROOT_PASSWORD: ${MINIO_ROOT_PASSWORD:?run task dev:compose:env}
     depends_on:
       minio:
         condition: service_healthy
 
   chat-quarkus:
-    image: memory-service-chat-quarkus:dev-local
+    image: ghcr.io/chirino/memory-service-chat-quarkus:latest
     build:
       context: .
       dockerfile: ./java/quarkus/examples/chat-quarkus/Dockerfile
     environment:
       # Unified config - gRPC client settings are auto-derived from this URL
       MEMORY_SERVICE_CLIENT_URL: http://memory-service:8080
-      MEMORY_SERVICE_CLIENT_API_KEY: ${MEMORY_SERVICE_API_KEY_AGENT:?run task dev:compose:env}
+      MEMORY_SERVICE_CLIENT_API_KEY: agent-api-key-1
       QUARKUS_OIDC_AUTH_SERVER_URL: http://keycloak:8080/realms/memory-service
       QUARKUS_OIDC_TOKEN_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       KEYCLOAK_FRONTEND_URL: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
-      KEYCLOAK_CLIENT_SECRET: ${KEYCLOAK_CLIENT_SECRET:?run task dev:compose:env}
+      KEYCLOAK_CLIENT_SECRET: change-me
       OPENAI_API_KEY: ${OPENAI_API_KEY:-none}
       OPENAI_BASE_URL: ${OPENAI_BASE_URL:-https://api.openai.com}
       OPENAI_MODEL: ${OPENAI_MODEL:-gpt-4o}
@@ -362,7 +360,7 @@ services:
       memory-service:
         condition: service_healthy
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8080:8080"
+      - "8080:8080"
 
   # ============================================================================
   # Cognition Processor (optional). Run with:
@@ -371,9 +369,9 @@ services:
 
   cognition-processor:
     profiles: ["cognition"]
-    image: quay.io/rigazilla/cognitive-memory:cd-latest@sha256:980ae0ea055961c4eab833b8d76fb664397fd85fee852d03b31bc45cfd98f0b0
+    image: quay.io/rigazilla/cognitive-memory:cd-latest
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8090:8090"
+      - "8090:8090"
     environment:
       # Quarkus runtime config
       JAVA_OPTS_APPEND: >-
@@ -388,7 +386,7 @@ services:
       # Memory Service connection (use Docker network service name)
       MEMORY_SERVICE_GRPC_HOST: memory-service
       MEMORY_SERVICE_GRPC_PORT: "8080"
-      MEMORY_SERVICE_API_KEY: ${MEMORY_SERVICE_API_KEY_COGNITION_PROCESSOR:?run task dev:compose:env}
+      MEMORY_SERVICE_API_KEY: cognition-processor-key-123
       MEMORY_SERVICE_CLIENT_ID: cognition_processor
 
       # Worker identity
@@ -422,11 +420,11 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.6.1.1193@sha256:1d1f6508eba2dccce2cee9913907c5f7766327debc57a6b1991f2c9e3176c163
+    image: clickhouse/clickhouse-server:26.6.1.1193
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
-      CLICKHOUSE_PASSWORD: ${CLICKHOUSE_PASSWORD:?run task dev:compose:env}
+      CLICKHOUSE_PASSWORD: clickhouse
     tmpfs:
       - /var/lib/clickhouse
       - /var/log/clickhouse-server
@@ -438,7 +436,7 @@ services:
 
   langfuse-worker:
     profiles: ["langfuse"]
-    image: langfuse/langfuse-worker:3@sha256:2a5027341d3b1eacfbfee15d8c22353eab036027715f1981e621909141bd9f86
+    image: langfuse/langfuse-worker:3
     environment:
       <<: *langfuse-common-env
     depends_on:
@@ -459,20 +457,20 @@ services:
 
   langfuse-web:
     profiles: ["langfuse"]
-    image: langfuse/langfuse:3@sha256:8de94f6ab67c1eec49356e07db34b835d2da553526c0366b91c3ef653f4bdd4a
+    image: langfuse/langfuse:3
     environment:
       <<: *langfuse-common-env
       LANGFUSE_INIT_ORG_ID: memory-service-dev
       LANGFUSE_INIT_ORG_NAME: Memory Service Dev
       LANGFUSE_INIT_PROJECT_ID: turn-traces
       LANGFUSE_INIT_PROJECT_NAME: Turn Traces
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: ${LANGFUSE_INIT_PROJECT_PUBLIC_KEY:?run task dev:compose:env}
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: ${LANGFUSE_INIT_PROJECT_SECRET_KEY:?run task dev:compose:env}
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_dev_turn_traces
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_dev_turn_traces
       LANGFUSE_INIT_USER_EMAIL: memory-service@example.com
       LANGFUSE_INIT_USER_NAME: Memory Service
-      LANGFUSE_INIT_USER_PASSWORD: ${LANGFUSE_INIT_USER_PASSWORD:?run task dev:compose:env}
+      LANGFUSE_INIT_USER_PASSWORD: memory-service
     ports:
-      - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:3002:3000"
+      - "3002:3000"
     depends_on:
       postgres:
         condition: service_healthy
@@ -491,7 +489,7 @@ services:
 
   turn-traces-processor:
     profiles: ["langfuse"]
-    image: memory-service:dev-local
+    image: ghcr.io/chirino/memory-service:latest
     build:
       context: .
       dockerfile: Dockerfile
@@ -501,7 +499,7 @@ services:
       MEMORY_SERVICE_LOG_LEVEL: debug
       MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
       MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
-      MEMORY_SERVICE_API_KEY: ${MEMORY_SERVICE_API_KEY_TURN_TRACES_PROCESSOR:?run task dev:compose:env}
+      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
       MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
       MEMORY_SERVICE_PROCESS_SCOPE: admin
       MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
@@ -512,7 +510,7 @@ services:
       MEMORY_SERVICE_TURN_TRACES_MAX_OPEN_TURNS: 1000
       OTEL_SERVICE_NAME: memory-service-turn-traces
       OTEL_EXPORTER_OTLP_ENDPOINT: http://langfuse-web:3000/api/public/otel
-      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic ${LANGFUSE_OTEL_BASIC_AUTH:?run task dev:compose:env},x-langfuse-ingestion-version=4
+      OTEL_EXPORTER_OTLP_HEADERS: Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4
       LANGFUSE_TRACING_ENVIRONMENT: docker-compose
     depends_on:
       memory-service:

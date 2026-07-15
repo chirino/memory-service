@@ -21,7 +21,7 @@ func TestValidateStartupConfigReturnsAllDetectedProblems(t *testing.T) {
 	cfg := config.DefaultConfig()
 	cfg.CORSEnabled = true
 	cfg.CORSOrigins = "*"
-	cfg.TrustedProxyCIDRs = "0.0.0.0/0"
+	cfg.TrustedProxyCIDRs = "not-a-cidr"
 	cfg.DeveloperFrontendEnabled = true
 	cfg.BaseURL = ""
 	cfg.Listener.MaxHeaderBytes = 512
@@ -29,7 +29,7 @@ func TestValidateStartupConfigReturnsAllDetectedProblems(t *testing.T) {
 	err := validateStartupConfig(&cfg)
 	require.ErrorContains(t, err, "credentialed CORS cannot use wildcard origins")
 	require.ErrorContains(t, err, "primary encryption provider is plain")
-	require.ErrorContains(t, err, "MEMORY_SERVICE_TRUSTED_PROXY_CIDRS must not trust universal range")
+	require.ErrorContains(t, err, "invalid MEMORY_SERVICE_TRUSTED_PROXY_CIDRS")
 	require.ErrorContains(t, err, "MEMORY_SERVICE_BASE_URL is required")
 	require.ErrorContains(t, err, "main listener max header bytes")
 }
@@ -118,8 +118,17 @@ func TestValidateStartupConfigRejectsInvalidTrustedProxyCIDR(t *testing.T) {
 	require.ErrorContains(t, err, "invalid MEMORY_SERVICE_TRUSTED_PROXY_CIDRS")
 }
 
-func TestValidateStartupConfigRejectsUniversalTrustedProxyCIDR(t *testing.T) {
-	for _, value := range []string{"0.0.0.0/0", "::/0", "0.0.0.0", "::"} {
+func TestValidateStartupConfigAllowsUniversalTrustedProxyCIDR(t *testing.T) {
+	for _, value := range []string{"0.0.0.0/0", "::/0"} {
+		cfg := validationTestConfig()
+		cfg.TrustedProxyCIDRs = value
+
+		require.NoError(t, validateStartupConfig(&cfg))
+	}
+}
+
+func TestValidateStartupConfigRejectsUnspecifiedTrustedProxyIP(t *testing.T) {
+	for _, value := range []string{"0.0.0.0", "::"} {
 		cfg := validationTestConfig()
 		cfg.TrustedProxyCIDRs = value
 
@@ -185,12 +194,11 @@ func TestValidateStartupConfigRejectsKnownDemoSecrets(t *testing.T) {
 		require.ErrorContains(t, err, "MEMORY_SERVICE_API_KEYS_* contains a known repository demo API key")
 	})
 
-	t.Run("encryption key", func(t *testing.T) {
+	t.Run("encryption key is not denylisted", func(t *testing.T) {
 		cfg := validationTestConfig()
 		cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
 
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_ENCRYPTION_DEK_KEY uses known repository demo key material")
+		require.NoError(t, validateStartupConfig(&cfg))
 	})
 
 	t.Run("qdrant api key", func(t *testing.T) {

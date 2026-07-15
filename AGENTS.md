@@ -18,6 +18,7 @@ When you discover something meaningful about this project during your work—arc
 - **Data stores**: PostgreSQL, MongoDB; Redis, Infinispan (caching); PGVector, Qdrant (vector search).
 - **Porting Server To Go**: we are porting the ./memory-service java module to ./main.go
 - **dev mode**: `task dev:memory-service` runs the go-based memory service using [air](https://github.com/air-verse/air) for hot reloading on port 8082 and it's dependencies get started with docker compose.
+- **Local developer tooling policy**: `compose.yaml` and `task dev*` prioritize zero-configuration ease of use over production security hardening; keep demo credentials and avoid mandatory secret-generation setup. Embedded MCP has the same single-user desktop assumption.
 
 ## Quick Reference
 

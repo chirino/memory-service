@@ -284,7 +284,7 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Category:    "Server:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS"),
 			Destination: &cfg.TrustedProxyCIDRs,
-			Usage:       "Comma-separated trusted TCP proxy IPs/CIDRs for client-IP resolution; empty trusts no proxies",
+			Usage:       "Comma-separated trusted TCP proxy IPs/CIDRs for client-IP resolution; empty trusts none, /0 trusts all peers",
 		},
 		&cli.StringFlag{
 			Name:        "rate-limit-mode",
@@ -634,6 +634,7 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DB_DISABLED"),
 			Destination: &cfg.EncryptionDBDisabled,
+			Value:       cfg.EncryptionDBDisabled,
 			Usage:       "Disable at-rest encryption for the database even when encryption is configured",
 		},
 		&cli.BoolFlag{
@@ -641,6 +642,7 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED"),
 			Destination: &cfg.EncryptionAttachmentsDisabled,
+			Value:       cfg.EncryptionAttachmentsDisabled,
 			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
 		},
 		&cli.BoolFlag{
@@ -648,6 +650,7 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN"),
 			Destination: &cfg.EncryptionAllowPlain,
+			Value:       cfg.EncryptionAllowPlain,
 			Usage:       "Explicitly allow the plain provider as the primary provider outside testing (unsafe)",
 		},
 		&cli.BoolFlag{
@@ -1119,7 +1122,7 @@ func bodyReadTimeoutMiddleware(bodyTimeout, attachmentBodyTimeout time.Duration)
 		if body.TimedOut() && !c.Writer.Written() {
 			c.AbortWithStatusJSON(http.StatusRequestTimeout, gin.H{
 				"code":  "request_timeout",
-				"error": "request_timeout",
+				"error": "request body read timeout",
 			})
 		}
 	}

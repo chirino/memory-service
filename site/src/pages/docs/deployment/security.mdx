@@ -53,8 +53,11 @@ index material, and administrative metadata.
   `MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT=true` only for the latter deployment boundary.
 - Keep request body deadlines enabled. Ordinary REST request bodies default to `30s`; multipart
   attachment uploads default to `5m`.
-- Forwarded client-IP headers should come only from explicitly trusted reverse proxy CIDRs
-  configured with `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS`; leave it unset to trust no proxies.
+- Configure forwarded client-IP trust with `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS`; leave it
+  unset to trust no proxies. Universal ranges (`0.0.0.0/0,::/0`) intentionally accept
+  forwarded client IPs from every peer and are appropriate only when direct callers choosing
+  their reported IP is acceptable or a network boundary forces traffic through a controlled
+  proxy.
 - Configure `MEMORY_SERVICE_MANAGEMENT_PORT` or
   `MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET` outside testing mode. Use
   `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true` only when the main listener is already

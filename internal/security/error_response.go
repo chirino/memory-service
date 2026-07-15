@@ -48,6 +48,7 @@ func (w *errorEnvelopeWriter) WriteHeaderNow() {
 		return
 	}
 	w.wrote = true
+	w.size = 0
 	if !w.shouldCapture() {
 		w.ResponseWriter.WriteHeader(w.status)
 	}
@@ -55,20 +56,26 @@ func (w *errorEnvelopeWriter) WriteHeaderNow() {
 
 func (w *errorEnvelopeWriter) Write(data []byte) (int, error) {
 	w.WriteHeaderNow()
-	w.size += len(data)
 	if w.shouldCapture() {
-		return w.body.Write(data)
+		n, err := w.body.Write(data)
+		w.size += n
+		return n, err
 	}
-	return w.ResponseWriter.Write(data)
+	n, err := w.ResponseWriter.Write(data)
+	w.size += n
+	return n, err
 }
 
 func (w *errorEnvelopeWriter) WriteString(data string) (int, error) {
 	w.WriteHeaderNow()
-	w.size += len(data)
 	if w.shouldCapture() {
-		return w.body.WriteString(data)
+		n, err := w.body.WriteString(data)
+		w.size += n
+		return n, err
 	}
-	return w.ResponseWriter.WriteString(data)
+	n, err := w.ResponseWriter.WriteString(data)
+	w.size += n
+	return n, err
 }
 
 func (w *errorEnvelopeWriter) Status() int {
@@ -93,12 +100,9 @@ func (w *errorEnvelopeWriter) finish(c *gin.Context) {
 		return
 	}
 	if w.status < http.StatusBadRequest {
-		if w.wrote {
-			w.ResponseWriter.WriteHeader(w.status)
-			if w.body.Len() > 0 {
-				_, _ = w.ResponseWriter.Write(w.body.Bytes())
-			}
-		}
+		// WriteHeader on Gin's writer records the status; Gin commits it after
+		// middleware returns. Forward it even when the handler wrote no body.
+		w.ResponseWriter.WriteHeader(w.status)
 		return
 	}
 	if isStreamingContentType(w.Header().Get("Content-Type")) {

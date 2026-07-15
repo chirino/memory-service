@@ -61,10 +61,13 @@ Outside testing mode, a single TCP listener cannot serve both plaintext and TLS.
 
 `unix-socket-auth=local` is valid only when the main API listener uses a Unix socket. It gives REST and gRPC the same local identity without granting privileged roles automatically. Any process running as the socket-owning Unix user is inside this trust boundary. Keep the default `credentials` mode when bearer-token or API-key authentication should remain mandatory.
 
-`trusted-proxy-cidrs` affects client-IP resolution only. Leave it unset unless Memory Service
-is directly behind a known TCP reverse proxy, and never use universal ranges such as
-`0.0.0.0/0` or `::/0`. Forwarded host/proto values do not determine browser-facing URLs;
-set `MEMORY_SERVICE_BASE_URL` for the developer frontend.
+`trusted-proxy-cidrs` affects client-IP resolution only. Leave it unset to ignore forwarded
+client-IP headers, configure known proxy addresses for a restricted trust boundary, or use
+`0.0.0.0/0,::/0` to accept forwarded client IPs from every peer in a simpler deployment.
+With a universal range, direct callers can select their reported client IP, so use it only
+when that behavior is acceptable or network policy ensures all traffic comes through a
+controlled proxy. Forwarded host/proto values do not determine browser-facing URLs; set
+`MEMORY_SERVICE_BASE_URL` for the developer frontend.
 
 ### Management Network Listener
 

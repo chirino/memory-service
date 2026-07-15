@@ -15,7 +15,27 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+const testEncryptionKey = "1123456789abcdef1123456789abcdef1123456789abcdef1123456789abcdef"
+
+func TestDefaultEmbeddedConfigUsesFilesystemSecurity(t *testing.T) {
+	if !buildcaps.SQLite {
+		t.Skip("required build capabilities missing: sqlite")
+	}
+
+	cfg := defaultEmbeddedConfig()
+	require.Equal(t, "plain", cfg.EncryptionProviders)
+	require.True(t, cfg.EncryptionAllowPlain)
+	require.True(t, cfg.EncryptionDBDisabled)
+	require.True(t, cfg.EncryptionAttachmentsDisabled)
+
+	cfg.DBURL = filepath.Join(t.TempDir(), "memory.db")
+	ensureEmbeddedAuth(&cfg)
+	srv, err := serve.BuildServer(config.WithContext(context.Background(), &cfg), &cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		_ = srv.Shutdown(context.Background())
+	})
+}
 
 func setupEmbeddedTestServer(t *testing.T) *mcpServer {
 	t.Helper()
@@ -27,6 +47,7 @@ func setupEmbeddedTestServer(t *testing.T) *mcpServer {
 
 	cfg := defaultEmbeddedConfig()
 	cfg.DBURL = dbURL
+	cfg.EncryptionProviders = "dek"
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true

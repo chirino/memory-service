@@ -1,6 +1,7 @@
 package security
 
 import (
+	"container/list"
 	"context"
 	"errors"
 	"fmt"
@@ -58,11 +59,15 @@ type rateLimitClassState struct {
 	spec    rateLimitSpec
 	mu      sync.Mutex
 	buckets map[string]*rateLimitBucket
+	recency list.List
+	idleTTL time.Duration
+	maxKeys int
 }
 
 type rateLimitBucket struct {
-	limiter  *rate.Limiter
-	lastSeen time.Time
+	limiter        *rate.Limiter
+	lastSeen       time.Time
+	recencyElement *list.Element
 }
 
 type rateLimitDecision struct {
@@ -110,10 +115,7 @@ func NewRateLimiter(cfg *config.Config) (*RateLimiter, error) {
 		if err != nil {
 			return nil, fmt.Errorf("MEMORY_SERVICE_RATE_LIMIT_%s: %w", envClassName(class), err)
 		}
-		limiter.classes[class] = &rateLimitClassState{
-			spec:    spec,
-			buckets: map[string]*rateLimitBucket{},
-		}
+		limiter.classes[class] = newRateLimitClassState(spec)
 	}
 	return limiter, nil
 }
@@ -179,7 +181,6 @@ func (l *RateLimiter) allow(class RateLimitClass, key string) rateLimitDecision 
 	now := time.Now()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	state.pruneLocked(now)
 	bucket := state.bucketLocked(key, now)
 	if bucket.limiter.AllowN(now, 1) {
 		recordRateLimit(class, "accepted")
@@ -207,7 +208,6 @@ func (l *RateLimiter) available(class RateLimitClass, key string) rateLimitDecis
 	now := time.Now()
 	state.mu.Lock()
 	defer state.mu.Unlock()
-	state.pruneLocked(now)
 	bucket := state.bucketLocked(key, now)
 	if bucket.limiter.TokensAt(now) >= 1 {
 		return rateLimitDecision{Allowed: true}
@@ -221,36 +221,52 @@ func (l *RateLimiter) available(class RateLimitClass, key string) rateLimitDecis
 	return rateLimitDecision{Allowed: false, RetryAfterSeconds: retryAfterSeconds(delay)}
 }
 
+func newRateLimitClassState(spec rateLimitSpec) *rateLimitClassState {
+	return &rateLimitClassState{
+		spec:    spec,
+		buckets: map[string]*rateLimitBucket{},
+		idleTTL: rateLimitIdleTTL,
+		maxKeys: rateLimitMaxKeys,
+	}
+}
+
 func (s *rateLimitClassState) bucketLocked(key string, now time.Time) *rateLimitBucket {
+	s.pruneExpiredLocked(now)
 	if bucket := s.buckets[key]; bucket != nil {
 		bucket.lastSeen = now
+		s.recency.MoveToBack(bucket.recencyElement)
 		return bucket
 	}
-	if len(s.buckets) >= rateLimitMaxKeys {
-		var oldestKey string
-		var oldest time.Time
-		for key, bucket := range s.buckets {
-			if oldestKey == "" || bucket.lastSeen.Before(oldest) {
-				oldestKey = key
-				oldest = bucket.lastSeen
-			}
-		}
-		delete(s.buckets, oldestKey)
+	if len(s.buckets) >= s.maxKeys {
+		s.removeOldestLocked()
 	}
 	bucket := &rateLimitBucket{
-		limiter:  rate.NewLimiter(rate.Limit(float64(s.spec.Tokens)/s.spec.Every.Seconds()), s.spec.Burst),
-		lastSeen: now,
+		limiter:        rate.NewLimiter(rate.Limit(float64(s.spec.Tokens)/s.spec.Every.Seconds()), s.spec.Burst),
+		lastSeen:       now,
+		recencyElement: s.recency.PushBack(key),
 	}
 	s.buckets[key] = bucket
 	return bucket
 }
 
-func (s *rateLimitClassState) pruneLocked(now time.Time) {
-	for key, bucket := range s.buckets {
-		if now.Sub(bucket.lastSeen) > rateLimitIdleTTL {
-			delete(s.buckets, key)
+func (s *rateLimitClassState) pruneExpiredLocked(now time.Time) {
+	for oldest := s.recency.Front(); oldest != nil; oldest = s.recency.Front() {
+		key := oldest.Value.(string)
+		bucket := s.buckets[key]
+		if now.Sub(bucket.lastSeen) <= s.idleTTL {
+			return
 		}
+		s.removeOldestLocked()
 	}
+}
+
+func (s *rateLimitClassState) removeOldestLocked() {
+	oldest := s.recency.Front()
+	if oldest == nil {
+		return
+	}
+	delete(s.buckets, oldest.Value.(string))
+	s.recency.Remove(oldest)
 }
 
 func retryAfterSeconds(delay time.Duration) int {

@@ -37,6 +37,40 @@ func TestParseRateLimitSpecAcceptsExpectedGrammar(t *testing.T) {
 	require.Equal(t, 10, spec.Burst)
 }
 
+func TestRateLimitClassStateEvictsLeastRecentlyUsedBucket(t *testing.T) {
+	state := newRateLimitClassState(rateLimitSpec{Tokens: 1, Every: time.Minute, Burst: 1})
+	state.maxKeys = 2
+	state.idleTTL = time.Hour
+	start := time.Now()
+
+	state.bucketLocked("first", start)
+	state.bucketLocked("second", start.Add(time.Second))
+	state.bucketLocked("first", start.Add(2*time.Second))
+	state.bucketLocked("third", start.Add(3*time.Second))
+
+	require.Contains(t, state.buckets, "first")
+	require.NotContains(t, state.buckets, "second")
+	require.Contains(t, state.buckets, "third")
+	require.Equal(t, 2, state.recency.Len())
+}
+
+func TestRateLimitClassStatePrunesExpiredBucketsFromOldest(t *testing.T) {
+	state := newRateLimitClassState(rateLimitSpec{Tokens: 1, Every: time.Minute, Burst: 1})
+	state.maxKeys = 3
+	state.idleTTL = time.Minute
+	start := time.Now()
+
+	state.bucketLocked("first", start)
+	state.bucketLocked("second", start.Add(30*time.Second))
+	state.bucketLocked("first", start.Add(45*time.Second))
+	state.bucketLocked("third", start.Add(91*time.Second))
+
+	require.Contains(t, state.buckets, "first")
+	require.NotContains(t, state.buckets, "second")
+	require.Contains(t, state.buckets, "third")
+	require.Equal(t, 2, state.recency.Len())
+}
+
 func TestSourceRateLimitMiddlewareRejectsWithStableEnvelope(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	cfg := config.DefaultConfig()

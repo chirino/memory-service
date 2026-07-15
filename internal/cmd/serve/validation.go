@@ -89,12 +89,6 @@ func validateKnownDemoSecrets(cfg *config.Config) error {
 			break
 		}
 	}
-	for _, key := range strings.Split(cfg.EncryptionKey, ",") {
-		if isKnownDemoSecret(key) {
-			problems = append(problems, fmt.Errorf("MEMORY_SERVICE_ENCRYPTION_DEK_KEY uses known repository demo key material; configure generated encryption keys"))
-			break
-		}
-	}
 	if isKnownDemoSecret(cfg.QdrantAPIKey) {
 		problems = append(problems, fmt.Errorf("MEMORY_SERVICE_VECTOR_QDRANT_API_KEY uses a known repository demo value; configure a generated Qdrant API key"))
 	}
@@ -283,9 +277,6 @@ func parseTrustedProxyCIDRs(raw string) ([]string, error) {
 				return nil, fmt.Errorf("invalid MEMORY_SERVICE_TRUSTED_PROXY_CIDRS value %q: %w", value, err)
 			}
 			prefix = prefix.Masked()
-			if prefix.Bits() == 0 {
-				return nil, fmt.Errorf("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS must not trust universal range %q", value)
-			}
 			trusted = append(trusted, prefix.String())
 			continue
 		}

@@ -696,8 +696,9 @@ Add one configuration field and reuse the existing base URL:
 
 - Store trusted proxies as a comma-separated config string, parse each item as an exact IP or
   CIDR, and call `router.SetTrustedProxies(nil)` when empty. This explicitly replaces Gin's
-  trust-all default. Reject invalid entries and all-address ranges such as `0.0.0.0/0` and
-  `::/0` during startup validation.
+  trust-all default. Reject invalid entries. Accept `0.0.0.0/0` and `::/0` as intentional,
+  easy-to-configure trust-all choices and document that direct callers can then select their
+  reported client IP unless a network boundary forces traffic through a controlled proxy.
 - When configured, pass only the parsed values to `SetTrustedProxies`. They affect
   `Context.ClientIP()` for access logs and rate limiting; they do not authorize requests and
   do not supply the developer frontend's external origin.
@@ -1012,8 +1013,8 @@ environment escape hatch. Validation returns all detected problems in one error.
 | Any TCP listener enables both TLS and plaintext | Fail with no unsafe override |
 | Plaintext TCP binds beyond loopback | Fail unless `--plaintext-behind-trusted-terminator` is true; the opt-in requires non-empty trusted proxy CIDRs, warns, and must be paired with an ingress/network boundary in docs |
 | Developer frontend lacks a valid explicit base URL | Fail under the F-M10 policy |
-| Proxy CIDRs are invalid/universal | Fail under the F-M10 policy |
-| A known repository demo secret is present in a service-owned config value | Fail by exact-value denylist for values the process can observe, including API keys, DEKs, database URL credentials, and configured backend API keys; local assets must generate/inject values rather than bypass this check |
+| Proxy CIDRs are invalid | Fail under the F-M10 policy; universal CIDRs are accepted as an explicit trust-all configuration |
+| A known repository demo secret is present in a service-owned config value | Fail by exact-value denylist for API keys, database URL credentials, and configured backend API keys; encryption key material is not denylisted because legacy keys must remain usable for rotation and recovery |
 
 Compose/deployment assets separately remove or generate credentials for external services
 that the memory-service process cannot observe, such as Grafana or Langfuse. Startup
@@ -1219,8 +1220,8 @@ change ships.
 - **HTTP/listener tests**: loopback bind defaults, explicit management selection, non-loopback
   acknowledgements, header/idle limits, ordinary/upload body deadlines, and absence of global
   read/write deadlines for gRPC/SSE/recorder streams.
-- **Proxy/config tests**: Gin trusts no proxy by default; invalid/universal CIDRs fail;
-  untrusted forwarding headers do not change `ClientIP`; production developer UI requires a
+- **Proxy/config tests**: Gin trusts no proxy by default; invalid CIDRs fail and universal
+  CIDRs are accepted; untrusted forwarding headers do not change `ClientIP`; production developer UI requires a
   valid origin-only base URL; testing fallback ignores forwarded host/proto; Unix sockets do
   not accept forwarded identity.
 - **Site documentation**: build/test the site, verify the Deployment sidebar contains only
@@ -1309,7 +1310,8 @@ Feature: authenticated and browser-safe attachments
 - [x] F-H16: Stop tracing/printing Fly secrets and remove the obsolete signing secret.
 - [x] F-M1/F-L4/F-M14: Reject unsafe startup combinations, including exact CORS-origin
   validation, OIDC TLS-skip rejection, aggregate startup error reporting, and service-owned
-  known demo-secret validation.
+  known demo-secret validation except for encryption key material needed for rotation and
+  recovery.
 - [x] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
   Request-ID middleware/interceptors are implemented for REST, dedicated management REST, and
   gRPC. REST error envelopes are normalized centrally, including `requestId`,

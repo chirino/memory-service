@@ -82,3 +82,40 @@ func TestErrorEnvelopeMiddlewareDoesNotModifySuccess(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{"ok":true}`, rec.Body.String())
 }
+
+func TestErrorEnvelopeMiddlewarePreservesBodylessStatus(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, expected := range []int{http.StatusNoContent, http.StatusNotModified} {
+		t.Run(http.StatusText(expected), func(t *testing.T) {
+			router := gin.New()
+			router.Use(ErrorEnvelopeMiddleware())
+			router.GET("/test", func(c *gin.Context) {
+				c.Status(expected)
+			})
+
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+
+			require.Equal(t, expected, rec.Code)
+			require.Empty(t, rec.Body.String())
+		})
+	}
+}
+
+func TestErrorEnvelopeMiddlewareReportsWrittenSize(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(ErrorEnvelopeMiddleware())
+	writtenSize := -1
+	router.GET("/test", func(c *gin.Context) {
+		c.String(http.StatusOK, "hello")
+		writtenSize = c.Writer.Size()
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/test", nil))
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Equal(t, "hello", rec.Body.String())
+	require.Equal(t, len("hello"), writtenSize)
+}
