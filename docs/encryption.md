@@ -4,7 +4,7 @@ Memory Service supports pluggable at-rest encryption for conversation data and a
 
 ## How It Works
 
-All encryption goes through a `Provider` interface with `Encrypt`/`Decrypt` and streaming `EncryptStream`/`DecryptStream` methods. The active provider is selected by the `MEMORY_SERVICE_ENCRYPTION_PROVIDERS` config key (default: `plain`).
+All encryption goes through a `Provider` interface with `Encrypt`/`Decrypt` and streaming `EncryptStream`/`DecryptStream` methods. The active provider order is selected by the `MEMORY_SERVICE_ENCRYPTION_KIND` config key (default: `plain`). The first provider is primary and encrypts new data; any later providers are decryption-only fallbacks for migration or key rotation. Outside testing, `plain` as the primary provider is rejected unless `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is set explicitly.
 
 Encrypted values are wrapped in an **MSEH envelope**:
 
@@ -12,20 +12,30 @@ Encrypted values are wrapped in an **MSEH envelope**:
 [4 bytes magic: "MSEH"][varint: header length][EncryptionHeader proto][ciphertext]
 ```
 
-The header records the provider ID and nonce, allowing multiple providers to coexist (enabling zero-downtime key rotation and migration from plain to encrypted).
+The header records the provider ID, version, and nonce, allowing multiple providers to coexist for key rotation and migration from plain to encrypted data.
+
+Headerless legacy plaintext reads are disabled by default. During a migration from
+headerless plaintext to an encrypted provider, configure the encrypted provider first,
+include `plain` as a fallback, and set
+`MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` only while migration reads are
+required. Malformed `MSEH` envelopes always fail closed and are never treated as plaintext.
 
 ## Providers
 
 | Provider ID | Algorithm | Key Source |
 |-------------|-----------|------------|
 | `plain` | None (passthrough) | — |
-| `dek` | AES-256-GCM | `MEMORY_SERVICE_ENCRYPTION_KEY` (base64 or hex, comma-separated for rotation) |
-| `kms` | AES-256-GCM, KEK via AWS KMS | `MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID` |
-| `vault` | AES-256-GCM, KEK via Vault Transit | `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` |
+| `dek` | AES-256-GCM for byte values; AES-CTR for current attachment streams | `MEMORY_SERVICE_ENCRYPTION_DEK_KEY` (base64 or hex, comma-separated for rotation) |
+| `kms` | AES-256-GCM for byte values; AES-CTR for current attachment streams; KEK via AWS KMS | `MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID` |
+| `vault` | AES-256-GCM for byte values; AES-CTR for current attachment streams; KEK via Vault Transit | `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` |
 
 For `kms` and `vault`, a random 32-byte Data Encryption Key (DEK) is generated on first start, wrapped by the external KMS, and stored in an `encryption_deks` table. The DEK is cached in memory; AWS KMS / Vault is **not** called on every request.
 
-Key rotation: supply multiple comma-separated keys in `MEMORY_SERVICE_ENCRYPTION_KEY`; the first is used for new encryptions, the rest for decryption only.
+Key rotation for the `dek` provider: supply multiple comma-separated keys in `MEMORY_SERVICE_ENCRYPTION_DEK_KEY`; the first is used for new encryptions, the rest for decryption only.
+
+Signed attachment download URLs do not use `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET`. Signing keys are derived from the configured encryption provider material via HKDF-SHA256. For the `dek` provider that means `MEMORY_SERVICE_ENCRYPTION_DEK_KEY`; for `kms` and `vault` it means the provider-managed DEKs loaded from the `encryption_deks` table.
+
+> **Current stream-integrity limitation**: database byte values are encrypted with AES-GCM and authenticated by the MSEH envelope. Current attachment streams use MSEH v2 with AES-CTR, which provides confidentiality but not tamper detection. Do not describe encrypted attachment streams as authenticated until the planned MSEH v3 stream format is implemented and migrated.
 
 ## What Is Encrypted
 
@@ -46,19 +56,25 @@ Attachment encryption can be disabled independently with `MEMORY_SERVICE_ENCRYPT
 
 ```bash
 # Direct AES key (DEK provider)
-MEMORY_SERVICE_ENCRYPTION_PROVIDERS=dek
-MEMORY_SERVICE_ENCRYPTION_KEY=<base64-encoded-32-byte-key>
+MEMORY_SERVICE_ENCRYPTION_KIND=dek
+MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<base64-or-hex-encoded-32-byte-key>
 
 # AWS KMS
-MEMORY_SERVICE_ENCRYPTION_PROVIDERS=kms
+MEMORY_SERVICE_ENCRYPTION_KIND=kms
 MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID=arn:aws:kms:us-east-1:…:key/…
 
 # HashiCorp Vault Transit
-MEMORY_SERVICE_ENCRYPTION_PROVIDERS=vault
+MEMORY_SERVICE_ENCRYPTION_KIND=vault
 MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY=my-transit-key
 
-# No encryption (default)
-MEMORY_SERVICE_ENCRYPTION_PROVIDERS=plain
+# No encryption (explicit unsafe production opt-in)
+MEMORY_SERVICE_ENCRYPTION_KIND=plain
+MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true
+
+# Read headerless legacy plaintext during migration to DEK
+MEMORY_SERVICE_ENCRYPTION_KIND=dek,plain
+MEMORY_SERVICE_ENCRYPTION_DEK_KEY=<base64-or-hex-encoded-32-byte-key>
+MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true
 ```
 
 ## What Is NOT Encrypted: Temporary Files

@@ -35,16 +35,28 @@ Memory Service is configured through CLI flags or environment variables. Use the
 | Flag                                                               | Values                 | Default       | Description                                                 |
 | ------------------------------------------------------------------ | ---------------------- | ------------- | ----------------------------------------------------------- |
 | <Cfg p="--port" e="MEMORY_SERVICE_PORT" />                         | integer                | `8080`        | HTTP/gRPC server port                                       |
+| <Cfg p="--host" e="MEMORY_SERVICE_HOST" />                         | host/IP                | `127.0.0.1`   | HTTP/gRPC bind host; containers should set `0.0.0.0` intentionally |
 | <Cfg p="--unix-socket" e="MEMORY_SERVICE_UNIX_SOCKET" />           | path                   | _(unset)_     | Absolute path to a Unix socket for the HTTP/gRPC server     |
 | <Cfg p="--unix-socket-auth" e="MEMORY_SERVICE_UNIX_SOCKET_AUTH" /> | `credentials`, `local` | `credentials` | Require credentials or trust access to the main Unix socket |
 | <Cfg p="--local-user-id" e="MEMORY_SERVICE_LOCAL_USER_ID" />       | string                 | OS username   | User identity used by `unix-socket-auth=local`              |
 | <Cfg p="--local-client-id" e="MEMORY_SERVICE_LOCAL_CLIENT_ID" />   | string                 | `local-agent` | Client identity used by `unix-socket-auth=local`            |
 | <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" />             | `true`, `false`        | `true`        | Enable plaintext HTTP/1.1 + h2c + gRPC                      |
 | <Cfg p="--tls" e="MEMORY_SERVICE_TLS" />                           | `true`, `false`        | `true`        | Enable TLS HTTP/1.1 + HTTP/2 + gRPC                         |
+| <Cfg p="--max-header-bytes" e="MEMORY_SERVICE_MAX_HEADER_BYTES" /> | bytes                  | `1048576`     | Maximum request header bytes on the main listener           |
+| <Cfg p="--idle-timeout" e="MEMORY_SERVICE_IDLE_TIMEOUT" />         | duration               | `120s`        | HTTP keep-alive idle timeout on the main listener           |
+| <Cfg p="--trusted-proxy-cidrs" e="MEMORY_SERVICE_TRUSTED_PROXY_CIDRS" /> | IP/CIDR CSV       | _(unset)_     | Trusted TCP proxy IPs/CIDRs for client-IP resolution; unset trusts no forwarded proxies |
 
 When a Unix socket path points into a directory that does not exist yet, Memory Service creates the parent directory with permissions restricted to the current user.
 
+TCP listeners bind to loopback by default. Container and Kubernetes deployments that expose a
+port must set `MEMORY_SERVICE_HOST=0.0.0.0` explicitly.
+
 `unix-socket-auth=local` is valid only when the main API listener uses a Unix socket. It gives REST and gRPC the same local identity without granting privileged roles automatically. Any process running as the socket-owning Unix user is inside this trust boundary. Keep the default `credentials` mode when bearer-token or API-key authentication should remain mandatory.
+
+`trusted-proxy-cidrs` affects client-IP resolution only. Leave it unset unless Memory Service
+is directly behind a known TCP reverse proxy, and never use universal ranges such as
+`0.0.0.0/0` or `::/0`. Forwarded host/proto values do not determine browser-facing URLs;
+set `MEMORY_SERVICE_BASE_URL` for the developer frontend.
 
 ### Management Network Listener
 
@@ -55,9 +67,12 @@ By default, `/health`, `/ready`, and `/metrics` are served on the main port alon
 | Flag                                                                           | Values          | Default   | Description                                                                 |
 | ------------------------------------------------------------------------------ | --------------- | --------- | --------------------------------------------------------------------------- |
 | <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />               | integer         | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
+| <Cfg p="--management-host" e="MEMORY_SERVICE_MANAGEMENT_HOST" />               | host/IP         | `127.0.0.1` | Management bind host; containers should set `0.0.0.0` intentionally |
 | <Cfg p="--management-unix-socket" e="MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET" /> | path            | _(unset)_ | Absolute path to a Unix socket for the management server                    |
 | <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" />   | `true`, `false` | `true`    | Enable plaintext HTTP for management server                                 |
 | <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" />                 | `true`, `false` | `true`    | Enable TLS for management server (uses same cert/key as main listener)      |
+| <Cfg p="--management-max-header-bytes" e="MEMORY_SERVICE_MANAGEMENT_MAX_HEADER_BYTES" /> | bytes | `65536` | Maximum request header bytes on the management listener |
+| <Cfg p="--management-idle-timeout" e="MEMORY_SERVICE_MANAGEMENT_IDLE_TIMEOUT" /> | duration | `30s` | HTTP keep-alive idle timeout on the management listener |
 
 Unix socket example:
 
@@ -453,6 +468,14 @@ Memory Service supports transparent encryption of stored data using AES-256-GCM.
 | <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" />                                 | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data   |
 | <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" />                   | `true`, `false`     | `false` | Disable at-rest encryption for the database even when an encryption provider is active         |
 | <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false`     | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
+| <Cfg p="--encryption-allow-plain" e="MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN" />                   | `true`, `false`     | `false` | Explicitly allow `plain` as the primary provider outside testing; unsafe for production data   |
+| <Cfg p="--encryption-legacy-plain-read-enabled" e="MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED" /> | `true`, `false` | `false` | Permit headerless legacy plaintext reads when `plain` is configured as a fallback provider |
+
+Outside testing, `plain` as the primary provider is rejected unless
+`MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is set deliberately. To migrate old headerless
+plaintext values after enabling a real provider, include `plain` as a fallback provider and
+set `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` only for the migration window.
+Malformed `MSEH` envelopes always fail closed and are never treated as plaintext.
 
 ### Encryption: DEK (AES-256-GCM)
 
@@ -547,13 +570,13 @@ AWS_SECRET_ACCESS_KEY=...`}
 
 ### Automatic attachment encryption
 
-When a non-`plain` provider is the primary provider, file attachments are encrypted automatically — no extra configuration is needed. When `plain` is active (the default), attachments are stored as-is with no overhead.
+When a non-`plain` provider is the primary provider, file attachments are encrypted automatically — no extra configuration is needed. When `plain` is explicitly allowed as the primary provider, attachments are stored as-is with no encryption overhead.
 
 > **S3 incompatibility**: Attachment encryption is incompatible with S3 direct download. Direct download is disabled by default; do not enable it when using encryption with S3.
 
 ### Key rotation
 
-To rotate between providers, list the new provider first and the old provider as a fallback in `--encryption-kind`. New data is always encrypted by the first (primary) provider; existing ciphertext is decrypted by trying each provider in order.
+To rotate between providers, list the new provider first and the old provider as a fallback in `--encryption-kind`. New data is always encrypted by the first (primary) provider; existing ciphertext is decrypted by trying each provider in order. Headerless legacy plaintext is read only when `plain` is listed as a fallback and `encryption-legacy-plain-read-enabled` is set.
 
 **Example: migrate from `dek` to `vault`:**
 
@@ -738,19 +761,25 @@ Memory Service supports OIDC authentication via Keycloak or any compliant provid
 | <Cfg p="--oidc-discovery-url" e="MEMORY_SERVICE_OIDC_DISCOVERY_URL" />                       | URL             | _(none)_ | Internal discovery URL when the issuer URL is not directly reachable                                         |
 | <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `true`, `false` | `false`  | Skip TLS certificate verification for OIDC discovery and JWKS requests; use only for self-signed dev issuers |
 | <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />                   | CSV             | _(none)_ | Optional OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer  |
-| <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />               | CSV             | _(none)_ | Optional OIDC audiences accepted by Memory Service; empty disables audience checks                           |
+| <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />               | CSV             | _(none)_ | Required OIDC audiences accepted by Memory Service when OIDC is enabled                                      |
+| <Cfg p="--oidc-allow-missing-audience" e="MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE" />     | `true`, `false` | `false`  | Unsafe compatibility mode for issuer-only validation while migrating audience configuration                  |
+| <Cfg p="--oidc-role-claim" e="MEMORY_SERVICE_OIDC_ROLE_CLAIMS" />                            | JSON Pointer(s) | `/realm_access/roles` | RFC 6901 claim path(s) used for claim-derived roles; env value is a JSON array of pointer strings |
 
-When OIDC is enabled, startup requires successful issuer discovery. `--oidc-allowed-clients` and `--oidc-allowed-audiences` are optional filters; when both are empty, any valid token from the configured issuer is accepted by the resolver and normal endpoint authorization still applies. If both filters are configured, both checks must pass. Allowed clients are matched against signed `azp` or `client_id` token claims. Allowed audiences are matched against the signed `aud` claim.
+When OIDC is enabled, startup requires successful issuer discovery and at least one allowed audience. Allowed clients are optional; when configured, both the client and audience checks must pass. Allowed clients are matched against signed `azp` or `client_id` token claims. Allowed audiences are matched against the signed `aud` claim. Use `--oidc-allow-missing-audience` only as a temporary migration setting.
+
+Claim-derived roles come only from configured JSON Pointer paths. The default is Keycloak-compatible `/realm_access/roles`; `scope`, top-level `roles`, and `groups` are not role sources unless explicitly configured. The `scope` claim remains available for resource/API scope gates.
 
 <ConfigBlock
   property={`# OIDC configuration
 --oidc-issuer=http://localhost:8180/realms/memory-service
 --oidc-allowed-clients=memory-service-client,frontend,developer-frontend
+--oidc-allowed-audiences=memory-service
 # Development/self-signed issuers only:
 --oidc-tls-insecure-skip-verify`}
   env={`# OIDC configuration
 MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service
 MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-frontend
+MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
 # Development/self-signed issuers only:
 MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY=true`}
 />

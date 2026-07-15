@@ -9,47 +9,82 @@ import { PROJECT_VERSION } from "../../../config";
 
 export const productionConfig = `services:
   memory-service:
-    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}  # Pin to specific version
+    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}
     restart: unless-stopped
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     environment:
-      # Database connection
       - MEMORY_SERVICE_DB_URL=postgres://postgres:\${DB_PASSWORD}@postgres:5432/memoryservice?sslmode=disable
-      # Enable TLS
+      - MEMORY_SERVICE_HOST=0.0.0.0
+      - MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp
       - MEMORY_SERVICE_TLS_CERT_FILE=/certs/server.crt
       - MEMORY_SERVICE_TLS_KEY_FILE=/certs/server.key
     volumes:
-      - ./certs:/certs:ro`;
+      - ./certs:/certs:ro
+      - memory_service_tmp:/var/lib/memory-service/tmp
+
+volumes:
+  memory_service_tmp:`;
 
 Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
 
 ## Quick Start
 
-Pull and run the latest image:
+Use a pinned release image and pass generated local credentials through environment
+variables:
 
 ```bash
+export DB_PASSWORD="$(openssl rand -base64 32)"
 docker run -d \
   --name memory-service \
   -p 8080:8080 \
-  -e MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@host.docker.internal:5432/memoryservice?sslmode=disable \
-  ghcr.io/chirino/memory-service:latest
+  --read-only \
+  --user 10001:10001 \
+  --cap-drop ALL \
+  --security-opt no-new-privileges:true \
+  --tmpfs /var/lib/memory-service/tmp:uid=10001,gid=10001,mode=0700 \
+  -e MEMORY_SERVICE_DB_URL="postgres://postgres:${DB_PASSWORD}@host.docker.internal:5432/memoryservice?sslmode=disable" \
+  -e MEMORY_SERVICE_HOST=0.0.0.0 \
+  -e MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp \
+  ghcr.io/chirino/memory-service:${PROJECT_VERSION}
 ```
 
 ## Docker Compose
 
-For a complete local setup with all dependencies:
+For a complete local setup with all dependencies, use the repository compose file and
+generate ignored local credentials first:
+
+```bash
+task dev:compose:env
+docker compose up -d
+```
+
+A minimal production-style compose file should keep secrets outside the file and pin the
+service image:
 
 ```yaml
-version: "3.8"
-
 services:
   memory-service:
-    image: ghcr.io/chirino/memory-service:latest
+    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}
+    read_only: true
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "8080:8080" # REST API
-      - "9000:9000" # gRPC API
+      - "127.0.0.1:8080:8080"
     environment:
-      - MEMORY_SERVICE_DB_URL=postgres://postgres:postgres@postgres:5432/memoryservice?sslmode=disable
+      - MEMORY_SERVICE_DB_URL=postgres://postgres:${DB_PASSWORD}@postgres:5432/memoryservice?sslmode=disable
       - MEMORY_SERVICE_DB_MIGRATE_AT_START=true
+      - MEMORY_SERVICE_HOST=0.0.0.0
+      - MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp
+    volumes:
+      - memory_service_tmp:/var/lib/memory-service/tmp
     depends_on:
       postgres:
         condition: service_healthy
@@ -59,7 +94,7 @@ services:
     environment:
       - POSTGRES_DB=memoryservice
       - POSTGRES_USER=postgres
-      - POSTGRES_PASSWORD=postgres
+      - POSTGRES_PASSWORD=${DB_PASSWORD}
     volumes:
       - postgres_data:/var/lib/postgresql
     healthcheck:
@@ -70,12 +105,7 @@ services:
 
 volumes:
   postgres_data:
-```
-
-Save as `docker-compose.yml` and run:
-
-```bash
-docker compose up -d
+  memory_service_tmp:
 ```
 
 ## Environment Variables
@@ -103,7 +133,7 @@ docker compose up -d
 ```yaml
 services:
   memory-service:
-    image: ghcr.io/chirino/memory-service:latest
+    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}
     environment:
       MEMORY_SERVICE_DB_KIND: sqlite
       MEMORY_SERVICE_DB_URL: /data/memory-service.sqlite
@@ -122,7 +152,8 @@ With this configuration, attachment bytes are stored under `/data/memory-service
 | ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------- |
 | `MEMORY_SERVICE_OIDC_ISSUER`                   | OIDC issuer URL                                                                                                             | -       |
 | `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS`          | Optional comma-separated OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer | -       |
-| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Optional comma-separated OIDC audiences accepted by Memory Service; empty disables audience checks                          | -       |
+| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Required comma-separated OIDC audiences accepted by Memory Service when OIDC is enabled                                     | -       |
+| `MEMORY_SERVICE_OIDC_ROLE_CLAIMS`              | JSON array of RFC 6901 claim paths used for claim-derived roles                                                             | `["/realm_access/roles"]` |
 | `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; use only with self-signed development issuers           | `false` |
 | `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                                  | -       |
 
@@ -179,7 +210,7 @@ With separate embedding service:
 ```yaml
 services:
   memory-service:
-    image: ghcr.io/chirino/memory-service:latest
+    image: ghcr.io/chirino/memory-service:${PROJECT_VERSION}
     environment:
       - MEMORY_SERVICE_EMBEDDING_URL=http://embedding-service:8000
     depends_on:
@@ -234,5 +265,5 @@ services:
 
 ## Next Steps
 
-- Configure [Database Setup](/docs/deployment/databases/)
 - Learn about [Service Configuration](/docs/configuration/)
+- Review the [Security Hardening](/docs/deployment/security/) checklist

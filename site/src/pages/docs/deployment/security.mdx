@@ -1,0 +1,72 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Security Hardening
+description: Production security recommendations for Memory Service deployments.
+---
+
+Memory Service is often placed behind agent applications and identity infrastructure. Treat
+the service as a sensitive data plane: it stores conversation content, attachment bytes,
+index material, and administrative metadata.
+
+## Baseline Runtime
+
+- Run the container as non-root. The published image uses UID/GID `10001`.
+- Use a read-only root filesystem and mount only the paths that must be writable.
+- Mount `MEMORY_SERVICE_TEMP_DIR` on a writable volume such as `/var/lib/memory-service/tmp`.
+- Drop Linux capabilities and set `allowPrivilegeEscalation: false`.
+- Disable Kubernetes service-account token mounting unless the pod explicitly needs the
+  Kubernetes API.
+- Pin deployment images by immutable version or digest in production.
+
+## Secrets
+
+- Generate unique values per environment for database passwords, API keys, OIDC client
+  secrets, attachment store credentials, and encryption keys. Attachment download signing
+  keys are derived from the configured encryption provider material; do not configure a
+  separate attachment signing secret.
+- Use `dek`, `kms`, or `vault` as the primary encryption provider for production data.
+  `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is an explicit unsafe opt-in, and
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` should be limited to a
+  documented migration window.
+- Do not use the local Docker Compose `.env` file as a production secret source.
+- Store production secrets in a secret manager or Kubernetes `Secret` managed by your
+  deployment system.
+- Rotate any value that was checked into source control, printed in logs, or shared in a
+  support bundle.
+
+## Network Exposure
+
+- Bind local demo services to loopback only. The repository `compose.yaml` uses
+  `COMPOSE_BIND_HOST=127.0.0.1` when generated with `task dev:compose:env`.
+- Keep Prometheus, Grafana, databases, object storage consoles, and management endpoints
+  off the public gateway.
+- Put browser-facing traffic behind TLS and configure `MEMORY_SERVICE_BASE_URL` to the
+  externally reachable HTTPS origin.
+- Forwarded client-IP headers should come only from explicitly trusted reverse proxy CIDRs
+  configured with `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS`; leave it unset to trust no proxies.
+
+## Authentication
+
+- Require OIDC audience checks for production issuers.
+- Keep API-key clients scoped to the least privilege required by each agent or processor.
+- Disable wildcard credentialed CORS; list exact browser origins.
+- Keep admin APIs on a separate network path when possible.
+
+## Attachments
+
+- Use S3-compatible storage for durable multi-node deployments.
+- Serve browser-downloadable attachments through the service so response headers can force
+  safe content type and disposition decisions.
+- Treat active content such as HTML and SVG as downloads unless a reviewed embedding path
+  intentionally isolates it.
+
+## Local Development
+
+Run this once before using the repository Docker Compose environment:
+
+```bash
+task dev:compose:env
+```
+
+The task creates an ignored `.env` with local-only credentials. Recreate it when you need to
+rotate local secrets.
