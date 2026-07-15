@@ -80,6 +80,32 @@ func TestConfigUsesRequestOriginWhenBaseURLIsUnset(t *testing.T) {
 	}`, rec.Body.String())
 }
 
+func TestConfigIgnoresForwardedOriginWhenBaseURLIsUnset(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := testConfig(t)
+	cfg.BaseURL = ""
+	router := gin.New()
+	require.NoError(t, RegisterRoutes(router, cfg))
+
+	req := httptest.NewRequest(http.MethodGet, "/developer/config.json", nil)
+	req.Host = "localhost:49152"
+	req.Header.Set("X-Forwarded-Proto", "https")
+	req.Header.Set("X-Forwarded-Host", "attacker.example")
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"apiUrl": "http://localhost:49152",
+		"oidc": {
+			"authority": "http://keycloak.example/realms/memory-service",
+			"clientId": "developer-frontend",
+			"redirectUri": "http://localhost:49152/developer/"
+		}
+	}`, rec.Body.String())
+}
+
 func TestRegisterRoutesFallsBackToSPAForExtensionlessDeveloperPaths(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 

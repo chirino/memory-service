@@ -19,6 +19,11 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	t.Setenv("MEMORY_SERVICE_CORS_ENABLED", "true")
 	t.Setenv("MEMORY_SERVICE_VECTOR_QDRANT_PORT", "7443")
 	t.Setenv("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "qdrant.example")
+	t.Setenv("MEMORY_SERVICE_OIDC_ROLE_CLAIMS", `["/realm_access/roles","/groups"]`)
+	t.Setenv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", "true")
+	t.Setenv("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS", "10.0.0.0/24")
+	t.Setenv("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN", "true")
+	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", "true")
 
 	cfg := DefaultConfig()
 	err := cfg.ApplyJavaCompatFromEnv()
@@ -35,6 +40,19 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	require.True(t, cfg.CORSEnabled)
 	require.Equal(t, "qdrant.example", cfg.QdrantHost)
 	require.Equal(t, 7443, cfg.QdrantPort)
+	require.Equal(t, []string{"/realm_access/roles", "/groups"}, cfg.OIDCRoleClaims)
+	require.True(t, cfg.OIDCAllowMissingAudience)
+	require.Equal(t, "10.0.0.0/24", cfg.TrustedProxyCIDRs)
+	require.True(t, cfg.EncryptionAllowPlain)
+	require.True(t, cfg.EncryptionLegacyPlainReadEnabled)
+}
+
+func TestApplyJavaCompatFromEnvRejectsInvalidOIDCRoleClaims(t *testing.T) {
+	t.Setenv("MEMORY_SERVICE_OIDC_ROLE_CLAIMS", `/groups`)
+
+	cfg := DefaultConfig()
+	err := cfg.ApplyJavaCompatFromEnv()
+	require.ErrorContains(t, err, "invalid MEMORY_SERVICE_OIDC_ROLE_CLAIMS")
 }
 
 func TestQdrantAddress_Defaults(t *testing.T) {

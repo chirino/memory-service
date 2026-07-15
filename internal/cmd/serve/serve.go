@@ -246,6 +246,13 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Destination: &cfg.RequireJustification,
 			Usage:       "Require justification for admin API calls",
 		},
+		&cli.StringFlag{
+			Name:        "trusted-proxy-cidrs",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS"),
+			Destination: &cfg.TrustedProxyCIDRs,
+			Usage:       "Comma-separated trusted TCP proxy IPs/CIDRs for client-IP resolution; empty trusts no proxies",
+		},
 	}
 }
 
@@ -302,6 +309,38 @@ func listenerFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.ManagementListener.EnableTLS,
 			Value:       cfg.ManagementListener.EnableTLS,
 			Usage:       "Enable TLS for management server",
+		},
+		&cli.IntFlag{
+			Name:        "max-header-bytes",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MAX_HEADER_BYTES"),
+			Destination: &cfg.Listener.MaxHeaderBytes,
+			Value:       cfg.Listener.MaxHeaderBytes,
+			Usage:       "Maximum request header bytes accepted by the main HTTP server",
+		},
+		&cli.IntFlag{
+			Name:        "management-max-header-bytes",
+			Category:    "Network Listener: Management:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_MAX_HEADER_BYTES"),
+			Destination: &cfg.ManagementListener.MaxHeaderBytes,
+			Value:       cfg.ManagementListener.MaxHeaderBytes,
+			Usage:       "Maximum request header bytes accepted by the management HTTP server",
+		},
+		&cli.DurationFlag{
+			Name:        "idle-timeout",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_IDLE_TIMEOUT"),
+			Destination: &cfg.Listener.IdleTimeout,
+			Value:       cfg.Listener.IdleTimeout,
+			Usage:       "HTTP keep-alive idle timeout for the main listener",
+		},
+		&cli.DurationFlag{
+			Name:        "management-idle-timeout",
+			Category:    "Network Listener: Management:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_IDLE_TIMEOUT"),
+			Destination: &cfg.ManagementListener.IdleTimeout,
+			Value:       cfg.ManagementListener.IdleTimeout,
+			Usage:       "HTTP keep-alive idle timeout for the management listener",
 		},
 	}
 	flags = append(flags, tcpListenerFlags(cfg)...)
@@ -515,6 +554,20 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.EncryptionAttachmentsDisabled,
 			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
 		},
+		&cli.BoolFlag{
+			Name:        "encryption-allow-plain",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN"),
+			Destination: &cfg.EncryptionAllowPlain,
+			Usage:       "Explicitly allow the plain provider as the primary provider outside testing (unsafe)",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-legacy-plain-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyPlainReadEnabled,
+			Usage:       "Permit headerless legacy plaintext reads when plain is registered as a fallback provider",
+		},
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption: DEK:",
@@ -605,6 +658,12 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.IndexerOIDCRole,
 			Usage:       "OIDC role name that maps to indexer permissions",
 		},
+		&cli.StringSliceFlag{
+			Name:        "oidc-role-claim",
+			Category:    "Authorization:",
+			Destination: &cfg.OIDCRoleClaims,
+			Usage:       "Repeatable RFC 6901 JSON Pointer to a string or string-array OIDC role claim; MEMORY_SERVICE_OIDC_ROLE_CLAIMS accepts a JSON array",
+		},
 		&cli.StringFlag{
 			Name:        "roles-admin-users",
 			Category:    "Authorization:",
@@ -659,7 +718,14 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"),
 			Destination: &cfg.OIDCAllowedAudiences,
-			Usage:       "Optional comma-separated OIDC audiences accepted by memory-service; empty disables audience checks",
+			Usage:       "Comma-separated OIDC audiences accepted by memory-service",
+		},
+		&cli.BoolFlag{
+			Name:        "oidc-allow-missing-audience",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE"),
+			Destination: &cfg.OIDCAllowMissingAudience,
+			Usage:       "Temporarily allow issuer-only OIDC validation without configured audiences (unsafe compatibility mode)",
 		},
 	}
 	for _, desc := range security.PermissionDescriptors() {

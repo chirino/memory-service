@@ -99,6 +99,9 @@ func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
 
 // BuildServer initializes all subsystems without binding any network listeners.
 func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	if err := validateStartupConfig(cfg); err != nil {
+		return nil, err
+	}
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return nil, err
 	}
@@ -191,7 +194,15 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up gin
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	trustedProxies, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	if err := router.SetTrustedProxies(trustedProxies); err != nil {
+		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
+	}
 	router.Use(gin.Recovery())
+	router.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
 		router.Use(security.AccessLogMiddleware())
 	} else {
@@ -489,7 +500,11 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 	}
 
 	mgmtRouter := gin.New()
+	if err := mgmtRouter.SetTrustedProxies(nil); err != nil {
+		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
+	}
 	mgmtRouter.Use(gin.Recovery())
+	mgmtRouter.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
 		mgmtRouter.Use(security.AccessLogMiddleware())
 	}

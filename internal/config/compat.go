@@ -1,6 +1,7 @@
 package config
 
 import (
+	"encoding/json"
 	"fmt"
 	"net"
 	"net/url"
@@ -102,11 +103,30 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	}
 
 	applyStringEnv("MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE", &c.IndexerOIDCRole)
+	if len(c.OIDCRoleClaims) == 0 {
+		if raw, ok := os.LookupEnv("MEMORY_SERVICE_OIDC_ROLE_CLAIMS"); ok {
+			var values []string
+			if err := json.Unmarshal([]byte(raw), &values); err != nil {
+				return fmt.Errorf("invalid MEMORY_SERVICE_OIDC_ROLE_CLAIMS: expected JSON array of strings: %w", err)
+			}
+			c.OIDCRoleClaims = values
+		}
+	}
+	if err = applyBoolEnv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", &c.OIDCAllowMissingAudience); err != nil {
+		return err
+	}
 	if err = applyBoolEnv("MEMORY_SERVICE_CORS_ENABLED", &c.CORSEnabled); err != nil {
 		return err
 	}
 	applyStringEnv("MEMORY_SERVICE_CORS_ORIGINS", &c.CORSOrigins)
+	applyStringEnv("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS", &c.TrustedProxyCIDRs)
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_KIND", &c.EncryptionProviders)
+	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN", &c.EncryptionAllowPlain); err != nil {
+		return err
+	}
+	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", &c.EncryptionLegacyPlainReadEnabled); err != nil {
+		return err
+	}
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE", &c.EncryptionProviderDEKType)
 	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED", &c.EncryptionProviderDEKEnabled); err != nil {
 		return err

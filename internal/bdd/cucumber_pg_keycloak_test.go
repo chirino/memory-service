@@ -35,6 +35,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	cfg.OIDCIssuer = keycloak.IssuerURL
 	cfg.OIDCDiscoveryURL = keycloak.DiscoveryURL
 	cfg.OIDCAllowedClients = "memory-service-client,frontend,developer-frontend"
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"

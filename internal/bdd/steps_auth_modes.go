@@ -126,6 +126,7 @@ func (am *authModeSteps) buildOIDCConfig() (config.Config, error) {
 	}
 	cfg.OIDCIssuer = kc.GetIssuerURL()
 	cfg.OIDCDiscoveryURL = kc.GetDiscoveryURL()
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"
@@ -246,6 +247,7 @@ func (am *authModeSteps) startOIDCAudienceServer(allowedClients, allowedAudience
 	}
 	cfg.OIDCAllowedClients = allowedClients
 	cfg.OIDCAllowedAudiences = allowedAudiences
+	cfg.OIDCAllowMissingAudience = strings.TrimSpace(allowedAudiences) == ""
 
 	return am.startServer(&cfg)
 }

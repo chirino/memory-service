@@ -15,10 +15,13 @@ Minimal deployment on Fly.io free tier: memory-service server + API key auth, no
 
 This will:
 - Create a Fly app (`memory-service-poc`)
-- Generate and set secrets (API key, encryption key, attachment signing secret)
+- Generate and set required secrets (API key and encryption key)
 - Build and deploy the Docker image
 
-Save the **agent API key** printed at the end — you'll need it to authenticate.
+Generated secrets are not printed to the terminal. When the script generates values, it
+writes them to `deploy/fly/.env` with mode `0600`; save that file securely because the
+agent API key is required for authentication and the encryption key is required to read
+existing encrypted data.
 
 ## Redeploy after code changes
 
@@ -37,7 +40,13 @@ Save the **agent API key** printed at the end — you'll need it to authenticate
 
 ### Memory Service configuration
 
-The deploy script forwards **all `MEMORY_SERVICE_*` environment variables** as Fly secrets. See the [Configuration docs](../../site/src/pages/docs/configuration.mdx) for the full list.
+The deploy script always sets the required memory-service secrets below. It does not forward
+every `MEMORY_SERVICE_*` variable from your shell, to avoid accidentally storing unrelated
+local values as Fly secrets.
+
+To forward additional memory-service secrets, set `FLY_MEMORY_SERVICE_SECRET_NAMES` to a
+comma- or space-separated list of exact environment variable names, and set each named
+variable in the environment before running the script.
 
 The following keys are generated automatically if not provided:
 
@@ -45,7 +54,6 @@ The following keys are generated automatically if not provided:
 |----------|---------|-------------|
 | `MEMORY_SERVICE_API_KEYS_AGENT` | random | Agent API key for authentication |
 | `MEMORY_SERVICE_ENCRYPTION_DEK_KEY` | random | 32-byte hex encryption key |
-| `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET` | random | Attachment signing secret |
 
 Example:
 ```bash
@@ -55,6 +63,8 @@ FLY_APP_NAME=my-team-memory FLY_REGION=lhr ./deploy/fly/deploy.sh
 Example with extra configuration:
 ```bash
 MEMORY_SERVICE_API_KEYS_AGENT=my-key \
+  MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY=sk-... \
+  FLY_MEMORY_SERVICE_SECRET_NAMES=MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY \
   ./deploy/fly/deploy.sh
 ```
 

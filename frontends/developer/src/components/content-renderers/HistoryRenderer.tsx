@@ -121,6 +121,19 @@ function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisp
   return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
 }
 
+function safeAttachmentUrl(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return undefined;
+    }
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * Fetches a signed download URL for an attachment.
  * For external URLs (no attachment ID), returns the href directly.
@@ -130,7 +143,7 @@ async function fetchSignedDownloadUrl(
   disposition: AttachmentDisposition,
 ): Promise<string | undefined> {
   if (!attachment.attachmentId) {
-    return attachment.href;
+    return safeAttachmentUrl(attachment.href);
   }
   try {
     const headers = new Headers();
@@ -143,7 +156,7 @@ async function fetchSignedDownloadUrl(
       return undefined;
     }
     const data = await response.json();
-    return data?.url ?? undefined;
+    return safeAttachmentUrl(data?.url);
   } catch {
     console.error("Failed to get admin download URL for attachment");
     return undefined;
@@ -177,7 +190,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: Attachme
     try {
       const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) {
-        window.open(url, "_blank");
+        window.open(url, "_blank", "noopener,noreferrer");
       }
     } finally {
       setIsLoading(false);
@@ -253,7 +266,8 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: Attachme
  * Returns true if the attachment is an image based on its contentType.
  */
 function isImageAttachment(attachment: Attachment): boolean {
-  return attachment.contentType?.split("/")[0] === "image";
+  const contentType = attachment.contentType?.toLowerCase().split(";")[0]?.trim();
+  return contentType?.split("/")[0] === "image" && contentType !== "image/svg+xml";
 }
 
 /**
@@ -284,7 +298,7 @@ function ImageAttachmentPreview({ attachment, isUserMessage }: { attachment: Att
     setIsLoading(true);
     try {
       const url = await fetchSignedDownloadUrl(attachment, "inline");
-      if (url) window.open(url, "_blank");
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     } finally {
       setIsLoading(false);
     }

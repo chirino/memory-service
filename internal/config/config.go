@@ -13,6 +13,7 @@ import (
 // ListenerConfig holds the network/TLS settings for a single listener (main or management).
 type ListenerConfig struct {
 	Port              int
+	Host              string
 	UnixSocket        string
 	EnablePlainText   bool
 	EnableTLS         bool
@@ -20,6 +21,8 @@ type ListenerConfig struct {
 	TLSKeyFile        string
 	TLSSelfSigned     bool
 	ReadHeaderTimeout time.Duration
+	MaxHeaderBytes    int
+	IdleTimeout       time.Duration
 }
 
 type contextKey struct{}
@@ -203,6 +206,7 @@ type Config struct {
 	ManagementAccessLog bool
 	CORSEnabled         bool
 	CORSOrigins         string
+	TrustedProxyCIDRs   string
 	UnixSocketAuth      string
 	LocalUserID         string
 	LocalClientID       string
@@ -221,9 +225,11 @@ type Config struct {
 	IndexerClients  string
 
 	// OIDC client/audience allowlisting and resource/API scope gates
-	OIDCAllowedClients   string
-	OIDCAllowedAudiences string
-	OIDCScopes           map[string]string // permission key -> comma-separated accepted OIDC scopes
+	OIDCAllowedClients       string
+	OIDCAllowedAudiences     string
+	OIDCAllowMissingAudience bool
+	OIDCRoleClaims           []string
+	OIDCScopes               map[string]string // permission key -> comma-separated accepted OIDC scopes
 
 	// Encryption
 	EncryptionProviders          string
@@ -242,6 +248,10 @@ type Config struct {
 	// EncryptionAttachmentsDisabled skips the encrypt.Wrap layer on the attachment store even when
 	// EncryptionKey is set.
 	EncryptionAttachmentsDisabled bool
+	// EncryptionAllowPlain explicitly permits the plain provider as the primary provider outside testing.
+	EncryptionAllowPlain bool
+	// EncryptionLegacyPlainReadEnabled permits headerless ciphertext/plaintext reads through the plain provider.
+	EncryptionLegacyPlainReadEnabled bool
 
 	// Body size limit (bytes)
 	MaxBodySize int64
@@ -340,13 +350,19 @@ func DefaultConfig() Config {
 		SearchFulltextEnabled:                 true,
 		Listener: ListenerConfig{
 			Port:              8080,
+			Host:              "127.0.0.1",
 			EnablePlainText:   true,
 			EnableTLS:         true,
 			ReadHeaderTimeout: 5 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+			IdleTimeout:       120 * time.Second,
 		},
 		ManagementListener: ListenerConfig{
 			EnablePlainText: true,
 			EnableTLS:       true,
+			Host:            "127.0.0.1",
+			MaxHeaderBytes:  64 << 10,
+			IdleTimeout:     30 * time.Second,
 		},
 		UnixSocketAuth:               "credentials",
 		LocalClientID:                "local-agent",

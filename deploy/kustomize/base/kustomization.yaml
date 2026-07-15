@@ -20,6 +20,7 @@ configMapGenerator:
       - MEMORY_SERVICE_ATTACHMENTS_KIND=db
       - MEMORY_SERVICE_OUTBOX_ENABLED=true
       - MEMORY_SERVICE_MANAGEMENT_PORT=8085
+      - MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0
 
 secretGenerator:
   - name: memory-service-secret

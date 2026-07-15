@@ -49,6 +49,51 @@ tasks:
     cmds:
       - docker build -t ghcr.io/chirino/memory-service-chat-quarkus:latest -f java/quarkus/examples/chat-quarkus/Dockerfile .
 
+  dev:compose:env:
+    desc: Generate ignored local Docker Compose credentials in .env
+    cmds:
+      - |
+        set -eu
+        if [ -e .env ]; then
+          echo ".env already exists; remove it first if you want new local credentials."
+          exit 0
+        fi
+        rand_hex() {
+          openssl rand -hex "$1"
+        }
+        rand_b64() {
+          openssl rand -base64 "$1" | tr -d '\n'
+        }
+        {
+          echo "COMPOSE_BIND_HOST=127.0.0.1"
+          echo "POSTGRES_PASSWORD=$(rand_b64 24)"
+          echo "KEYCLOAK_DB_PASSWORD=$(rand_b64 24)"
+          echo "KEYCLOAK_ADMIN_PASSWORD=$(rand_b64 24)"
+          echo "QDRANT_API_KEY=$(rand_b64 24)"
+          echo "INFINISPAN_USERNAME=admin"
+          echo "INFINISPAN_PASSWORD=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_API_KEY_AGENT=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_API_KEY_AGENT_2=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_API_KEY_ADMIN=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_API_KEY_TURN_TRACES_PROCESSOR=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_API_KEY_COGNITION_PROCESSOR=$(rand_b64 24)"
+          echo "MEMORY_SERVICE_ENCRYPTION_DEK_KEY=$(rand_hex 32)"
+          echo "MINIO_ROOT_USER=memoryservice"
+          echo "MINIO_ROOT_PASSWORD=$(rand_b64 24)"
+          echo "GRAFANA_ADMIN_PASSWORD=$(rand_b64 24)"
+          echo "KEYCLOAK_CLIENT_SECRET=$(rand_b64 24)"
+          echo "LANGFUSE_NEXTAUTH_SECRET=$(rand_b64 32)"
+          echo "LANGFUSE_SALT=$(rand_b64 16)"
+          echo "LANGFUSE_ENCRYPTION_KEY=$(rand_hex 32)"
+          echo "CLICKHOUSE_PASSWORD=$(rand_b64 24)"
+          echo "LANGFUSE_INIT_PROJECT_PUBLIC_KEY=lf_pk_dev_turn_traces"
+          echo "LANGFUSE_INIT_PROJECT_SECRET_KEY=$(rand_b64 24)"
+          echo "LANGFUSE_INIT_USER_PASSWORD=$(rand_b64 24)"
+          echo "LANGFUSE_OTEL_BASIC_AUTH=$(printf '%s:%s' lf_pk_dev_turn_traces "$(rand_b64 24)" | base64 | tr -d '\n')"
+        } > .env
+        chmod 600 .env
+        echo "Generated .env for local Docker Compose."
+
   generate:
     desc: "generate and format source files"
     deps: # these seem safe to run concurrently.
@@ -199,7 +244,7 @@ tasks:
       MEMORY_SERVICE_PORT: 8082
       MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
       # ── Datastore ──────────────────────────────────────────────
-      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_URL: 'postgres://postgres:{{.POSTGRES_PASSWORD}}@localhost:5432/memory_service?sslmode=disable'
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
       # ── Cache ──────────────────────────────────────────────────
       MEMORY_SERVICE_CACHE_KIND: redis
@@ -210,13 +255,14 @@ tasks:
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
+      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
-      MEMORY_SERVICE_API_KEYS_ADMIN: admin-api-key-1
-      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
+      MEMORY_SERVICE_API_KEYS_AGENT: '{{.MEMORY_SERVICE_API_KEY_AGENT}}'
+      MEMORY_SERVICE_API_KEYS_ADMIN: '{{.MEMORY_SERVICE_API_KEY_ADMIN}}'
+      MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: '{{.MEMORY_SERVICE_API_KEY_TURN_TRACES_PROCESSOR}}'
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
@@ -224,20 +270,20 @@ tasks:
       MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
       # ── Encryption ─────────────────────────────────────────────
       MEMORY_SERVICE_ENCRYPTION_KIND: dek
-      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY}}'
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
       MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
       AWS_ENDPOINT_URL: http://localhost:9000
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_ACCESS_KEY_ID: '{{.MINIO_ROOT_USER}}'
+      AWS_SECRET_ACCESS_KEY: '{{.MINIO_ROOT_PASSWORD}}'
       AWS_REGION: us-east-1
       # ── Vector search ──────────────────────────────────────────
       MEMORY_SERVICE_VECTOR_KIND: qdrant
       MEMORY_SERVICE_VECTOR_QDRANT_HOST: localhost
       MEMORY_SERVICE_VECTOR_QDRANT_PORT: "6334"
-      MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: change-me
+      MEMORY_SERVICE_VECTOR_QDRANT_API_KEY: '{{.QDRANT_API_KEY}}'
       # ── Embeddings ─────────────────────────────────────────────
       MEMORY_SERVICE_EMBEDDING_KIND: '{{.MEMORY_SERVICE_EMBEDDING_KIND | default "openai"}}'
       MEMORY_SERVICE_OPENAI_API_KEY: '{{.OPENAI_API_KEY | default "none"}}'
@@ -252,7 +298,7 @@ tasks:
       MEMORY_SERVICE_LOG_LEVEL: info
       MEMORY_SERVICE_GRPC_ENDPOINT: '{{.MEMORY_SERVICE_GRPC_ENDPOINT | default "localhost:8082"}}'
       MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
-      MEMORY_SERVICE_API_KEY: turn-traces-processor-key
+      MEMORY_SERVICE_API_KEY: '{{.MEMORY_SERVICE_API_KEY_TURN_TRACES_PROCESSOR}}'
       MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
       MEMORY_SERVICE_PROCESS_SCOPE: admin
       MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
@@ -264,7 +310,7 @@ tasks:
       MEMORY_SERVICE_AIR_FULL_BIN: ./bin/memory-service process turn-traces
       OTEL_SERVICE_NAME: memory-service-turn-traces
       OTEL_EXPORTER_OTLP_ENDPOINT: '{{.OTEL_EXPORTER_OTLP_ENDPOINT | default "http://localhost:3002/api/public/otel"}}'
-      OTEL_EXPORTER_OTLP_HEADERS: '{{.OTEL_EXPORTER_OTLP_HEADERS | default "Authorization=Basic bGZfcGtfZGV2X3R1cm5fdHJhY2VzOmxmX3NrX2Rldl90dXJuX3RyYWNlcw==,x-langfuse-ingestion-version=4"}}'
+      OTEL_EXPORTER_OTLP_HEADERS: 'Authorization=Basic {{.LANGFUSE_OTEL_BASIC_AUTH}},x-langfuse-ingestion-version=4'
       LANGFUSE_TRACING_ENVIRONMENT: '{{.LANGFUSE_TRACING_ENVIRONMENT | default "local-dev"}}'
     cmds:
       - docker compose up -d postgres redis qdrant infinispan keycloak prometheus minio minio-init clickhouse langfuse-worker langfuse-web memory-service
@@ -277,7 +323,7 @@ tasks:
       MEMORY_SERVICE_PORT: 8082
       MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
       # ── Datastore ──────────────────────────────────────────────
-      MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
+      MEMORY_SERVICE_DB_URL: 'postgres://postgres:{{.POSTGRES_PASSWORD}}@localhost:5432/memory_service?sslmode=disable'
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
       # ── Cache ──────────────────────────────────────────────────
       MEMORY_SERVICE_CACHE_KIND: redis
@@ -285,11 +331,12 @@ tasks:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: agent
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1
+      MEMORY_SERVICE_API_KEYS_AGENT: '{{.MEMORY_SERVICE_API_KEY_AGENT}}'
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
@@ -297,14 +344,14 @@ tasks:
       MEMORY_SERVICE_PROMETHEUS_URL: http://localhost:9092
       # ── Encryption ─────────────────────────────────────────────
       MEMORY_SERVICE_ENCRYPTION_KIND: dek
-      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY | default "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"}}'
+      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: '{{.MEMORY_SERVICE_ENCRYPTION_DEK_KEY}}'
       # ── Attachments ────────────────────────────────────────────
       MEMORY_SERVICE_ATTACHMENTS_KIND: s3
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
       MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true"
       AWS_ENDPOINT_URL: http://localhost:9000
-      AWS_ACCESS_KEY_ID: minioadmin
-      AWS_SECRET_ACCESS_KEY: minioadmin
+      AWS_ACCESS_KEY_ID: '{{.MINIO_ROOT_USER}}'
+      AWS_SECRET_ACCESS_KEY: '{{.MINIO_ROOT_PASSWORD}}'
       AWS_REGION: us-east-1
       # ── Vector search (pgvector) ────────────────────────────────
       MEMORY_SERVICE_VECTOR_KIND: pgvector
@@ -478,10 +525,8 @@ tasks:
         echo ""
         echo "Services available at:"
         echo "  Chat:           http://chat.127.0.0.1.nip.io               (bob/bob or alice/alice)"
-        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io           (admin/admin)"
-        echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/   (admin/admin)"
-        echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
-        echo "  MinIO Console:  http://minio.127.0.0.1.nip.io              (minioadmin/minioadmin)"
+        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io"
+        echo "  MinIO Console:  http://minio.127.0.0.1.nip.io"
 
   release:java:bundle:
     desc: Build a signed Maven Central bundle for validation (without publishing)

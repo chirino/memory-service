@@ -4,8 +4,9 @@ on:
   push:
     branches: [main]
     paths:
+      - '.devcontainer/devcontainer.json'
       - '.devcontainer/Dockerfile'
-      - '.devcontainer/supervisord.conf'
+      - '.devcontainer/post-start.sh'
       - '.github/workflows/devcontainer.yml'
   workflow_dispatch:
 

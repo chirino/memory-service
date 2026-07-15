@@ -68,6 +68,28 @@ func TestMaxBodySizeMiddleware_EnforcesForNonStreamingEndpoints(t *testing.T) {
 	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
 }
 
+func TestSecurityHeadersMiddleware(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(securityHeadersMiddleware())
+	router.GET("/ok", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+	router.Handle(http.MethodTrace, "/ok", func(c *gin.Context) {
+		c.Status(http.StatusOK)
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ok", nil))
+	require.Equal(t, http.StatusNoContent, rec.Code)
+	require.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, "strict-origin-when-cross-origin", rec.Header().Get("Referrer-Policy"))
+
+	trace := httptest.NewRecorder()
+	router.ServeHTTP(trace, httptest.NewRequest(http.MethodTrace, "/ok", nil))
+	require.Equal(t, http.StatusMethodNotAllowed, trace.Code)
+}
+
 func TestMaxPageSizeMiddleware(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

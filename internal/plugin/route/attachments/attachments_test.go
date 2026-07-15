@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/textproto"
 	"net/url"
 	"sync"
 	"testing"
@@ -243,6 +244,43 @@ func TestAttachmentTokenDownloadAndDelete(t *testing.T) {
 	getResp := httptest.NewRecorder()
 	router.ServeHTTP(getResp, getReq)
 	require.Equal(t, http.StatusNotFound, getResp.Code)
+}
+
+func TestActiveContentCannotBeForcedInline(t *testing.T) {
+	router := setupAttachmentsRouter(t)
+
+	form := &bytes.Buffer{}
+	writer := multipart.NewWriter(form)
+	partHeader := textproto.MIMEHeader{}
+	partHeader.Set("Content-Disposition", `form-data; name="file"; filename="active.html"`)
+	partHeader.Set("Content-Type", "text/html")
+	part, err := writer.CreatePart(partHeader)
+	require.NoError(t, err)
+	_, err = part.Write([]byte("<!doctype html><script>alert(1)</script>"))
+	require.NoError(t, err)
+	require.NoError(t, writer.Close())
+
+	uploadReq := httptest.NewRequest(http.MethodPost, "/v1/attachments", form)
+	uploadReq.Header.Set("Content-Type", writer.FormDataContentType())
+	uploadReq.Header.Set("Authorization", "Bearer alice")
+	uploadResp := httptest.NewRecorder()
+	router.ServeHTTP(uploadResp, uploadReq)
+	require.Equal(t, http.StatusCreated, uploadResp.Code)
+
+	var created map[string]any
+	require.NoError(t, json.Unmarshal(uploadResp.Body.Bytes(), &created))
+	id, _ := created["id"].(string)
+	require.NotEmpty(t, id)
+
+	getReq := httptest.NewRequest(http.MethodGet, "/v1/attachments/"+id+"?disposition=inline", nil)
+	getReq.Header.Set("Authorization", "Bearer alice")
+	getResp := httptest.NewRecorder()
+	router.ServeHTTP(getResp, getReq)
+
+	require.Equal(t, http.StatusOK, getResp.Code)
+	require.Equal(t, "application/octet-stream", getResp.Header().Get("Content-Type"))
+	require.Equal(t, "nosniff", getResp.Header().Get("X-Content-Type-Options"))
+	require.Equal(t, `attachment; filename=active.html`, getResp.Header().Get("Content-Disposition"))
 }
 
 func TestSourceURLTransport_BlocksPrivateLiteralIPs(t *testing.T) {

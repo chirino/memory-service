@@ -130,13 +130,25 @@ function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisp
   return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
 }
 
+function safeAttachmentUrl(rawUrl: string | undefined): string | undefined {
+  if (!rawUrl) return undefined;
+  try {
+    const parsed = new URL(rawUrl, window.location.origin);
+    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+      return undefined;
+    }
+    return parsed.toString();
+  } catch {
+    return undefined;
+  }
+}
+
 async function fetchSignedDownloadUrl(
   attachment: ChatAttachment,
   disposition: AttachmentDisposition,
 ): Promise<string | undefined> {
   if (!attachment.attachmentId) {
-    // External URL — return href directly
-    return attachment.href;
+    return safeAttachmentUrl(attachment.href);
   }
   const token = getAccessToken();
   const resp = await fetch(attachmentDownloadUrl(attachment.attachmentId, disposition), {
@@ -147,14 +159,15 @@ async function fetchSignedDownloadUrl(
     return undefined;
   }
   const data = await resp.json();
-  return data.url;
+  return safeAttachmentUrl(data.url);
 }
 
 /**
  * Returns true if the attachment is an image based on its contentType.
  */
 function isImageAttachment(attachment: ChatAttachment): boolean {
-  return attachment.contentType?.split("/")[0] === "image";
+  const contentType = attachment.contentType?.toLowerCase().split(";")[0]?.trim();
+  return contentType?.split("/")[0] === "image" && contentType !== "image/svg+xml";
 }
 
 /**
@@ -192,7 +205,7 @@ function ImageAttachmentPreview({
     setIsLoading(true);
     try {
       const url = await fetchSignedDownloadUrl(attachment, "inline");
-      if (url) window.open(url, "_blank");
+      if (url) window.open(url, "_blank", "noopener,noreferrer");
     } finally {
       setIsLoading(false);
     }
@@ -275,7 +288,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: ChatAtta
     try {
       const url = await fetchSignedDownloadUrl(attachment, "inline");
       if (url) {
-        window.open(url, "_blank");
+        window.open(url, "_blank", "noopener,noreferrer");
       }
     } finally {
       setIsLoading(false);

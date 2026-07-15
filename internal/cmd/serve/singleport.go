@@ -36,6 +36,9 @@ func StartSinglePortHTTPAndGRPC(
 	if cfg.ReadHeaderTimeout == 0 {
 		cfg.ReadHeaderTimeout = 5 * time.Second
 	}
+	if cfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = http.DefaultMaxHeaderBytes
+	}
 
 	prepared, err := prepareListener(cfg)
 	if err != nil {
@@ -60,6 +63,8 @@ func StartSinglePortHTTPAndGRPC(
 		plainServer = &http.Server{
 			Handler:           h2c.NewHandler(dispatch, &http2.Server{}),
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := plainServer.Serve(plainLis); err != nil && err != http.ErrServerClosed {
@@ -85,6 +90,8 @@ func StartSinglePortHTTPAndGRPC(
 		tlsServer = &http.Server{
 			Handler:           dispatch,
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := tlsServer.Serve(tlsWrapped); err != nil && err != http.ErrServerClosed {

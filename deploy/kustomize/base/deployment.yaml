@@ -17,9 +17,24 @@ spec:
         app.kubernetes.io/name: memory-service
     spec:
       serviceAccountName: memory-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: memory-service
           image: ghcr.io/chirino/memory-service:latest
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 8080
@@ -80,6 +95,13 @@ spec:
             # so the Go server receives an integer, not a TCP URL.
             - name: MEMORY_SERVICE_PORT
               value: "8080"
+            - name: MEMORY_SERVICE_HOST
+              value: "0.0.0.0"
+            - name: MEMORY_SERVICE_TEMP_DIR
+              value: /var/lib/memory-service/tmp
+          volumeMounts:
+            - name: memory-service-tmp
+              mountPath: /var/lib/memory-service/tmp
           livenessProbe:
             httpGet:
               path: /health
@@ -103,3 +125,7 @@ spec:
             limits:
               memory: 1Gi
               cpu: "1"
+      volumes:
+        - name: memory-service-tmp
+          emptyDir:
+            sizeLimit: 1Gi
