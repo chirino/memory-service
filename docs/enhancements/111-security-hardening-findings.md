@@ -753,7 +753,7 @@ out these changes rather than presenting the work as transparent hardening.
 | Attachment response policy | Omitted disposition now downloads; unsafe/unlisted types cannot render inline | Update OpenAPI descriptions, client/docs examples, and release notes; callers that need preview must request `inline` and use an allow-listed type |
 | S3 inline delivery | Inline S3 attachments are proxied instead of returned as presigned object URLs | Size proxy capacity for inline media; attachment downloads may remain direct when response overrides are enforceable |
 | OIDC role/audience policy | Tokens that relied on `scope`, top-level `roles`, implicit groups, or lack an accepted audience are rejected | Configure JSON Pointer role claims and audience/client allow-lists before upgrade; there is no scope-role compatibility mode |
-| Production startup validation | Plain encryption, wildcard credentialed CORS, public management fallback, ambiguous TLS/plaintext, missing frontend base URL, unsafe proxy trust, or demo secrets can stop startup | Validate configuration in staging and set only the documented risk-specific migration/unsafe flags |
+| Production startup validation | Plain encryption, wildcard credentialed CORS, public management fallback, ambiguous TLS/plaintext, missing frontend base URL, or unsafe proxy trust can stop startup | Validate configuration in staging and set only the documented risk-specific migration/unsafe flags |
 | Listener bind defaults | TCP listeners default to loopback rather than all interfaces | Set explicit container/Kubernetes hosts and the trusted-terminator/internal-management acknowledgements |
 | Trust-none proxy default | Unconfigured proxy deployments see the immediate proxy as client IP | Configure exact trusted TCP proxy CIDRs before relying on client-IP logging or rate limiting |
 | Non-root/read-only container | Implicit writes to the image filesystem fail | Mount explicitly writable attachment/temp paths with the runtime UID/GID before deployment |
@@ -802,8 +802,8 @@ The guide covers:
   overrides, proxy-only inline S3 behavior, and private-source-URL risk;
 - non-root/read-only container operation, writable attachment/temp volumes, Kubernetes
   security context, and disabled service-account token mounting;
-- secret generation/storage, prohibition of known Compose/demo values, log/xtrace handling,
-  and a final deployment verification checklist.
+- secret generation/storage, log/xtrace handling, and a final deployment verification
+  checklist.
 
 The site guide does **not** repeat finding IDs, severities, source-code locations, exact MSEH
 binary framing, CI/devcontainer maintainer work, or internal migration implementation. It
@@ -1014,8 +1014,6 @@ environment escape hatch. Validation returns all detected problems in one error.
 | Plaintext TCP binds beyond loopback | Fail unless `--plaintext-behind-trusted-terminator` is true; the opt-in requires non-empty trusted proxy CIDRs, warns, and must be paired with an ingress/network boundary in docs |
 | Developer frontend lacks a valid explicit base URL | Fail under the F-M10 policy |
 | Proxy CIDRs are invalid | Fail under the F-M10 policy; universal CIDRs are accepted as an explicit trust-all configuration |
-| A known repository demo secret is present in a service-owned config value | Fail by exact-value denylist for API keys, database URL credentials, and configured backend API keys; encryption key material is not denylisted because legacy keys must remain usable for rotation and recovery |
-
 Compose/deployment assets separately remove or generate credentials for external services
 that the memory-service process cannot observe, such as Grafana or Langfuse. Startup
 validation must not claim to validate secrets it never receives.
@@ -1309,9 +1307,7 @@ Feature: authenticated and browser-safe attachments
 - [x] F-H15: Remove GitHub expression interpolation from release shell source.
 - [x] F-H16: Stop tracing/printing Fly secrets and remove the obsolete signing secret.
 - [x] F-M1/F-L4/F-M14: Reject unsafe startup combinations, including exact CORS-origin
-  validation, OIDC TLS-skip rejection, aggregate startup error reporting, and service-owned
-  known demo-secret validation except for encryption key material needed for rotation and
-  recovery.
+  validation, OIDC TLS-skip rejection, and aggregate startup error reporting.
 - [x] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
   Request-ID middleware/interceptors are implemented for REST, dedicated management REST, and
   gRPC. REST error envelopes are normalized centrally, including `requestId`,

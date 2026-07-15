@@ -33,7 +33,7 @@ export const productionConfig = `services:
       - memory_service_tmp:/var/lib/memory-service/tmp
 
 volumes:
-  memory_service_tmp:`;
+memory_service_tmp:`;
 
 Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
 Before adapting these examples for a real environment, review the [Security Hardening](/docs/deployment/security/) guide for image pinning, secret handling, TLS, management endpoints, and attachment-download safety.
@@ -67,11 +67,9 @@ docker run -d \
 
 ## Docker Compose
 
-For a complete local setup with all dependencies, use the repository compose file and
-generate ignored local credentials first:
+For a complete local setup with all dependencies, use the repository compose file:
 
 ```bash
-task dev:compose:env
 docker compose up -d
 ```
 
@@ -167,14 +165,14 @@ With this configuration, attachment bytes are stored under `/data/memory-service
 
 ### Authentication
 
-| Variable                                       | Description                                                                                                                 | Default |
-| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------- |
-| `MEMORY_SERVICE_OIDC_ISSUER`                   | OIDC issuer URL                                                                                                             | -       |
-| `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS`          | Optional comma-separated OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer | -       |
-| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Required comma-separated OIDC audiences accepted by Memory Service when OIDC is enabled                                     | -       |
+| Variable                                       | Description                                                                                                                 | Default                   |
+| ---------------------------------------------- | --------------------------------------------------------------------------------------------------------------------------- | ------------------------- |
+| `MEMORY_SERVICE_OIDC_ISSUER`                   | OIDC issuer URL                                                                                                             | -                         |
+| `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS`          | Optional comma-separated OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer | -                         |
+| `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Required comma-separated OIDC audiences accepted by Memory Service when OIDC is enabled                                     | -                         |
 | `MEMORY_SERVICE_OIDC_ROLE_CLAIMS`              | JSON array of RFC 6901 claim paths used for claim-derived roles                                                             | `["/realm_access/roles"]` |
-| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; rejected outside testing mode                           | `false` |
-| `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                                  | -       |
+| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; rejected outside testing mode                           | `false`                   |
+| `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                                  | -                         |
 
 ## Health Checks
 

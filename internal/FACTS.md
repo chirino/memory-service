@@ -1,5 +1,7 @@
 # Internal Module Facts
 
+**urfave slice destinations**: urfave/cli v3 `StringSliceFlag` replaces a nil `Destination` slice with an empty slice even when the flag is unset. Defaults consumed after CLI parsing must treat both nil and empty slices as unset, or provide an explicit flag value.
+
 **Runtime mode is not user-configurable**: `config.DefaultConfig()` uses `ModeProd`; tests and embedded test harnesses set `ModeTesting` programmatically. The serve CLI does not read `MEMORY_SERVICE_MODE`, so production hardening checks should key off `cfg.Mode` and must not document that environment variable as an escape hatch.
 **Gin proxy trust default**: The pinned Gin `v1.12.0` `gin.New()` engine trusts all IPv4/IPv6 proxies until `SetTrustedProxies` is called. Main and management routers must explicitly call `SetTrustedProxies(nil)` when no validated proxy CIDRs are configured; do not rely on the library default.
 **Universal proxy trust**: `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS` intentionally accepts `0.0.0.0/0` and `::/0` as trust-all configurations for simple deployments. Keep the empty value as trust-none, reject malformed CIDRs, and document that universal trust lets direct callers select their forwarded client IP unless an external network boundary restricts access.

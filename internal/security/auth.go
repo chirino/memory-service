@@ -1134,7 +1134,7 @@ func extractTokenRoles(claims map[string]any, pointers []string) (map[string]boo
 }
 
 func validateRoleClaimPointers(configured []string) ([]string, error) {
-	if configured == nil {
+	if len(configured) == 0 {
 		return []string{"/realm_access/roles"}, nil
 	}
 	if len(configured) > 16 {

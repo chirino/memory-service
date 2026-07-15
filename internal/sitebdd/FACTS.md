@@ -115,6 +115,12 @@ substitute canonical user names:
 Response bodies are normalized back before assertions (`alice-<uid>` → `alice`).
 This keeps feature file content matching the documentation.
 
+The shared TCP and Unix-socket Memory Service test servers enable the mock OIDC issuer and
+must allow the mock JWT audience `memory-service`; `mock_jwt.go` issues every test token with
+that audience. Both servers also select the `dek` encryption provider explicitly when setting
+their fixed test key; setting `EncryptionKey` alone does not change the default `plain`
+provider.
+
 Site BDD also enforces cross-scenario UUID uniqueness for executed curl requests.
 A shared UUID (for example, conversation IDs reused in two scenario files) now
 fails the later scenario with a registry conflict error to prevent data races.

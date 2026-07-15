@@ -303,3 +303,25 @@ func TestMaxPageSizeFlagAndEnvironment(t *testing.T) {
 		})
 	}
 }
+
+func TestOIDCRoleClaimFlagLeavesUnsetValueEmpty(t *testing.T) {
+	cfg := config.DefaultConfig()
+	var roleClaimFlag cli.Flag
+	for _, flag := range authorizationFlags(&cfg) {
+		if slices.Contains(flag.Names(), "oidc-role-claim") {
+			roleClaimFlag = flag
+			break
+		}
+	}
+	require.NotNil(t, roleClaimFlag)
+
+	cmd := &cli.Command{
+		Name:  "test",
+		Flags: []cli.Flag{roleClaimFlag},
+		Action: func(context.Context, *cli.Command) error {
+			require.Empty(t, cfg.OIDCRoleClaims)
+			return nil
+		},
+	}
+	require.NoError(t, cmd.Run(context.Background(), []string{"test"}))
+}

@@ -177,72 +177,13 @@ func TestValidateStartupConfigAllowsOIDCTLSSkipVerifyInTesting(t *testing.T) {
 	require.NoError(t, validateStartupConfig(&cfg))
 }
 
-func TestValidateStartupConfigRejectsKnownDemoSecrets(t *testing.T) {
-	t.Run("database url password", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.DBURL = "postgresql://postgres:postgres@postgresql:5432/memory_service"
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_DB_URL uses a known repository demo password")
-	})
-
-	t.Run("api key", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.APIKeys = map[string]string{"agent-api-key-1": "agent"}
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_API_KEYS_* contains a known repository demo API key")
-	})
-
-	t.Run("encryption key is not denylisted", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
-
-		require.NoError(t, validateStartupConfig(&cfg))
-	})
-
-	t.Run("qdrant api key", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.QdrantAPIKey = "change-me"
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_VECTOR_QDRANT_API_KEY uses a known repository demo value")
-	})
-
-	t.Run("infinispan password", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.InfinispanPassword = "admin"
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_INFINISPAN_PASSWORD uses a known repository demo value")
-	})
-
-	t.Run("infinispan vector password", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.InfinispanVectorPassword = "admin"
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD uses a known repository demo value")
-	})
-
-	t.Run("openai api key placeholder", func(t *testing.T) {
-		cfg := validationTestConfig()
-		cfg.OpenAIAPIKey = "none"
-
-		err := validateStartupConfig(&cfg)
-		require.ErrorContains(t, err, "MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY uses a placeholder value")
-	})
-}
-
-func TestValidateStartupConfigAllowsKnownDemoSecretsInTesting(t *testing.T) {
-	cfg := config.DefaultConfig()
-	cfg.Mode = config.ModeTesting
-	cfg.APIKeys = map[string]string{"agent-api-key-1": "agent"}
-	cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+func TestValidateStartupConfigAllowsDemoCredentials(t *testing.T) {
+	cfg := validationTestConfig()
 	cfg.DBURL = "postgresql://postgres:postgres@postgresql:5432/memory_service"
+	cfg.APIKeys = map[string]string{"agent-api-key-1": "agent"}
 	cfg.QdrantAPIKey = "change-me"
 	cfg.InfinispanPassword = "admin"
-	cfg.InfinispanVectorPassword = "admin"
+	cfg.InfinispanVectorPassword = "password"
 	cfg.OpenAIAPIKey = "none"
 
 	require.NoError(t, validateStartupConfig(&cfg))

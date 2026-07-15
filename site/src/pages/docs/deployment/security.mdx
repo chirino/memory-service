@@ -1,12 +1,13 @@
 ---
 layout: ../../../layouts/DocsLayout.astro
 title: Security Hardening
-description: Production security recommendations for Memory Service deployments.
+description: Production security guidance for Memory Service operators and SREs.
 ---
 
 Memory Service is often placed behind agent applications and identity infrastructure. Treat
 the service as a sensitive data plane: it stores conversation content, attachment bytes,
-index material, and administrative metadata.
+index material, and administrative metadata. This page is an operational checklist for
+deploying and maintaining that data plane.
 
 ## Baseline Runtime
 
@@ -26,14 +27,8 @@ index material, and administrative metadata.
   secrets, attachment store credentials, and encryption keys. Attachment download signing
   keys are derived from the configured encryption provider material; do not configure a
   separate attachment signing secret.
-- Startup rejects known repository demo or placeholder values in service-owned secret
-  configuration, including database URL passwords, API keys, DEK keys, and backend API keys.
 - Use `dek`, `kms`, or `vault` as the primary encryption provider for production data.
-  `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is an explicit unsafe opt-in, and
-  `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` should be limited to a
-  documented migration window. Legacy MSEH v1 database field reads and MSEH v2 attachment
-  stream reads should likewise remain enabled only while running their migrations.
-- Do not use the local Docker Compose `.env` file as a production secret source.
+  `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is an explicit unsafe opt-in.
 - Store production secrets in a secret manager or Kubernetes `Secret` managed by your
   deployment system.
 - Rotate any value that was checked into source control, printed in logs, or shared in a
@@ -41,8 +36,8 @@ index material, and administrative metadata.
 
 ## Network Exposure
 
-- Bind local demo services to loopback only. The repository `compose.yaml` uses
-  `COMPOSE_BIND_HOST=127.0.0.1` when generated with `task dev:compose:env`.
+- Treat the repository `compose.yaml` as local-development infrastructure, not as a
+  production network boundary.
 - Keep Prometheus, Grafana, databases, object storage consoles, and management endpoints
   off the public gateway.
 - Put browser-facing traffic behind TLS and configure `MEMORY_SERVICE_BASE_URL` to the
@@ -53,11 +48,14 @@ index material, and administrative metadata.
   `MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT=true` only for the latter deployment boundary.
 - Keep request body deadlines enabled. Ordinary REST request bodies default to `30s`; multipart
   attachment uploads default to `5m`.
-- Configure forwarded client-IP trust with `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS`; leave it
-  unset to trust no proxies. Universal ranges (`0.0.0.0/0,::/0`) intentionally accept
-  forwarded client IPs from every peer and are appropriate only when direct callers choosing
-  their reported IP is acceptable or a network boundary forces traffic through a controlled
-  proxy.
+- Configure forwarded client-IP trust with `MEMORY_SERVICE_TRUSTED_PROXY_CIDRS`. The resolved
+  client IP keys pre-authentication source and authentication-failure rate limits. Trusting
+  spoofable forwarded addresses lets callers evade those limits by changing their reported
+  IP; failing to trust the actual proxy makes its clients share one rate-limit bucket. Leave
+  the setting unset to trust no proxies. Universal ranges (`0.0.0.0/0,::/0`) intentionally
+  accept forwarded client IPs from every peer and are appropriate only when direct callers
+  choosing their reported IP is acceptable or a network boundary forces traffic through a
+  controlled proxy.
 - Configure `MEMORY_SERVICE_MANAGEMENT_PORT` or
   `MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET` outside testing mode. Use
   `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true` only when the main listener is already
@@ -72,27 +70,22 @@ index material, and administrative metadata.
 - Disable wildcard credentialed CORS; list exact browser origins.
 - Keep admin APIs on a separate network path when possible.
 
-## Errors and Rate Limits
+## Rate Limits and Diagnostics
 
-- Propagate `X-Request-ID` in support workflows. REST error bodies include the same
-  `requestId`; gRPC returns `x-request-id` metadata.
-- Branch clients on the stable `code` field rather than parsing the human-readable `error`
-  message.
+- Preserve `X-Request-ID` through ingress and gateway layers and include it in support
+  workflows. REST error bodies include the same `requestId`; gRPC returns `x-request-id`
+  metadata.
 - Keep local process rate limits enabled unless an ingress or gateway limiter already covers
   the same boundary. `MEMORY_SERVICE_RATE_LIMIT_MODE=off` is an explicit unsafe opt-out and
   exports `memory_service_security_unsafe_config{reason="rate_limits_off"} 1`.
 - Treat local limits as per-replica protection. In multi-replica deployments, enforce
   cluster-wide quotas at the ingress, gateway, or service mesh.
-- Handle REST `429` responses by honoring `Retry-After`; handle gRPC `ResourceExhausted`
-  responses by honoring `google.rpc.RetryInfo` when present.
 
 ## Attachments
 
 - Use S3-compatible storage for durable multi-node deployments.
 - Serve browser-downloadable attachments through the service so response headers can force
   safe content type and disposition decisions.
-- Treat active content such as HTML and SVG as downloads unless a reviewed embedding path
-  intentionally isolates it.
 
 ## Upgrade and Rollback
 
@@ -100,8 +93,7 @@ index material, and administrative metadata.
   now reject plaintext encryption, issuer-only OIDC trust, wildcard credentialed CORS,
   malformed proxy CIDRs, dual plaintext/TLS TCP listeners, missing management-listener
   decisions, non-loopback management binds without an explicit acknowledgement, or a missing
-  developer frontend base URL. It also rejects known demo or placeholder values in
-  service-owned secret configuration.
+  developer frontend base URL.
 - Stop all old replicas before deploying MSEH v3 attachment-stream writes or MSEH v4 field
   writes. Mixed old/new memory-service binaries are not a supported deployment mode for
   those formats.
@@ -109,11 +101,11 @@ index material, and administrative metadata.
   migrations. Keep that backup until legacy-read metrics are zero for the installation's
   normal retention window.
 - Inventory and rewrite legacy attachment streams with `memory-service migrate attachments
-  --to-stream-version=3 --dry-run`, then rerun without `--dry-run` after reviewing the
+--to-stream-version=3 --dry-run`, then rerun without `--dry-run` after reviewing the
   counts. The command skips non-v2/already-v3 objects and refuses to mutate stores that do
   not support atomic replacement.
 - Inventory and rewrite legacy database fields with `memory-service migrate
-  encryption-fields --to-version=4 --dry-run`, then rerun without `--dry-run` after
+encryption-fields --to-version=4 --dry-run`, then rerun without `--dry-run` after
   reviewing the counts. The command scans conversation titles, entry content, admin
   checkpoint values, and episodic memory values, skips already-v4 values, and conditionally
   updates each value only if it has not changed since it was read.
@@ -127,14 +119,3 @@ index material, and administrative metadata.
   documented migration window, then remove them after verification.
 - After upgrading, verify that legacy-read and unsafe-config metrics remain at zero before
   removing compatibility flags or retiring the pre-upgrade backup.
-
-## Local Development
-
-Run this once before using the repository Docker Compose environment:
-
-```bash
-task dev:compose:env
-```
-
-The task creates an ignored `.env` with local-only credentials. Recreate it when you need to
-rotate local secrets.

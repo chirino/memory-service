@@ -99,6 +99,9 @@ func TestExtractTokenRolesUsesDefaultRealmAccessPointerOnly(t *testing.T) {
 
 	pointers, err := validateRoleClaimPointers(nil)
 	require.NoError(t, err)
+	emptyPointers, err := validateRoleClaimPointers([]string{})
+	require.NoError(t, err)
+	require.Equal(t, pointers, emptyPointers)
 	roles, err := extractTokenRoles(claims, pointers)
 	require.NoError(t, err)
 	require.True(t, roles["admin"])
