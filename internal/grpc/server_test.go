@@ -3,10 +3,12 @@ package grpc
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/config"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -29,6 +31,41 @@ func TestGRPCPageSizeUsesConfiguredMaximum(t *testing.T) {
 	_, err = grpcPageSize(ctx, 4, 20)
 	require.Equal(t, codes.InvalidArgument, status.Code(err))
 	require.ErrorContains(t, err, "page size must be between 1 and 3")
+}
+
+func TestMapErrorHidesUntypedInternalErrors(t *testing.T) {
+	err := mapError(errors.New("postgres://user:secret@example/internal detail"))
+
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.Equal(t, "internal server error", status.Convert(err).Message())
+}
+
+func TestMapErrorPreservesTypedValidationMessage(t *testing.T) {
+	err := mapError(&registrystore.ValidationError{Field: "limit", Message: "must be positive"})
+
+	require.Equal(t, codes.InvalidArgument, status.Code(err))
+	require.Contains(t, status.Convert(err).Message(), "must be positive")
+}
+
+func TestMapErrorMapsConflictsToAborted(t *testing.T) {
+	err := mapError(&registrystore.ConflictError{Message: "revision conflict"})
+
+	require.Equal(t, codes.Aborted, status.Code(err))
+	require.Equal(t, "revision conflict", status.Convert(err).Message())
+}
+
+func TestMapErrorMapsFailedPreconditionConflictsToAborted(t *testing.T) {
+	err := mapError(&registrystore.ConflictError{Message: "state conflict", Code: "failed_precondition"})
+
+	require.Equal(t, codes.Aborted, status.Code(err))
+	require.Equal(t, "state conflict", status.Convert(err).Message())
+}
+
+func TestEpisodicInternalErrorUsesStablePublicMessage(t *testing.T) {
+	err := episodicInternalError("semantic search backend leaked detail", errors.New("postgres://user:secret@example/internal detail"))
+
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.Equal(t, "internal server error", status.Convert(err).Message())
 }
 
 func TestProtoPerQueryLimitCapsDefaultCandidateBudget(t *testing.T) {

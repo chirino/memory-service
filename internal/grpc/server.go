@@ -190,13 +190,9 @@ func mapError(err error) error {
 	case errors.As(err, &badRequest):
 		return status.Error(codes.InvalidArgument, err.Error())
 	case errors.As(err, &conflict):
-		// ALREADY_EXISTS or FAILED_PRECONDITION are both valid mappings for HTTP 409/422 style conflicts.
-		if strings.EqualFold(conflict.Code, "failed_precondition") {
-			return status.Error(codes.FailedPrecondition, err.Error())
-		}
-		return status.Error(codes.AlreadyExists, err.Error())
+		return status.Error(codes.Aborted, err.Error())
 	default:
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, "internal server error")
 	}
 }
 
@@ -1465,7 +1461,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 		return nil, mapError(err)
 	}
 	if len(entries) == 0 {
-		return nil, status.Error(codes.Internal, "no entry created")
+		return nil, status.Error(codes.Internal, "internal server error")
 	}
 	s.publishEntryEvents(ctx, eventsToPublish)
 	return entryToProto(&entries[0]), nil
@@ -2411,14 +2407,14 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 			return nil, status.Error(codes.InvalidArgument, err.Error())
 		}
 		if s.Embedder == nil {
-			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 		}
 		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
 			return multiQuerySemanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
 		})
 		if err != nil {
 			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-				return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+				return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 			}
 			return nil, episodicInternalError("semantic search error", err)
 		}
@@ -2434,14 +2430,14 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 	if query != "" {
 		if s.Embedder == nil {
-			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 		}
 		items, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
 			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, query, limit, archived)
 		})
 		if err != nil {
 			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-				return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+				return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 			}
 			return nil, episodicInternalError("semantic search error", err)
 		}
@@ -2703,14 +2699,14 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 			return nil, status.Error(codes.InvalidArgument, queryErr.Error())
 		}
 		if s.Embedder == nil {
-			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 		}
 		items, err = withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
 			return multiQuerySemanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, queries, perQueryLimit, limit, archived)
 		})
 	} else if query != "" {
 		if s.Embedder == nil {
-			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 		}
 		items, err = withEpisodicRead(ctx, s.Store, func(txCtx context.Context) ([]registryepisodic.MemoryItem, error) {
 			return semanticSearchMemories(txCtx, s.Store, s.Embedder, effectivePrefix, normalizedFilter, query, limit, archived)
@@ -2729,7 +2725,7 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 	}
 	if err != nil {
 		if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-			return nil, status.Error(codes.FailedPrecondition, "semantic search unavailable")
+			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
 		}
 		return nil, episodicInternalError("failed to search admin memories", err)
 	}
@@ -3127,8 +3123,8 @@ func (s *MemoriesServer) memoryPolicyContext(ctx context.Context, actor *pb.Requ
 }
 
 func episodicInternalError(message string, err error) error {
-	log.Error("episodic gRPC error", "error", err, "stack", string(debug.Stack()))
-	return status.Error(codes.Internal, message)
+	log.Error("episodic gRPC error", "message", message, "error", err, "stack", string(debug.Stack()))
+	return status.Error(codes.Internal, "internal server error")
 }
 
 func memoryWriteResultToProto(item *registryepisodic.MemoryWriteResult) (*pb.MemoryWriteResult, error) {
@@ -3626,7 +3622,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 				continue
 			}
 			if _, err := writer.Write(payload.Chunk); err != nil {
-				return status.Error(codes.Internal, err.Error())
+				return status.Error(codes.Internal, "internal server error")
 			}
 		default:
 			return status.Error(codes.InvalidArgument, "invalid upload payload")
@@ -3690,7 +3686,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 
 	reader, err := s.AttachStore.Retrieve(stream.Context(), *attachment.StorageKey)
 	if err != nil {
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, "internal server error")
 	}
 	defer reader.Close()
 
@@ -3710,7 +3706,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 			break
 		}
 		if readErr != nil {
-			return status.Error(codes.Internal, readErr.Error())
+			return status.Error(codes.Internal, "internal server error")
 		}
 	}
 	return nil
@@ -3880,7 +3876,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if recorder != nil {
 				if err := recorder.Complete(); err != nil {
 					log.Warn("record stream: complete failed after cancel", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, err.Error())
+					return status.Error(codes.Internal, "internal server error")
 				}
 			}
 			s.publishResponseEvent(stream.Context(), "deleted", "failed", convUUID, convID)
@@ -3893,7 +3889,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				if recorder != nil {
 					if err := recorder.Complete(); err != nil {
 						log.Warn("record stream: complete failed on EOF", "conversation_id", convID, "error", err)
-						return status.Error(codes.Internal, err.Error())
+						return status.Error(codes.Internal, "internal server error")
 					}
 				}
 				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
@@ -3919,12 +3915,12 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
 				if err != nil {
 					log.Warn("record stream: failed to create recorder", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, err.Error())
+					return status.Error(codes.Internal, "internal server error")
 				}
 				cancelStream, err = s.Resumer.CancelStream(stream.Context(), convID)
 				if err != nil {
 					log.Warn("record stream: failed to subscribe to cancel channel", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, err.Error())
+					return status.Error(codes.Internal, "internal server error")
 				}
 				s.publishResponseEvent(stream.Context(), "created", "started", convUUID, convID)
 			}
@@ -3935,7 +3931,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if recorder != nil && req.GetContent() != "" {
 				if err := recorder.Record(req.GetContent()); err != nil {
 					log.Warn("record stream: failed to write chunk", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, err.Error())
+					return status.Error(codes.Internal, "internal server error")
 				}
 			}
 
@@ -3945,7 +3941,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				}
 				if err := recorder.Complete(); err != nil {
 					log.Warn("record stream: complete failed", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, err.Error())
+					return status.Error(codes.Internal, "internal server error")
 				}
 				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
@@ -3971,7 +3967,7 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	advertised := s.resolveAdvertisedAddress(stream.Context())
 	ch, redirectAddress, err := s.Resumer.ReplayWithAddress(stream.Context(), string(convID), advertised)
 	if err != nil {
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, "internal server error")
 	}
 	if redirectAddress != "" {
 		return stream.Send(&pb.ReplayResponse{RedirectAddress: redirectAddress})
@@ -3999,7 +3995,7 @@ func (s *ResponseRecorderServer) Cancel(ctx context.Context, req *pb.CancelRecor
 	advertised := s.resolveAdvertisedAddress(ctx)
 	redirectAddress, err := s.Resumer.RequestCancelWithAddress(ctx, string(convID), advertised)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.Internal, "internal server error")
 	}
 	if redirectAddress != "" {
 		return &pb.CancelRecordResponse{Accepted: false, RedirectAddress: redirectAddress}, nil
@@ -4029,7 +4025,7 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 
 	active, err := s.Resumer.Check(ctx, ids)
 	if err != nil {
-		return nil, status.Error(codes.Internal, err.Error())
+		return nil, status.Error(codes.Internal, "internal server error")
 	}
 
 	resp := &pb.CheckRecordingsResponse{}
@@ -4041,7 +4037,7 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 
 func (s *ResponseRecorderServer) requireConversationAccess(ctx context.Context, conversationID string, minLevel model.AccessLevel) error {
 	if s.Store == nil {
-		return status.Error(codes.Internal, "response recorder store not configured")
+		return status.Error(codes.Internal, "internal server error")
 	}
 	userID := getUserID(ctx)
 	if userID == "" {
@@ -4197,7 +4193,7 @@ func mapCheckpointError(err error) error {
 	case errors.As(err, &validation):
 		return status.Error(codes.InvalidArgument, validation.Error())
 	default:
-		return status.Error(codes.Internal, err.Error())
+		return status.Error(codes.Internal, "internal server error")
 	}
 }
 
@@ -4208,12 +4204,12 @@ func checkpointToProto(checkpoint *registrystore.ClientCheckpoint) (*pb.AdminChe
 	var value any
 	if len(checkpoint.Value) > 0 {
 		if err := json.Unmarshal(checkpoint.Value, &value); err != nil {
-			return nil, status.Error(codes.Internal, "checkpoint value is invalid JSON")
+			return nil, status.Error(codes.Internal, "internal server error")
 		}
 	}
 	pValue, err := structpb.NewValue(value)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "checkpoint value cannot be encoded")
+		return nil, status.Error(codes.Internal, "internal server error")
 	}
 	return &pb.AdminCheckpoint{
 		ClientId:    checkpoint.ClientID,
@@ -4348,7 +4344,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			if errors.Is(err, registrystore.ErrOutboxReplayUnsupported) {
 				return status.Error(codes.Unimplemented, "durable event replay is not supported by the configured datastore")
 			}
-			return status.Error(codes.Internal, "failed to initialize event replay")
+			return status.Error(codes.Internal, "internal server error")
 		}
 	}
 
@@ -4377,7 +4373,7 @@ streamLoop:
 		}
 		sub, err := s.EventBus.Subscribe(stream.Context(), subscribeUserID)
 		if err != nil {
-			return status.Error(codes.Internal, "failed to subscribe to event bus")
+			return status.Error(codes.Internal, "internal server error")
 		}
 
 		if resumeCursor != "" {
@@ -4454,7 +4450,7 @@ streamLoop:
 				}
 				matches, filterErr := entryFilter.Matches(stream.Context(), event, loader)
 				if filterErr != nil {
-					return status.Error(codes.Internal, "failed to filter event")
+					return status.Error(codes.Internal, "internal server error")
 				}
 				if !matches {
 					continue
@@ -4480,7 +4476,7 @@ streamLoop:
 					enriched, enrichedOK, err = s.enrichGRPCEvent(stream.Context(), userID, grpcClientIDPtr, detail, event)
 				}
 				if err != nil {
-					return status.Error(codes.Internal, "failed to enrich event")
+					return status.Error(codes.Internal, "internal server error")
 				}
 				if !enrichedOK {
 					continue
@@ -4535,7 +4531,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 	}
 	visibleGroups, err := s.loadReplayGroups(stream.Context(), userID)
 	if err != nil {
-		return replayGRPCClosed, status.Error(codes.Internal, "failed to preload replay membership state")
+		return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 	}
 	query := registrystore.OutboxQuery{
 		AfterCursor: afterCursor,
@@ -4563,7 +4559,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 				})
 				return replayGRPCClosed, nil
 			}
-			return replayGRPCClosed, status.Error(codes.Internal, "failed to replay outbox events")
+			return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 		}
 		if page == nil {
 			break
@@ -4588,14 +4584,14 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !ok {
 				continue
@@ -4632,14 +4628,14 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !ok {
 				continue
@@ -4683,7 +4679,7 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 				})
 				return replayGRPCClosed, nil
 			}
-			return replayGRPCClosed, status.Error(codes.Internal, "failed to replay outbox events")
+			return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 		}
 		if page == nil {
 			break
@@ -4705,14 +4701,14 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !ok {
 				continue
@@ -4749,14 +4745,14 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to filter replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "failed to enrich replayed event")
+				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
 			}
 			if !ok {
 				continue

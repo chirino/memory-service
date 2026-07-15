@@ -201,6 +201,8 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err := router.SetTrustedProxies(trustedProxies); err != nil {
 		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
 	}
+	router.Use(security.RequestIDMiddleware())
+	router.Use(security.ErrorEnvelopeMiddleware())
 	router.Use(gin.Recovery())
 	router.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
@@ -376,10 +378,14 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			security.GRPCRequestIDUnaryInterceptor(),
 			security.GRPCUnaryInterceptor(resolver),
 			maxPageSizeUnaryInterceptor(cfg),
 		),
-		grpc.ChainStreamInterceptor(security.GRPCStreamInterceptor(resolver)),
+		grpc.ChainStreamInterceptor(
+			security.GRPCRequestIDStreamInterceptor(),
+			security.GRPCStreamInterceptor(resolver),
+		),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
 	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
@@ -510,6 +516,8 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 	if err := mgmtRouter.SetTrustedProxies(nil); err != nil {
 		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
 	}
+	mgmtRouter.Use(security.RequestIDMiddleware())
+	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
 	mgmtRouter.Use(gin.Recovery())
 	mgmtRouter.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {

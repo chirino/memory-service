@@ -658,17 +658,26 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [code, error, requestId]
                 properties:
-                  error:
-                    type: string
-                    example: "A pending ownership transfer already exists for this conversation"
                   code:
                     type: string
-                    example: "TRANSFER_ALREADY_PENDING"
+                    example: TRANSFER_ALREADY_PENDING
+                  error:
+                    type: string
+                    example: a transfer is already pending for this conversation
+                  requestId:
+                    type: string
+                    description: Request correlation identifier, also returned in the X-Request-ID header.
+                  details:
+                    type: object
+                    additionalProperties: true
+                    description: Structured non-sensitive error details.
                   existingTransferId:
                     type: string
                     format: uuid
-                    description: ID of the existing pending transfer
+                    description: Deprecated compatibility alias for details.existingTransferId.
+                    deprecated: true
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -1738,31 +1747,52 @@ components:
   schemas:
     ErrorResponse:
       type: object
+      required: [code, error, requestId]
       properties:
-        error:
-          type: string
         code:
           type: string
+          description: Stable machine-readable error code.
+        error:
+          type: string
+          description: Safe human-readable error message.
+        requestId:
+          type: string
+          description: Request correlation identifier, also returned in the X-Request-ID header.
         details:
           type: object
           additionalProperties: true
+          description: Structured non-sensitive error details.
     SearchTypeUnavailableError:
       type: object
       description: Error response when the requested search type is not available on the server.
+      required: [code, error, requestId]
       properties:
+        code:
+          type: string
+          description: Stable machine-readable error code.
+          example: search_type_unavailable
         error:
           type: string
-          description: Error code.
-          example: search_type_unavailable
+          description: Safe human-readable error message.
+          example: One or more requested search types are not available on this server.
+        requestId:
+          type: string
+          description: Request correlation identifier, also returned in the X-Request-ID header.
+        details:
+          type: object
+          additionalProperties: true
+          description: Structured non-sensitive error details, including availableTypes when known.
         message:
           type: string
-          description: Human-readable error message.
-          example: Semantic search is not available. The embedding service is disabled on this server.
+          description: Deprecated compatibility alias for error.
+          deprecated: true
+          example: One or more requested search types are not available on this server.
         availableTypes:
           type: array
           items:
             type: string
-          description: List of search types that are available on this server.
+          description: Deprecated compatibility alias for details.availableTypes.
+          deprecated: true
           example: [fulltext]
     CapabilitiesResponse:
       type: object

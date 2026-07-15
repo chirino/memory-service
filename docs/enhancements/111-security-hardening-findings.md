@@ -1284,7 +1284,17 @@ Feature: authenticated and browser-safe attachments
 - [x] F-M1/F-L4/F-M14: Reject unsafe startup combinations, including exact CORS-origin
   validation, OIDC TLS-skip rejection, aggregate startup error reporting, and service-owned
   known demo-secret validation.
-- [ ] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
+- [x] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
+  Request-ID middleware/interceptors are implemented for REST, dedicated management REST, and
+  gRPC. REST error envelopes are normalized centrally, including `requestId`,
+  missing stable `code` values, `details.field`, and the legacy
+  `search_type_unavailable` shape. Central gRPC `mapError` now hides untyped internal
+  errors, and direct gRPC internal-error returns now use the same stable public message.
+  Central conflict mapping now always uses gRPC `Aborted`, episodic internal errors use the
+  fixed public internal message, and semantic-search-unavailable responses use gRPC
+  `Unavailable`. The Agent/Admin OpenAPI schemas and generated Go bindings now require the
+  shared `code`, `error`, and `requestId` fields, retain optional safe `details`, and mark
+  search/ownership compatibility aliases as deprecated.
 - [ ] F-M4: Add the five-class process-local token-bucket policy and telemetry.
 - [x] F-M6/F-M7/F-L8: Pin actions, minimize token permissions, and repair path filters.
   Actions are commit-pinned and CI path filters no longer skip workflow/devcontainer changes;
