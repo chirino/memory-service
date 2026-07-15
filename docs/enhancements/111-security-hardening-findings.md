@@ -1071,23 +1071,19 @@ encryption is enabled but the selected primary provider cannot write v4; `plain`
 implement v4. Store call sites must stop swallowing decryption failures or returning raw
 ciphertext.
 
-Define shared `EncryptedFieldRecord` and cursor-page types in
-`internal/registry/encryptmigration`,
-then add optional migration capabilities to both store registries rather than teaching the
-command raw datastore schemas:
+Add the optional `registry/store.FieldEncryptionMigrator` capability so the migration
+command stays out of raw datastore schemas:
 
 ```go
-type EncryptedFieldMigrationStore interface {
-    ListEncryptedFields(ctx context.Context, domain, after string, limit int) (EncryptedFieldPage, error)
-    CompareAndSwapEncryptedField(ctx context.Context, domain, identity string, oldValue, newValue []byte) (bool, error)
+type FieldEncryptionMigrator interface {
+    MigrateEncryptedFields(ctx context.Context, opts FieldEncryptionMigrationOptions) (*FieldEncryptionMigrationStats, error)
 }
 ```
 
-The core `registry/store` capability exposes `conversation.title`, `entry.content`, and
-`admin-checkpoint.value`; the separate `registry/episodic` capability exposes `memory.value`.
-Built-in PostgreSQL, SQLite, and MongoDB plugins implement the appropriate capability.
-External plugins remain source-compatible, but the migrator validates that every selected
-store supports its required capability before mutating anything.
+Built-in PostgreSQL, SQLite, and MongoDB plugins implement this capability for all four
+current domains: `conversation.title`, `entry.content`, `admin-checkpoint.value`, and
+`memory.value`. External plugins remain source-compatible, but the migrator validates that
+the selected store supports the capability before mutating anything.
 
 Add resumable `memory-service migrate encryption-fields --to-version=4 --batch-size=500`,
 with `--dry-run` to inventory versions without mutation. It scans all four domains in stable
@@ -1272,7 +1268,7 @@ Feature: authenticated and browser-safe attachments
   Kustomize manifests, demo deployment images, and pulled Compose images are digest-pinned;
   Compose services built locally use non-`latest` local tags instead of pullable mutable tags.
 - [x] F-H11: Make plaintext provider/fallback explicit, migration-only, and fail-closed.
-- [ ] F-H11/F-M13: Implement MSEH v4 field AAD and the resumable four-domain migration.
+- [x] F-H11/F-M13: Implement MSEH v4 field AAD and the resumable four-domain migration.
   Provider-layer support is in place: `dataencryption.Service` exposes `EncryptField` /
   `DecryptField`, MSEH v4 field AAD binds the raw header prefix, domain, and immutable
   identity, DEK/KMS/Vault implement the optional field provider interface, and startup now
@@ -1283,7 +1279,13 @@ Feature: authenticated and browser-safe attachments
   sites now use the `conversation.title` domain with conversation ID identity. Mongo,
   PostgreSQL, and SQLite entry content call sites now use the `entry.content` domain with
   entry ID identity and fail closed on content decrypt/authentication errors. Migration
-  capabilities and the four-domain migrator remain.
+  now ships through `memory-service migrate encryption-fields --to-version=4`, covering all
+  four domains for MongoDB, PostgreSQL, and SQLite with dry-run inventory, v4 skips,
+  conditional updates, concurrent-change accounting, and explicit v1/headerless
+  compatibility gates. Legacy MSEH v1 field reads are controlled by
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED` /
+  `--encryption-legacy-byte-v1-read-enabled`, warn when used, and increment
+  `memory_service_encryption_legacy_field_reads_total`.
 - [x] F-H12: Gate and observe legacy MSEH v2 attachment stream reads.
   `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED` now controls v2 AES-CTR stream
   reads for DEK/KMS/Vault providers, defaults to enabled for compatibility, warns when
@@ -1292,13 +1294,14 @@ Feature: authenticated and browser-safe attachments
 - [x] F-H12: Implement MSEH v3 64-KiB AES-GCM attachment stream records.
   DEK, KMS, and Vault now write v3 authenticated records, read v3 directly, and keep v2
   AES-CTR as a gated read-only compatibility path.
-- [ ] F-H12: Implement the resumable attachment migrator.
-  Operators must not disable the v2 read flag until the migrator reports no remaining v2
-  objects, or they know no encrypted v2 attachment stream reads are required.
+- [x] F-H12: Implement the resumable attachment migrator.
+  `memory-service migrate attachments --to-stream-version=3` inventories and rewrites v2
+  encrypted attachment objects to v3, skips non-v2/already-v3 objects, verifies plaintext
+  size and SHA-256 metadata before replacement, and can be safely rerun after interruption.
 - [x] F-H12: Implement optional `AtomicAttachmentReplacer` support for built-in stores. The
   filesystem, S3, PostgreSQL large-object/legacy-chunk, and encrypted attachment wrappers now
   preserve storage keys while replacing content and return the new logical size/SHA-256.
-- [ ] F-H12: Fail the attachment migration safely for plugins that do not provide
+- [x] F-H12: Fail the attachment migration safely for plugins that do not provide
   `AtomicAttachmentReplacer` before mutating any attachment content.
 - [x] F-H13/F-M9: Enforce attachment MIME/disposition/header/isolation policy.
 - [x] F-H14/F-M2: Implement JSON Pointer role claims, limits, and required audience policy.
@@ -1347,8 +1350,9 @@ Feature: authenticated and browser-safe attachments
   in release notes and operator docs. Release notes and the security guide now document the
   current startup-breaking changes, active v3 attachment stream writes, and the forward-only
   MSEH rollback boundary.
-- [ ] Document command-specific v3/v4 migration procedures after the attachment and field
-  migrators land.
+- [x] Document command-specific v4 field migration procedures after the field migrator lands.
+  Attachment v2-to-v3 and field v1-to-v4 migration command usage are now documented in the
+  encryption guide, release notes, and deployment security guide.
 - [x] Add `site/src/pages/docs/deployment/security.mdx` with the production security checklist.
 - [x] Re-enable the Deployment sidebar with only Docker and Security Hardening.
 - [x] Refresh the Docker deployment page, configuration reference, attachment documentation,

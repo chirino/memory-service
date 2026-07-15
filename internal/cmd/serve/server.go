@@ -68,33 +68,7 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
-	attachStoreName := cfg.AttachType
-	if cfg.DatastoreType == "sqlite" {
-		switch strings.TrimSpace(attachStoreName) {
-		case "", "db":
-			if cfg.AttachTypeExplicit {
-				return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
-			}
-			attachStoreName = "fs"
-		case "fs":
-			// explicit, supported
-		default:
-			return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
-		}
-		if _, err := cfg.ResolvedAttachmentsFSDir(); err != nil {
-			return "", err
-		}
-	} else if attachStoreName == "db" {
-		switch cfg.DatastoreType {
-		case "mongo":
-			return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=mongo; use --attachments-kind=s3 or --attachments-kind=fs with --attachments-fs-dir", cfg.AttachType)
-		default:
-			attachStoreName = "postgres"
-		}
-	} else if cfg.DatastoreType == "mongo" && attachStoreName == "mongo" {
-		return "", fmt.Errorf("attachments-kind=%q is not supported; Mongo GridFS attachment storage has been removed, use --attachments-kind=s3 or --attachments-kind=fs with --attachments-fs-dir", cfg.AttachType)
-	}
-	return attachStoreName, nil
+	return config.ResolveAttachmentStoreName(cfg)
 }
 
 // BuildServer initializes all subsystems without binding any network listeners.
@@ -107,6 +81,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyStreamV2ReadEnabled {
 		log.Warn("Legacy MSEH v2 attachment stream reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED after encrypted attachment migration completes")
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyByteV1ReadEnabled {
+		log.Warn("Legacy MSEH v1 field reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED after encrypted field migration completes")
 	}
 	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,

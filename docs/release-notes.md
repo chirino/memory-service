@@ -27,7 +27,14 @@ startup or require explicit opt-in flags.
 - New encrypted attachment writes use MSEH v3 authenticated AES-GCM records. Legacy MSEH v2
   AES-CTR attachment streams remain readable behind
   `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED=true` until the attachment
-  migrator reports no remaining v2 objects.
+  migrator reports no remaining v2 objects. Use `memory-service migrate attachments
+  --to-stream-version=3 --dry-run` to inventory first, then rerun without `--dry-run` to
+  rewrite v2 objects.
+- New encrypted database field writes use MSEH v4 authenticated field records. Legacy MSEH
+  v1 byte-encrypted fields remain readable behind
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED=true` until the field migrator
+  reports no remaining v1 values. Use `memory-service migrate encryption-fields
+  --to-version=4 --dry-run` to inventory first, then rerun without `--dry-run`.
 
 Before deploying MSEH v3 attachment-stream writes or MSEH v4 field writes/migrations, stop
 all old memory-service replicas and take a coordinated database plus attachment-object

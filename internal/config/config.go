@@ -269,6 +269,8 @@ type Config struct {
 	EncryptionAllowPlain bool
 	// EncryptionLegacyPlainReadEnabled permits headerless ciphertext/plaintext reads through the plain provider.
 	EncryptionLegacyPlainReadEnabled bool
+	// EncryptionLegacyByteV1ReadEnabled permits legacy MSEH v1 byte-encrypted field reads during migration.
+	EncryptionLegacyByteV1ReadEnabled bool
 	// EncryptionLegacyStreamV2ReadEnabled permits legacy MSEH v2 AES-CTR attachment stream reads.
 	EncryptionLegacyStreamV2ReadEnabled bool
 
@@ -415,6 +417,7 @@ func DefaultConfig() Config {
 		EncryptionProviders:                 "plain",
 		EncryptionProviderDEKType:           "dek",
 		EncryptionProviderDEKEnabled:        true,
+		EncryptionLegacyByteV1ReadEnabled:   true,
 		EncryptionLegacyStreamV2ReadEnabled: true,
 
 		// Event bus defaults

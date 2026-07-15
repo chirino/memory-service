@@ -103,8 +103,9 @@ func TestEncryptFieldBindsDomainAndIdentity(t *testing.T) {
 
 func TestDecryptFieldReadsLegacyV1Envelope(t *testing.T) {
 	cfg := &config.Config{
-		EncryptionProviders: "dek",
-		EncryptionKey:       serviceTestKeyHex,
+		EncryptionProviders:               "dek",
+		EncryptionKey:                     serviceTestKeyHex,
+		EncryptionLegacyByteV1ReadEnabled: true,
 	}
 	svc, err := dataencryption.New(context.Background(), cfg)
 	require.NoError(t, err)
@@ -115,6 +116,26 @@ func TestDecryptFieldReadsLegacyV1Envelope(t *testing.T) {
 	got, err := svc.DecryptField(legacy, "conversation.title", "conversation-1")
 	require.NoError(t, err)
 	require.Equal(t, []byte("legacy"), got)
+}
+
+func TestDecryptFieldRejectsLegacyV1EnvelopeWhenDisabled(t *testing.T) {
+	cfg := &config.Config{
+		EncryptionProviders:               "dek",
+		EncryptionKey:                     serviceTestKeyHex,
+		EncryptionLegacyByteV1ReadEnabled: true,
+	}
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	legacy, err := svc.Encrypt([]byte("legacy"))
+	require.NoError(t, err)
+
+	cfg.EncryptionLegacyByteV1ReadEnabled = false
+	svc, err = dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	_, err = svc.DecryptField(legacy, "conversation.title", "conversation-1")
+	require.ErrorContains(t, err, "legacy MSEH v1 field read is disabled")
 }
 
 func TestPrimaryPlainCanReadHeaderlessData(t *testing.T) {

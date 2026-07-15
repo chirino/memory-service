@@ -9,6 +9,7 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	"github.com/chirino/memory-service/internal/security"
 )
 
 type contextKey struct{}
@@ -28,9 +29,10 @@ func FromContext(ctx context.Context) *Service {
 // encryptions; all registered providers are available for decryption routing via
 // the MSEH ProviderID field.
 type Service struct {
-	primary                encrypt.Provider
-	byID                   map[string]encrypt.Provider
-	legacyPlainReadEnabled bool
+	primary                 encrypt.Provider
+	byID                    map[string]encrypt.Provider
+	legacyPlainReadEnabled  bool
+	legacyByteV1ReadEnabled bool
 }
 
 // New constructs a Service from cfg.EncryptionProviders (comma-separated list).
@@ -38,8 +40,9 @@ type Service struct {
 func New(ctx context.Context, cfg *config.Config) (*Service, error) {
 	names := strings.Split(cfg.EncryptionProviders, ",")
 	svc := &Service{
-		byID:                   make(map[string]encrypt.Provider),
-		legacyPlainReadEnabled: cfg.EncryptionLegacyPlainReadEnabled,
+		byID:                    make(map[string]encrypt.Provider),
+		legacyPlainReadEnabled:  cfg.EncryptionLegacyPlainReadEnabled,
+		legacyByteV1ReadEnabled: cfg.EncryptionLegacyByteV1ReadEnabled,
 	}
 
 	for i, name := range names {
@@ -140,7 +143,8 @@ func (s *Service) EncryptField(plaintext []byte, domain, identity string) ([]byt
 }
 
 // DecryptField decrypts a persisted field. MSEH v4 values are authenticated with
-// the supplied domain and identity; legacy MSEH v1 values remain readable for migration.
+// the supplied domain and identity; legacy MSEH v1 values are readable only when
+// the explicit migration compatibility flag is enabled.
 func (s *Service) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
 	plain := s.byID["plain"]
 
@@ -153,14 +157,22 @@ func (s *Service) DecryptField(ciphertext []byte, domain, identity string) ([]by
 		if !ok {
 			return nil, fmt.Errorf("dataencryption: unknown provider %q in MSEH header", h.ProviderID)
 		}
-		if h.Version != VersionFieldAESGCM {
+		switch h.Version {
+		case VersionFieldAESGCM:
+			fieldProvider, ok := provider.(encrypt.FieldProvider)
+			if !ok {
+				return nil, fmt.Errorf("dataencryption: provider %q does not support MSEH v4 field decryption", h.ProviderID)
+			}
+			return fieldProvider.DecryptField(ciphertext, domain, identity)
+		case VersionAESGCM:
+			if !s.legacyByteV1ReadEnabled {
+				return nil, fmt.Errorf("dataencryption: legacy MSEH v1 field read is disabled")
+			}
+			security.RecordLegacyEncryptedFieldRead(fmt.Sprintf("%d", h.Version), h.ProviderID, domain)
 			return provider.Decrypt(ciphertext)
+		default:
+			return nil, fmt.Errorf("dataencryption: unsupported MSEH v%d field envelope", h.Version)
 		}
-		fieldProvider, ok := provider.(encrypt.FieldProvider)
-		if !ok {
-			return nil, fmt.Errorf("dataencryption: provider %q does not support MSEH v4 field decryption", h.ProviderID)
-		}
-		return fieldProvider.DecryptField(ciphertext, domain, identity)
 	}
 
 	if plain != nil && s.legacyPlainReadEnabled {

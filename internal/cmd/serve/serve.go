@@ -658,6 +658,14 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Usage:       "Permit headerless legacy plaintext reads when plain is registered as a fallback provider",
 		},
 		&cli.BoolFlag{
+			Name:        "encryption-legacy-byte-v1-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyByteV1ReadEnabled,
+			Value:       cfg.EncryptionLegacyByteV1ReadEnabled,
+			Usage:       "Permit legacy MSEH v1 byte-encrypted field reads during migration",
+		},
+		&cli.BoolFlag{
 			Name:        "encryption-legacy-stream-v2-read-enabled",
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED"),
