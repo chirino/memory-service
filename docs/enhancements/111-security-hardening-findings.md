@@ -1286,10 +1286,11 @@ Feature: authenticated and browser-safe attachments
   known demo-secret validation.
 - [ ] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
 - [ ] F-M4: Add the five-class process-local token-bucket policy and telemetry.
-- [ ] F-M6/F-M7/F-L8: Pin actions, minimize token permissions, and repair path filters.
+- [x] F-M6/F-M7/F-L8: Pin actions, minimize token permissions, and repair path filters.
   Actions are commit-pinned and CI path filters no longer skip workflow/devcontainer changes;
-  release, Pages, and snapshot jobs use narrower permissions. The combined CI matrix still
-  needs splitting before token permissions can be minimized per job.
+  release, Pages, and snapshot jobs use narrower permissions. CI now splits verify, test,
+  image, artifact, and manifest jobs so `checks: write` and `packages: write` are granted only
+  to jobs that publish reports or container images.
 - [x] F-M10: Add trust-none proxy initialization, explicit CIDR parsing, production base-URL
   validation, and forwarded-origin removal.
 - [x] F-M11/F-M12/F-M16: Add explicit bind hosts, route-aware HTTP limits, management
