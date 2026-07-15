@@ -85,6 +85,8 @@ type S3AttachmentStore struct {
 	tempDir          string
 }
 
+var _ registryattach.AtomicAttachmentReplacer = (*S3AttachmentStore)(nil)
+
 // s3Key returns the actual S3 object key for a storage key, applying the prefix if set.
 // This matches Java's S3FileStore.key(storageKey) behaviour: the storage_key column holds the
 // bare UUID; the prefix is applied at access time and never persisted.
@@ -97,6 +99,21 @@ func (s *S3AttachmentStore) s3Key(storageKey string) string {
 
 func (s *S3AttachmentStore) Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
 	storageKey := uuid.New().String()
+	return s.putObject(ctx, storageKey, data, maxSize, contentType)
+}
+
+func (s *S3AttachmentStore) Replace(ctx context.Context, storageKey string, data io.Reader, contentType string) (*registryattach.FileStoreResult, error) {
+	s3Key := s.s3Key(storageKey)
+	if _, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
+		Bucket: &s.bucket,
+		Key:    &s3Key,
+	}); err != nil {
+		return nil, fmt.Errorf("s3store: attachment not found: %w", err)
+	}
+	return s.putObject(ctx, storageKey, data, -1, contentType)
+}
+
+func (s *S3AttachmentStore) putObject(ctx context.Context, storageKey string, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
 	s3Key := s.s3Key(storageKey)
 	hasher := sha256.New()
 	limited := data

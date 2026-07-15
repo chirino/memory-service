@@ -657,6 +657,14 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.EncryptionLegacyPlainReadEnabled,
 			Usage:       "Permit headerless legacy plaintext reads when plain is registered as a fallback provider",
 		},
+		&cli.BoolFlag{
+			Name:        "encryption-legacy-stream-v2-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyStreamV2ReadEnabled,
+			Value:       cfg.EncryptionLegacyStreamV2ReadEnabled,
+			Usage:       "Permit legacy MSEH v2 AES-CTR attachment stream reads during migration",
+		},
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption: DEK:",

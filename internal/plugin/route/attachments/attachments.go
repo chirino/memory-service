@@ -421,7 +421,10 @@ func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore
 		c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
 	}
 	c.Status(http.StatusOK)
-	_, _ = io.Copy(c.Writer, reader)
+	if _, err := io.Copy(c.Writer, reader); err != nil {
+		log.Warn("attachment stream failed", "attachmentId", attachment.ID, "error", err)
+		c.Abort()
+	}
 }
 
 type responsePolicy struct {

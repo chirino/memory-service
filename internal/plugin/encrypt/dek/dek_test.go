@@ -7,6 +7,7 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
+	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
 	"github.com/stretchr/testify/require"
 )
@@ -19,7 +20,8 @@ const legacyKeyHex = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9
 // keys[0] is primary; any additional keys are legacy (decryption-only).
 func makeCfg(keys ...string) *config.Config {
 	return &config.Config{
-		EncryptionKey: joinKeys(keys),
+		EncryptionKey:                       joinKeys(keys),
+		EncryptionLegacyStreamV2ReadEnabled: true,
 	}
 }
 
@@ -79,7 +81,7 @@ func TestDecryptWithKeyRotation(t *testing.T) {
 // TestEncryptStreamRoundTrip verifies EncryptStream + DecryptStream.
 func TestEncryptStreamRoundTrip(t *testing.T) {
 	p := newProvider(t, testKeyHex)
-	plaintext := []byte("streaming encrypt/decrypt test payload")
+	plaintext := bytes.Repeat([]byte("streaming encrypt/decrypt test payload"), 3000)
 
 	var encBuf bytes.Buffer
 	w, err := p.EncryptStream(&encBuf)
@@ -107,8 +109,34 @@ func TestEncryptStreamRoundTrip(t *testing.T) {
 	h, hasMagic, err := dataencryption.ReadHeader(bytes.NewReader(encrypted))
 	require.NoError(t, err)
 	require.True(t, hasMagic)
-	require.Equal(t, uint32(dataencryption.VersionAESCTR), h.Version)
-	require.Len(t, h.Nonce, 16)
+	require.Equal(t, uint32(dataencryption.VersionAttachmentStreamAESGCM), h.Version)
+	require.Len(t, h.Nonce, 24)
+}
+
+func TestDecryptStreamRejectsTamperedV3Record(t *testing.T) {
+	p := newProvider(t, testKeyHex)
+	plaintext := []byte("streaming tamper detection payload")
+
+	var encBuf bytes.Buffer
+	w, err := p.EncryptStream(&encBuf)
+	require.NoError(t, err)
+	_, err = w.Write(plaintext)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+
+	encrypted := append([]byte(nil), encBuf.Bytes()...)
+	encrypted[len(encrypted)-20] ^= 0x01
+
+	cfg := makeCfg(testKeyHex)
+	cfg.EncryptionProviders = "dek"
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	reader, err := svc.DecryptStream(bytes.NewReader(encrypted))
+	require.NoError(t, err)
+	var plainBuf bytes.Buffer
+	_, err = plainBuf.ReadFrom(reader)
+	require.Error(t, err)
 }
 
 func TestDecryptStreamWithKeyRotation(t *testing.T) {
@@ -133,6 +161,40 @@ func TestDecryptStreamWithKeyRotation(t *testing.T) {
 	_, err = plainBuf.ReadFrom(reader)
 	require.NoError(t, err)
 	require.Equal(t, plaintext, plainBuf.Bytes())
+}
+
+func TestDecryptStreamRejectsLegacyV2WhenDisabled(t *testing.T) {
+	plaintext := []byte("legacy stream read gate payload")
+	encrypted := encryptLegacyV2Stream(t, plaintext, testKeyHex)
+
+	cfg := makeCfg(testKeyHex)
+	cfg.EncryptionProviders = "dek"
+	cfg.EncryptionLegacyStreamV2ReadEnabled = false
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	_, err = svc.DecryptStream(bytes.NewReader(encrypted))
+	require.ErrorContains(t, err, "legacy MSEH v2 stream reads are disabled")
+}
+
+func encryptLegacyV2Stream(t *testing.T, plaintext []byte, keyHex string) []byte {
+	t.Helper()
+	key, err := config.DecodeEncryptionKey(keyHex)
+	require.NoError(t, err)
+	nonce, err := dekpkg.NewCTRNonce(key)
+	require.NoError(t, err)
+	var encBuf bytes.Buffer
+	require.NoError(t, dataencryption.WriteHeader(&encBuf, dataencryption.Header{
+		Version:    dataencryption.VersionAESCTR,
+		ProviderID: "dek",
+		Nonce:      nonce,
+	}))
+	w, err := dekpkg.NewCTREncryptWriter(&encBuf, key, nonce)
+	require.NoError(t, err)
+	_, err = w.Write(plaintext)
+	require.NoError(t, err)
+	require.NoError(t, w.Close())
+	return encBuf.Bytes()
 }
 
 // TestMSEHProviderIDField verifies the MSEH header contains provider_id="dek".

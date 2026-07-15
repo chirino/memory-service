@@ -36,6 +36,12 @@ type Provider interface {
 	AttachmentSigningKeys(ctx context.Context) ([][]byte, error)
 }
 
+// FieldProvider is the optional provider extension for MSEH v4 persisted-field encryption.
+type FieldProvider interface {
+	EncryptField(plaintext []byte, domain, identity string) ([]byte, error)
+	DecryptField(ciphertext []byte, domain, identity string) ([]byte, error)
+}
+
 // Header is passed to DecryptStream after DataEncryptionService has parsed the
 // MSEH envelope. Keeping it here avoids an import cycle with dataencryption.
 type Header struct {

@@ -12,6 +12,8 @@ import (
 	"gorm.io/gorm/clause"
 )
 
+const adminCheckpointValueFieldDomain = "admin-checkpoint.value"
+
 type postgresCheckpointRow struct {
 	ClientID    string          `gorm:"column:client_id;primaryKey"`
 	ContentType string          `gorm:"column:content_type"`
@@ -37,7 +39,7 @@ func (s *PostgresStore) AdminGetCheckpoint(ctx context.Context, clientID string)
 	if result.RowsAffected == 0 {
 		return nil, &registrystore.NotFoundError{Resource: "checkpoint", ID: clientID}
 	}
-	value, err := s.decrypt(row.Value)
+	value, err := s.decryptCheckpointValue(clientID, row.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -62,7 +64,7 @@ func (s *PostgresStore) AdminPutCheckpoint(ctx context.Context, checkpoint regis
 	if !json.Valid(value) {
 		return nil, &registrystore.ValidationError{Field: "value", Message: "value must be valid JSON"}
 	}
-	encryptedValue, err := s.encrypt(value)
+	encryptedValue, err := s.encryptCheckpointValue(clientID, value)
 	if err != nil {
 		return nil, err
 	}
@@ -84,6 +86,20 @@ func (s *PostgresStore) AdminPutCheckpoint(ctx context.Context, checkpoint regis
 		Value:       append(json.RawMessage(nil), value...),
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
+}
+
+func (s *PostgresStore) encryptCheckpointValue(clientID string, value []byte) ([]byte, error) {
+	if s.enc == nil || value == nil {
+		return value, nil
+	}
+	return s.enc.EncryptField(value, adminCheckpointValueFieldDomain, clientID)
+}
+
+func (s *PostgresStore) decryptCheckpointValue(clientID string, value []byte) ([]byte, error) {
+	if s.enc == nil || value == nil {
+		return value, nil
+	}
+	return s.enc.DecryptField(value, adminCheckpointValueFieldDomain, clientID)
 }
 
 var _ registrystore.AdminCheckpointStore = (*PostgresStore)(nil)

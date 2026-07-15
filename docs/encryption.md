@@ -25,9 +25,9 @@ required. Malformed `MSEH` envelopes always fail closed and are never treated as
 | Provider ID | Algorithm | Key Source |
 |-------------|-----------|------------|
 | `plain` | None (passthrough) | — |
-| `dek` | AES-256-GCM for byte values; AES-CTR for current attachment streams | `MEMORY_SERVICE_ENCRYPTION_DEK_KEY` (base64 or hex, comma-separated for rotation) |
-| `kms` | AES-256-GCM for byte values; AES-CTR for current attachment streams; KEK via AWS KMS | `MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID` |
-| `vault` | AES-256-GCM for byte values; AES-CTR for current attachment streams; KEK via Vault Transit | `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` |
+| `dek` | AES-256-GCM for byte values and MSEH v3 AES-GCM attachment streams | `MEMORY_SERVICE_ENCRYPTION_DEK_KEY` (base64 or hex, comma-separated for rotation) |
+| `kms` | AES-256-GCM for byte values and MSEH v3 AES-GCM attachment streams; KEK via AWS KMS | `MEMORY_SERVICE_ENCRYPTION_KMS_KEY_ID` |
+| `vault` | AES-256-GCM for byte values and MSEH v3 AES-GCM attachment streams; KEK via Vault Transit | `MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY` |
 
 For `kms` and `vault`, a random 32-byte Data Encryption Key (DEK) is generated on first start, wrapped by the external KMS, and stored in an `encryption_deks` table. The DEK is cached in memory; AWS KMS / Vault is **not** called on every request.
 
@@ -35,7 +35,10 @@ Key rotation for the `dek` provider: supply multiple comma-separated keys in `ME
 
 Signed attachment download URLs do not use `MEMORY_SERVICE_ATTACHMENT_SIGNING_SECRET`. Signing keys are derived from the configured encryption provider material via HKDF-SHA256. For the `dek` provider that means `MEMORY_SERVICE_ENCRYPTION_DEK_KEY`; for `kms` and `vault` it means the provider-managed DEKs loaded from the `encryption_deks` table.
 
-> **Current stream-integrity limitation**: database byte values are encrypted with AES-GCM and authenticated by the MSEH envelope. Current attachment streams use MSEH v2 with AES-CTR, which provides confidentiality but not tamper detection. Do not describe encrypted attachment streams as authenticated until the planned MSEH v3 stream format is implemented and migrated.
+Attachment writes use MSEH v3 authenticated AES-GCM records. Legacy MSEH v2 AES-CTR
+attachment streams remain readable only while
+`MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED=true`; disable that flag after the
+attachment migration reports no remaining v2 objects.
 
 ## What Is Encrypted
 

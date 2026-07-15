@@ -269,6 +269,8 @@ type Config struct {
 	EncryptionAllowPlain bool
 	// EncryptionLegacyPlainReadEnabled permits headerless ciphertext/plaintext reads through the plain provider.
 	EncryptionLegacyPlainReadEnabled bool
+	// EncryptionLegacyStreamV2ReadEnabled permits legacy MSEH v2 AES-CTR attachment stream reads.
+	EncryptionLegacyStreamV2ReadEnabled bool
 
 	// Body size limit (bytes)
 	MaxBodySize int64
@@ -385,34 +387,35 @@ func DefaultConfig() Config {
 			MaxHeaderBytes:  64 << 10,
 			IdleTimeout:     30 * time.Second,
 		},
-		UnixSocketAuth:               "credentials",
-		LocalClientID:                "local-agent",
-		RateLimitMode:                "local",
-		RateLimitSource:              "600/1m,burst=100",
-		RateLimitIdentity:            "1200/1m,burst=200",
-		RateLimitAuthFailure:         "30/1m,burst=10",
-		RateLimitExpensive:           "60/1m,burst=10",
-		RateLimitStreamOpen:          "30/1m,burst=5",
-		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
-		BodyReadTimeout:              30 * time.Second,
-		AttachmentBodyReadTimeout:    5 * time.Minute,
-		MaxPageSize:                  DefaultMaxPageSize,
-		DrainTimeout:                 30,
-		DBMaxOpenConns:               25,
-		DBMaxIdleConns:               5,
-		EvictionBatchSize:            1000,
-		EvictionBatchDelay:           100,
-		ResumerTempFileRetention:     30 * time.Minute,
-		QdrantHost:                   "localhost",
-		QdrantPort:                   6334,
-		QdrantCollectionPrefix:       "memory-service",
-		QdrantStartupTimeout:         30 * time.Second,
-		S3DirectDownload:             false,
-		AdminOIDCRole:                "admin",
-		AuditorOIDCRole:              "auditor",
-		EncryptionProviders:          "plain",
-		EncryptionProviderDEKType:    "dek",
-		EncryptionProviderDEKEnabled: true,
+		UnixSocketAuth:                      "credentials",
+		LocalClientID:                       "local-agent",
+		RateLimitMode:                       "local",
+		RateLimitSource:                     "600/1m,burst=100",
+		RateLimitIdentity:                   "1200/1m,burst=200",
+		RateLimitAuthFailure:                "30/1m,burst=10",
+		RateLimitExpensive:                  "60/1m,burst=10",
+		RateLimitStreamOpen:                 "30/1m,burst=5",
+		MaxBodySize:                         20 * 1024 * 1024, // 2x attachment max-size
+		BodyReadTimeout:                     30 * time.Second,
+		AttachmentBodyReadTimeout:           5 * time.Minute,
+		MaxPageSize:                         DefaultMaxPageSize,
+		DrainTimeout:                        30,
+		DBMaxOpenConns:                      25,
+		DBMaxIdleConns:                      5,
+		EvictionBatchSize:                   1000,
+		EvictionBatchDelay:                  100,
+		ResumerTempFileRetention:            30 * time.Minute,
+		QdrantHost:                          "localhost",
+		QdrantPort:                          6334,
+		QdrantCollectionPrefix:              "memory-service",
+		QdrantStartupTimeout:                30 * time.Second,
+		S3DirectDownload:                    false,
+		AdminOIDCRole:                       "admin",
+		AuditorOIDCRole:                     "auditor",
+		EncryptionProviders:                 "plain",
+		EncryptionProviderDEKType:           "dek",
+		EncryptionProviderDEKEnabled:        true,
+		EncryptionLegacyStreamV2ReadEnabled: true,
 
 		// Event bus defaults
 		EventBusType:             "local",

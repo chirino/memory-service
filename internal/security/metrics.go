@@ -9,6 +9,7 @@ import (
 	"sync"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -48,9 +49,17 @@ var (
 	// RateLimitRequestsTotal counts process-local rate-limit decisions by bounded class/outcome labels.
 	RateLimitRequestsTotal *prometheus.CounterVec
 
+	// EncryptionLegacyStreamReadsTotal counts legacy encrypted stream reads by MSEH version.
+	EncryptionLegacyStreamReadsTotal *prometheus.CounterVec
+
 	// SecurityUnsafeConfig records explicit operator acknowledgements for unsafe settings.
 	SecurityUnsafeConfig *prometheus.GaugeVec
 )
+
+var legacyStreamReadWarning struct {
+	sync.Mutex
+	last time.Time
+}
 
 var validLabelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
@@ -171,6 +180,14 @@ func initMetricsInner(constLabels prometheus.Labels) {
 		[]string{"class", "outcome"},
 	)
 
+	EncryptionLegacyStreamReadsTotal = f.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "memory_service_encryption_legacy_stream_reads_total",
+			Help: "Total number of legacy encrypted stream reads by MSEH version",
+		},
+		[]string{"version"},
+	)
+
 	SecurityUnsafeConfig = f.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "memory_service_security_unsafe_config",
@@ -194,4 +211,21 @@ func MetricsMiddleware() gin.HandlerFunc {
 		httpRequestsTotal.WithLabelValues(c.Request.Method, strconv.Itoa(c.Writer.Status())).Inc()
 		httpRequestDuration.WithLabelValues(c.Request.Method).Observe(duration.Seconds())
 	}
+}
+
+// RecordLegacyEncryptedStreamRead records and rate-limited-warns on compatibility
+// reads of legacy encrypted attachment streams.
+func RecordLegacyEncryptedStreamRead(version string, provider string) {
+	if EncryptionLegacyStreamReadsTotal != nil {
+		EncryptionLegacyStreamReadsTotal.WithLabelValues(version).Inc()
+	}
+
+	now := time.Now()
+	legacyStreamReadWarning.Lock()
+	defer legacyStreamReadWarning.Unlock()
+	if now.Sub(legacyStreamReadWarning.last) < time.Minute {
+		return
+	}
+	legacyStreamReadWarning.last = now
+	log.Warn("decrypting legacy encrypted attachment stream", "mseh_version", version, "provider", provider)
 }

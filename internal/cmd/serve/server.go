@@ -105,6 +105,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return nil, err
 	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyStreamV2ReadEnabled {
+		log.Warn("Legacy MSEH v2 attachment stream reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED after encrypted attachment migration completes")
+	}
 	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,
 		"httpSocket", strings.TrimSpace(cfg.Listener.UnixSocket),
@@ -152,6 +155,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	encSvc, err := dataencryption.New(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize encryption service: %w", err)
+	}
+	if !cfg.EncryptionDBDisabled && encSvc.IsPrimaryReal() && !encSvc.PrimarySupportsFieldEncryption() {
+		return nil, fmt.Errorf("database encryption requires primary encryption provider %q to support MSEH v4 field encryption; disable database encryption during migration or choose a provider with field-AAD support", encSvc.PrimaryProviderID())
 	}
 	ctx = dataencryption.WithContext(ctx, encSvc)
 

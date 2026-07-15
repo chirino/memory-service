@@ -74,10 +74,55 @@ func TestMalformedMSEHNeverFallsBackToPlaintext(t *testing.T) {
 	require.Error(t, err)
 }
 
+func TestEncryptFieldBindsDomainAndIdentity(t *testing.T) {
+	cfg := &config.Config{
+		EncryptionProviders: "dek",
+		EncryptionKey:       serviceTestKeyHex,
+	}
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+	require.True(t, svc.PrimarySupportsFieldEncryption())
+
+	ct, err := svc.EncryptField([]byte("secret title"), "conversation.title", "conversation-1")
+	require.NoError(t, err)
+	require.True(t, dataencryption.HasMagic(ct))
+
+	got, err := svc.DecryptField(ct, "conversation.title", "conversation-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("secret title"), got)
+
+	_, err = svc.DecryptField(ct, "entry.content", "conversation-1")
+	require.Error(t, err)
+	_, err = svc.DecryptField(ct, "conversation.title", "conversation-2")
+	require.Error(t, err)
+
+	ct[len(ct)-1] ^= 0x01
+	_, err = svc.DecryptField(ct, "conversation.title", "conversation-1")
+	require.Error(t, err)
+}
+
+func TestDecryptFieldReadsLegacyV1Envelope(t *testing.T) {
+	cfg := &config.Config{
+		EncryptionProviders: "dek",
+		EncryptionKey:       serviceTestKeyHex,
+	}
+	svc, err := dataencryption.New(context.Background(), cfg)
+	require.NoError(t, err)
+
+	legacy, err := svc.Encrypt([]byte("legacy"))
+	require.NoError(t, err)
+
+	got, err := svc.DecryptField(legacy, "conversation.title", "conversation-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("legacy"), got)
+}
+
 func TestPrimaryPlainCanReadHeaderlessData(t *testing.T) {
 	cfg := &config.Config{EncryptionProviders: "plain"}
 	svc, err := dataencryption.New(context.Background(), cfg)
 	require.NoError(t, err)
+	require.Equal(t, "plain", svc.PrimaryProviderID())
+	require.False(t, svc.PrimarySupportsFieldEncryption())
 
 	got, err := svc.Decrypt([]byte("plaintext"))
 	require.NoError(t, err)

@@ -140,6 +140,22 @@ func (s *mongoEpisodicStore) decrypt(ciphertext []byte) ([]byte, error) {
 	return s.enc.Decrypt(ciphertext)
 }
 
+const memoryValueFieldDomain = "memory.value"
+
+func (s *mongoEpisodicStore) encryptMemoryValue(id uuid.UUID, plaintext []byte) ([]byte, error) {
+	if s.enc == nil || plaintext == nil {
+		return plaintext, nil
+	}
+	return s.enc.EncryptField(plaintext, memoryValueFieldDomain, strings.ToLower(id.String()))
+}
+
+func (s *mongoEpisodicStore) decryptMemoryValue(id uuid.UUID, ciphertext []byte) ([]byte, error) {
+	if s.enc == nil || ciphertext == nil {
+		return ciphertext, nil
+	}
+	return s.enc.DecryptField(ciphertext, memoryValueFieldDomain, strings.ToLower(id.String()))
+}
+
 func encodeNS(ns []string) (string, error) {
 	return episodic.EncodeNamespace(ns, 0)
 }
@@ -192,11 +208,13 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		return nil, err
 	}
 
+	newID := uuid.New()
+
 	valueJSON, err := json.Marshal(req.Value)
 	if err != nil {
 		return nil, fmt.Errorf("marshal value: %w", err)
 	}
-	valueEnc, err := s.encrypt(valueJSON)
+	valueEnc, err := s.encryptMemoryValue(newID, valueJSON)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt value: %w", err)
 	}
@@ -208,7 +226,6 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 	}
 
 	now := time.Now()
-	newID := uuid.New()
 	indexedContent := req.Index
 	if indexedContent == nil {
 		indexedContent = map[string]string{}
@@ -1155,9 +1172,12 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 		var attrs map[string]interface{}
 		if item.kind == registryepisodic.EventKindAdd || item.kind == registryepisodic.EventKindUpdate {
 			if len(item.valueEnc) > 0 {
-				plain, err := s.decrypt(item.valueEnc)
-				if err == nil {
-					_ = json.Unmarshal(plain, &value)
+				plain, err := s.decryptMemoryValue(item.id, item.valueEnc)
+				if err != nil {
+					return nil, fmt.Errorf("decrypt memory event value: %w", err)
+				}
+				if err := json.Unmarshal(plain, &value); err != nil {
+					return nil, fmt.Errorf("unmarshal memory event value: %w", err)
 				}
 			}
 			attrs = item.attrs
@@ -1426,21 +1446,21 @@ func decodeAdminOffsetCursor(cursor string) int {
 
 // docToItem converts a memoryDoc to a MemoryItem by decrypting value.
 func (s *mongoEpisodicStore) docToItem(doc memoryDoc, namespace []string) (*registryepisodic.MemoryItem, error) {
+	id, err := uuid.Parse(doc.ID)
+	if err != nil {
+		return nil, fmt.Errorf("parse memory id: %w", err)
+	}
+
 	// nil ValueEncrypted means the row is a tombstone (data cleared after eviction).
 	var value map[string]interface{}
 	if len(doc.ValueEncrypted) > 0 {
-		valuePlain, err := s.decrypt(doc.ValueEncrypted)
+		valuePlain, err := s.decryptMemoryValue(id, doc.ValueEncrypted)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt value: %w", err)
 		}
 		if err := json.Unmarshal(valuePlain, &value); err != nil {
 			return nil, fmt.Errorf("unmarshal value: %w", err)
 		}
-	}
-
-	id, err := uuid.Parse(doc.ID)
-	if err != nil {
-		return nil, fmt.Errorf("parse memory id: %w", err)
 	}
 
 	return &registryepisodic.MemoryItem{

@@ -892,7 +892,10 @@ func adminGetAttachmentContent(c *gin.Context, store registrystore.MemoryStore, 
 			c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
 		}
 		c.Status(http.StatusOK)
-		_, _ = io.Copy(c.Writer, reader)
+		if _, err := io.Copy(c.Writer, reader); err != nil {
+			log.Warn("admin attachment stream failed", "attachmentId", attachment.ID, "error", err)
+			c.Abort()
+		}
 		return nil
 	}); err != nil {
 		handleError(c, err)

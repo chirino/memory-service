@@ -24,6 +24,7 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	t.Setenv("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS", "10.0.0.0/24")
 	t.Setenv("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN", "true")
 	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", "true")
+	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED", "false")
 
 	cfg := DefaultConfig()
 	err := cfg.ApplyJavaCompatFromEnv()
@@ -45,6 +46,7 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	require.Equal(t, "10.0.0.0/24", cfg.TrustedProxyCIDRs)
 	require.True(t, cfg.EncryptionAllowPlain)
 	require.True(t, cfg.EncryptionLegacyPlainReadEnabled)
+	require.False(t, cfg.EncryptionLegacyStreamV2ReadEnabled)
 }
 
 func TestApplyJavaCompatFromEnvRejectsInvalidOIDCRoleClaims(t *testing.T) {

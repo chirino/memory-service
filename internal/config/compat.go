@@ -127,6 +127,9 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", &c.EncryptionLegacyPlainReadEnabled); err != nil {
 		return err
 	}
+	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED", &c.EncryptionLegacyStreamV2ReadEnabled); err != nil {
+		return err
+	}
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE", &c.EncryptionProviderDEKType)
 	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED", &c.EncryptionProviderDEKEnabled); err != nil {
 		return err

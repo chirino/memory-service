@@ -24,12 +24,16 @@ startup or require explicit opt-in flags.
   probes must set `MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0`.
 - Existing omitted/unsafe attachment dispositions now download as
   `application/octet-stream`; active content such as HTML and SVG cannot be forced inline.
+- New encrypted attachment writes use MSEH v3 authenticated AES-GCM records. Legacy MSEH v2
+  AES-CTR attachment streams remain readable behind
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED=true` until the attachment
+  migrator reports no remaining v2 objects.
 
-Before enabling the planned MSEH v3 attachment-stream or MSEH v4 field migrations, stop all
-old memory-service replicas and take a coordinated database plus attachment-object backup.
-After any v3/v4 write or migration replacement, rollback to a binary that does not understand
-that version requires restoring that pre-upgrade backup. Mixed old/new memory-service
-deployments are not supported by this hardening plan.
+Before deploying MSEH v3 attachment-stream writes or MSEH v4 field writes/migrations, stop
+all old memory-service replicas and take a coordinated database plus attachment-object
+backup. After any v3/v4 write or migration replacement, rollback to a binary that does not
+understand that version requires restoring that pre-upgrade backup. Mixed old/new
+memory-service deployments are not supported by this hardening plan.
 
 ### Breaking datastore reset: schema version 110
 

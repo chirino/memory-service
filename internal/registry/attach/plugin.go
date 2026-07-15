@@ -36,6 +36,17 @@ type AttachmentStore interface {
 	GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration, opts *SignedURLOptions) (*url.URL, error)
 }
 
+// AtomicAttachmentReplacer is an optional capability for stores that can
+// replace the bytes for an existing storage key without changing the persisted
+// key. Migration jobs use this to rewrite encrypted attachments while leaving
+// attachment metadata stable.
+type AtomicAttachmentReplacer interface {
+	// Replace writes data to an existing storage key and returns the new logical
+	// file metadata. Implementations must fail if storageKey does not already
+	// exist.
+	Replace(ctx context.Context, storageKey string, data io.Reader, contentType string) (*FileStoreResult, error)
+}
+
 // Loader creates an AttachmentStore from config.
 type Loader func(ctx context.Context) (AttachmentStore, error)
 

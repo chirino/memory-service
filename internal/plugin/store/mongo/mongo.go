@@ -362,6 +362,41 @@ func (s *MongoStore) decryptString(data []byte) string {
 	return string(plain)
 }
 
+const conversationTitleFieldDomain = "conversation.title"
+const entryContentFieldDomain = "entry.content"
+
+func (s *MongoStore) encryptConversationTitle(conversationID string, title string) ([]byte, error) {
+	if s.enc == nil {
+		return []byte(title), nil
+	}
+	return s.enc.EncryptField([]byte(title), conversationTitleFieldDomain, conversationID)
+}
+
+func (s *MongoStore) decryptConversationTitle(conversationID string, data []byte) (string, error) {
+	if s.enc == nil || data == nil {
+		return string(data), nil
+	}
+	plain, err := s.enc.DecryptField(data, conversationTitleFieldDomain, conversationID)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
+}
+
+func (s *MongoStore) encryptEntryContent(entryID string, content []byte) ([]byte, error) {
+	if s.enc == nil || content == nil {
+		return content, nil
+	}
+	return s.enc.EncryptField(content, entryContentFieldDomain, strings.ToLower(entryID))
+}
+
+func (s *MongoStore) decryptEntryContent(entryID string, data []byte) ([]byte, error) {
+	if s.enc == nil || data == nil {
+		return data, nil
+	}
+	return s.enc.DecryptField(data, entryContentFieldDomain, strings.ToLower(entryID))
+}
+
 // --- MongoDB document types ---
 
 type groupDoc struct {
@@ -577,9 +612,13 @@ func (s *MongoStore) conversationSummaryFromDoc(ctx context.Context, doc convDoc
 	if err := s.hydrateConversationFork(ctx, &doc); err != nil {
 		return registrystore.ConversationSummary{}, err
 	}
+	title, err := s.decryptConversationTitle(doc.ID, doc.Title)
+	if err != nil {
+		return registrystore.ConversationSummary{}, fmt.Errorf("decrypt conversation title: %w", err)
+	}
 	return registrystore.ConversationSummary{
 		ID:                      string(doc.ID),
-		Title:                   s.decryptString(doc.Title),
+		Title:                   title,
 		OwnerUserID:             doc.OwnerUserID,
 		ClientID:                doc.ClientID,
 		AgentID:                 doc.AgentID,
@@ -600,9 +639,13 @@ func (s *MongoStore) conversationForkSummaryFromDoc(ctx context.Context, doc con
 	if err := s.hydrateConversationFork(ctx, &doc); err != nil {
 		return registrystore.ConversationForkSummary{}, err
 	}
+	title, err := s.decryptConversationTitle(doc.ID, doc.Title)
+	if err != nil {
+		return registrystore.ConversationForkSummary{}, fmt.Errorf("decrypt conversation title: %w", err)
+	}
 	return registrystore.ConversationForkSummary{
 		ID:                     doc.ID,
-		Title:                  s.decryptString(doc.Title),
+		Title:                  title,
 		ForkedAtEntryID:        doc.ForkedAtEntryID,
 		ForkedAtConversationID: doc.ForkedAtConversationID,
 		CreatedAt:              doc.CreatedAt,
@@ -982,7 +1025,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		}
 	}
 
-	encTitle, err := s.encrypt([]byte(title))
+	encTitle, err := s.encryptConversationTitle(string(convID), title)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt title: %w", err)
 	}
@@ -1338,7 +1381,7 @@ func (s *MongoStore) UpdateConversation(ctx context.Context, userID string, conv
 	update := bson.M{"$set": bson.M{"updated_at": time.Now()}}
 	sets := update["$set"].(bson.M)
 	if title != nil {
-		encTitle, err := s.encrypt([]byte(*title))
+		encTitle, err := s.encryptConversationTitle(string(conversationID), *title)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt title: %w", err)
 		}
@@ -1629,9 +1672,9 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 			return nil, err
 		}
 		for _, entry := range entryDocs {
-			value := s.entryDocToModel(entry)
-			if decrypted, err := s.decrypt(value.Content); err == nil {
-				value.Content = decrypted
+			value, err := s.entryDocToModelWithContent(entry)
+			if err != nil {
+				return nil, err
 			}
 			entryMap[value.ID] = value
 		}
@@ -1653,16 +1696,20 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 	}
 	firstByConversation := map[string]model.Entry{}
 	for _, row := range firstRows {
-		entry := s.entryDocToModel(row.Entry)
-		if decrypted, err := s.decrypt(entry.Content); err == nil {
-			entry.Content = decrypted
+		entry, err := s.entryDocToModelWithContent(row.Entry)
+		if err != nil {
+			return nil, err
 		}
 		entryMap[entry.ID] = entry
 		firstByConversation[entry.ConversationID] = entry
 	}
 	records := make([]registrystore.ForkNavigationConversation, 0, len(conversations))
 	for _, conversation := range conversations {
-		record := registrystore.ForkNavigationConversation{ID: conversation.ID, Title: s.decryptString(conversation.Title), CreatedAt: conversation.CreatedAt}
+		title, err := s.decryptConversationTitle(conversation.ID, conversation.Title)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt conversation title: %w", err)
+		}
+		record := registrystore.ForkNavigationConversation{ID: conversation.ID, Title: title, CreatedAt: conversation.CreatedAt}
 		if direct := directByChild[conversation.ID]; direct.ParentConversationID != nil {
 			record.ForkedAtConversationID = direct.ParentConversationID
 			if direct.ForkedAtEntryID != nil {
@@ -1922,11 +1969,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -1936,11 +1981,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -1950,11 +1993,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -1964,11 +2005,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -1990,11 +2029,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if pErr != nil {
 			return nil, &registrystore.BadRequestError{Message: pErr.Error()}
 		}
-		entries := make([]model.Entry, len(page))
-		for i, d := range page {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(page)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -2009,11 +2046,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -2023,11 +2058,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -2037,11 +2070,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -2051,11 +2082,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			content, _ := s.decrypt(d.Content)
-			entries[i] = s.entryDocToModel(d)
-			entries[i].Content = content
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -2101,11 +2130,9 @@ func (s *MongoStore) GetEntries(ctx context.Context, userID string, conversation
 	if pErr != nil {
 		return nil, &registrystore.BadRequestError{Message: pErr.Error()}
 	}
-	entries := make([]model.Entry, len(page))
-	for i, d := range page {
-		content, _ := s.decrypt(d.Content)
-		entries[i] = s.entryDocToModel(d)
-		entries[i].Content = content
+	entries, err := s.entryDocsToModelsWithContent(page)
+	if err != nil {
+		return nil, err
 	}
 	return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
@@ -2129,11 +2156,9 @@ func (s *MongoStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (
 		return nil, err
 	}
 
-	entry := s.entryDocToModel(doc)
-
-	// Decrypt content if encryption is enabled
-	if decrypted, err := s.decrypt(entry.Content); err == nil {
-		entry.Content = decrypted
+	entry, err := s.entryDocToModelWithContent(doc)
+	if err != nil {
+		return nil, err
 	}
 
 	return &entry, nil
@@ -2198,13 +2223,14 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 		}
 
 		entryEpoch := registrystore.EpochForChannel(model.Channel(ch), epoch)
+		entryID := uuidToStr(uuid.New())
 
-		encContent, err := s.encrypt(req.Content)
+		encContent, err := s.encryptEntryContent(entryID, req.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 		}
 		doc := entryDoc{
-			ID:                  uuidToStr(uuid.New()),
+			ID:                  entryID,
 			ConversationID:      string(conversationID),
 			ConversationGroupID: conv.ConversationGroupID,
 			UserID:              &userID,
@@ -2248,8 +2274,12 @@ func (s *MongoStore) AppendEntries(ctx context.Context, userID string, conversat
 			if e.Channel == model.ChannelHistory {
 				title := deriveTitleFromContent(string(e.Content))
 				if title != "" {
-					if encTitle, encErr := s.encrypt([]byte(title)); encErr == nil {
-						s.conversations().UpdateByID(ctx, string(conversationID), bson.M{"$set": bson.M{"title": encTitle, "updated_at": now}})
+					encTitle, err := s.encryptConversationTitle(string(conversationID), title)
+					if err != nil {
+						return nil, fmt.Errorf("failed to encrypt title: %w", err)
+					}
+					if _, err := s.conversations().UpdateByID(ctx, string(conversationID), bson.M{"$set": bson.M{"title": encTitle, "updated_at": now}}); err != nil {
+						return nil, fmt.Errorf("failed to update derived title: %w", err)
 					}
 				}
 				break
@@ -2329,7 +2359,10 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		return nil, fmt.Errorf("failed to load entries for sync: %w", err)
 	}
 
-	existingContent := flattenMemoryContentEntries(s, latestEntries)
+	existingContent, err := flattenMemoryContentEntries(s, latestEntries)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compute the current latest epoch value.
 	var latestEpoch *int64
@@ -2387,12 +2420,13 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 	}
 
 	now := time.Now()
-	encContent, err := s.encrypt(appendContent)
+	entryID := uuidToStr(uuid.New())
+	encContent, err := s.encryptEntryContent(entryID, appendContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 	}
 	doc := entryDoc{
-		ID:                  uuidToStr(uuid.New()),
+		ID:                  entryID,
 		ConversationID:      string(conversationID),
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
@@ -2545,12 +2579,9 @@ func (s *MongoStore) ListUnindexedEntries(ctx context.Context, limit int, afterC
 		docs = docs[:limit]
 	}
 
-	entries := make([]model.Entry, len(docs))
-	for i, d := range docs {
-		entries[i] = s.entryDocToModel(d)
-		if decrypted, err := s.decrypt(d.Content); err == nil {
-			entries[i].Content = decrypted
-		}
+	entries, err := s.entryDocsToModelsWithContent(docs)
+	if err != nil {
+		return nil, nil, err
 	}
 
 	var nextCursor *string
@@ -2576,12 +2607,9 @@ func (s *MongoStore) FindEntriesPendingVectorIndexing(ctx context.Context, limit
 		return nil, fmt.Errorf("failed to decode entries: %w", err)
 	}
 
-	entries := make([]model.Entry, len(docs))
-	for i, d := range docs {
-		entries[i] = s.entryDocToModel(d)
-		if decrypted, err := s.decrypt(d.Content); err == nil {
-			entries[i].Content = decrypted
-		}
+	entries, err := s.entryDocsToModelsWithContent(docs)
+	if err != nil {
+		return nil, err
 	}
 	return entries, nil
 }
@@ -2660,9 +2688,9 @@ func (s *MongoStore) FetchSearchResultDetails(ctx context.Context, userID string
 			r.Highlights = &h
 		}
 		if includeEntry {
-			e := s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				e.Content = decrypted
+			e, err := s.entryDocToModelWithContent(d)
+			if err != nil {
+				return nil, err
 			}
 			r.Entry = &e
 		}
@@ -2765,9 +2793,9 @@ func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query str
 			item.Highlights = &h
 		}
 		if includeEntry {
-			e := s.entryDocToModel(d.asEntryDoc())
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				e.Content = decrypted
+			e, err := s.entryDocToModelWithContent(d.asEntryDoc())
+			if err != nil {
+				return nil, err
 			}
 			item.Entry = &e
 		}
@@ -3039,12 +3067,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3058,12 +3083,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3073,12 +3095,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3088,12 +3107,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3107,12 +3123,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3130,12 +3143,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3149,12 +3159,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3168,12 +3175,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 		if err != nil {
 			return nil, err
 		}
-		entries := make([]model.Entry, len(docs))
-		for i, d := range docs {
-			entries[i] = s.entryDocToModel(d)
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				entries[i].Content = decrypted
-			}
+		entries, err := s.entryDocsToModelsWithContent(docs)
+		if err != nil {
+			return nil, err
 		}
 		return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
@@ -3219,12 +3223,9 @@ func (s *MongoStore) AdminGetEntries(ctx context.Context, conversationID string,
 	if pErr != nil {
 		return nil, &registrystore.BadRequestError{Message: pErr.Error()}
 	}
-	entries := make([]model.Entry, len(page))
-	for i, d := range page {
-		entries[i] = s.entryDocToModel(d)
-		if decrypted, err := s.decrypt(d.Content); err == nil {
-			entries[i].Content = decrypted
-		}
+	entries, err := s.entryDocsToModelsWithContent(page)
+	if err != nil {
+		return nil, err
 	}
 	return &registrystore.PagedEntries{Data: entries, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
@@ -3351,9 +3352,9 @@ func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore
 			results[i].Highlights = &h
 		}
 		if query.IncludeEntry {
-			e := s.entryDocToModel(d.asEntryDoc())
-			if decrypted, err := s.decrypt(d.Content); err == nil {
-				e.Content = decrypted
+			e, err := s.entryDocToModelWithContent(d.asEntryDoc())
+			if err != nil {
+				return nil, err
 			}
 			results[i].Entry = &e
 		}
@@ -5775,16 +5776,16 @@ func (s *MongoStore) warmEntriesCache(ctx context.Context, conv convDoc, ancestr
 }
 
 // flattenMemoryContentEntries flattens model.Entry content for comparison in SyncAgentEntry.
-func flattenMemoryContentEntries(s *MongoStore, entries []model.Entry) []any {
+func flattenMemoryContentEntries(s *MongoStore, entries []model.Entry) ([]any, error) {
 	result := make([]any, 0)
 	for _, entry := range entries {
-		content := entry.Content
-		if decrypted, err := s.decrypt(content); err == nil {
-			content = decrypted
+		content, err := s.decryptEntryContent(entry.ID.String(), entry.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
 		result = append(result, parseContentArray(content)...)
 	}
-	return result
+	return result, nil
 }
 
 func parseContentArray(raw []byte) []any {
@@ -5931,7 +5932,11 @@ func (s *MongoStore) lookupConversationTitle(ctx context.Context, conversationID
 	if err != nil || len(doc.Title) == 0 {
 		return nil
 	}
-	title := s.decryptString(doc.Title)
+	title, err := s.decryptConversationTitle(doc.ID, doc.Title)
+	if err != nil {
+		log.Warn("decrypt conversation title failed", "conversationID", conversationID, "error", err)
+		return nil
+	}
 	return &title
 }
 
@@ -5962,6 +5967,28 @@ func (s *MongoStore) entryDocToModel(d entryDoc) model.Entry {
 		IndexedAt:           d.IndexedAt,
 		CreatedAt:           d.CreatedAt,
 	}
+}
+
+func (s *MongoStore) entryDocToModelWithContent(d entryDoc) (model.Entry, error) {
+	entry := s.entryDocToModel(d)
+	content, err := s.decryptEntryContent(d.ID, d.Content)
+	if err != nil {
+		return model.Entry{}, fmt.Errorf("failed to decrypt entry content: %w", err)
+	}
+	entry.Content = content
+	return entry, nil
+}
+
+func (s *MongoStore) entryDocsToModelsWithContent(docs []entryDoc) ([]model.Entry, error) {
+	entries := make([]model.Entry, len(docs))
+	for i, doc := range docs {
+		entry, err := s.entryDocToModelWithContent(doc)
+		if err != nil {
+			return nil, err
+		}
+		entries[i] = entry
+	}
+	return entries, nil
 }
 
 func (s *MongoStore) attachmentDocToModel(d attachmentDoc) model.Attachment {

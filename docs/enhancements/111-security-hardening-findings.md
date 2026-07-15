@@ -1035,7 +1035,7 @@ control or explicitly opt into only the local risk they need.
 ### MSEH v4 field binding and migration (F-M13)
 
 Use **MSEH version 4** for byte-encrypted persisted fields. The existing version 1 remains
-read-only during migration; version 3 remains reserved for authenticated attachment streams.
+read-only during migration; version 3 is used for authenticated attachment streams.
 V4 keeps a fresh 12-byte AES-GCM nonce and adds canonical AAD binding to the exact envelope
 header, field purpose, and immutable record identity.
 
@@ -1273,10 +1273,33 @@ Feature: authenticated and browser-safe attachments
   Compose services built locally use non-`latest` local tags instead of pullable mutable tags.
 - [x] F-H11: Make plaintext provider/fallback explicit, migration-only, and fail-closed.
 - [ ] F-H11/F-M13: Implement MSEH v4 field AAD and the resumable four-domain migration.
-- [ ] F-H12: Implement MSEH v3 64-KiB AES-GCM records, v2 read telemetry/gating, and the
-  resumable attachment migrator.
-- [ ] F-H12: Implement optional `AtomicAttachmentReplacer` support for built-in stores and
-  fail migration safely for plugins that do not provide it.
+  Provider-layer support is in place: `dataencryption.Service` exposes `EncryptField` /
+  `DecryptField`, MSEH v4 field AAD binds the raw header prefix, domain, and immutable
+  identity, DEK/KMS/Vault implement the optional field provider interface, and startup now
+  rejects database encryption when the primary provider cannot write v4 field envelopes.
+  Admin checkpoint value call sites now use the `admin-checkpoint.value` domain with client
+  ID identity, and episodic memory value call sites now use the `memory.value` domain with
+  the canonical memory UUID identity. Mongo, PostgreSQL, and SQLite conversation title call
+  sites now use the `conversation.title` domain with conversation ID identity. Mongo,
+  PostgreSQL, and SQLite entry content call sites now use the `entry.content` domain with
+  entry ID identity and fail closed on content decrypt/authentication errors. Migration
+  capabilities and the four-domain migrator remain.
+- [x] F-H12: Gate and observe legacy MSEH v2 attachment stream reads.
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED` now controls v2 AES-CTR stream
+  reads for DEK/KMS/Vault providers, defaults to enabled for compatibility, warns when
+  enabled outside testing, rejects v2 reads when disabled, and records
+  `memory_service_encryption_legacy_stream_reads_total{version="2"}` on compatibility reads.
+- [x] F-H12: Implement MSEH v3 64-KiB AES-GCM attachment stream records.
+  DEK, KMS, and Vault now write v3 authenticated records, read v3 directly, and keep v2
+  AES-CTR as a gated read-only compatibility path.
+- [ ] F-H12: Implement the resumable attachment migrator.
+  Operators must not disable the v2 read flag until the migrator reports no remaining v2
+  objects, or they know no encrypted v2 attachment stream reads are required.
+- [x] F-H12: Implement optional `AtomicAttachmentReplacer` support for built-in stores. The
+  filesystem, S3, PostgreSQL large-object/legacy-chunk, and encrypted attachment wrappers now
+  preserve storage keys while replacing content and return the new logical size/SHA-256.
+- [ ] F-H12: Fail the attachment migration safely for plugins that do not provide
+  `AtomicAttachmentReplacer` before mutating any attachment content.
 - [x] F-H13/F-M9: Enforce attachment MIME/disposition/header/isolation policy.
 - [x] F-H14/F-M2: Implement JSON Pointer role claims, limits, and required audience policy.
 - [x] F-H15: Remove GitHub expression interpolation from release shell source.
@@ -1320,10 +1343,12 @@ Feature: authenticated and browser-safe attachments
 - [x] F-M15/F-L5: Correct active encryption and attachment-signing documentation.
 - [x] F-M17: Validate frontend attachment URL schemes.
 - [x] F-L1/F-L2/F-L6/F-L7: Tighten remaining local/deployment hygiene.
-- [ ] Document the coordinated stop/backup/upgrade/migrate rollout and forward-only rollback
-  boundary in release notes and operator docs. Release notes and the security guide now
-  document the current startup-breaking changes plus the forward-only MSEH rollback boundary;
-  command-specific migration docs remain blocked on the v3/v4 migrators.
+- [x] Document the coordinated stop/backup/upgrade rollout and forward-only rollback boundary
+  in release notes and operator docs. Release notes and the security guide now document the
+  current startup-breaking changes, active v3 attachment stream writes, and the forward-only
+  MSEH rollback boundary.
+- [ ] Document command-specific v3/v4 migration procedures after the attachment and field
+  migrators land.
 - [x] Add `site/src/pages/docs/deployment/security.mdx` with the production security checklist.
 - [x] Re-enable the Deployment sidebar with only Docker and Security Hardening.
 - [x] Refresh the Docker deployment page, configuration reference, attachment documentation,

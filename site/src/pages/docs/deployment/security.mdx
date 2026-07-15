@@ -98,8 +98,8 @@ index material, and administrative metadata.
   decisions, non-loopback management binds without an explicit acknowledgement, or a missing
   developer frontend base URL. It also rejects known demo or placeholder values in
   service-owned secret configuration.
-- Stop all old replicas before enabling future MSEH v3 attachment-stream writes or MSEH v4
-  field writes. Mixed old/new memory-service binaries are not a supported deployment mode for
+- Stop all old replicas before deploying MSEH v3 attachment-stream writes or MSEH v4 field
+  writes. Mixed old/new memory-service binaries are not a supported deployment mode for
   those formats.
 - Take a coordinated database backup and attachment-object backup before running encryption
   migrations. Keep that backup until legacy-read metrics are zero for the installation's

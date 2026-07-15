@@ -238,6 +238,41 @@ func (s *PostgresStore) decryptString(data []byte) string {
 	return string(plain)
 }
 
+const conversationTitleFieldDomain = "conversation.title"
+const entryContentFieldDomain = "entry.content"
+
+func (s *PostgresStore) encryptConversationTitle(conversationID string, title string) ([]byte, error) {
+	if s.enc == nil {
+		return []byte(title), nil
+	}
+	return s.enc.EncryptField([]byte(title), conversationTitleFieldDomain, conversationID)
+}
+
+func (s *PostgresStore) decryptConversationTitle(conversationID string, data []byte) (string, error) {
+	if s.enc == nil || data == nil {
+		return string(data), nil
+	}
+	plain, err := s.enc.DecryptField(data, conversationTitleFieldDomain, conversationID)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
+}
+
+func (s *PostgresStore) encryptEntryContent(entryID uuid.UUID, content []byte) ([]byte, error) {
+	if s.enc == nil || content == nil {
+		return content, nil
+	}
+	return s.enc.EncryptField(content, entryContentFieldDomain, strings.ToLower(entryID.String()))
+}
+
+func (s *PostgresStore) decryptEntryContent(entryID uuid.UUID, data []byte) ([]byte, error) {
+	if s.enc == nil || data == nil {
+		return data, nil
+	}
+	return s.enc.DecryptField(data, entryContentFieldDomain, strings.ToLower(entryID.String()))
+}
+
 // --- Conversations ---
 
 func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
@@ -357,7 +392,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		}
 	}
 
-	encTitle, err := s.encrypt([]byte(title))
+	encTitle, err := s.encryptConversationTitle(string(convID), title)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt title: %w", err)
 	}
@@ -398,10 +433,14 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		if err := s.hydrateConversationFork(ctx, &existing); err != nil {
 			return nil, err
 		}
+		title, err := s.decryptConversationTitle(existing.ID, existing.Title)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		return &registrystore.ConversationDetail{
 			ConversationSummary: registrystore.ConversationSummary{
 				ID:                      existing.ID,
-				Title:                   s.decryptString(existing.Title),
+				Title:                   title,
 				OwnerUserID:             existing.OwnerUserID,
 				ClientID:                existing.ClientID,
 				AgentID:                 existing.AgentID,
@@ -554,7 +593,11 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		lq := strings.ToLower(queryStr)
 		filtered := rows[:0]
 		for _, r := range rows {
-			if strings.Contains(strings.ToLower(s.decryptString(r.Title)), lq) {
+			title, err := s.decryptConversationTitle(r.ID, r.Title)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
+			if strings.Contains(strings.ToLower(title), lq) {
 				filtered = append(filtered, r)
 			}
 		}
@@ -568,9 +611,13 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			Metadata:                r.Metadata,
 			ConversationGroupID:     r.ConversationGroupID,
@@ -608,11 +655,15 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
 	}
+	title, err := s.decryptConversationTitle(conv.ID, conv.Title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+	}
 
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      conv.ID,
-			Title:                   s.decryptString(conv.Title),
+			Title:                   title,
 			OwnerUserID:             conv.OwnerUserID,
 			ClientID:                conv.ClientID,
 			AgentID:                 conv.AgentID,
@@ -644,7 +695,7 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 
 	updates := map[string]interface{}{"updated_at": time.Now()}
 	if title != nil {
-		encTitle, err := s.encrypt([]byte(*title))
+		encTitle, err := s.encryptConversationTitle(string(conversationID), *title)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt title: %w", err)
 		}
@@ -908,7 +959,9 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 			return nil, err
 		}
 	}
-	decryptEntries(s, entries)
+	if err := decryptEntries(s, entries); err != nil {
+		return nil, err
+	}
 	var firstEntries []model.Entry
 	if err := db.Raw(`SELECT * FROM (
 		SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.conversation_id ORDER BY e.created_at ASC, e.seq ASC NULLS FIRST, e.id ASC) AS fork_row
@@ -916,7 +969,9 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 	) ranked WHERE fork_row = 1`, conv.ConversationGroupID, model.ChannelHistory).Scan(&firstEntries).Error; err != nil {
 		return nil, err
 	}
-	decryptEntries(s, firstEntries)
+	if err := decryptEntries(s, firstEntries); err != nil {
+		return nil, err
+	}
 	entryMap := make(map[uuid.UUID]model.Entry, len(entries)+len(firstEntries))
 	for _, entry := range entries {
 		entryMap[entry.ID] = entry
@@ -928,7 +983,11 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 	}
 	records := make([]registrystore.ForkNavigationConversation, 0, len(convs))
 	for _, c := range convs {
-		record := registrystore.ForkNavigationConversation{ID: c.ID, Title: s.decryptString(c.Title), CreatedAt: c.CreatedAt}
+		title, err := s.decryptConversationTitle(c.ID, c.Title)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
+		record := registrystore.ForkNavigationConversation{ID: c.ID, Title: title, CreatedAt: c.CreatedAt}
 		if direct, ok := directByChild[c.ID]; ok {
 			parent := direct.AncestorConversationID
 			record.ForkedAtConversationID = &parent
@@ -994,9 +1053,13 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 	}
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			Metadata:                r.Metadata,
 			ConversationGroupID:     r.ConversationGroupID,
@@ -1261,7 +1324,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1270,7 +1335,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1279,7 +1346,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1288,7 +1357,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1310,7 +1381,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, &BadRequestError{Message: err.Error()}
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1324,7 +1397,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1333,7 +1408,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1342,7 +1419,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1351,7 +1430,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1432,7 +1513,9 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 	if err != nil {
 		return nil, &BadRequestError{Message: err.Error()}
 	}
-	decryptEntries(s, page)
+	if err := decryptEntries(s, page); err != nil {
+		return nil, err
+	}
 	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
@@ -1458,9 +1541,10 @@ func (s *PostgresStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID
 		return nil, result.Error
 	}
 
-	// Decrypt content if encryption is enabled
-	if decrypted, err := s.decrypt(entry.Content); err == nil {
+	if decrypted, err := s.decryptEntryContent(entry.ID, entry.Content); err == nil {
 		entry.Content = decrypted
+	} else {
+		return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 	}
 
 	return &entry, nil
@@ -1533,7 +1617,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 				return nil, err
 			}
 		} else {
-			encTitle, err := s.encrypt([]byte(detail.Title))
+			encTitle, err := s.encryptConversationTitle(detail.ID, detail.Title)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt title: %w", err)
 			}
@@ -1568,13 +1652,14 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		}
 
 		entryEpoch := registrystore.EpochForChannel(ch, epoch)
+		entryID := uuid.New()
 
-		encContent, err := s.encrypt(req.Content)
+		encContent, err := s.encryptEntryContent(entryID, req.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 		}
 		entry := model.Entry{
-			ID:                  uuid.New(),
+			ID:                  entryID,
 			ConversationID:      conversationID,
 			ConversationGroupID: conv.ConversationGroupID,
 			UserID:              &userID,
@@ -1604,7 +1689,11 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 			if e.Channel == model.ChannelHistory {
 				title := deriveTitleFromContent(string(e.Content))
 				if title != "" {
-					db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", title)
+					encTitle, err := s.encryptConversationTitle(conversationID, title)
+					if err != nil {
+						return nil, fmt.Errorf("failed to encrypt title: %w", err)
+					}
+					db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", encTitle)
 				}
 				break
 			}
@@ -1703,7 +1792,10 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		return nil, err
 	}
 
-	existingContent := flattenMemoryContent(s, latestEpochEntries)
+	existingContent, err := flattenMemoryContent(s, latestEpochEntries)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compute the current latest epoch value.
 	var latestEpoch *int64
@@ -1762,12 +1854,13 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	}
 
 	now := time.Now()
-	encContent, err := s.encrypt(appendContent)
+	entryID := uuid.New()
+	encContent, err := s.encryptEntryContent(entryID, appendContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 	}
 	newEntry := model.Entry{
-		ID:                  uuid.New(),
+		ID:                  entryID,
 		ConversationID:      conversationID,
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
@@ -1903,9 +1996,11 @@ func (s *PostgresStore) ListUnindexedEntries(ctx context.Context, limit int, aft
 
 	// Decrypt
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
 
 	var cursor *string
@@ -1927,9 +2022,11 @@ func (s *PostgresStore) FindEntriesPendingVectorIndexing(ctx context.Context, li
 		return nil, fmt.Errorf("failed to find entries pending vector indexing: %w", err)
 	}
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
 	return entries, nil
 }
@@ -1977,7 +2074,10 @@ func (s *PostgresStore) FetchSearchResultDetails(ctx context.Context, userID str
 	}
 	results := make([]registrystore.SearchResult, len(rows))
 	for i, r := range rows {
-		title := s.decryptString(r.ConversationTitle)
+		title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		highlight := r.IndexedContent
 		if len(highlight) > 200 {
 			highlight = highlight[:200] + "..."
@@ -2106,7 +2206,10 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 			Highlights:     &highlight,
 		}
 		if len(r.ConversationTitle) > 0 {
-			title := s.decryptString(r.ConversationTitle)
+			title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
 			item.ConversationTitle = &title
 		}
 		if includeEntry {
@@ -2116,9 +2219,11 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 				Limit(1).
 				Find(&entry)
 			if result.Error == nil && result.RowsAffected > 0 {
-				if decrypted, err := s.decrypt(entry.Content); err == nil {
-					entry.Content = decrypted
+				decrypted, err := s.decryptEntryContent(entry.ID, entry.Content)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 				}
+				entry.Content = decrypted
 				item.Entry = &entry
 			}
 		}
@@ -2214,9 +2319,13 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			ClientID:                r.ClientID,
 			AgentID:                 r.AgentID,
@@ -2252,10 +2361,14 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
 	}
+	title, err := s.decryptConversationTitle(conv.ID, conv.Title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+	}
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      conv.ID,
-			Title:                   s.decryptString(conv.Title),
+			Title:                   title,
 			OwnerUserID:             conv.OwnerUserID,
 			ClientID:                conv.ClientID,
 			AgentID:                 conv.AgentID,
@@ -2332,9 +2445,13 @@ func (s *PostgresStore) AdminListChildConversations(ctx context.Context, convers
 	}
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			ClientID:                r.ClientID,
 			AgentID:                 r.AgentID,
@@ -2377,7 +2494,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2390,7 +2509,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2399,7 +2520,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2408,7 +2531,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2417,7 +2542,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2430,7 +2557,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2439,7 +2568,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2448,7 +2579,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2493,7 +2626,9 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 	if err != nil {
 		return nil, &BadRequestError{Message: err.Error()}
 	}
-	decryptEntries(s, page)
+	if err := decryptEntries(s, page); err != nil {
+		return nil, err
+	}
 	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
@@ -2589,7 +2724,10 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 			Highlights:     &highlight,
 		}
 		if len(r.ConversationTitle) > 0 {
-			title := s.decryptString(r.ConversationTitle)
+			title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
 			results[i].ConversationTitle = &title
 		}
 		if query.IncludeEntry {
@@ -2599,9 +2737,11 @@ func (s *PostgresStore) AdminSearchEntries(ctx context.Context, query registryst
 				Limit(1).
 				Find(&entry)
 			if result.Error == nil && result.RowsAffected > 0 {
-				if decrypted, err := s.decrypt(entry.Content); err == nil {
-					entry.Content = decrypted
+				decrypted, err := s.decryptEntryContent(entry.ID, entry.Content)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 				}
+				entry.Content = decrypted
 				results[i].Entry = &entry
 			}
 		}
@@ -4307,24 +4447,27 @@ func filterEntriesByFromSeq(entries []model.Entry, fromSeq uint32) []model.Entry
 	return filtered
 }
 
-func decryptEntries(s *PostgresStore, entries []model.Entry) {
+func decryptEntries(s *PostgresStore, entries []model.Entry) error {
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
+	return nil
 }
 
-func flattenMemoryContent(s *PostgresStore, entries []model.Entry) []any {
+func flattenMemoryContent(s *PostgresStore, entries []model.Entry) ([]any, error) {
 	result := make([]any, 0)
 	for _, entry := range entries {
-		content := entry.Content
-		if decrypted, err := s.decrypt(content); err == nil {
-			content = decrypted
+		content, err := s.decryptEntryContent(entry.ID, entry.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
 		result = append(result, parseContentArray(content)...)
 	}
-	return result
+	return result, nil
 }
 
 func parseContentArray(raw []byte) []any {

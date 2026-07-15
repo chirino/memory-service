@@ -73,6 +73,24 @@ func (s *Service) IsPrimaryReal() bool {
 	return s.primary.ID() != "plain"
 }
 
+// PrimaryProviderID returns the configured primary provider ID.
+func (s *Service) PrimaryProviderID() string {
+	if s == nil || s.primary == nil {
+		return ""
+	}
+	return s.primary.ID()
+}
+
+// PrimarySupportsFieldEncryption reports whether the primary provider can write
+// MSEH v4 persisted-field envelopes with domain/identity AAD.
+func (s *Service) PrimarySupportsFieldEncryption() bool {
+	if s == nil || s.primary == nil {
+		return false
+	}
+	_, ok := s.primary.(encrypt.FieldProvider)
+	return ok
+}
+
 // Encrypt delegates to the primary provider.
 func (s *Service) Encrypt(plaintext []byte) ([]byte, error) {
 	return s.primary.Encrypt(plaintext)
@@ -106,6 +124,45 @@ func (s *Service) Decrypt(ciphertext []byte) ([]byte, error) {
 	}
 
 	// No MSEH header — Scenario 1: route to "plain" only when explicitly enabled.
+	if plain != nil && s.legacyPlainReadEnabled {
+		return plain.Decrypt(ciphertext)
+	}
+	return s.primary.Decrypt(ciphertext)
+}
+
+// EncryptField encrypts a persisted field with MSEH v4 domain/identity AAD binding.
+func (s *Service) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
+	provider, ok := s.primary.(encrypt.FieldProvider)
+	if !ok {
+		return nil, fmt.Errorf("dataencryption: primary provider %q does not support MSEH v4 field encryption", s.primary.ID())
+	}
+	return provider.EncryptField(plaintext, domain, identity)
+}
+
+// DecryptField decrypts a persisted field. MSEH v4 values are authenticated with
+// the supplied domain and identity; legacy MSEH v1 values remain readable for migration.
+func (s *Service) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
+	plain := s.byID["plain"]
+
+	if HasMagic(ciphertext) {
+		h, _, err := ReadHeader(bytes.NewReader(ciphertext))
+		if err != nil {
+			return nil, err
+		}
+		provider, ok := s.byID[h.ProviderID]
+		if !ok {
+			return nil, fmt.Errorf("dataencryption: unknown provider %q in MSEH header", h.ProviderID)
+		}
+		if h.Version != VersionFieldAESGCM {
+			return provider.Decrypt(ciphertext)
+		}
+		fieldProvider, ok := provider.(encrypt.FieldProvider)
+		if !ok {
+			return nil, fmt.Errorf("dataencryption: provider %q does not support MSEH v4 field decryption", h.ProviderID)
+		}
+		return fieldProvider.DecryptField(ciphertext, domain, identity)
+	}
+
 	if plain != nil && s.legacyPlainReadEnabled {
 		return plain.Decrypt(ciphertext)
 	}
