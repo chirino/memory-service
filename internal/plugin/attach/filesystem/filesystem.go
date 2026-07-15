@@ -45,6 +45,8 @@ type AttachmentStore struct {
 	rootDir string
 }
 
+var _ registryattach.AtomicAttachmentReplacer = (*AttachmentStore)(nil)
+
 func (s *AttachmentStore) Store(_ context.Context, data io.Reader, maxSize int64, _ string) (*registryattach.FileStoreResult, error) {
 	storageKey := uuid.NewString()
 	destPath, err := s.storagePath(storageKey)
@@ -79,6 +81,47 @@ func (s *AttachmentStore) Store(_ context.Context, data io.Reader, maxSize int64
 	}
 	if err := os.Rename(tmp.Name(), destPath); err != nil {
 		return nil, fmt.Errorf("fsstore: move temp file into place: %w", err)
+	}
+
+	return &registryattach.FileStoreResult{
+		StorageKey: storageKey,
+		Size:       counting.n,
+		SHA256:     fmt.Sprintf("%x", hasher.Sum(nil)),
+	}, nil
+}
+
+func (s *AttachmentStore) Replace(_ context.Context, storageKey string, data io.Reader, _ string) (*registryattach.FileStoreResult, error) {
+	destPath, err := s.storagePath(storageKey)
+	if err != nil {
+		return nil, err
+	}
+	if _, err := os.Stat(destPath); err != nil {
+		if os.IsNotExist(err) {
+			return nil, fmt.Errorf("attachment not found: %s", storageKey)
+		}
+		return nil, fmt.Errorf("fsstore: stat attachment: %w", err)
+	}
+	destDir := filepath.Dir(destPath)
+
+	tmp, err := tempfiles.Create(destDir, "memory-service-fs-replace-*")
+	if err != nil {
+		return nil, fmt.Errorf("fsstore: create temp file: %w", err)
+	}
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+
+	hasher := sha256.New()
+	counting := &countingWriter{h: hasher}
+	if _, err := io.Copy(tmp, io.TeeReader(data, counting)); err != nil {
+		return nil, fmt.Errorf("fsstore: write temp file: %w", err)
+	}
+	if err := tmp.Close(); err != nil {
+		return nil, fmt.Errorf("fsstore: close temp file: %w", err)
+	}
+	if err := os.Rename(tmp.Name(), destPath); err != nil {
+		return nil, fmt.Errorf("fsstore: replace attachment: %w", err)
 	}
 
 	return &registryattach.FileStoreResult{

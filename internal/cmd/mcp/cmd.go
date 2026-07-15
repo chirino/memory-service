@@ -191,6 +191,11 @@ func defaultEmbeddedConfig() config.Config {
 	cfg.DatastoreType = "sqlite"
 	cfg.CacheType = "local"
 	cfg.AttachType = "fs"
+	// Embedded MCP is a single-user desktop process whose database and attachments
+	// are protected by the user's filesystem permissions. Keep it zero-configuration.
+	cfg.EncryptionAllowPlain = true
+	cfg.EncryptionDBDisabled = true
+	cfg.EncryptionAttachmentsDisabled = true
 	cfg.VectorType = ""
 	cfg.EmbedType = "none"
 	cfg.SearchSemanticEnabled = false

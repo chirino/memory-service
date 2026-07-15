@@ -84,22 +84,14 @@ func resolveBaseURL(c *gin.Context, cfg *config.Config) string {
 		return strings.TrimRight(cfg.BaseURL, "/")
 	}
 
-	// 2. Use the browser-facing request origin when available. This handles
-	// Docker/Testcontainers port mappings better than container-local listener
-	// details.
+	// 2. Use the direct request origin when available. Forwarded headers are
+	// intentionally ignored here; production deployments must set BaseURL.
 	if c != nil && c.Request != nil {
-		scheme := c.GetHeader("X-Forwarded-Proto")
-		if scheme == "" {
-			if c.Request.TLS != nil {
-				scheme = "https"
-			} else {
-				scheme = "http"
-			}
+		scheme := "http"
+		if c.Request.TLS != nil {
+			scheme = "https"
 		}
-		host := c.GetHeader("X-Forwarded-Host")
-		if host == "" {
-			host = c.Request.Host
-		}
+		host := c.Request.Host
 		if host != "" {
 			return fmt.Sprintf("%s://%s", scheme, host)
 		}

@@ -17,9 +17,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// testEncryptionKey is a 64-hex-char (32-byte) AES-256 key for testing.
-const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
-
 func TestFeaturesPgEncrypted(t *testing.T) {
 	if !buildcaps.PostgreSQL {
 		requireCapabilities(t, "postgresql")
@@ -28,12 +25,11 @@ func TestFeaturesPgEncrypted(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "none"
 	cfg.AttachType = "db"
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.AdminUsers = bddAdminUsers()
 	cfg.AuditorUsers = bddAuditorUsers()
 	cfg.IndexerUsers = bddIndexerUsers()

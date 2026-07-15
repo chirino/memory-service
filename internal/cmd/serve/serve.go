@@ -2,11 +2,14 @@ package serve
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os/user"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -225,6 +228,22 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Value:       cfg.MaxPageSize,
 			Usage:       "Maximum items accepted by listing endpoints",
 		},
+		&cli.DurationFlag{
+			Name:        "body-read-timeout",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_BODY_READ_TIMEOUT"),
+			Destination: &cfg.BodyReadTimeout,
+			Value:       cfg.BodyReadTimeout,
+			Usage:       "Maximum time allowed to read ordinary REST request bodies (0 disables)",
+		},
+		&cli.DurationFlag{
+			Name:        "attachment-body-read-timeout",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT"),
+			Destination: &cfg.AttachmentBodyReadTimeout,
+			Value:       cfg.AttachmentBodyReadTimeout,
+			Usage:       "Maximum time allowed to read multipart attachment upload bodies (0 disables)",
+		},
 		&cli.StringFlag{
 			Name:        "temp-dir",
 			Category:    "Server:",
@@ -240,11 +259,80 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Usage:       "Enable HTTP access logging for management endpoints (/health, /ready, /metrics)",
 		},
 		&cli.BoolFlag{
+			Name:        "management-on-main-listener",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER"),
+			Destination: &cfg.ManagementOnMainListener,
+			Usage:       "Explicitly serve management endpoints on the main API listener outside testing mode",
+		},
+		&cli.BoolFlag{
+			Name:        "management-allow-non-loopback",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK"),
+			Destination: &cfg.ManagementAllowNonLoopback,
+			Usage:       "Explicitly allow the dedicated management listener to bind beyond loopback outside testing mode",
+		},
+		&cli.BoolFlag{
 			Name:        "admin-require-justification",
 			Category:    "Server:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION"),
 			Destination: &cfg.RequireJustification,
 			Usage:       "Require justification for admin API calls",
+		},
+		&cli.StringFlag{
+			Name:        "trusted-proxy-cidrs",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS"),
+			Destination: &cfg.TrustedProxyCIDRs,
+			Usage:       "Comma-separated trusted TCP proxy IPs/CIDRs for client-IP resolution; empty trusts none, /0 trusts all peers",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-mode",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_MODE"),
+			Destination: &cfg.RateLimitMode,
+			Value:       cfg.RateLimitMode,
+			Usage:       "Process-local rate limiting mode: local or off",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-source",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_SOURCE"),
+			Destination: &cfg.RateLimitSource,
+			Value:       cfg.RateLimitSource,
+			Usage:       "Source admission rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-identity",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_IDENTITY"),
+			Destination: &cfg.RateLimitIdentity,
+			Value:       cfg.RateLimitIdentity,
+			Usage:       "Authenticated identity rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-auth-failure",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_AUTH_FAILURE"),
+			Destination: &cfg.RateLimitAuthFailure,
+			Value:       cfg.RateLimitAuthFailure,
+			Usage:       "Authentication-failure rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-expensive",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_EXPENSIVE"),
+			Destination: &cfg.RateLimitExpensive,
+			Value:       cfg.RateLimitExpensive,
+			Usage:       "Expensive-operation rate limit as <tokens>/<duration>,burst=<tokens>",
+		},
+		&cli.StringFlag{
+			Name:        "rate-limit-stream-open",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_RATE_LIMIT_STREAM_OPEN"),
+			Destination: &cfg.RateLimitStreamOpen,
+			Value:       cfg.RateLimitStreamOpen,
+			Usage:       "Stream-open rate limit as <tokens>/<duration>,burst=<tokens>",
 		},
 	}
 }
@@ -288,6 +376,14 @@ func listenerFlags(cfg *config.Config) []cli.Flag {
 			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
 		},
 		&cli.BoolFlag{
+			Name:        "allow-non-loopback-plaintext",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT"),
+			Destination: &cfg.AllowNonLoopbackPlainText,
+			Value:       cfg.AllowNonLoopbackPlainText,
+			Usage:       "Explicitly allow plaintext API traffic on a non-loopback TCP bind outside testing mode",
+		},
+		&cli.BoolFlag{
 			Name:        "management-plain-text",
 			Category:    "Network Listener: Management:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT"),
@@ -302,6 +398,38 @@ func listenerFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.ManagementListener.EnableTLS,
 			Value:       cfg.ManagementListener.EnableTLS,
 			Usage:       "Enable TLS for management server",
+		},
+		&cli.IntFlag{
+			Name:        "max-header-bytes",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MAX_HEADER_BYTES"),
+			Destination: &cfg.Listener.MaxHeaderBytes,
+			Value:       cfg.Listener.MaxHeaderBytes,
+			Usage:       "Maximum request header bytes accepted by the main HTTP server",
+		},
+		&cli.IntFlag{
+			Name:        "management-max-header-bytes",
+			Category:    "Network Listener: Management:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_MAX_HEADER_BYTES"),
+			Destination: &cfg.ManagementListener.MaxHeaderBytes,
+			Value:       cfg.ManagementListener.MaxHeaderBytes,
+			Usage:       "Maximum request header bytes accepted by the management HTTP server",
+		},
+		&cli.DurationFlag{
+			Name:        "idle-timeout",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_IDLE_TIMEOUT"),
+			Destination: &cfg.Listener.IdleTimeout,
+			Value:       cfg.Listener.IdleTimeout,
+			Usage:       "HTTP keep-alive idle timeout for the main listener",
+		},
+		&cli.DurationFlag{
+			Name:        "management-idle-timeout",
+			Category:    "Network Listener: Management:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_IDLE_TIMEOUT"),
+			Destination: &cfg.ManagementListener.IdleTimeout,
+			Value:       cfg.ManagementListener.IdleTimeout,
+			Usage:       "HTTP keep-alive idle timeout for the management listener",
 		},
 	}
 	flags = append(flags, tcpListenerFlags(cfg)...)
@@ -506,6 +634,7 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DB_DISABLED"),
 			Destination: &cfg.EncryptionDBDisabled,
+			Value:       cfg.EncryptionDBDisabled,
 			Usage:       "Disable at-rest encryption for the database even when encryption is configured",
 		},
 		&cli.BoolFlag{
@@ -513,7 +642,39 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Encryption:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED"),
 			Destination: &cfg.EncryptionAttachmentsDisabled,
+			Value:       cfg.EncryptionAttachmentsDisabled,
 			Usage:       "Disable at-rest encryption for the attachment store even when encryption is configured",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-allow-plain",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN"),
+			Destination: &cfg.EncryptionAllowPlain,
+			Value:       cfg.EncryptionAllowPlain,
+			Usage:       "Explicitly allow the plain provider as the primary provider outside testing (unsafe)",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-legacy-plain-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyPlainReadEnabled,
+			Usage:       "Permit headerless legacy plaintext reads when plain is registered as a fallback provider",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-legacy-byte-v1-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyByteV1ReadEnabled,
+			Value:       cfg.EncryptionLegacyByteV1ReadEnabled,
+			Usage:       "Permit legacy MSEH v1 byte-encrypted field reads during migration",
+		},
+		&cli.BoolFlag{
+			Name:        "encryption-legacy-stream-v2-read-enabled",
+			Category:    "Encryption:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED"),
+			Destination: &cfg.EncryptionLegacyStreamV2ReadEnabled,
+			Value:       cfg.EncryptionLegacyStreamV2ReadEnabled,
+			Usage:       "Permit legacy MSEH v2 AES-CTR attachment stream reads during migration",
 		},
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
@@ -605,6 +766,12 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.IndexerOIDCRole,
 			Usage:       "OIDC role name that maps to indexer permissions",
 		},
+		&cli.StringSliceFlag{
+			Name:        "oidc-role-claim",
+			Category:    "Authorization:",
+			Destination: &cfg.OIDCRoleClaims,
+			Usage:       "Repeatable RFC 6901 JSON Pointer to a string or string-array OIDC role claim; MEMORY_SERVICE_OIDC_ROLE_CLAIMS accepts a JSON array",
+		},
 		&cli.StringFlag{
 			Name:        "roles-admin-users",
 			Category:    "Authorization:",
@@ -659,7 +826,14 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"),
 			Destination: &cfg.OIDCAllowedAudiences,
-			Usage:       "Optional comma-separated OIDC audiences accepted by memory-service; empty disables audience checks",
+			Usage:       "Comma-separated OIDC audiences accepted by memory-service",
+		},
+		&cli.BoolFlag{
+			Name:        "oidc-allow-missing-audience",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE"),
+			Destination: &cfg.OIDCAllowMissingAudience,
+			Usage:       "Temporarily allow issuer-only OIDC validation without configured audiences (unsafe compatibility mode)",
 		},
 	}
 	for _, desc := range security.PermissionDescriptors() {
@@ -848,6 +1022,9 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	if cfg.MaxPageSize <= 0 {
 		return fmt.Errorf("max-page-size must be greater than zero")
 	}
+	if err := security.ValidateRateLimitConfig(cfg); err != nil {
+		return err
+	}
 
 	if !validateListeners {
 		cfg.ManagementListenerEnabled = false
@@ -862,6 +1039,9 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	}
 	if err := validateListenerSelections(*cfg, selections); err != nil {
 		return err
+	}
+	if cfg.ManagementOnMainListener && (selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit) {
+		return fmt.Errorf("--management-on-main-listener cannot be combined with --management-port or --management-unix-socket")
 	}
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return err
@@ -916,6 +1096,74 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	log.Info("Server stopped")
 	return nil
+}
+
+var errRequestBodyTimeout = errors.New("request body read timeout")
+
+func bodyReadTimeoutMiddleware(bodyTimeout, attachmentBodyTimeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request == nil || c.Request.Body == nil || c.Request.Body == http.NoBody {
+			c.Next()
+			return
+		}
+		timeout := bodyTimeout
+		if isStreamingRequest(c.Request) {
+			timeout = attachmentBodyTimeout
+		}
+		if timeout <= 0 {
+			c.Next()
+			return
+		}
+
+		body := newTimeoutReadCloser(c.Request.Body, timeout)
+		c.Request.Body = body
+		c.Next()
+		body.Stop()
+		if body.TimedOut() && !c.Writer.Written() {
+			c.AbortWithStatusJSON(http.StatusRequestTimeout, gin.H{
+				"code":  "request_timeout",
+				"error": "request body read timeout",
+			})
+		}
+	}
+}
+
+type timeoutReadCloser struct {
+	body     io.ReadCloser
+	timer    *time.Timer
+	timedOut atomic.Bool
+}
+
+func newTimeoutReadCloser(body io.ReadCloser, timeout time.Duration) *timeoutReadCloser {
+	wrapped := &timeoutReadCloser{body: body}
+	wrapped.timer = time.AfterFunc(timeout, func() {
+		wrapped.timedOut.Store(true)
+		_ = body.Close()
+	})
+	return wrapped
+}
+
+func (b *timeoutReadCloser) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	if err != nil && b.timedOut.Load() {
+		return n, errRequestBodyTimeout
+	}
+	return n, err
+}
+
+func (b *timeoutReadCloser) Close() error {
+	b.Stop()
+	return b.body.Close()
+}
+
+func (b *timeoutReadCloser) Stop() {
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+}
+
+func (b *timeoutReadCloser) TimedOut() bool {
+	return b.timedOut.Load()
 }
 
 func maxBodySizeMiddleware(maxBodySize int64) gin.HandlerFunc {

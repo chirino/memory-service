@@ -1,5 +1,5 @@
 // Package dek registers the "dek" encryption provider.
-// Byte-slice encryption uses AES-256-GCM; streamed attachment encryption uses AES-CTR.
+// Byte-slice encryption uses AES-256-GCM; streamed attachment encryption uses MSEH v3 AES-GCM records.
 package dek
 
 import (
@@ -14,6 +14,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	"github.com/chirino/memory-service/internal/security"
 )
 
 func init() {
@@ -70,6 +71,33 @@ func (p *dekProvider) Encrypt(plaintext []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// EncryptField encrypts plaintext with AES-256-GCM and MSEH v4 field AAD.
+func (p *dekProvider) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
+	iv, err := randomBytes(gcmNonceSize)
+	if err != nil {
+		return nil, err
+	}
+	gcm, err := newGCM(p.primaryKey)
+	if err != nil {
+		return nil, err
+	}
+	headerPrefix, err := dataencryption.EncodeHeader(dataencryption.Header{
+		Version:    dataencryption.VersionFieldAESGCM,
+		ProviderID: "dek",
+		Nonce:      iv,
+	})
+	if err != nil {
+		return nil, err
+	}
+	aad := dataencryption.FieldAAD(headerPrefix, domain, identity)
+	ciphertext := gcm.Seal(nil, iv, plaintext, aad)
+
+	var buf bytes.Buffer
+	buf.Write(headerPrefix)
+	buf.Write(ciphertext)
+	return buf.Bytes(), nil
+}
+
 // Decrypt decrypts an MSEH-wrapped ciphertext produced by Encrypt.
 func (p *dekProvider) Decrypt(ciphertext []byte) ([]byte, error) {
 	if !dataencryption.HasMagic(ciphertext) {
@@ -91,8 +119,33 @@ func (p *dekProvider) decryptMSEH(ciphertext []byte) ([]byte, error) {
 	return p.gcmOpen(h.Nonce, payload)
 }
 
+// DecryptField decrypts an MSEH v4 field ciphertext with domain/identity AAD.
+func (p *dekProvider) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
+	if !dataencryption.HasMagic(ciphertext) {
+		return nil, fmt.Errorf("dek: expected MSEH envelope")
+	}
+	r := bytes.NewReader(ciphertext)
+	h, _, err := dataencryption.ReadHeader(r)
+	if err != nil {
+		return nil, err
+	}
+	if h.Version != dataencryption.VersionFieldAESGCM {
+		return p.decryptMSEH(ciphertext)
+	}
+	headerPrefix := ciphertext[:len(ciphertext)-r.Len()]
+	payload := make([]byte, r.Len())
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, fmt.Errorf("dek: reading field ciphertext payload: %w", err)
+	}
+	return p.gcmOpenWithAAD(h.Nonce, payload, dataencryption.FieldAAD(headerPrefix, domain, identity))
+}
+
 // gcmOpen tries decrypting payload+nonce with the primary key then all legacy keys.
 func (p *dekProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
+	return p.gcmOpenWithAAD(iv, payload, nil)
+}
+
+func (p *dekProvider) gcmOpenWithAAD(iv, payload, aad []byte) ([]byte, error) {
 	keys := append([][]byte{p.primaryKey}, p.legacyKeys...)
 	var lastErr error
 	for _, key := range keys {
@@ -101,7 +154,7 @@ func (p *dekProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
 			lastErr = err
 			continue
 		}
-		plain, err := gcm.Open(nil, iv, payload, nil)
+		plain, err := gcm.Open(nil, iv, payload, aad)
 		if err == nil {
 			return plain, nil
 		}
@@ -110,21 +163,21 @@ func (p *dekProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
 	return nil, fmt.Errorf("dek: decryption failed with all keys: %w", lastErr)
 }
 
-// EncryptStream writes the MSEH v2 header immediately, then returns a WriteCloser
-// that encrypts bytes directly to dst using AES-CTR.
+// EncryptStream writes the MSEH v3 header immediately, then returns a WriteCloser
+// that writes authenticated AES-GCM records to dst.
 func (p *dekProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
-	nonce, err := NewCTRNonce(p.primaryKey)
+	nonce, err := NewGCMStreamNonce(p.primaryKey)
 	if err != nil {
 		return nil, err
 	}
 	if err := dataencryption.WriteHeader(dst, dataencryption.Header{
-		Version:    dataencryption.VersionAESCTR,
+		Version:    dataencryption.VersionAttachmentStreamAESGCM,
 		ProviderID: "dek",
 		Nonce:      nonce,
 	}); err != nil {
 		return nil, err
 	}
-	return NewCTREncryptWriter(dst, p.primaryKey, nonce)
+	return NewGCMStreamEncryptWriter(dst, p.primaryKey, p.ID(), nonce)
 }
 
 // DecryptStream reads ciphertext from src (already positioned after the MSEH header)
@@ -133,9 +186,20 @@ func (p *dekProvider) DecryptStream(src io.Reader, header *encrypt.Header) (io.R
 	if header == nil {
 		return nil, fmt.Errorf("dek: DecryptStream requires a parsed MSEH header")
 	}
+	if header.Version == dataencryption.VersionAttachmentStreamAESGCM {
+		key, err := SelectGCMStreamKey(append([][]byte{p.primaryKey}, p.legacyKeys...), header.Nonce)
+		if err != nil {
+			return nil, err
+		}
+		return NewGCMStreamDecryptReader(src, key, p.ID(), header.Nonce)
+	}
 	if header.Version != dataencryption.VersionAESCTR {
 		return nil, fmt.Errorf("dek: unsupported MSEH stream version %d", header.Version)
 	}
+	if p.cfg != nil && !p.cfg.EncryptionLegacyStreamV2ReadEnabled {
+		return nil, fmt.Errorf("dek: legacy MSEH v2 stream reads are disabled")
+	}
+	security.RecordLegacyEncryptedStreamRead("2", p.ID())
 	key, err := SelectCTRKey(append([][]byte{p.primaryKey}, p.legacyKeys...), header.Nonce)
 	if err != nil {
 		return nil, err
@@ -159,6 +223,11 @@ func randomBytes(size int) ([]byte, error) {
 	return buf, nil
 }
 
+// NewGCMNonce returns a fresh AES-GCM nonce.
+func NewGCMNonce() ([]byte, error) {
+	return randomBytes(gcmNonceSize)
+}
+
 func newGCM(key []byte) (cipher.AEAD, error) {
 	block, err := aes.NewCipher(key)
 	if err != nil {
@@ -174,6 +243,11 @@ func newGCM(key []byte) (cipher.AEAD, error) {
 // AESGCMSeal encrypts plaintext with AES-256-GCM using key and a random IV.
 // Returns (iv, ciphertext, error). Exported for use by KEK-backed providers.
 func AESGCMSeal(key, plaintext []byte) (iv, ciphertext []byte, err error) {
+	return AESGCMSealWithAAD(key, plaintext, nil)
+}
+
+// AESGCMSealWithAAD encrypts plaintext with AES-256-GCM using key, a random IV, and AAD.
+func AESGCMSealWithAAD(key, plaintext, aad []byte) (iv, ciphertext []byte, err error) {
 	iv, err = randomBytes(gcmNonceSize)
 	if err != nil {
 		return nil, nil, err
@@ -182,17 +256,31 @@ func AESGCMSeal(key, plaintext []byte) (iv, ciphertext []byte, err error) {
 	if err != nil {
 		return nil, nil, err
 	}
-	return iv, gcm.Seal(nil, iv, plaintext, nil), nil
+	return iv, gcm.Seal(nil, iv, plaintext, aad), nil
+}
+
+// AESGCMSealWithNonceAndAAD encrypts plaintext with AES-256-GCM using the supplied IV and AAD.
+func AESGCMSealWithNonceAndAAD(key, iv, plaintext, aad []byte) (usedIV, ciphertext []byte, err error) {
+	gcm, err := newGCM(key)
+	if err != nil {
+		return nil, nil, err
+	}
+	return iv, gcm.Seal(nil, iv, plaintext, aad), nil
 }
 
 // AESGCMOpen decrypts ciphertext (with appended GCM tag) using key and iv.
 // Exported for use by KEK-backed providers.
 func AESGCMOpen(key, iv, ciphertext []byte) ([]byte, error) {
+	return AESGCMOpenWithAAD(key, iv, ciphertext, nil)
+}
+
+// AESGCMOpenWithAAD decrypts ciphertext using key, iv, and AAD.
+func AESGCMOpenWithAAD(key, iv, ciphertext, aad []byte) ([]byte, error) {
 	gcm, err := newGCM(key)
 	if err != nil {
 		return nil, err
 	}
-	plain, err := gcm.Open(nil, iv, ciphertext, nil)
+	plain, err := gcm.Open(nil, iv, ciphertext, aad)
 	if err != nil {
 		return nil, fmt.Errorf("dek: AES-GCM open: %w", err)
 	}

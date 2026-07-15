@@ -98,7 +98,7 @@ func (am *authModeSteps) buildBaseConfig() (config.Config, error) {
 	if dbURL == "" {
 		return config.Config{}, fmt.Errorf("auth mode DB URL not set in suite extra key %q; configure in test runner", AuthModeDBURLKey)
 	}
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeProd
 	cfg.DBURL = dbURL
 	cfg.CacheType = "none"
@@ -126,6 +126,7 @@ func (am *authModeSteps) buildOIDCConfig() (config.Config, error) {
 	}
 	cfg.OIDCIssuer = kc.GetIssuerURL()
 	cfg.OIDCDiscoveryURL = kc.GetDiscoveryURL()
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"
@@ -246,6 +247,7 @@ func (am *authModeSteps) startOIDCAudienceServer(allowedClients, allowedAudience
 	}
 	cfg.OIDCAllowedClients = allowedClients
 	cfg.OIDCAllowedAudiences = allowedAudiences
+	cfg.OIDCAllowMissingAudience = strings.TrimSpace(allowedAudiences) == ""
 
 	return am.startServer(&cfg)
 }

@@ -34,14 +34,13 @@ func TestFeatures(t *testing.T) {
 	prom := NewMockPrometheus(t)
 	infinispan := testinfinispan.StartInfinispan(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "infinispan"
 	cfg.InfinispanHost = infinispan.Host
 	cfg.InfinispanUsername = infinispan.Username
 	cfg.InfinispanPassword = infinispan.Password
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

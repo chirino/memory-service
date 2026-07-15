@@ -10,7 +10,6 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         libsqlite3-dev \
         maven \
-        supervisor \
         ripgrep \
         apt-transport-https \
         ca-certificates \
@@ -59,13 +58,6 @@ RUN curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg \
     && apt-get install -y gh \
     && rm -rf /var/lib/apt/lists/*
 
-# Build microsocks (lightweight SOCKS5 proxy with remote DNS support)
-RUN git clone https://github.com/rofl0r/microsocks.git /tmp/microsocks \
-    && cd /tmp/microsocks \
-    && make \
-    && cp microsocks /usr/local/bin/ \
-    && rm -rf /tmp/microsocks
-
 # Install go-task (https://taskfile.dev)
 RUN sh -c "$(curl --location https://taskfile.dev/install.sh)" -- -d -b /usr/local/bin
 
@@ -106,8 +98,4 @@ RUN GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install gotest.
     && GOBIN=/usr/local/bin GOPATH=/tmp/go GOCACHE=/tmp/go-cache go install github.com/cosmtrek/air@v1.51.0 \
     && rm -rf /tmp/go /tmp/go-cache
 
-COPY supervisord.conf /etc/supervisor/conf.d/supervisord.conf
-
 WORKDIR /home/vscode
-
-CMD ["/usr/bin/supervisord", "-n", "-c", "/etc/supervisor/conf.d/supervisord.conf"]

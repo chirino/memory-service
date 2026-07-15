@@ -4,6 +4,7 @@
 **Search docs contract**: `POST /v1/conversations/search` uses `searchType` values `auto`, `semantic`, `fulltext` (not `keyword`) and also accepts an array of concrete types (for example `["semantic","fulltext"]`), with `limit` applied per requested type.
 **Attachment entry docs contract**: When a history entry references an uploaded attachment by `attachmentId`, stored entry content preserves `attachmentId` and backfills `contentType`/`name` only. Do not document it as replacing `attachmentId`, adding `href`, or auto-copying `size`/`sha256` into entry content.
 **Attachment disposition docs contract**: User/admin direct downloads, download-url responses, and signed token downloads support `disposition=inline|attachment`. Omitted disposition means no `Content-Disposition` header and browser-default behavior; do not document an `auto` enum value.
+**Deployment sidebar scope**: The Deployment sidebar is intentionally re-enabled with only Docker and Security Hardening. Do not add Kubernetes or database deployment pages back to the sidebar until those routes are refreshed and tested.
 **CodeFromFile match selection**: `site/src/components/CodeFromFile.astro` selects snippet regions via the `match="..."` prop and rejects default-slot matching; docs should always pass match anchors as props.
 **CodeFromFile tracked-file gotcha**: `CodeFromFile` reads files from the checked-out repo during Astro build. Do not point it at ignored names like `.env`; use tracked examples such as `.env.example` or CI site builds will fail even if local builds pass.
 

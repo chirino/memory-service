@@ -5,8 +5,21 @@ export type ClientOptions = {
 };
 
 export type ErrorResponse = {
-  error?: string;
-  code?: string;
+  /**
+   * Stable machine-readable error code.
+   */
+  code: string;
+  /**
+   * Safe human-readable error message.
+   */
+  error: string;
+  /**
+   * Request correlation identifier, also returned in the X-Request-ID header.
+   */
+  requestId: string;
+  /**
+   * Structured non-sensitive error details.
+   */
   details?: {
     [key: string]: unknown;
   };
@@ -17,15 +30,33 @@ export type ErrorResponse = {
  */
 export type SearchTypeUnavailableError = {
   /**
-   * Error code.
+   * Stable machine-readable error code.
    */
-  error?: string;
+  code: string;
   /**
-   * Human-readable error message.
+   * Safe human-readable error message.
+   */
+  error: string;
+  /**
+   * Request correlation identifier, also returned in the X-Request-ID header.
+   */
+  requestId: string;
+  /**
+   * Structured non-sensitive error details, including availableTypes when known.
+   */
+  details?: {
+    [key: string]: unknown;
+  };
+  /**
+   * Deprecated compatibility alias for error.
+   *
+   * @deprecated
    */
   message?: string;
   /**
-   * List of search types that are available on this server.
+   * Deprecated compatibility alias for details.availableTypes.
+   *
+   * @deprecated
    */
   availableTypes?: Array<string>;
 };
@@ -1315,10 +1346,22 @@ export type CreateOwnershipTransferErrors = {
    * A pending transfer already exists for this conversation.
    */
   409: {
-    error?: string;
-    code?: string;
+    code: string;
+    error: string;
     /**
-     * ID of the existing pending transfer
+     * Request correlation identifier, also returned in the X-Request-ID header.
+     */
+    requestId: string;
+    /**
+     * Structured non-sensitive error details.
+     */
+    details?: {
+      [key: string]: unknown;
+    };
+    /**
+     * Deprecated compatibility alias for details.existingTransferId.
+     *
+     * @deprecated
      */
     existingTransferId?: string;
   };

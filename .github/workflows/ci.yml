@@ -9,8 +9,6 @@ on:
       - 'docs/**'
       - '*.md'
       - '.skills/**'
-      - '.github/**'
-      - '.devconainer/**'
   push:
     branches: [main]
     paths-ignore:
@@ -18,7 +16,6 @@ on:
       - 'docs/**'
       - '*.md'
       - '.skills/**'
-      - '.devconainer/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -26,70 +23,48 @@ concurrency:
 
 permissions:
   contents: read
-  checks: write
-  packages: write
 
 jobs:
-  build:
-    runs-on: ${{ matrix.job == 'artifact-memory-service-macos-arm64' && 'macos-26' || ((startsWith(matrix.job, 'image-') || startsWith(matrix.job, 'artifact-memory-service-linux-')) && endsWith(matrix.job, 'linux-arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest') }}
-    strategy:
-      fail-fast: true   # cancels other matrix jobs on first failure
-      matrix:
-        job:
-          - verify-generated
-          - test-go
-          - test-site
-          - test-java
-          - image-memory-service-linux-amd64
-          - image-memory-service-linux-arm64
-          - image-chat-quarkus-linux-amd64
-          - image-chat-quarkus-linux-arm64
-          - artifact-memory-service-linux-amd64
-          - artifact-memory-service-linux-arm64
-          - artifact-memory-service-macos-arm64
+  verify-generated:
+    runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Go
-        if: contains('verify-generated test-go test-site', matrix.job)
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
           cache-dependency-path: |
             go.sum
-            .github/cache/go-${{ matrix.job }}.sum
+            .github/cache/go-verify-generated.sum
 
       - name: Set up Java
-        if: contains('verify-generated test-java test-site', matrix.job)
-        uses: actions/setup-java@v5.4.0
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           distribution: temurin
           java-version: '21'
           cache: maven
           cache-dependency-path: |
             **/pom.xml
-            .github/cache/maven-${{ matrix.job }}.key
+            .github/cache/maven-verify-generated.key
 
       - name: Set up Node
-        if: contains('verify-generated test-java test-site', matrix.job)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
           cache-dependency-path: |
             frontends/chat-frontend/package-lock.json
             site/package-lock.json
-            .github/cache/npm-${{ matrix.job }}.key
+            .github/cache/npm-verify-generated.key
 
       - name: Generate Source Code
-        if: contains('verify-generated', matrix.job)
         run: |
           go run github.com/go-task/task/v3/cmd/task generate
 
       - name: Check for uncommitted changes
-        if: contains('verify-generated', matrix.job)
         run: |
           if [ "$(git diff --ignore-space-at-eol | wc -l)" -gt "0" ]; then
             echo "Detected uncommitted changes after build.  See status below:"
@@ -100,52 +75,40 @@ jobs:
             exit 1
           fi
 
+  test-go:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            .github/cache/go-test-go.sum
+
       - name: Run Go Tests
-        if: contains('test-go', matrix.job)
         run: |
           mkdir -p reports
           export GODOG_REPORT_DIR=./reports
           export GODOG_REPORT_FORMAT=cucumber
           go run github.com/go-task/task/v3/cmd/task test:go
 
-      - name: Install uv
-        if: contains('test-site', matrix.job)
-        uses: astral-sh/setup-uv@v8.2.0
-        with:
-          enable-cache: true
-
-      - name: Run Site Tests
-        if: contains('test-site', matrix.job)
-        run: |
-          mkdir -p reports
-          export GODOG_REPORT_DIR=./reports
-          export GODOG_REPORT_FORMAT=cucumber
-          export SITE_TEST_SCENARIO_CONCURRENCY=2
-          go run github.com/go-task/task/v3/cmd/task test:site
-
-      - name: Run Java Tests
-        if: contains('test-java', matrix.job)
-        run: ./java/mvnw -T 1C -f java/pom.xml clean install
-
-      - name: Add JUnit summary to job
-        if: always() && contains('test-java', matrix.job)
-        continue-on-error: true
-        uses: mikepenz/action-junit-report@v6.4.2
-        with:
-          report_paths: '**/target/surefire-reports/TEST-*.xml'
-          check_name: JUnit report (${{ matrix.job }})
-          detailed_summary: true
-          fail_on_parse_error: true
-
       - name: Upload test reports
-        if: always() && contains('test-go test-site', matrix.job)
-        uses: actions/upload-artifact@v7
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
-          name: ${{ matrix.job }}
+          name: test-go
           path: '**/reports'
 
       - name: Create Cucumber report files
-        if: always() && contains('test-go test-site', matrix.job)
+        if: always()
         continue-on-error: true
         run: |
           go run ./internal/cmd/create-cucumber-reports \
@@ -155,20 +118,158 @@ jobs:
             --max-items 50
 
       - name: Add Cucumber summary to job
-        if: always() && contains('test-go test-site', matrix.job)
+        if: always()
         continue-on-error: true
         timeout-minutes: 5
-        uses: deblockt/cucumber-report-annotations-action@v1.21
+        uses: deblockt/cucumber-report-annotations-action@c240de1ffc48641595ff0c8b5ad70cf069701530 # v1.21
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .artifacts/cucumber-report-*.json
-          name: Cucumber report (${{ matrix.job }})
+          name: Cucumber report (test-go)
           show-global-summary-report: true
           ignore-no-report-found: true
 
+  test-site:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            .github/cache/go-test-site.sum
+
+      - name: Set up Java
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .github/cache/maven-test-site.key
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: |
+            frontends/chat-frontend/package-lock.json
+            site/package-lock.json
+            .github/cache/npm-test-site.key
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
+        with:
+          enable-cache: true
+
+      - name: Run Site Tests
+        run: |
+          mkdir -p reports
+          export GODOG_REPORT_DIR=./reports
+          export GODOG_REPORT_FORMAT=cucumber
+          export SITE_TEST_SCENARIO_CONCURRENCY=2
+          go run github.com/go-task/task/v3/cmd/task test:site
+
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: test-site
+          path: '**/reports'
+
+      - name: Create Cucumber report files
+        if: always()
+        continue-on-error: true
+        run: |
+          go run ./internal/cmd/create-cucumber-reports \
+            --input-dir . \
+            --output-dir .artifacts \
+            --output-stem cucumber-report \
+            --max-items 50
+
+      - name: Add Cucumber summary to job
+        if: always()
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: deblockt/cucumber-report-annotations-action@c240de1ffc48641595ff0c8b5ad70cf069701530 # v1.21
+        with:
+          access-token: ${{ secrets.GITHUB_TOKEN }}
+          path: .artifacts/cucumber-report-*.json
+          name: Cucumber report (test-site)
+          show-global-summary-report: true
+          ignore-no-report-found: true
+
+  test-java:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Java
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: |
+            **/pom.xml
+            .github/cache/maven-test-java.key
+
+      - name: Set up Node
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: lts/*
+          cache: npm
+          cache-dependency-path: |
+            frontends/chat-frontend/package-lock.json
+            site/package-lock.json
+            .github/cache/npm-test-java.key
+
+      - name: Run Java Tests
+        run: ./java/mvnw -T 1C -f java/pom.xml clean install
+
+      - name: Add JUnit summary to job
+        if: always()
+        continue-on-error: true
+        uses: mikepenz/action-junit-report@d9f48fc87bc235f7e214acf696ca5abc0a986f16 # v6.4.2
+        with:
+          report_paths: '**/target/surefire-reports/TEST-*.xml'
+          check_name: JUnit report (test-java)
+          detailed_summary: true
+          fail_on_parse_error: true
+
+  images:
+    runs-on: ${{ endsWith(matrix.job, 'linux-arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest' }}
+    permissions:
+      contents: read
+      packages: write
+    strategy:
+      fail-fast: true
+      matrix:
+        job:
+          - image-memory-service-linux-amd64
+          - image-memory-service-linux-arm64
+          - image-chat-quarkus-linux-amd64
+          - image-chat-quarkus-linux-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - name: Prepare Docker image metadata
         id: docker-meta
-        if: startsWith(matrix.job, 'image-')
         shell: bash
         run: |
           set -euo pipefail
@@ -236,20 +337,20 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true'
-        uses: docker/setup-buildx-action@v4
+        if: steps.docker-meta.outputs.should-build == 'true'
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v4
+        if: steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Build Docker image
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref != 'refs/heads/main'
-        uses: docker/build-push-action@v7
+        if: steps.docker-meta.outputs.should-build == 'true' && github.ref != 'refs/heads/main'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: ${{ steps.docker-meta.outputs.dockerfile }}
@@ -264,8 +365,8 @@ jobs:
 
       - name: Build and push Docker image by digest
         id: docker-build
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v7
+        if: steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: ${{ steps.docker-meta.outputs.dockerfile }}
@@ -279,7 +380,7 @@ jobs:
           cache-to: type=gha,mode=max,scope=${{ steps.docker-meta.outputs.cache-scope }}
 
       - name: Export Docker digest
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
+        if: steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
         shell: bash
         run: |
           set -euo pipefail
@@ -289,17 +390,29 @@ jobs:
           touch "/tmp/digests/${{ steps.docker-meta.outputs.image }}/${digest#sha256:}"
 
       - name: Upload Docker digest
-        if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        if: steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ci-docker-digest-${{ steps.docker-meta.outputs.image }}-${{ steps.docker-meta.outputs.platform-key }}
           path: /tmp/digests
           if-no-files-found: error
           retention-days: 1
 
+  artifacts:
+    runs-on: ${{ matrix.job == 'artifact-memory-service-macos-arm64' && 'macos-26' || (endsWith(matrix.job, 'linux-arm64') && 'ubuntu-24.04-arm' || 'ubuntu-latest') }}
+    strategy:
+      fail-fast: true
+      matrix:
+        job:
+          - artifact-memory-service-linux-amd64
+          - artifact-memory-service-linux-arm64
+          - artifact-memory-service-macos-arm64
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
       - name: Prepare binary artifact metadata
         id: artifact-meta
-        if: startsWith(matrix.job, 'artifact-')
         shell: bash
         run: |
           set -euo pipefail
@@ -334,7 +447,7 @@ jobs:
 
       - name: Set up Docker Buildx for portable Linux artifact
         if: startsWith(matrix.job, 'artifact-memory-service-linux-')
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Build portable Linux binary artifact
         if: startsWith(matrix.job, 'artifact-memory-service-linux-')
@@ -358,7 +471,7 @@ jobs:
 
       - name: Set up Go for macOS artifact
         if: matrix.job == 'artifact-memory-service-macos-arm64'
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -380,30 +493,32 @@ jobs:
           chmod +x dist/memory-service
 
       - name: Upload binary artifact
-        if: startsWith(matrix.job, 'artifact-')
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.artifact-meta.outputs.artifact-name }}
           path: dist/memory-service
           if-no-files-found: error
 
   image-manifest:
-    needs: build
+    needs: images
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: ci-docker-digest-*
           path: /tmp/digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}

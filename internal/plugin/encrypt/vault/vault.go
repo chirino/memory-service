@@ -24,6 +24,7 @@ import (
 	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/plugin/encrypt/dekstore"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
+	"github.com/chirino/memory-service/internal/security"
 	"github.com/urfave/cli/v3"
 )
 
@@ -217,6 +218,37 @@ func (p *vaultProvider) Encrypt(plaintext []byte) ([]byte, error) {
 	return buf.Bytes(), nil
 }
 
+// EncryptField encrypts plaintext with the primary DEK using AES-256-GCM + MSEH v4 field AAD.
+func (p *vaultProvider) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
+	if err := p.ensureLoaded(); err != nil {
+		return nil, err
+	}
+	p.mu.RLock()
+	pk := p.keys[0]
+	p.mu.RUnlock()
+
+	iv, err := dekpkg.NewGCMNonce()
+	if err != nil {
+		return nil, err
+	}
+	headerPrefix, err := dataencryption.EncodeHeader(dataencryption.Header{
+		Version:    dataencryption.VersionFieldAESGCM,
+		ProviderID: "vault",
+		Nonce:      iv,
+	})
+	if err != nil {
+		return nil, err
+	}
+	_, ciphertext, err := dekpkg.AESGCMSealWithNonceAndAAD(pk, iv, plaintext, dataencryption.FieldAAD(headerPrefix, domain, identity))
+	if err != nil {
+		return nil, err
+	}
+	var buf bytes.Buffer
+	buf.Write(headerPrefix)
+	buf.Write(ciphertext)
+	return buf.Bytes(), nil
+}
+
 // Decrypt unwraps MSEH-wrapped ciphertext using the cached DEKs (primary first, then legacy).
 func (p *vaultProvider) Decrypt(ciphertext []byte) ([]byte, error) {
 	if err := p.ensureLoaded(); err != nil {
@@ -237,8 +269,32 @@ func (p *vaultProvider) Decrypt(ciphertext []byte) ([]byte, error) {
 	return p.gcmOpen(h.Nonce, payload)
 }
 
-// EncryptStream writes the MSEH v2 header then returns a WriteCloser that encrypts
-// bytes directly to dst using AES-CTR.
+// DecryptField decrypts an MSEH v4 field ciphertext with domain/identity AAD.
+func (p *vaultProvider) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
+	if err := p.ensureLoaded(); err != nil {
+		return nil, err
+	}
+	if !dataencryption.HasMagic(ciphertext) {
+		return nil, fmt.Errorf("vault: expected MSEH envelope")
+	}
+	r := bytes.NewReader(ciphertext)
+	h, _, err := dataencryption.ReadHeader(r)
+	if err != nil {
+		return nil, err
+	}
+	if h.Version != dataencryption.VersionFieldAESGCM {
+		return p.Decrypt(ciphertext)
+	}
+	headerPrefix := ciphertext[:len(ciphertext)-r.Len()]
+	payload := make([]byte, r.Len())
+	if _, err := io.ReadFull(r, payload); err != nil {
+		return nil, fmt.Errorf("vault: reading field ciphertext: %w", err)
+	}
+	return p.gcmOpenWithAAD(h.Nonce, payload, dataencryption.FieldAAD(headerPrefix, domain, identity))
+}
+
+// EncryptStream writes the MSEH v3 header then returns a WriteCloser that writes
+// authenticated AES-GCM records to dst.
 func (p *vaultProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	if err := p.ensureLoaded(); err != nil {
 		return nil, err
@@ -247,18 +303,18 @@ func (p *vaultProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	pk := p.keys[0]
 	p.mu.RUnlock()
 
-	nonce, err := dekpkg.NewCTRNonce(pk)
+	nonce, err := dekpkg.NewGCMStreamNonce(pk)
 	if err != nil {
 		return nil, err
 	}
 	if err := dataencryption.WriteHeader(dst, dataencryption.Header{
-		Version:    dataencryption.VersionAESCTR,
+		Version:    dataencryption.VersionAttachmentStreamAESGCM,
 		ProviderID: "vault",
 		Nonce:      nonce,
 	}); err != nil {
 		return nil, err
 	}
-	return dekpkg.NewCTREncryptWriter(dst, pk, nonce)
+	return dekpkg.NewGCMStreamEncryptWriter(dst, pk, p.ID(), nonce)
 }
 
 // DecryptStream decrypts a ciphertext stream (already past the MSEH header).
@@ -269,9 +325,20 @@ func (p *vaultProvider) DecryptStream(src io.Reader, header *encrypt.Header) (io
 	if header == nil {
 		return nil, fmt.Errorf("vault: DecryptStream requires a parsed MSEH header")
 	}
+	if header.Version == dataencryption.VersionAttachmentStreamAESGCM {
+		key, err := dekpkg.SelectGCMStreamKey(p.currentKeys(), header.Nonce)
+		if err != nil {
+			return nil, fmt.Errorf("vault: %w", err)
+		}
+		return dekpkg.NewGCMStreamDecryptReader(src, key, p.ID(), header.Nonce)
+	}
 	if header.Version != dataencryption.VersionAESCTR {
 		return nil, fmt.Errorf("vault: unsupported MSEH stream version %d", header.Version)
 	}
+	if p.cfg != nil && !p.cfg.EncryptionLegacyStreamV2ReadEnabled {
+		return nil, fmt.Errorf("vault: legacy MSEH v2 stream reads are disabled")
+	}
+	security.RecordLegacyEncryptedStreamRead("2", p.ID())
 	key, err := dekpkg.SelectCTRKey(p.currentKeys(), header.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("vault: %w", err)
@@ -299,7 +366,11 @@ func (p *vaultProvider) AttachmentSigningKeys(_ context.Context) ([][]byte, erro
 // gcmOpen tries decrypting payload with all cached keys. If all fail it refreshes
 // the key cache from the DB (handles a rotated primary) and retries once.
 func (p *vaultProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
-	if plain, err := p.tryKeys(iv, payload, p.currentKeys()); err == nil {
+	return p.gcmOpenWithAAD(iv, payload, nil)
+}
+
+func (p *vaultProvider) gcmOpenWithAAD(iv, payload, aad []byte) ([]byte, error) {
+	if plain, err := p.tryKeys(iv, payload, aad, p.currentKeys()); err == nil {
 		return plain, nil
 	}
 
@@ -307,7 +378,7 @@ func (p *vaultProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
 	if refreshErr := p.refreshKeys(context.Background()); refreshErr != nil {
 		return nil, fmt.Errorf("vault: decryption failed and cache refresh also failed: %w", refreshErr)
 	}
-	plain, err := p.tryKeys(iv, payload, p.currentKeys())
+	plain, err := p.tryKeys(iv, payload, aad, p.currentKeys())
 	if err != nil {
 		return nil, fmt.Errorf("vault: decryption failed with all keys (after cache refresh): %w", err)
 	}
@@ -315,10 +386,10 @@ func (p *vaultProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
 }
 
 // tryKeys attempts AES-GCM decryption with each key in order, returning the first success.
-func (p *vaultProvider) tryKeys(iv, payload []byte, keys [][]byte) ([]byte, error) {
+func (p *vaultProvider) tryKeys(iv, payload, aad []byte, keys [][]byte) ([]byte, error) {
 	var lastErr error
 	for _, key := range keys {
-		if plain, err := dekpkg.AESGCMOpen(key, iv, payload); err == nil {
+		if plain, err := dekpkg.AESGCMOpenWithAAD(key, iv, payload, aad); err == nil {
 			return plain, nil
 		} else {
 			lastErr = err

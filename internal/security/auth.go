@@ -228,6 +228,7 @@ type TokenResolver struct {
 	oidcEnabled     bool
 	allowedClients  map[string]bool // empty = no client check
 	allowedAudience map[string]bool // empty = no audience check
+	roleClaims      []string
 	apiKeys         map[string]string
 	adminOIDCRole   string
 	auditorOIDCRole string
@@ -264,6 +265,12 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 
 	if oidcIssuer != "" {
 		oidcEnabled = true
+		if len(splitCSV(cfg.OIDCAllowedAudiences)) == 0 && !cfg.OIDCAllowMissingAudience {
+			return nil, fmt.Errorf("OIDC allowed audiences are required when OIDC is enabled; set MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES")
+		}
+		if cfg.OIDCAllowMissingAudience {
+			log.Warn("OIDC audience validation compatibility mode is enabled; configure MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES before production use")
+		}
 
 		ctx := context.Background()
 		if cfg.OIDCTLSSkipCertificateVerify {
@@ -320,12 +327,17 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 	if auditorOIDCRole == "" {
 		auditorOIDCRole = RoleAuditor
 	}
+	roleClaims, err := validateRoleClaimPointers(cfg.OIDCRoleClaims)
+	if err != nil {
+		return nil, err
+	}
 
 	return &TokenResolver{
 		verifier:        verifier,
 		oidcEnabled:     oidcEnabled,
 		allowedClients:  splitCSV(cfg.OIDCAllowedClients),
 		allowedAudience: splitCSV(cfg.OIDCAllowedAudiences),
+		roleClaims:      roleClaims,
 		apiKeys:         cfg.APIKeys,
 		adminOIDCRole:   adminOIDCRole,
 		auditorOIDCRole: auditorOIDCRole,
@@ -486,7 +498,9 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 		// Resolve roles from token claims.
 		var rawClaims map[string]any
 		if err := idToken.Claims(&rawClaims); err == nil {
-			r.addTokenRoles(roles, rawClaims)
+			if err := r.addTokenRoles(roles, rawClaims); err != nil {
+				return nil, errors.Join(errInvalidJWT, err)
+			}
 		}
 
 		r.addUserRoles(roles, userID)
@@ -538,8 +552,11 @@ func (r *TokenResolver) rolesForClient(clientID string) map[string]bool {
 	return roles
 }
 
-func (r *TokenResolver) addTokenRoles(roles map[string]bool, rawClaims map[string]any) {
-	tokenRoles := extractTokenRoles(rawClaims)
+func (r *TokenResolver) addTokenRoles(roles map[string]bool, rawClaims map[string]any) error {
+	tokenRoles, err := extractTokenRoles(rawClaims, r.roleClaims)
+	if err != nil {
+		return err
+	}
 	if tokenRoles[r.adminOIDCRole] {
 		roles[RoleAdmin] = true
 	}
@@ -549,6 +566,7 @@ func (r *TokenResolver) addTokenRoles(roles map[string]bool, rawClaims map[strin
 	if r.indexerOIDCRole != "" && tokenRoles[r.indexerOIDCRole] {
 		roles[RoleIndexer] = true
 	}
+	return nil
 }
 
 func (r *TokenResolver) addUserRoles(roles map[string]bool, userID string) {
@@ -761,10 +779,17 @@ func EffectiveAdminRole(c *gin.Context) string {
 // using the provided TokenResolver. Allows X-API-Key-only requests (for admin service principals)
 // when no Authorization header is present.
 func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
+	return AuthMiddlewareWithRateLimiter(resolver, nil)
+}
+
+func AuthMiddlewareWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if resolver.localUserID != "" {
 			id, _ := resolver.Resolve(c.Request.Context(), RequestCredentials{})
 			setGinIdentity(c, id)
+			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+				return
+			}
 			c.Next()
 			return
 		}
@@ -779,16 +804,14 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			creds := RequestCredentials{Transport: EmbeddedMCPTransport}
 			id, err := resolver.Resolve(c.Request.Context(), creds)
 			if err != nil {
+				consumeHTTPAuthFailure(c, limiter)
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": err.Error()})
 				return
 			}
-			c.Set(ContextKeyUserID, id.UserID)
-			if id.ClientID != "" {
-				c.Set(ContextKeyClientID, id.ClientID)
+			setGinIdentity(c, id)
+			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+				return
 			}
-			c.Set(ContextKeyIdentity, id)
-			c.Set(ContextKeyRoles, id.Roles)
-			c.Set(ContextKeyIsAdmin, id.IsAdmin)
 			c.Next()
 			return
 		}
@@ -799,6 +822,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			bearerToken = strings.TrimPrefix(auth, "Bearer ")
 			if bearerToken == auth {
 				log.Info("Auth rejected: invalid Authorization header; expected Bearer token", "method", c.Request.Method, "path", c.Request.URL.Path)
+				consumeHTTPAuthFailure(c, limiter)
 				c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "invalid Authorization header; expected Bearer token"})
 				return
 			}
@@ -807,6 +831,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 		// Reject requests with no credentials (no bearer token, no API key, no test client ID).
 		if bearerToken == "" && strings.TrimSpace(apiKey) == "" && strings.TrimSpace(clientIDHeader) == "" {
 			log.Info("Auth rejected: missing credentials", "method", c.Request.Method, "path", c.Request.URL.Path)
+			consumeHTTPAuthFailure(c, limiter)
 			c.AbortWithStatusJSON(http.StatusUnauthorized, gin.H{"error": "missing credentials"})
 			return
 		}
@@ -820,6 +845,7 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 		id, err := resolver.Resolve(c.Request.Context(), creds)
 		if err != nil {
 			log.Info("Auth rejected", "method", c.Request.Method, "path", c.Request.URL.Path, "err", err)
+			consumeHTTPAuthFailure(c, limiter)
 			// Return 403 for allowed-client/audience violations; 401 for other auth failures.
 			status := http.StatusUnauthorized
 			errStr := err.Error()
@@ -831,13 +857,10 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 			return
 		}
 
-		c.Set(ContextKeyUserID, id.UserID)
-		if id.ClientID != "" {
-			c.Set(ContextKeyClientID, id.ClientID)
+		setGinIdentity(c, id)
+		if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+			return
 		}
-		c.Set(ContextKeyIdentity, id)
-		c.Set(ContextKeyRoles, id.Roles)
-		c.Set(ContextKeyIsAdmin, id.IsAdmin)
 		c.Next()
 	}
 }
@@ -924,6 +947,10 @@ func grpcMetadataValue(ctx context.Context, key string) string {
 
 // resolveGRPCIdentity extracts auth headers from gRPC metadata and resolves identity.
 func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.Context {
+	return resolveGRPCIdentityWithRateLimiter(ctx, resolver, nil)
+}
+
+func resolveGRPCIdentityWithRateLimiter(ctx context.Context, resolver *TokenResolver, limiter *RateLimiter) context.Context {
 	if resolver.localUserID != "" {
 		id, _ := resolver.Resolve(ctx, RequestCredentials{})
 		return context.WithValue(ctx, grpcIdentityKey{}, id)
@@ -939,6 +966,7 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 			// so a valid API key cannot silently succeed alongside a malformed auth header.
 			// Do not log the header value — it may contain Basic credentials or other secrets.
 			log.Debug("gRPC auth: non-Bearer authorization header rejected")
+			consumeGRPCAuthFailure(ctx, limiter)
 			return ctx
 		}
 	}
@@ -956,6 +984,7 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 	id, err := resolver.Resolve(ctx, creds)
 	if err != nil {
 		log.Debug("gRPC auth: token resolution failed", "err", err)
+		consumeGRPCAuthFailure(ctx, limiter)
 		return ctx
 	}
 	return context.WithValue(ctx, grpcIdentityKey{}, id)
@@ -963,18 +992,30 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 
 // GRPCUnaryInterceptor returns a gRPC unary server interceptor that resolves caller identity.
 func GRPCUnaryInterceptor(resolver *TokenResolver) grpc.UnaryServerInterceptor {
+	return GRPCUnaryInterceptorWithRateLimiter(resolver, nil)
+}
+
+// GRPCUnaryInterceptorWithRateLimiter returns a gRPC unary server interceptor that resolves
+// caller identity and charges invalid credentials against the auth-failure bucket.
+func GRPCUnaryInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) grpc.UnaryServerInterceptor {
 	return func(
 		ctx context.Context,
 		req any,
 		info *grpc.UnaryServerInfo,
 		handler grpc.UnaryHandler,
 	) (any, error) {
-		return handler(resolveGRPCIdentity(ctx, resolver), req)
+		return handler(resolveGRPCIdentityWithRateLimiter(ctx, resolver, limiter), req)
 	}
 }
 
 // GRPCStreamInterceptor returns a gRPC stream server interceptor that resolves caller identity.
 func GRPCStreamInterceptor(resolver *TokenResolver) grpc.StreamServerInterceptor {
+	return GRPCStreamInterceptorWithRateLimiter(resolver, nil)
+}
+
+// GRPCStreamInterceptorWithRateLimiter returns a gRPC stream server interceptor that resolves
+// caller identity and charges invalid credentials against the auth-failure bucket.
+func GRPCStreamInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) grpc.StreamServerInterceptor {
 	return func(
 		srv any,
 		ss grpc.ServerStream,
@@ -983,7 +1024,7 @@ func GRPCStreamInterceptor(resolver *TokenResolver) grpc.StreamServerInterceptor
 	) error {
 		wrapped := &wrappedServerStream{
 			ServerStream: ss,
-			ctx:          resolveGRPCIdentity(ss.Context(), resolver),
+			ctx:          resolveGRPCIdentityWithRateLimiter(ss.Context(), resolver, limiter),
 		}
 		return handler(srv, wrapped)
 	}
@@ -1033,33 +1074,126 @@ func matchesConfiguredValue(values map[string]bool, actual string) bool {
 	return false
 }
 
-func extractTokenRoles(claims map[string]any) map[string]bool {
+func extractTokenRoles(claims map[string]any, pointers []string) (map[string]bool, error) {
 	result := map[string]bool{}
-	addList := func(values []string) {
+	addRole := func(value string) error {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			return nil
+		}
+		if len([]byte(value)) > 256 {
+			return fmt.Errorf("OIDC role value exceeds 256 bytes")
+		}
+		if len(result) >= 256 && !result[value] {
+			return fmt.Errorf("OIDC token contains more than 256 roles")
+		}
+		result[value] = true
+		return nil
+	}
+	addList := func(values []string) error {
 		for _, v := range values {
-			v = strings.TrimSpace(v)
-			if v == "" {
-				continue
+			if err := addRole(v); err != nil {
+				return err
 			}
-			result[v] = true
+		}
+		return nil
+	}
+
+	for _, pointer := range pointers {
+		value, found := jsonPointerValue(claims, pointer)
+		if !found {
+			continue
+		}
+		switch v := value.(type) {
+		case string:
+			if err := addRole(v); err != nil {
+				return nil, err
+			}
+		case []string:
+			if err := addList(v); err != nil {
+				return nil, err
+			}
+		case []any:
+			values := make([]string, 0, len(v))
+			for _, item := range v {
+				s, ok := item.(string)
+				if !ok {
+					return nil, fmt.Errorf("OIDC role claim %q must contain only strings", pointer)
+				}
+				values = append(values, s)
+			}
+			if err := addList(values); err != nil {
+				return nil, err
+			}
+		default:
+			return nil, fmt.Errorf("OIDC role claim %q must be a string or string array", pointer)
 		}
 	}
 
-	// Common top-level claims.
-	addList(toStringSlice(claims["roles"]))
-	addList(toStringSlice(claims["groups"]))
+	return result, nil
+}
 
-	// RFC 8693 / OAuth style scope claim.
-	if scope, ok := claims["scope"].(string); ok {
-		addList(strings.Fields(scope))
+func validateRoleClaimPointers(configured []string) ([]string, error) {
+	if len(configured) == 0 {
+		return []string{"/realm_access/roles"}, nil
 	}
-
-	// Keycloak-style realm_access.roles.
-	if realm, ok := claims["realm_access"].(map[string]any); ok {
-		addList(toStringSlice(realm["roles"]))
+	if len(configured) > 16 {
+		return nil, fmt.Errorf("OIDC role claims must contain at most 16 JSON Pointer paths")
 	}
+	out := make([]string, 0, len(configured))
+	seen := map[string]bool{}
+	for _, pointer := range configured {
+		pointer = strings.TrimSpace(pointer)
+		if err := validateJSONPointer(pointer); err != nil {
+			return nil, fmt.Errorf("invalid OIDC role claim %q: %w", pointer, err)
+		}
+		if !seen[pointer] {
+			seen[pointer] = true
+			out = append(out, pointer)
+		}
+	}
+	return out, nil
+}
 
-	return result
+func validateJSONPointer(pointer string) error {
+	if pointer == "" {
+		return nil
+	}
+	if !strings.HasPrefix(pointer, "/") {
+		return fmt.Errorf("JSON Pointer must be empty or start with '/'")
+	}
+	for _, part := range strings.Split(pointer[1:], "/") {
+		for i := 0; i < len(part); i++ {
+			if part[i] == '~' {
+				if i+1 >= len(part) || (part[i+1] != '0' && part[i+1] != '1') {
+					return fmt.Errorf("invalid JSON Pointer escape")
+				}
+				i++
+			}
+		}
+	}
+	return nil
+}
+
+func jsonPointerValue(doc any, pointer string) (any, bool) {
+	if pointer == "" {
+		return doc, true
+	}
+	current := doc
+	for _, rawPart := range strings.Split(pointer[1:], "/") {
+		part := strings.ReplaceAll(strings.ReplaceAll(rawPart, "~1", "/"), "~0", "~")
+		switch node := current.(type) {
+		case map[string]any:
+			next, ok := node[part]
+			if !ok {
+				return nil, false
+			}
+			current = next
+		default:
+			return nil, false
+		}
+	}
+	return current, true
 }
 
 func toStringSlice(value any) []string {

@@ -1219,7 +1219,7 @@ export function ChatPanel({
     queryFn: async (): Promise<ConversationForkNavigation> => {
       return (await ConversationsService.listConversationForks({
         conversationId: conversationId!,
-      })) as ConversationForkNavigation;
+      })) as unknown as ConversationForkNavigation;
     },
   });
 

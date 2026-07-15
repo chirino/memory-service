@@ -17,9 +17,24 @@ spec:
         app.kubernetes.io/name: memory-service
     spec:
       serviceAccountName: memory-service
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+        fsGroupChangePolicy: OnRootMismatch
+        seccompProfile:
+          type: RuntimeDefault
       containers:
         - name: memory-service
-          image: ghcr.io/chirino/memory-service:latest
+          image: ghcr.io/chirino/memory-service:latest@sha256:c03c98f1b7ab2a04f2db5d3573aed02273a1a229890a7602e39e31667933b345
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
           ports:
             - name: http
               containerPort: 8080
@@ -35,8 +50,11 @@ spec:
           #
           # Available ConfigMap keys (see docs/configuration for details):
           #
-          # Server:       MEMORY_SERVICE_PORT, MEMORY_SERVICE_PLAIN_TEXT, MEMORY_SERVICE_TLS,
-          #               MEMORY_SERVICE_MANAGEMENT_PORT, MEMORY_SERVICE_TEMP_DIR
+          # Server:       MEMORY_SERVICE_PORT, MEMORY_SERVICE_HOST, MEMORY_SERVICE_PLAIN_TEXT,
+          #               MEMORY_SERVICE_TLS, MEMORY_SERVICE_MANAGEMENT_PORT,
+          #               MEMORY_SERVICE_MANAGEMENT_HOST, MEMORY_SERVICE_MANAGEMENT_TLS,
+          #               MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT,
+          #               MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK, MEMORY_SERVICE_TEMP_DIR
           # DB:           MEMORY_SERVICE_DB_KIND, MEMORY_SERVICE_DB_MIGRATE_AT_START,
           #               MEMORY_SERVICE_DB_MAX_OPEN_CONNS, MEMORY_SERVICE_DB_MAX_IDLE_CONNS
           # Cache:        MEMORY_SERVICE_CACHE_KIND, MEMORY_SERVICE_CACHE_EPOCH_TTL,
@@ -80,6 +98,13 @@ spec:
             # so the Go server receives an integer, not a TCP URL.
             - name: MEMORY_SERVICE_PORT
               value: "8080"
+            - name: MEMORY_SERVICE_HOST
+              value: "0.0.0.0"
+            - name: MEMORY_SERVICE_TEMP_DIR
+              value: /var/lib/memory-service/tmp
+          volumeMounts:
+            - name: memory-service-tmp
+              mountPath: /var/lib/memory-service/tmp
           livenessProbe:
             httpGet:
               path: /health
@@ -103,3 +128,7 @@ spec:
             limits:
               memory: 1Gi
               cpu: "1"
+      volumes:
+        - name: memory-service-tmp
+          emptyDir:
+            sizeLimit: 1Gi

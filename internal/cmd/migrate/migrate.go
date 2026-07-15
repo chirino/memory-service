@@ -7,6 +7,11 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	"github.com/urfave/cli/v3"
+
+	// Import core (non-excludable) plugins to trigger init() registration.
+	_ "github.com/chirino/memory-service/internal/plugin/attach/filesystem"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
+	_ "github.com/chirino/memory-service/internal/plugin/encrypt/plain"
 )
 
 // Command returns the migrate sub-command.
@@ -14,6 +19,10 @@ func Command() *cli.Command {
 	return &cli.Command{
 		Name:  "migrate",
 		Usage: "Run database migrations",
+		Commands: []*cli.Command{
+			attachmentsCommand(),
+			encryptionFieldsCommand(),
+		},
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "db-url",

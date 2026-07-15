@@ -100,6 +100,7 @@ func TestSiteDocs(t *testing.T) {
 	cfg.Mode = config.ModeTesting // allows X-Client-ID header in BDD tests
 	cfg.OIDCIssuer = mock.URL()   // enables JWT validation using mock JWKS
 	cfg.OIDCAllowedClients = "memory-service-client"
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.DBURL = dbURL
 	// API key used by all checkpoint frameworks (Quarkus/Spring/Python) to authenticate
 	// as agent clients. Required for memory-channel access (clientID must be non-empty).
@@ -111,6 +112,7 @@ func TestSiteDocs(t *testing.T) {
 	cfg.SearchSemanticEnabled = false
 	cfg.SearchFulltextEnabled = true
 	// Fixed 32-byte test key (hex); enables HMAC-signed attachment download URLs.
+	cfg.EncryptionProviders = "dek"
 	cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
@@ -130,6 +132,7 @@ func TestSiteDocs(t *testing.T) {
 	udsCfg.Mode = config.ModeTesting
 	udsCfg.OIDCIssuer = mock.URL()
 	udsCfg.OIDCAllowedClients = "memory-service-client"
+	udsCfg.OIDCAllowedAudiences = "memory-service"
 	udsCfg.DBURL = "file:" + filepath.Join(udsRoot, "memory-service.db")
 	udsCfg.DatastoreType = "sqlite"
 	udsCfg.CacheType = "local"
@@ -142,6 +145,7 @@ func TestSiteDocs(t *testing.T) {
 	udsCfg.APIKeys = map[string]string{
 		"agent-api-key-1": "checkpoint-agent",
 	}
+	udsCfg.EncryptionProviders = cfg.EncryptionProviders
 	udsCfg.EncryptionKey = cfg.EncryptionKey
 	udsCfg.Listener.Port = 0
 	udsCfg.Listener.UnixSocket = udsSocketPath

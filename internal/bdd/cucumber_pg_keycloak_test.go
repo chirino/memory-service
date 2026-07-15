@@ -25,7 +25,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 	keycloak := testkeycloak.StartKeycloak(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeProd // to require validation of the tokens
 	cfg.DBURL = dbURL
 	cfg.CacheType = "none"
@@ -35,6 +35,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	cfg.OIDCIssuer = keycloak.IssuerURL
 	cfg.OIDCDiscoveryURL = keycloak.DiscoveryURL
 	cfg.OIDCAllowedClients = "memory-service-client,frontend,developer-frontend"
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"

@@ -2,6 +2,46 @@
 
 ## Unreleased
 
+### Security hardening rollout notes
+
+This release starts the Security Hardening work tracked by
+`docs/enhancements/111-security-hardening-findings.md`. Operators should validate production
+configuration in staging before upgrade because several unsafe combinations now fail at
+startup or require explicit opt-in flags.
+
+- Production deployments that still use `MEMORY_SERVICE_ENCRYPTION_KIND=plain` must either
+  switch to `dek`, `kms`, or `vault`, or set the explicit unsafe opt-in
+  `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true`.
+- Headerless legacy plaintext reads are disabled by default. During a bounded migration
+  window, configure a real provider first, include `plain` only as a fallback, and set
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true`.
+- Malformed `MSEH` envelopes no longer fall back to plaintext.
+- OIDC issuers require an accepted audience unless
+  `MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=true` is set explicitly. Claim-derived
+  application roles come only from configured JSON Pointer paths.
+- TCP listeners bind to `127.0.0.1` by default. Container, Kubernetes, and Fly deployments
+  that expose the service must set `MEMORY_SERVICE_HOST=0.0.0.0`, and dedicated management
+  probes must set `MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0`.
+- Existing omitted/unsafe attachment dispositions now download as
+  `application/octet-stream`; active content such as HTML and SVG cannot be forced inline.
+- New encrypted attachment writes use MSEH v3 authenticated AES-GCM records. Legacy MSEH v2
+  AES-CTR attachment streams remain readable behind
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED=true` until the attachment
+  migrator reports no remaining v2 objects. Use `memory-service migrate attachments
+  --to-stream-version=3 --dry-run` to inventory first, then rerun without `--dry-run` to
+  rewrite v2 objects.
+- New encrypted database field writes use MSEH v4 authenticated field records. Legacy MSEH
+  v1 byte-encrypted fields remain readable behind
+  `MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED=true` until the field migrator
+  reports no remaining v1 values. Use `memory-service migrate encryption-fields
+  --to-version=4 --dry-run` to inventory first, then rerun without `--dry-run`.
+
+Before deploying MSEH v3 attachment-stream writes or MSEH v4 field writes/migrations, stop
+all old memory-service replicas and take a coordinated database plus attachment-object
+backup. After any v3/v4 write or migration replacement, rollback to a binary that does not
+understand that version requires restoring that pre-upgrade backup. Mixed old/new
+memory-service deployments are not supported by this hardening plan.
+
 ### Breaking datastore reset: schema version 110
 
 This release squashes datastore migrations and changes conversation fork lineage persistence.

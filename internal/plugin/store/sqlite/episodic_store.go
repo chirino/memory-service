@@ -159,6 +159,22 @@ func (e *sqliteEpisodicStore) decodeNS(encoded string) ([]string, error) {
 	return episodic.DecodeNamespace(encoded)
 }
 
+const memoryValueFieldDomain = "memory.value"
+
+func (e *sqliteEpisodicStore) encryptMemoryValue(id uuid.UUID, plaintext []byte) ([]byte, error) {
+	if e.s.enc == nil || plaintext == nil {
+		return plaintext, nil
+	}
+	return e.s.enc.EncryptField(plaintext, memoryValueFieldDomain, strings.ToLower(id.String()))
+}
+
+func (e *sqliteEpisodicStore) decryptMemoryValue(id uuid.UUID, ciphertext []byte) ([]byte, error) {
+	if e.s.enc == nil || ciphertext == nil {
+		return ciphertext, nil
+	}
+	return e.s.enc.DecryptField(ciphertext, memoryValueFieldDomain, strings.ToLower(id.String()))
+}
+
 // PutMemory upserts a memory. On update, the previous active row is archived.
 func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := e.encodeNS(req.Namespace)
@@ -166,12 +182,14 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		return nil, err
 	}
 
+	newID := uuid.New()
+
 	// Encrypt the value.
 	valueJSON, err := json.Marshal(req.Value)
 	if err != nil {
 		return nil, fmt.Errorf("marshal value: %w", err)
 	}
-	valueEnc, err := e.s.encrypt(valueJSON)
+	valueEnc, err := e.encryptMemoryValue(newID, valueJSON)
 	if err != nil {
 		return nil, fmt.Errorf("encrypt value: %w", err)
 	}
@@ -182,7 +200,6 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		expiresAt = &t
 	}
 
-	newID := uuid.New()
 	now := time.Now()
 	indexedContent := req.Index
 	if indexedContent == nil {
@@ -932,9 +949,12 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 		var attrs map[string]interface{}
 		if row.EventKind == registryepisodic.EventKindAdd || row.EventKind == registryepisodic.EventKindUpdate {
 			if len(row.ValueEncrypted) > 0 {
-				plain, err := e.s.decrypt(row.ValueEncrypted)
-				if err == nil {
-					_ = json.Unmarshal(plain, &value)
+				plain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
+				if err != nil {
+					return nil, fmt.Errorf("decrypt memory event value: %w", err)
+				}
+				if err := json.Unmarshal(plain, &value); err != nil {
+					return nil, fmt.Errorf("unmarshal memory event value: %w", err)
 				}
 			}
 			if len(row.PolicyAttrsRaw) > 0 {
@@ -1196,7 +1216,7 @@ func (e *sqliteEpisodicStore) rowToItem(row memoryRow, namespace []string) (*reg
 	// Decrypt value. nil means the row is a tombstone (data cleared after eviction).
 	var value map[string]interface{}
 	if len(row.ValueEncrypted) > 0 {
-		valuePlain, err := e.s.decrypt(row.ValueEncrypted)
+		valuePlain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
 		if err != nil {
 			return nil, fmt.Errorf("decrypt value: %w", err)
 		}

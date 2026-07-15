@@ -48,7 +48,7 @@ Feature: Ownership Transfers gRPC API
     conversation_id: "${conversationId | uuid_to_hex_string}"
     new_owner_user_id: "bob"
     """
-    Then the gRPC response should have status "ALREADY_EXISTS"
+    Then the gRPC response should have status "ABORTED"
 
   Scenario: Cannot transfer to non-member via gRPC
     When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:

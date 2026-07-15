@@ -27,6 +27,9 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 	if cfg.ReadHeaderTimeout == 0 {
 		cfg.ReadHeaderTimeout = 5 * time.Second
 	}
+	if cfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = 64 << 10
+	}
 
 	prepared, err := prepareListener(cfg)
 	if err != nil {
@@ -50,6 +53,8 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 		plainServer = &http.Server{
 			Handler:           h2c.NewHandler(handler, &http2.Server{}),
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := plainServer.Serve(plainLis); err != nil && err != http.ErrServerClosed {
@@ -74,6 +79,8 @@ func startManagementServer(cfg config.ListenerConfig, handler http.Handler) (net
 		tlsServer = &http.Server{
 			Handler:           handler,
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := tlsServer.Serve(tlsWrapped); err != nil && err != http.ErrServerClosed {

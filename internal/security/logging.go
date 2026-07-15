@@ -28,6 +28,7 @@ func AccessLogMiddleware(skipPaths ...string) gin.HandlerFunc {
 			"method", c.Request.Method,
 			"path", c.Request.URL.Path,
 			"status", c.Writer.Status(),
+			"requestId", RequestIDFromGin(c),
 			"duration", duration,
 			"clientIP", c.ClientIP(),
 			"userAgent", c.Request.UserAgent(),
@@ -69,6 +70,7 @@ func AdminAuditMiddleware(requireJustification bool) gin.HandlerFunc {
 				"method", c.Request.Method,
 				"path", c.Request.URL.Path,
 				"status", c.Writer.Status(),
+				"requestId", RequestIDFromGin(c),
 				"clientIP", c.ClientIP(),
 				"justification", justification,
 			)

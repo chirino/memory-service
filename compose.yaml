@@ -177,7 +177,6 @@ services:
     environment:
 
       # ── Datastore ──────────────────────────────────────────────
-      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
       MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@postgres:5432/memory_service?sslmode=disable
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
 
@@ -191,6 +190,7 @@ services:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor
@@ -201,6 +201,9 @@ services:
       MEMORY_SERVICE_EPISODIC_POLICY_DIR: /etc/memory-service/episodic-policy
 
       # ── CORS ───────────────────────────────────────────────────
+      MEMORY_SERVICE_HOST: 0.0.0.0
+      MEMORY_SERVICE_TLS: "false"
+      MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT: "true"
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
       MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
@@ -209,6 +212,9 @@ services:
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
       MEMORY_SERVICE_MANAGEMENT_PORT: 8085
+      MEMORY_SERVICE_MANAGEMENT_HOST: 0.0.0.0
+      MEMORY_SERVICE_MANAGEMENT_TLS: "false"
+      MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK: "true"
 
       # ── Encryption ─────────────────────────────────────────────
       # Dev key — replace with a securely generated value in production.

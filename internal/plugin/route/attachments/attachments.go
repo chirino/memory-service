@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net"
 	"net/http"
 	"net/url"
@@ -216,8 +217,9 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 			return nil
 		}
 
-		if cfg.S3DirectDownload {
-			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(disposition, attachment.Filename)); err == nil {
+		policy := attachmentResponsePolicy(attachment.ContentType, disposition)
+		if cfg.S3DirectDownload && policy.AllowDirect {
+			if signed, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(policy.Disposition, attachment.Filename)); err == nil {
 				c.Redirect(http.StatusFound, signed.String())
 				return nil
 			}
@@ -299,8 +301,9 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 			return nil
 		}
 
-		if cfg.S3DirectDownload {
-			if signedURL, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(disposition, attachment.Filename)); err == nil {
+		policy := attachmentResponsePolicy(attachment.ContentType, disposition)
+		if cfg.S3DirectDownload && policy.AllowDirect {
+			if signedURL, err := attachStore.GetSignedURL(ctx, *attachment.StorageKey, cfg.AttachmentDownloadURLExpiresIn, signedURLOptions(policy.Disposition, attachment.Filename)); err == nil {
 				c.JSON(http.StatusOK, gin.H{"url": signedURL.String(), "expiresIn": int(cfg.AttachmentDownloadURLExpiresIn.Seconds())})
 				return nil
 			}
@@ -317,8 +320,8 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 		}
 		token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
 		downloadURL := fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename)
-		if disposition != "" {
-			downloadURL += "?disposition=" + url.QueryEscape(disposition)
+		if policy.Disposition != "" {
+			downloadURL += "?disposition=" + url.QueryEscape(policy.Disposition)
 		}
 		c.JSON(http.StatusOK, gin.H{
 			"url":       downloadURL,
@@ -386,7 +389,7 @@ func contentDisposition(disposition string, filename *string) string {
 	if filename == nil || strings.TrimSpace(*filename) == "" {
 		return disposition
 	}
-	return fmt.Sprintf("%s; filename=%q", disposition, strings.TrimSpace(*filename))
+	return mime.FormatMediaType(disposition, map[string]string{"filename": strings.TrimSpace(*filename)})
 }
 
 func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore, storageKey string, attachment *model.Attachment, disposition string) {
@@ -407,16 +410,61 @@ func streamAttachment(c *gin.Context, attachStore registryattach.AttachmentStore
 		}
 	}
 
+	policy := attachmentResponsePolicy(attachment.ContentType, disposition)
 	c.Header("Cache-Control", "private, max-age=300, immutable")
-	c.Header("Content-Type", attachment.ContentType)
-	if header := contentDisposition(disposition, attachment.Filename); header != "" {
+	c.Header("X-Content-Type-Options", "nosniff")
+	c.Header("Content-Type", policy.ContentType)
+	if header := contentDisposition(policy.Disposition, attachment.Filename); header != "" {
 		c.Header("Content-Disposition", header)
 	}
 	if attachment.Size != nil {
 		c.Header("Content-Length", strconv.FormatInt(*attachment.Size, 10))
 	}
 	c.Status(http.StatusOK)
-	_, _ = io.Copy(c.Writer, reader)
+	if _, err := io.Copy(c.Writer, reader); err != nil {
+		log.Warn("attachment stream failed", "attachmentId", attachment.ID, "error", err)
+		c.Abort()
+	}
+}
+
+type responsePolicy struct {
+	ContentType string
+	Disposition string
+	AllowDirect bool
+}
+
+func attachmentResponsePolicy(contentType, requestedDisposition string) responsePolicy {
+	mediaType := normalizedContentType(contentType)
+	disposition := strings.ToLower(strings.TrimSpace(requestedDisposition))
+	if activeAttachmentContentType(mediaType) {
+		return responsePolicy{
+			ContentType: "application/octet-stream",
+			Disposition: "attachment",
+			AllowDirect: false,
+		}
+	}
+	return responsePolicy{
+		ContentType: mediaType,
+		Disposition: disposition,
+		AllowDirect: disposition != "inline",
+	}
+}
+
+func normalizedContentType(contentType string) string {
+	mediaType, _, err := mime.ParseMediaType(strings.TrimSpace(contentType))
+	if err != nil || mediaType == "" {
+		return "application/octet-stream"
+	}
+	return strings.ToLower(mediaType)
+}
+
+func activeAttachmentContentType(contentType string) bool {
+	switch strings.ToLower(strings.TrimSpace(contentType)) {
+	case "text/html", "application/xhtml+xml", "image/svg+xml":
+		return true
+	default:
+		return false
+	}
 }
 
 func parseAttachmentIDParam(c *gin.Context) (uuid.UUID, error) {

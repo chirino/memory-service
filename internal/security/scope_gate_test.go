@@ -109,6 +109,7 @@ func buildResolver(t *testing.T, m *mockOIDCServer, oidcScopes map[string]string
 	cfg.Mode = config.ModeProd
 	cfg.OIDCIssuer = m.server.URL
 	cfg.OIDCAllowedClients = "memory-service-client"
+	cfg.OIDCAllowedAudiences = "memory-service"
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"

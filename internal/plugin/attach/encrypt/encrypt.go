@@ -15,7 +15,11 @@ import (
 
 // Wrap wraps an AttachmentStore with MSEH-based attachment encryption via svc.
 func Wrap(inner registryattach.AttachmentStore, svc *dataencryption.Service) (registryattach.AttachmentStore, error) {
-	return &EncryptStore{inner: inner, svc: svc}, nil
+	store := &EncryptStore{inner: inner, svc: svc}
+	if _, ok := inner.(registryattach.AtomicAttachmentReplacer); ok {
+		return &atomicEncryptStore{EncryptStore: store}, nil
+	}
+	return store, nil
 }
 
 // EncryptStore wraps an AttachmentStore with MSEH encryption on write and
@@ -27,8 +31,14 @@ type EncryptStore struct {
 
 var _ registryattach.AttachmentStore = (*EncryptStore)(nil)
 
-// Store streams plaintext through AES-CTR encryption into the inner store while
-// hashing and enforcing the plaintext max size.
+type atomicEncryptStore struct {
+	*EncryptStore
+}
+
+var _ registryattach.AtomicAttachmentReplacer = (*atomicEncryptStore)(nil)
+
+// Store streams plaintext through authenticated MSEH encryption into the inner
+// store while hashing and enforcing the plaintext max size.
 func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*registryattach.FileStoreResult, error) {
 	hasher := sha256.New()
 	plaintext := &hashLimitReader{
@@ -98,6 +108,56 @@ func (s *EncryptStore) Delete(ctx context.Context, storageKey string) error {
 
 func (s *EncryptStore) GetSignedURL(ctx context.Context, storageKey string, expiry time.Duration, opts *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("signed URLs not supported for encrypted attachment store")
+}
+
+func (s *atomicEncryptStore) Replace(ctx context.Context, storageKey string, data io.Reader, contentType string) (*registryattach.FileStoreResult, error) {
+	replacer, ok := s.inner.(registryattach.AtomicAttachmentReplacer)
+	if !ok {
+		return nil, fmt.Errorf("encrypted attachment store: inner store does not support atomic replace")
+	}
+
+	hasher := sha256.New()
+	plaintext := &hashLimitReader{
+		src:     data,
+		maxSize: -1,
+		hasher:  hasher,
+	}
+	pr, pw := io.Pipe()
+	errCh := make(chan error, 1)
+
+	go func() {
+		enc, err := s.svc.EncryptStream(pw)
+		if err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		if _, err := io.Copy(enc, plaintext); err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		if err := enc.Close(); err != nil {
+			_ = pw.CloseWithError(err)
+			errCh <- err
+			return
+		}
+		errCh <- pw.Close()
+	}()
+
+	result, err := replacer.Replace(ctx, storageKey, pr, contentType)
+	if err != nil {
+		_ = pr.CloseWithError(err)
+		<-errCh
+		return nil, err
+	}
+	if err := <-errCh; err != nil {
+		return nil, err
+	}
+	result.StorageKey = storageKey
+	result.Size = plaintext.count
+	result.SHA256 = fmt.Sprintf("%x", hasher.Sum(nil))
+	return result, nil
 }
 
 // ── helpers ───────────────────────────────────────────────────────────────────

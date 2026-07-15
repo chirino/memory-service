@@ -36,7 +36,7 @@ func TestFeaturesPgInfinispan(t *testing.T) {
 	infinispanURL := startInfinispanForVectorSearch(t)
 	prom := NewMockPrometheus(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "local"
@@ -48,7 +48,6 @@ func TestFeaturesPgInfinispan(t *testing.T) {
 	cfg.EmbedType = "disabled"
 	cfg.SearchSemanticEnabled = false
 	cfg.OutboxEnabled = true
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

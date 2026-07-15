@@ -7,4 +7,4 @@ spec:
     spec:
       containers:
         - name: postgresql
-          image: pgvector/pgvector:pg18
+          image: pgvector/pgvector:pg18@sha256:12a379b47ad65289572ea0756efc11b7c241a6662833e8af7038cd3b73d647e0

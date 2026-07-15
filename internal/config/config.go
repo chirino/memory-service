@@ -13,6 +13,7 @@ import (
 // ListenerConfig holds the network/TLS settings for a single listener (main or management).
 type ListenerConfig struct {
 	Port              int
+	Host              string
 	UnixSocket        string
 	EnablePlainText   bool
 	EnableTLS         bool
@@ -20,6 +21,8 @@ type ListenerConfig struct {
 	TLSKeyFile        string
 	TLSSelfSigned     bool
 	ReadHeaderTimeout time.Duration
+	MaxHeaderBytes    int
+	IdleTimeout       time.Duration
 }
 
 type contextKey struct{}
@@ -198,14 +201,32 @@ type Config struct {
 	// (or their env vars) was explicitly provided. When false, management endpoints are
 	// served on the main port.
 	ManagementListenerEnabled bool
+	// ManagementOnMainListener explicitly acknowledges serving management routes on the main
+	// API listener outside testing mode.
+	ManagementOnMainListener bool
+	// ManagementAllowNonLoopback explicitly acknowledges binding the unauthenticated
+	// management listener beyond loopback outside testing mode.
+	ManagementAllowNonLoopback bool
+	// AllowNonLoopbackPlainText explicitly acknowledges serving plaintext API traffic beyond
+	// loopback outside testing mode, typically behind an ingress or TLS terminator.
+	AllowNonLoopbackPlainText bool
 	// ManagementAccessLog enables HTTP access logging for management endpoints (/health, /ready, /metrics).
 	// Disabled by default to suppress high-frequency probe noise from the access log.
 	ManagementAccessLog bool
 	CORSEnabled         bool
 	CORSOrigins         string
+	TrustedProxyCIDRs   string
 	UnixSocketAuth      string
 	LocalUserID         string
 	LocalClientID       string
+
+	// Process-local rate limiting.
+	RateLimitMode        string
+	RateLimitSource      string
+	RateLimitIdentity    string
+	RateLimitAuthFailure string
+	RateLimitExpensive   string
+	RateLimitStreamOpen  string
 
 	// Security
 	// APIKeys maps API key values to client IDs (Java parity: MEMORY_SERVICE_API_KEYS_<CLIENT_ID>=<key>).
@@ -221,9 +242,11 @@ type Config struct {
 	IndexerClients  string
 
 	// OIDC client/audience allowlisting and resource/API scope gates
-	OIDCAllowedClients   string
-	OIDCAllowedAudiences string
-	OIDCScopes           map[string]string // permission key -> comma-separated accepted OIDC scopes
+	OIDCAllowedClients       string
+	OIDCAllowedAudiences     string
+	OIDCAllowMissingAudience bool
+	OIDCRoleClaims           []string
+	OIDCScopes               map[string]string // permission key -> comma-separated accepted OIDC scopes
 
 	// Encryption
 	EncryptionProviders          string
@@ -242,9 +265,21 @@ type Config struct {
 	// EncryptionAttachmentsDisabled skips the encrypt.Wrap layer on the attachment store even when
 	// EncryptionKey is set.
 	EncryptionAttachmentsDisabled bool
+	// EncryptionAllowPlain explicitly permits the plain provider as the primary provider outside testing.
+	EncryptionAllowPlain bool
+	// EncryptionLegacyPlainReadEnabled permits headerless ciphertext/plaintext reads through the plain provider.
+	EncryptionLegacyPlainReadEnabled bool
+	// EncryptionLegacyByteV1ReadEnabled permits legacy MSEH v1 byte-encrypted field reads during migration.
+	EncryptionLegacyByteV1ReadEnabled bool
+	// EncryptionLegacyStreamV2ReadEnabled permits legacy MSEH v2 AES-CTR attachment stream reads.
+	EncryptionLegacyStreamV2ReadEnabled bool
 
 	// Body size limit (bytes)
 	MaxBodySize int64
+	// BodyReadTimeout bounds ordinary REST request body reads. Zero disables the timeout.
+	BodyReadTimeout time.Duration
+	// AttachmentBodyReadTimeout bounds multipart attachment upload body reads. Zero disables the timeout.
+	AttachmentBodyReadTimeout time.Duration
 	// Maximum number of items a client may request from any listing endpoint.
 	MaxPageSize int
 
@@ -340,34 +375,50 @@ func DefaultConfig() Config {
 		SearchFulltextEnabled:                 true,
 		Listener: ListenerConfig{
 			Port:              8080,
+			Host:              "127.0.0.1",
 			EnablePlainText:   true,
 			EnableTLS:         true,
 			ReadHeaderTimeout: 5 * time.Second,
+			MaxHeaderBytes:    1 << 20,
+			IdleTimeout:       120 * time.Second,
 		},
 		ManagementListener: ListenerConfig{
 			EnablePlainText: true,
 			EnableTLS:       true,
+			Host:            "127.0.0.1",
+			MaxHeaderBytes:  64 << 10,
+			IdleTimeout:     30 * time.Second,
 		},
-		UnixSocketAuth:               "credentials",
-		LocalClientID:                "local-agent",
-		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
-		MaxPageSize:                  DefaultMaxPageSize,
-		DrainTimeout:                 30,
-		DBMaxOpenConns:               25,
-		DBMaxIdleConns:               5,
-		EvictionBatchSize:            1000,
-		EvictionBatchDelay:           100,
-		ResumerTempFileRetention:     30 * time.Minute,
-		QdrantHost:                   "localhost",
-		QdrantPort:                   6334,
-		QdrantCollectionPrefix:       "memory-service",
-		QdrantStartupTimeout:         30 * time.Second,
-		S3DirectDownload:             false,
-		AdminOIDCRole:                "admin",
-		AuditorOIDCRole:              "auditor",
-		EncryptionProviders:          "plain",
-		EncryptionProviderDEKType:    "dek",
-		EncryptionProviderDEKEnabled: true,
+		UnixSocketAuth:                      "credentials",
+		LocalClientID:                       "local-agent",
+		RateLimitMode:                       "local",
+		RateLimitSource:                     "600/1m,burst=100",
+		RateLimitIdentity:                   "1200/1m,burst=200",
+		RateLimitAuthFailure:                "30/1m,burst=10",
+		RateLimitExpensive:                  "60/1m,burst=10",
+		RateLimitStreamOpen:                 "30/1m,burst=5",
+		MaxBodySize:                         20 * 1024 * 1024, // 2x attachment max-size
+		BodyReadTimeout:                     30 * time.Second,
+		AttachmentBodyReadTimeout:           5 * time.Minute,
+		MaxPageSize:                         DefaultMaxPageSize,
+		DrainTimeout:                        30,
+		DBMaxOpenConns:                      25,
+		DBMaxIdleConns:                      5,
+		EvictionBatchSize:                   1000,
+		EvictionBatchDelay:                  100,
+		ResumerTempFileRetention:            30 * time.Minute,
+		QdrantHost:                          "localhost",
+		QdrantPort:                          6334,
+		QdrantCollectionPrefix:              "memory-service",
+		QdrantStartupTimeout:                30 * time.Second,
+		S3DirectDownload:                    false,
+		AdminOIDCRole:                       "admin",
+		AuditorOIDCRole:                     "auditor",
+		EncryptionProviders:                 "plain",
+		EncryptionProviderDEKType:           "dek",
+		EncryptionProviderDEKEnabled:        true,
+		EncryptionLegacyByteV1ReadEnabled:   true,
+		EncryptionLegacyStreamV2ReadEnabled: true,
 
 		// Event bus defaults
 		EventBusType:             "local",

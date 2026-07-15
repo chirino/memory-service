@@ -181,8 +181,12 @@ func handleError(c *gin.Context, err error) {
 		if conflict.Code != "" {
 			resp["code"] = conflict.Code
 		}
+		if len(conflict.Details) > 0 {
+			resp["details"] = gin.H{}
+		}
 		for k, v := range conflict.Details {
 			resp[k] = v
+			resp["details"].(gin.H)[k] = v
 		}
 		c.JSON(http.StatusConflict, resp)
 	case errors.As(err, &forbidden):

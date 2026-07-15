@@ -244,6 +244,41 @@ func (s *SQLiteStore) decryptString(data []byte) string {
 	return string(plain)
 }
 
+const conversationTitleFieldDomain = "conversation.title"
+const entryContentFieldDomain = "entry.content"
+
+func (s *SQLiteStore) encryptConversationTitle(conversationID string, title string) ([]byte, error) {
+	if s.enc == nil {
+		return []byte(title), nil
+	}
+	return s.enc.EncryptField([]byte(title), conversationTitleFieldDomain, conversationID)
+}
+
+func (s *SQLiteStore) decryptConversationTitle(conversationID string, data []byte) (string, error) {
+	if s.enc == nil || data == nil {
+		return string(data), nil
+	}
+	plain, err := s.enc.DecryptField(data, conversationTitleFieldDomain, conversationID)
+	if err != nil {
+		return "", err
+	}
+	return string(plain), nil
+}
+
+func (s *SQLiteStore) encryptEntryContent(entryID uuid.UUID, content []byte) ([]byte, error) {
+	if s.enc == nil || content == nil {
+		return content, nil
+	}
+	return s.enc.EncryptField(content, entryContentFieldDomain, strings.ToLower(entryID.String()))
+}
+
+func (s *SQLiteStore) decryptEntryContent(entryID uuid.UUID, data []byte) ([]byte, error) {
+	if s.enc == nil || data == nil {
+		return data, nil
+	}
+	return s.enc.DecryptField(data, entryContentFieldDomain, strings.ToLower(entryID.String()))
+}
+
 // --- Conversations ---
 
 func (s *SQLiteStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
@@ -360,7 +395,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		}
 	}
 
-	encTitle, err := s.encrypt([]byte(title))
+	encTitle, err := s.encryptConversationTitle(string(convID), title)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt title: %w", err)
 	}
@@ -523,7 +558,11 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		lq := strings.ToLower(queryStr)
 		filtered := rows[:0]
 		for _, r := range rows {
-			if strings.Contains(strings.ToLower(s.decryptString(r.Title)), lq) {
+			title, err := s.decryptConversationTitle(r.ID, r.Title)
+			if err != nil {
+				return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
+			if strings.Contains(strings.ToLower(title), lq) {
 				filtered = append(filtered, r)
 			}
 		}
@@ -537,9 +576,13 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			Metadata:                r.Metadata,
 			ConversationGroupID:     r.ConversationGroupID,
@@ -574,11 +617,15 @@ func (s *SQLiteStore) GetConversation(ctx context.Context, userID string, conver
 	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
 	}
+	title, err := s.decryptConversationTitle(conv.ID, conv.Title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+	}
 
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      conv.ID,
-			Title:                   s.decryptString(conv.Title),
+			Title:                   title,
 			OwnerUserID:             conv.OwnerUserID,
 			ClientID:                conv.ClientID,
 			AgentID:                 conv.AgentID,
@@ -608,7 +655,7 @@ func (s *SQLiteStore) UpdateConversation(ctx context.Context, userID string, con
 
 	updates := map[string]interface{}{"updated_at": time.Now()}
 	if title != nil {
-		encTitle, err := s.encrypt([]byte(*title))
+		encTitle, err := s.encryptConversationTitle(string(conversationID), *title)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt title: %w", err)
 		}
@@ -858,7 +905,9 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 			return nil, err
 		}
 	}
-	decryptEntries(s, entries)
+	if err := decryptEntries(s, entries); err != nil {
+		return nil, err
+	}
 	var firstEntries []model.Entry
 	if err := db.Raw(`SELECT * FROM (
 		SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.conversation_id ORDER BY e.created_at ASC, CASE WHEN e.seq IS NULL THEN 0 ELSE 1 END ASC, e.seq ASC, e.id ASC) AS fork_row
@@ -866,7 +915,9 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 	) ranked WHERE fork_row = 1`, conv.ConversationGroupID, model.ChannelHistory).Scan(&firstEntries).Error; err != nil {
 		return nil, err
 	}
-	decryptEntries(s, firstEntries)
+	if err := decryptEntries(s, firstEntries); err != nil {
+		return nil, err
+	}
 	entryMap := map[uuid.UUID]model.Entry{}
 	for _, entry := range entries {
 		entryMap[entry.ID] = entry
@@ -878,7 +929,11 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 	}
 	records := make([]registrystore.ForkNavigationConversation, 0, len(convs))
 	for _, c := range convs {
-		record := registrystore.ForkNavigationConversation{ID: c.ID, Title: s.decryptString(c.Title), CreatedAt: c.CreatedAt}
+		title, err := s.decryptConversationTitle(c.ID, c.Title)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
+		record := registrystore.ForkNavigationConversation{ID: c.ID, Title: title, CreatedAt: c.CreatedAt}
 		if direct, ok := directByChild[c.ID]; ok {
 			parent := direct.AncestorConversationID
 			record.ForkedAtConversationID = &parent
@@ -1161,7 +1216,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1170,7 +1227,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1179,7 +1238,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1188,7 +1249,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1210,7 +1273,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, &BadRequestError{Message: err.Error()}
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1224,7 +1289,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1233,7 +1300,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1242,7 +1311,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1251,7 +1322,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -1332,7 +1405,9 @@ func (s *SQLiteStore) GetEntries(ctx context.Context, userID string, conversatio
 	if err != nil {
 		return nil, &BadRequestError{Message: err.Error()}
 	}
-	decryptEntries(s, page)
+	if err := decryptEntries(s, page); err != nil {
+		return nil, err
+	}
 	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
@@ -1358,9 +1433,10 @@ func (s *SQLiteStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) 
 		return nil, result.Error
 	}
 
-	// Decrypt content if encryption is enabled
-	if decrypted, err := s.decrypt(entry.Content); err == nil {
+	if decrypted, err := s.decryptEntryContent(entry.ID, entry.Content); err == nil {
 		entry.Content = decrypted
+	} else {
+		return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 	}
 
 	return &entry, nil
@@ -1432,7 +1508,7 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 				return nil, err
 			}
 		} else {
-			encTitle, err := s.encrypt([]byte(detail.Title))
+			encTitle, err := s.encryptConversationTitle(detail.ID, detail.Title)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt title: %w", err)
 			}
@@ -1469,13 +1545,14 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 		}
 
 		entryEpoch := registrystore.EpochForChannel(ch, epoch)
+		entryID := uuid.New()
 
-		encContent, err := s.encrypt(req.Content)
+		encContent, err := s.encryptEntryContent(entryID, req.Content)
 		if err != nil {
 			return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 		}
 		entry := model.Entry{
-			ID:                  uuid.New(),
+			ID:                  entryID,
 			ConversationID:      conversationID,
 			ConversationGroupID: conv.ConversationGroupID,
 			UserID:              &userID,
@@ -1505,7 +1582,11 @@ func (s *SQLiteStore) AppendEntries(ctx context.Context, userID string, conversa
 			if e.Channel == model.ChannelHistory {
 				title := deriveTitleFromContent(string(e.Content))
 				if title != "" {
-					db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", title)
+					encTitle, err := s.encryptConversationTitle(conversationID, title)
+					if err != nil {
+						return nil, fmt.Errorf("failed to encrypt title: %w", err)
+					}
+					db.Model(&model.Conversation{}).Where("id = ?", conversationID).Update("title", encTitle)
 				}
 				break
 			}
@@ -1602,7 +1683,10 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 		return nil, err
 	}
 
-	existingContent := flattenMemoryContent(s, latestEpochEntries)
+	existingContent, err := flattenMemoryContent(s, latestEpochEntries)
+	if err != nil {
+		return nil, err
+	}
 
 	// Compute the current latest epoch value.
 	var latestEpoch *int64
@@ -1661,12 +1745,13 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 	}
 
 	now := time.Now()
-	encContent, err := s.encrypt(appendContent)
+	entryID := uuid.New()
+	encContent, err := s.encryptEntryContent(entryID, appendContent)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt entry content: %w", err)
 	}
 	newEntry := model.Entry{
-		ID:                  uuid.New(),
+		ID:                  entryID,
 		ConversationID:      conversationID,
 		ConversationGroupID: conv.ConversationGroupID,
 		UserID:              &userID,
@@ -1799,9 +1884,11 @@ func (s *SQLiteStore) ListUnindexedEntries(ctx context.Context, limit int, after
 
 	// Decrypt
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
 
 	var cursor *string
@@ -1823,9 +1910,11 @@ func (s *SQLiteStore) FindEntriesPendingVectorIndexing(ctx context.Context, limi
 		return nil, fmt.Errorf("failed to find entries pending vector indexing: %w", err)
 	}
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
 	return entries, nil
 }
@@ -1873,7 +1962,10 @@ func (s *SQLiteStore) FetchSearchResultDetails(ctx context.Context, userID strin
 	}
 	results := make([]registrystore.SearchResult, len(rows))
 	for i, r := range rows {
-		title := s.decryptString(r.ConversationTitle)
+		title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		highlight := r.IndexedContent
 		if len(highlight) > 200 {
 			highlight = highlight[:200] + "..."
@@ -2005,7 +2097,10 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 			Highlights:     &highlight,
 		}
 		if len(r.ConversationTitle) > 0 {
-			title := s.decryptString(r.ConversationTitle)
+			title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
 			item.ConversationTitle = &title
 		}
 		if includeEntry {
@@ -2015,9 +2110,11 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 				Limit(1).
 				Find(&entry)
 			if result.Error == nil && result.RowsAffected > 0 {
-				if decrypted, err := s.decrypt(entry.Content); err == nil {
-					entry.Content = decrypted
+				decrypted, err := s.decryptEntryContent(entry.ID, entry.Content)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 				}
+				entry.Content = decrypted
 				item.Entry = &entry
 			}
 		}
@@ -2113,9 +2210,13 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			ClientID:                r.ClientID,
 			AgentID:                 r.AgentID,
@@ -2148,10 +2249,14 @@ func (s *SQLiteStore) AdminGetConversation(ctx context.Context, conversationID s
 	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
 	}
+	title, err := s.decryptConversationTitle(conv.ID, conv.Title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+	}
 	return &registrystore.ConversationDetail{
 		ConversationSummary: registrystore.ConversationSummary{
 			ID:                      conv.ID,
-			Title:                   s.decryptString(conv.Title),
+			Title:                   title,
 			OwnerUserID:             conv.OwnerUserID,
 			ClientID:                conv.ClientID,
 			AgentID:                 conv.AgentID,
@@ -2210,7 +2315,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2223,7 +2330,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2232,7 +2341,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2241,7 +2352,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2250,7 +2363,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2263,7 +2378,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2272,7 +2389,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2281,7 +2400,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 		if err != nil {
 			return nil, err
 		}
-		decryptEntries(s, page)
+		if err := decryptEntries(s, page); err != nil {
+			return nil, err
+		}
 		return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 	}
 
@@ -2326,7 +2447,9 @@ func (s *SQLiteStore) AdminGetEntries(ctx context.Context, conversationID string
 	if err != nil {
 		return nil, &BadRequestError{Message: err.Error()}
 	}
-	decryptEntries(s, page)
+	if err := decryptEntries(s, page); err != nil {
+		return nil, err
+	}
 	return &registrystore.PagedEntries{Data: page, AfterCursor: afterCursor, BeforeCursor: beforeCursor}, nil
 }
 
@@ -2440,7 +2563,10 @@ func (s *SQLiteStore) AdminSearchEntries(ctx context.Context, query registrystor
 			Highlights:     &highlight,
 		}
 		if len(r.ConversationTitle) > 0 {
-			title := s.decryptString(r.ConversationTitle)
+			title, err := s.decryptConversationTitle(r.ConversationID, r.ConversationTitle)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
 			results[i].ConversationTitle = &title
 		}
 		if query.IncludeEntry {
@@ -2450,9 +2576,11 @@ func (s *SQLiteStore) AdminSearchEntries(ctx context.Context, query registrystor
 				Limit(1).
 				Find(&entry)
 			if result.Error == nil && result.RowsAffected > 0 {
-				if decrypted, err := s.decrypt(entry.Content); err == nil {
-					entry.Content = decrypted
+				decrypted, err := s.decryptEntryContent(entry.ID, entry.Content)
+				if err != nil {
+					return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 				}
+				entry.Content = decrypted
 				results[i].Entry = &entry
 			}
 		}
@@ -2909,9 +3037,13 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 	}
 	summaries := make([]registrystore.ConversationSummary, len(rows))
 	for i, r := range rows {
+		title, err := s.decryptConversationTitle(r.ID, r.Title)
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
 		summaries[i] = registrystore.ConversationSummary{
 			ID:                      r.ID,
-			Title:                   s.decryptString(r.Title),
+			Title:                   title,
 			OwnerUserID:             r.OwnerUserID,
 			ClientID:                r.ClientID,
 			AgentID:                 r.AgentID,
@@ -4265,24 +4397,27 @@ func filterEntriesByFromSeq(entries []model.Entry, fromSeq uint32) []model.Entry
 	return filtered
 }
 
-func decryptEntries(s *SQLiteStore, entries []model.Entry) {
+func decryptEntries(s *SQLiteStore, entries []model.Entry) error {
 	for i := range entries {
-		if decrypted, err := s.decrypt(entries[i].Content); err == nil {
-			entries[i].Content = decrypted
+		decrypted, err := s.decryptEntryContent(entries[i].ID, entries[i].Content)
+		if err != nil {
+			return fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
+		entries[i].Content = decrypted
 	}
+	return nil
 }
 
-func flattenMemoryContent(s *SQLiteStore, entries []model.Entry) []any {
+func flattenMemoryContent(s *SQLiteStore, entries []model.Entry) ([]any, error) {
 	result := make([]any, 0)
 	for _, entry := range entries {
-		content := entry.Content
-		if decrypted, err := s.decrypt(content); err == nil {
-			content = decrypted
+		content, err := s.decryptEntryContent(entry.ID, entry.Content)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt entry content: %w", err)
 		}
 		result = append(result, parseContentArray(content)...)
 	}
-	return result
+	return result, nil
 }
 
 func parseContentArray(raw []byte) []any {

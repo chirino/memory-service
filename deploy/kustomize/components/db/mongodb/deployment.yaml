@@ -20,7 +20,7 @@ spec:
     spec:
       initContainers:
         - name: init-keyfile
-          image: mongo:7
+          image: mongo:7@sha256:d5b3ca8c3f3cdce78d44870dc0871b76d5235e9b2ad4ea6bea5d1fbff8027703
           command: ["bash", "-c", "cp /secret/keyfile /etc/mongo/keyfile && chmod 400 /etc/mongo/keyfile && chown 999:999 /etc/mongo/keyfile"]
           volumeMounts:
             - name: keyfile-secret
@@ -30,7 +30,7 @@ spec:
               mountPath: /etc/mongo
       containers:
         - name: mongodb
-          image: mongo:7
+          image: mongo:7@sha256:d5b3ca8c3f3cdce78d44870dc0871b76d5235e9b2ad4ea6bea5d1fbff8027703
           args: ["--replSet", "rs0", "--keyFile", "/etc/mongo/keyfile"]
           ports:
             - name: mongo

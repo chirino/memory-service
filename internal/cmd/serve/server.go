@@ -68,39 +68,22 @@ func (s *Server) Shutdown(ctx context.Context) error {
 }
 
 func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
-	attachStoreName := cfg.AttachType
-	if cfg.DatastoreType == "sqlite" {
-		switch strings.TrimSpace(attachStoreName) {
-		case "", "db":
-			if cfg.AttachTypeExplicit {
-				return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
-			}
-			attachStoreName = "fs"
-		case "fs":
-			// explicit, supported
-		default:
-			return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=sqlite; use --attachments-kind=fs", cfg.AttachType)
-		}
-		if _, err := cfg.ResolvedAttachmentsFSDir(); err != nil {
-			return "", err
-		}
-	} else if attachStoreName == "db" {
-		switch cfg.DatastoreType {
-		case "mongo":
-			return "", fmt.Errorf("attachments-kind=%q is not supported with db-kind=mongo; use --attachments-kind=s3 or --attachments-kind=fs with --attachments-fs-dir", cfg.AttachType)
-		default:
-			attachStoreName = "postgres"
-		}
-	} else if cfg.DatastoreType == "mongo" && attachStoreName == "mongo" {
-		return "", fmt.Errorf("attachments-kind=%q is not supported; Mongo GridFS attachment storage has been removed, use --attachments-kind=s3 or --attachments-kind=fs with --attachments-fs-dir", cfg.AttachType)
-	}
-	return attachStoreName, nil
+	return config.ResolveAttachmentStoreName(cfg)
 }
 
 // BuildServer initializes all subsystems without binding any network listeners.
 func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	if err := validateStartupConfig(cfg); err != nil {
+		return nil, err
+	}
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return nil, err
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyStreamV2ReadEnabled {
+		log.Warn("Legacy MSEH v2 attachment stream reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED after encrypted attachment migration completes")
+	}
+	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyByteV1ReadEnabled {
+		log.Warn("Legacy MSEH v1 field reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED after encrypted field migration completes")
 	}
 	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,
@@ -150,6 +133,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize encryption service: %w", err)
 	}
+	if !cfg.EncryptionDBDisabled && encSvc.IsPrimaryReal() && !encSvc.PrimarySupportsFieldEncryption() {
+		return nil, fmt.Errorf("database encryption requires primary encryption provider %q to support MSEH v4 field encryption; disable database encryption during migration or choose a provider with field-AAD support", encSvc.PrimaryProviderID())
+	}
 	ctx = dataencryption.WithContext(ctx, encSvc)
 
 	// S3 direct download bypasses the server, so encrypted attachments cannot be
@@ -191,7 +177,22 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up gin
 	gin.SetMode(gin.ReleaseMode)
 	router := gin.New()
+	trustedProxies, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
+	if err != nil {
+		return nil, err
+	}
+	if err := router.SetTrustedProxies(trustedProxies); err != nil {
+		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
+	}
+	rateLimiter, err := security.NewRateLimiter(cfg)
+	if err != nil {
+		return nil, fmt.Errorf("rate limit configuration error: %w", err)
+	}
+	router.Use(security.RequestIDMiddleware())
+	router.Use(security.ErrorEnvelopeMiddleware())
+	router.Use(security.SourceRateLimitMiddleware(rateLimiter))
 	router.Use(gin.Recovery())
+	router.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
 		router.Use(security.AccessLogMiddleware())
 	} else {
@@ -199,6 +200,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	router.Use(security.MetricsMiddleware())
 	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
+	router.Use(bodyReadTimeoutMiddleware(cfg.BodyReadTimeout, cfg.AttachmentBodyReadTimeout))
 	router.Use(maxBodySizeMiddleware(cfg.MaxBodySize))
 	router.Use(maxPageSizeMiddleware(cfg))
 	if cfg.CORSEnabled {
@@ -273,7 +275,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("auth configuration error: %w", err)
 	}
-	auth := security.AuthMiddleware(resolver)
+	auth := security.AuthMiddlewareWithRateLimiter(resolver, rateLimiter)
 	// Store resolver on Server so callers like embedded MCP can configure it after build.
 	var builtServer Server
 	builtServer.TokenResolver = resolver
@@ -364,10 +366,18 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
-			security.GRPCUnaryInterceptor(resolver),
+			security.GRPCRequestIDUnaryInterceptor(),
+			security.GRPCSourceRateLimitUnaryInterceptor(rateLimiter),
+			security.GRPCUnaryInterceptorWithRateLimiter(resolver, rateLimiter),
+			security.GRPCIdentityRateLimitUnaryInterceptor(rateLimiter),
 			maxPageSizeUnaryInterceptor(cfg),
 		),
-		grpc.ChainStreamInterceptor(security.GRPCStreamInterceptor(resolver)),
+		grpc.ChainStreamInterceptor(
+			security.GRPCRequestIDStreamInterceptor(),
+			security.GRPCSourceRateLimitStreamInterceptor(rateLimiter),
+			security.GRPCStreamInterceptorWithRateLimiter(resolver, rateLimiter),
+			security.GRPCIdentityRateLimitStreamInterceptor(rateLimiter),
+		),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
 	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
@@ -451,6 +461,12 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
+	if err := validateManagementRouteExposure(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateNetworkTransportConfig(cfg); err != nil {
+		return nil, err
+	}
 
 	if cfg.ManagementListenerEnabled {
 		closeManagement, err := startManagementRoutes(cfg)
@@ -489,7 +505,13 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 	}
 
 	mgmtRouter := gin.New()
+	if err := mgmtRouter.SetTrustedProxies(nil); err != nil {
+		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
+	}
+	mgmtRouter.Use(security.RequestIDMiddleware())
+	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
 	mgmtRouter.Use(gin.Recovery())
+	mgmtRouter.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
 		mgmtRouter.Use(security.AccessLogMiddleware())
 	}

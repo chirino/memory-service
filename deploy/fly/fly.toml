@@ -21,11 +21,11 @@ primary_region = "lhr"
   MEMORY_SERVICE_EMBEDDING_KIND = "local"
 
   # ── Auth (API keys only — no OIDC on free tier) ──────────
-  MEMORY_SERVICE_MODE = "prod"
   MEMORY_SERVICE_ROLES_INDEXER_CLIENTS = "agent"
 
   # ── Server ────────────────────────────────────────────────
   MEMORY_SERVICE_PORT = "8080"
+  MEMORY_SERVICE_HOST = "0.0.0.0"
   MEMORY_SERVICE_PLAIN_TEXT = "true"
   MEMORY_SERVICE_TLS = "false"
 

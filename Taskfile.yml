@@ -197,7 +197,10 @@ tasks:
     desc: Run the memory-service app in dev mode.
     env:
       MEMORY_SERVICE_PORT: 8082
-      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
+      # Local developer server: prefer a zero-configuration loopback listener.
+      MEMORY_SERVICE_PLAIN_TEXT: "true"
+      MEMORY_SERVICE_TLS: "false"
+      MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER: "true"
       # ── Datastore ──────────────────────────────────────────────
       MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
@@ -209,6 +212,7 @@ tasks:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
@@ -275,7 +279,10 @@ tasks:
     desc: Run the memory-service app in dev mode with pgvector (for knowledge clustering).
     env:
       MEMORY_SERVICE_PORT: 8082
-      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
+      # Local developer server: prefer a zero-configuration loopback listener.
+      MEMORY_SERVICE_PLAIN_TEXT: "true"
+      MEMORY_SERVICE_TLS: "false"
+      MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER: "true"
       # ── Datastore ──────────────────────────────────────────────
       MEMORY_SERVICE_DB_URL: postgres://postgres:postgres@localhost:5432/memory_service?sslmode=disable
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
@@ -285,6 +292,7 @@ tasks:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
+      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: agent
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor

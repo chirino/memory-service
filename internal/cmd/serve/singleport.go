@@ -36,6 +36,9 @@ func StartSinglePortHTTPAndGRPC(
 	if cfg.ReadHeaderTimeout == 0 {
 		cfg.ReadHeaderTimeout = 5 * time.Second
 	}
+	if cfg.MaxHeaderBytes == 0 {
+		cfg.MaxHeaderBytes = http.DefaultMaxHeaderBytes
+	}
 
 	prepared, err := prepareListener(cfg)
 	if err != nil {
@@ -60,6 +63,8 @@ func StartSinglePortHTTPAndGRPC(
 		plainServer = &http.Server{
 			Handler:           h2c.NewHandler(dispatch, &http2.Server{}),
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := plainServer.Serve(plainLis); err != nil && err != http.ErrServerClosed {
@@ -85,6 +90,8 @@ func StartSinglePortHTTPAndGRPC(
 		tlsServer = &http.Server{
 			Handler:           dispatch,
 			ReadHeaderTimeout: cfg.ReadHeaderTimeout,
+			MaxHeaderBytes:    cfg.MaxHeaderBytes,
+			IdleTimeout:       cfg.IdleTimeout,
 		}
 		go func() {
 			if err := tlsServer.Serve(tlsWrapped); err != nil && err != http.ErrServerClosed {
@@ -119,16 +126,12 @@ func StartSinglePortHTTPAndGRPC(
 				}
 			}
 
-			done := make(chan struct{})
-			go func() {
-				grpcServer.GracefulStop()
-				close(done)
-			}()
-			select {
-			case <-done:
-			case <-ctx.Done():
-				grpcServer.Stop()
-			}
+			// This listener serves gRPC through grpc.Server.ServeHTTP behind net/http
+			// rather than grpc.Server.Serve. grpc-go's ServeHTTP transport does not
+			// implement Drain(), so GracefulStop can panic while trying to gracefully
+			// drain those transports. The surrounding http.Server.Shutdown calls above
+			// already stop accepting requests and wait for in-flight HTTP handlers.
+			grpcServer.Stop()
 
 			_ = baseLis.Close()
 			if err := prepared.Cleanup(); err != nil && shutdownErr == nil {

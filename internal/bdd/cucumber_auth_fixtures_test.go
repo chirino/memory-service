@@ -18,14 +18,13 @@ func TestFeaturesAuthFixturesSQLite(t *testing.T) {
 		requireCapabilities(t, "sqlite")
 	}
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
 	cfg.CacheType = "none"
 	cfg.AttachType = "fs"
 	cfg.VectorType = "none"
 	cfg.SearchSemanticEnabled = false
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

@@ -6,17 +6,10 @@
   },
   "workspaceFolder": "/workspaces/${localWorkspaceFolderBasename}",
   "workspaceMount": "source=${localWorkspaceFolder}/..,target=/workspaces,type=bind,consistency=cached",
-  "mounts": [
-    "source=${localEnv:HOME},target=/home/host,type=bind,readonly"
-  ],
   "appPort": [
-    "1080",
     "8080"
   ],
   "portsAttributes": {
-    "1080": {
-      "label": "socks5"
-    },
     "8080": {
       "label": "http"
     }
@@ -27,7 +20,7 @@
   },
   "postStartCommand": "bash .devcontainer/post-start.sh",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4.0.0": {
       "dockerDashComposeVersion": "v2"
     },
     "ghcr.io/devcontainers/features/common-utils:2": {

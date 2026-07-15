@@ -27,9 +27,15 @@ nb-configuration.xml
 .factorypath
 .vscode-profile
 .chrome-profile
+.bob
 
 # OSX
 .DS_Store
+
+# Python/local runtime caches
+__pycache__/
+*.py[cod]
+.venv/
 
 # Vim
 *.swp
@@ -39,15 +45,54 @@ nb-configuration.xml
 *.orig
 *.rej
 
-# Local environment
+# Local environment and secrets
 .env
+.env.*
+!.env.example
 .envrc
 .private
+*.key
+*.pem
+*.p12
+*.pfx
+*.crt
+*.csr
+*.keystore
+*.jks
+.aws/
+.azure/
+.config/gh/
+.gnupg/
+.kube/
+.npmrc
+.pypirc
 
 # Plugin directory
 /.quarkus/cli/plugins/
 # TLS Certificates
 .certs/
+
+# Local test/debug artifacts
+*.log
+*.trace
+*.prof
+*.pprof
+*.pid
+*.sock
+*.sqlite
+*.sqlite3
+*.db
+*.db-*
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+coverage/
+coverage.*
+screenshots/
+test-results/
+playwright-report/
 
 /vendor
 /tmp

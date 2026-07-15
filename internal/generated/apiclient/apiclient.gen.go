@@ -844,9 +844,17 @@ type Entry struct {
 
 // ErrorResponse defines model for ErrorResponse.
 type ErrorResponse struct {
-	Code    *string                 `json:"code,omitempty"`
+	// Code Stable machine-readable error code.
+	Code string `json:"code"`
+
+	// Details Structured non-sensitive error details.
 	Details *map[string]interface{} `json:"details,omitempty"`
-	Error   *string                 `json:"error,omitempty"`
+
+	// Error Safe human-readable error message.
+	Error string `json:"error"`
+
+	// RequestId Request correlation identifier, also returned in the X-Request-ID header.
+	RequestId string `json:"requestId"`
 }
 
 // IndexConversationsResponse defines model for IndexConversationsResponse.
@@ -1084,14 +1092,25 @@ type SearchResultKind string
 
 // SearchTypeUnavailableError Error response when the requested search type is not available on the server.
 type SearchTypeUnavailableError struct {
-	// AvailableTypes List of search types that are available on this server.
+	// AvailableTypes Deprecated compatibility alias for details.availableTypes.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	AvailableTypes *[]string `json:"availableTypes,omitempty"`
 
-	// Error Error code.
-	Error *string `json:"error,omitempty"`
+	// Code Stable machine-readable error code.
+	Code string `json:"code"`
 
-	// Message Human-readable error message.
+	// Details Structured non-sensitive error details, including availableTypes when known.
+	Details *map[string]interface{} `json:"details,omitempty"`
+
+	// Error Safe human-readable error message.
+	Error string `json:"error"`
+
+	// Message Deprecated compatibility alias for error.
+	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 	Message *string `json:"message,omitempty"`
+
+	// RequestId Request correlation identifier, also returned in the X-Request-ID header.
+	RequestId string `json:"requestId"`
 }
 
 // ShareConversationRequest defines model for ShareConversationRequest.
@@ -5788,11 +5807,18 @@ type CreateOwnershipTransferResp struct {
 	JSON403      *Error
 	JSON404      *NotFound
 	JSON409      *struct {
-		Code  *string `json:"code,omitempty"`
-		Error *string `json:"error,omitempty"`
+		Code string `json:"code"`
 
-		// ExistingTransferId ID of the existing pending transfer
+		// Details Structured non-sensitive error details.
+		Details *map[string]interface{} `json:"details,omitempty"`
+		Error   string                  `json:"error"`
+
+		// ExistingTransferId Deprecated compatibility alias for details.existingTransferId.
+		// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 		ExistingTransferId *openapi_types.UUID `json:"existingTransferId,omitempty"`
+
+		// RequestId Request correlation identifier, also returned in the X-Request-ID header.
+		RequestId string `json:"requestId"`
 	}
 	JSONDefault *Error
 }
@@ -7594,11 +7620,18 @@ func ParseCreateOwnershipTransferResp(rsp *http.Response) (*CreateOwnershipTrans
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
 		var dest struct {
-			Code  *string `json:"code,omitempty"`
-			Error *string `json:"error,omitempty"`
+			Code string `json:"code"`
 
-			// ExistingTransferId ID of the existing pending transfer
+			// Details Structured non-sensitive error details.
+			Details *map[string]interface{} `json:"details,omitempty"`
+			Error   string                  `json:"error"`
+
+			// ExistingTransferId Deprecated compatibility alias for details.existingTransferId.
+			// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
 			ExistingTransferId *openapi_types.UUID `json:"existingTransferId,omitempty"`
+
+			// RequestId Request correlation identifier, also returned in the X-Request-ID header.
+			RequestId string `json:"requestId"`
 		}
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err

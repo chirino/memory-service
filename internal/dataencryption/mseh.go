@@ -9,6 +9,7 @@
 package dataencryption
 
 import (
+	"encoding/binary"
 	"fmt"
 	"io"
 
@@ -22,8 +23,12 @@ var magic = [4]byte{0x4D, 0x53, 0x45, 0x48} // "MSEH"
 const (
 	// VersionAESGCM is the legacy MSEH format used by byte-slice encryption APIs.
 	VersionAESGCM uint32 = 1
-	// VersionAESCTR is the streaming MSEH format used for attachment streams.
+	// VersionAESCTR is the legacy unauthenticated AES-CTR stream format used for attachment streams.
 	VersionAESCTR uint32 = 2
+	// VersionAttachmentStreamAESGCM is the authenticated record stream format used for attachments.
+	VersionAttachmentStreamAESGCM uint32 = 3
+	// VersionFieldAESGCM is the authenticated field format using domain/identity AAD.
+	VersionFieldAESGCM uint32 = 4
 )
 
 // Header is the decoded MSEH envelope header.
@@ -41,20 +46,47 @@ func HasMagic(b []byte) bool {
 
 // WriteHeader encodes h as an MSEH envelope prefix and writes it to w.
 func WriteHeader(w io.Writer, h Header) error {
+	buf, err := EncodeHeader(h)
+	if err != nil {
+		return err
+	}
+	_, err = w.Write(buf)
+	return err
+}
+
+// EncodeHeader encodes h as an MSEH envelope prefix.
+func EncodeHeader(h Header) ([]byte, error) {
 	protoBytes, err := proto.Marshal(&pbv1.EncryptionHeader{
 		Version:    h.Version,
 		ProviderId: h.ProviderID,
 		Nonce:      h.Nonce,
 	})
 	if err != nil {
-		return fmt.Errorf("mseh: encoding header: %w", err)
+		return nil, fmt.Errorf("mseh: encoding header: %w", err)
 	}
 	buf := make([]byte, 4+varintLen(uint32(len(protoBytes)))+len(protoBytes))
 	copy(buf[:4], magic[:])
 	n := putVarint32(buf[4:], uint32(len(protoBytes)))
 	copy(buf[4+n:], protoBytes)
-	_, err = w.Write(buf)
-	return err
+	return buf, nil
+}
+
+// FieldAAD returns the canonical associated data for an MSEH v4 persisted field.
+func FieldAAD(headerPrefix []byte, domain, identity string) []byte {
+	var out []byte
+	out = appendFrame(out, []byte("memory-service/mseh/v4/field"))
+	out = appendFrame(out, headerPrefix)
+	out = appendFrame(out, []byte(domain))
+	out = appendFrame(out, []byte(identity))
+	return out
+}
+
+func appendFrame(out, value []byte) []byte {
+	var lenBuf [4]byte
+	binary.BigEndian.PutUint32(lenBuf[:], uint32(len(value)))
+	out = append(out, lenBuf[:]...)
+	out = append(out, value...)
+	return out
 }
 
 // ReadHeader reads the MSEH magic + varint + proto fields from r.

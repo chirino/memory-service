@@ -38,7 +38,7 @@ func TestFeaturesPgS3(t *testing.T) {
 	infinispan := testinfinispan.StartInfinispan(t)
 	bucket := tests3.StartS3(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "infinispan"
@@ -48,7 +48,6 @@ func TestFeaturesPgS3(t *testing.T) {
 	cfg.AttachType = "s3"
 	cfg.S3Bucket = bucket
 	cfg.S3UsePathStyle = true
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

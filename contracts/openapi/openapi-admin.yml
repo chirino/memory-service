@@ -1790,14 +1790,21 @@ components:
   schemas:
     ErrorResponse:
       type: object
+      required: [code, error, requestId]
       properties:
-        error:
-          type: string
         code:
           type: string
+          description: Stable machine-readable error code.
+        error:
+          type: string
+          description: Safe human-readable error message.
+        requestId:
+          type: string
+          description: Request correlation identifier, also returned in the X-Request-ID header.
         details:
           type: object
           additionalProperties: true
+          description: Structured non-sensitive error details.
     AdminCheckpoint:
       type: object
       required: [clientId, contentType, value, updatedAt]

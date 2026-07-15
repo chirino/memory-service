@@ -26,7 +26,7 @@ func TestFeaturesPgClustering(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 	prom := NewMockPrometheus(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "local"
@@ -35,7 +35,6 @@ func TestFeaturesPgClustering(t *testing.T) {
 	cfg.EmbedType = "local"
 	cfg.SearchSemanticEnabled = true
 	cfg.SearchFulltextEnabled = true
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

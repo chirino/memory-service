@@ -13,6 +13,8 @@ import (
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
+const adminCheckpointValueFieldDomain = "admin-checkpoint.value"
+
 type checkpointDoc struct {
 	ClientID    string    `bson:"client_id"`
 	ContentType string    `bson:"content_type"`
@@ -35,7 +37,7 @@ func (s *MongoStore) AdminGetCheckpoint(ctx context.Context, clientID string) (*
 		}
 		return nil, err
 	}
-	value, err := s.decrypt(doc.Value)
+	value, err := s.decryptCheckpointValue(clientID, doc.Value)
 	if err != nil {
 		return nil, err
 	}
@@ -60,7 +62,7 @@ func (s *MongoStore) AdminPutCheckpoint(ctx context.Context, checkpoint registry
 	if !json.Valid(value) {
 		return nil, &registrystore.ValidationError{Field: "value", Message: "value must be valid JSON"}
 	}
-	encryptedValue, err := s.encrypt(value)
+	encryptedValue, err := s.encryptCheckpointValue(clientID, value)
 	if err != nil {
 		return nil, err
 	}
@@ -90,6 +92,20 @@ func (s *MongoStore) AdminPutCheckpoint(ctx context.Context, checkpoint registry
 		Value:       append(json.RawMessage(nil), value...),
 		UpdatedAt:   doc.UpdatedAt,
 	}, nil
+}
+
+func (s *MongoStore) encryptCheckpointValue(clientID string, value []byte) ([]byte, error) {
+	if s.enc == nil || value == nil {
+		return value, nil
+	}
+	return s.enc.EncryptField(value, adminCheckpointValueFieldDomain, clientID)
+}
+
+func (s *MongoStore) decryptCheckpointValue(clientID string, value []byte) ([]byte, error) {
+	if s.enc == nil || value == nil {
+		return value, nil
+	}
+	return s.enc.DecryptField(value, adminCheckpointValueFieldDomain, clientID)
 }
 
 var _ registrystore.AdminCheckpointStore = (*MongoStore)(nil)
