@@ -19,8 +19,7 @@ on:
         type: boolean
 
 permissions:
-  contents: write
-  packages: write
+  contents: read
 
 concurrency:
   group: release-${{ inputs.version }}
@@ -30,6 +29,8 @@ jobs:
   prepare:
     runs-on: ubuntu-latest
     environment: release
+    permissions:
+      contents: write
     outputs:
       branch: ${{ steps.release.outputs.branch }}
       checkout-ref: ${{ steps.prepare.outputs.checkout-ref }}
@@ -61,18 +62,18 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           fetch-depth: 0
 
       - name: Set up Go
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
 
       - name: Set up JDK 21
-        uses: actions/setup-java@v5.4.0
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           java-version: '21'
           distribution: 'temurin'
@@ -198,6 +199,9 @@ jobs:
   docker-build:
     needs: prepare
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
+      packages: write
     strategy:
       fail-fast: true
       matrix:
@@ -232,15 +236,15 @@ jobs:
             runner: ubuntu-24.04-arm
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ needs.prepare.outputs.checkout-ref }}
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -248,7 +252,7 @@ jobs:
 
       - name: Build and push Docker image by digest
         id: build
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: ${{ matrix.dockerfile }}
@@ -274,7 +278,7 @@ jobs:
           touch "/tmp/digests/$IMAGE_NAME/${digest#sha256:}"
 
       - name: Upload digest
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-docker-digest-${{ matrix.image }}-${{ matrix.platform-key }}
           path: /tmp/digests
@@ -284,6 +288,8 @@ jobs:
   binary-artifact:
     needs: prepare
     runs-on: ${{ matrix.runner }}
+    permissions:
+      contents: read
     strategy:
       fail-fast: true
       matrix:
@@ -305,13 +311,13 @@ jobs:
             build-kind: go
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ needs.prepare.outputs.checkout-ref }}
 
       - name: Set up Docker Buildx
         if: matrix.build-kind == 'docker'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Build portable Linux binary artifact
         if: matrix.build-kind == 'docker'
@@ -339,7 +345,7 @@ jobs:
 
       - name: Set up Go
         if: matrix.build-kind == 'go'
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -362,7 +368,7 @@ jobs:
           chmod +x dist/memory-service
 
       - name: Upload binary artifact
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-binary-${{ matrix.artifact-name }}
           path: dist/memory-service
@@ -373,19 +379,21 @@ jobs:
       - prepare
       - docker-build
     runs-on: ubuntu-latest
+    permissions:
+      packages: write
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: release-docker-digest-*
           path: /tmp/digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -432,16 +440,18 @@ jobs:
       - docker-manifest
       - binary-artifact
     runs-on: ubuntu-latest
+    permissions:
+      contents: write
     steps:
       - name: Checkout release ref
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
         with:
           ref: ${{ needs.prepare.outputs.checkout-ref }}
           fetch-depth: 0
 
       - name: Download binary artifacts
         if: inputs.create_github_release
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: release-binary-*
           path: /tmp/release-binaries

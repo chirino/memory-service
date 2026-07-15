@@ -9,8 +9,6 @@ on:
       - 'docs/**'
       - '*.md'
       - '.skills/**'
-      - '.github/**'
-      - '.devconainer/**'
   push:
     branches: [main]
     paths-ignore:
@@ -18,7 +16,6 @@ on:
       - 'docs/**'
       - '*.md'
       - '.skills/**'
-      - '.devconainer/**'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -49,11 +46,11 @@ jobs:
           - artifact-memory-service-macos-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
 
       - name: Set up Go
         if: contains('verify-generated test-go test-site', matrix.job)
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -63,7 +60,7 @@ jobs:
 
       - name: Set up Java
         if: contains('verify-generated test-java test-site', matrix.job)
-        uses: actions/setup-java@v5.4.0
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           distribution: temurin
           java-version: '21'
@@ -74,7 +71,7 @@ jobs:
 
       - name: Set up Node
         if: contains('verify-generated test-java test-site', matrix.job)
-        uses: actions/setup-node@v6
+        uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
         with:
           node-version: lts/*
           cache: npm
@@ -110,7 +107,7 @@ jobs:
 
       - name: Install uv
         if: contains('test-site', matrix.job)
-        uses: astral-sh/setup-uv@v8.2.0
+        uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39 # v8.2.0
         with:
           enable-cache: true
 
@@ -130,7 +127,7 @@ jobs:
       - name: Add JUnit summary to job
         if: always() && contains('test-java', matrix.job)
         continue-on-error: true
-        uses: mikepenz/action-junit-report@v6.4.2
+        uses: mikepenz/action-junit-report@d9f48fc87bc235f7e214acf696ca5abc0a986f16 # v6.4.2
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
           check_name: JUnit report (${{ matrix.job }})
@@ -139,7 +136,7 @@ jobs:
 
       - name: Upload test reports
         if: always() && contains('test-go test-site', matrix.job)
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ matrix.job }}
           path: '**/reports'
@@ -158,7 +155,7 @@ jobs:
         if: always() && contains('test-go test-site', matrix.job)
         continue-on-error: true
         timeout-minutes: 5
-        uses: deblockt/cucumber-report-annotations-action@v1.21
+        uses: deblockt/cucumber-report-annotations-action@c240de1ffc48641595ff0c8b5ad70cf069701530 # v1.21
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .artifacts/cucumber-report-*.json
@@ -237,11 +234,11 @@ jobs:
 
       - name: Set up Docker Buildx
         if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true'
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
         if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -249,7 +246,7 @@ jobs:
 
       - name: Build Docker image
         if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref != 'refs/heads/main'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: ${{ steps.docker-meta.outputs.dockerfile }}
@@ -265,7 +262,7 @@ jobs:
       - name: Build and push Docker image by digest
         id: docker-build
         if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: docker/build-push-action@v7
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a # v7
         with:
           context: .
           file: ${{ steps.docker-meta.outputs.dockerfile }}
@@ -290,7 +287,7 @@ jobs:
 
       - name: Upload Docker digest
         if: startsWith(matrix.job, 'image-') && steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ci-docker-digest-${{ steps.docker-meta.outputs.image }}-${{ steps.docker-meta.outputs.platform-key }}
           path: /tmp/digests
@@ -334,7 +331,7 @@ jobs:
 
       - name: Set up Docker Buildx for portable Linux artifact
         if: startsWith(matrix.job, 'artifact-memory-service-linux-')
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Build portable Linux binary artifact
         if: startsWith(matrix.job, 'artifact-memory-service-linux-')
@@ -358,7 +355,7 @@ jobs:
 
       - name: Set up Go for macOS artifact
         if: matrix.job == 'artifact-memory-service-macos-arm64'
-        uses: actions/setup-go@v6.5.0
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
         with:
           go-version-file: go.mod
           cache: true
@@ -381,7 +378,7 @@ jobs:
 
       - name: Upload binary artifact
         if: startsWith(matrix.job, 'artifact-')
-        uses: actions/upload-artifact@v7
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.artifact-meta.outputs.artifact-name }}
           path: dist/memory-service
@@ -393,17 +390,17 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Download digests
-        uses: actions/download-artifact@v8
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
         with:
           pattern: ci-docker-digest-*
           path: /tmp/digests
           merge-multiple: true
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c # v4
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@v4
+        uses: docker/login-action@af1e73f918a031802d376d3c8bbc3fe56130a9b0 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
