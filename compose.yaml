@@ -47,7 +47,7 @@ x-langfuse-common-env: &langfuse-common-env
 
 services:
   postgres:
-    image: pgvector/pgvector:pg18
+    image: pgvector/pgvector:pg18@sha256:12a379b47ad65289572ea0756efc11b7c241a6662833e8af7038cd3b73d647e0
     command:
       - postgres
       - -c
@@ -76,7 +76,7 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:v1.18.2
+    image: qdrant/qdrant:v1.18.2@sha256:75eab8c4ba42096724fdcfde8b4de0b5713d529dde32f285a1f86fdcb2c9e50c
     ports:
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6333:6333"   # HTTP/REST
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6334:6334"   # gRPC
@@ -91,7 +91,7 @@ services:
       retries: 10
 
   redis:
-    image: redis:8-alpine
+    image: redis:8-alpine@sha256:9d317178eceac8454a2284a9e6df2466b93c745529947f0cd42a0fa9609d7005
     ports:
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:6379:6379"
     command: ["redis-server", "--save", "", "--appendonly", "no"]
@@ -105,7 +105,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.2.1
+    image: quay.io/infinispan/server:16.2.1@sha256:6866aed19264787674be7ac44ee5f1d726093a08dd538959c90a3fc5c7fa43f4
     ports:
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:11222:11222"
     environment:
@@ -118,7 +118,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.6.4
+    image: quay.io/keycloak/keycloak:26.6.4@sha256:0aae0de7fca85525f727d3354df17896092de8bb26ae4c12d89c77e5df8cbce4
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -150,7 +150,7 @@ services:
 
   memory-service:
 
-    image: ghcr.io/chirino/memory-service:latest
+    image: memory-service:dev-local
     ports:
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8082:8080"
     build:
@@ -160,7 +160,8 @@ services:
       - ./deploy/episodic-policies/cognition:/etc/memory-service/episodic-policy:ro
 
     ### <dev-mode> Uncomment below and Comment above to enable dev mode ###
-    # image: ghcr.io/chirino/memory-service-dev:latest
+    # For local dev images, prefer a locally loaded tag or a release tag plus digest.
+    # image: ghcr.io/chirino/memory-service-dev:<version>@sha256:<digest>
     # ports:
     #   - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8082:8080"
     #   - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:2345:2345" # go debug port
@@ -177,7 +178,6 @@ services:
     environment:
 
       # ── Datastore ──────────────────────────────────────────────
-      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
       MEMORY_SERVICE_DB_URL: postgres://postgres:${POSTGRES_PASSWORD:?run task dev:compose:env}@postgres:5432/memory_service?sslmode=disable
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
 
@@ -203,6 +203,8 @@ services:
 
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_HOST: 0.0.0.0
+      MEMORY_SERVICE_TLS: "false"
+      MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT: "true"
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
       MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
@@ -211,6 +213,9 @@ services:
       # ── Observability ──────────────────────────────────────────
       MEMORY_SERVICE_PROMETHEUS_URL: http://prometheus:9090
       MEMORY_SERVICE_MANAGEMENT_PORT: 8085
+      MEMORY_SERVICE_MANAGEMENT_HOST: 0.0.0.0
+      MEMORY_SERVICE_MANAGEMENT_TLS: "false"
+      MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK: "true"
 
       # ── Encryption ─────────────────────────────────────────────
       # Dev key — replace with a securely generated value in production.
@@ -272,7 +277,7 @@ services:
       retries: 12
 
   prometheus:
-    image: prom/prometheus:latest
+    image: prom/prometheus:latest@sha256:3c42b892cf723fa54d2f262c37a0e1f80aa8c8ddb1da7b9b0df9455a35a7f893
     volumes:
       - ./deploy/docker/prometheus.yml:/etc/prometheus/prometheus.yml:ro
     command:
@@ -288,7 +293,7 @@ services:
       retries: 5
 
   grafana:
-    image: grafana/grafana:latest
+    image: grafana/grafana:latest@sha256:121a7a9ece6dc10b969f1f96eed64b4f07dfac0d0b8abc070f7cb83bbde86f63
     environment:
       GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:?run task dev:compose:env}
       GF_AUTH_ANONYMOUS_ENABLED: "false"
@@ -299,7 +304,7 @@ services:
         condition: service_healthy
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio:latest@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: ${MINIO_ROOT_USER:?run task dev:compose:env}
@@ -317,7 +322,7 @@ services:
       start_period: 10s
 
   minio-init:
-    image: minio/mc:latest
+    image: minio/mc:latest@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
     entrypoint: >
       /bin/sh -c "
       until mc alias set minio http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
@@ -338,7 +343,7 @@ services:
         condition: service_healthy
 
   chat-quarkus:
-    image: ghcr.io/chirino/memory-service-chat-quarkus:latest
+    image: memory-service-chat-quarkus:dev-local
     build:
       context: .
       dockerfile: ./java/quarkus/examples/chat-quarkus/Dockerfile
@@ -366,7 +371,7 @@ services:
 
   cognition-processor:
     profiles: ["cognition"]
-    image: quay.io/rigazilla/cognitive-memory:cd-latest
+    image: quay.io/rigazilla/cognitive-memory:cd-latest@sha256:980ae0ea055961c4eab833b8d76fb664397fd85fee852d03b31bc45cfd98f0b0
     ports:
       - "${COMPOSE_BIND_HOST:?run task dev:compose:env}:8090:8090"
     environment:
@@ -417,7 +422,7 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.6.1.1193
+    image: clickhouse/clickhouse-server:26.6.1.1193@sha256:1d1f6508eba2dccce2cee9913907c5f7766327debc57a6b1991f2c9e3176c163
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
@@ -433,7 +438,7 @@ services:
 
   langfuse-worker:
     profiles: ["langfuse"]
-    image: langfuse/langfuse-worker:3
+    image: langfuse/langfuse-worker:3@sha256:2a5027341d3b1eacfbfee15d8c22353eab036027715f1981e621909141bd9f86
     environment:
       <<: *langfuse-common-env
     depends_on:
@@ -454,7 +459,7 @@ services:
 
   langfuse-web:
     profiles: ["langfuse"]
-    image: langfuse/langfuse:3
+    image: langfuse/langfuse:3@sha256:8de94f6ab67c1eec49356e07db34b835d2da553526c0366b91c3ef653f4bdd4a
     environment:
       <<: *langfuse-common-env
       LANGFUSE_INIT_ORG_ID: memory-service-dev
@@ -486,7 +491,7 @@ services:
 
   turn-traces-processor:
     profiles: ["langfuse"]
-    image: ghcr.io/chirino/memory-service:latest
+    image: memory-service:dev-local
     build:
       context: .
       dockerfile: Dockerfile

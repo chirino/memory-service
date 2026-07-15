@@ -17,6 +17,59 @@ func TestValidateStartupConfigRejectsCredentialedWildcardCORS(t *testing.T) {
 	require.ErrorContains(t, err, "credentialed CORS cannot use wildcard origins")
 }
 
+func TestValidateStartupConfigReturnsAllDetectedProblems(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.CORSEnabled = true
+	cfg.CORSOrigins = "*"
+	cfg.TrustedProxyCIDRs = "0.0.0.0/0"
+	cfg.DeveloperFrontendEnabled = true
+	cfg.BaseURL = ""
+	cfg.Listener.MaxHeaderBytes = 512
+
+	err := validateStartupConfig(&cfg)
+	require.ErrorContains(t, err, "credentialed CORS cannot use wildcard origins")
+	require.ErrorContains(t, err, "primary encryption provider is plain")
+	require.ErrorContains(t, err, "MEMORY_SERVICE_TRUSTED_PROXY_CIDRS must not trust universal range")
+	require.ErrorContains(t, err, "MEMORY_SERVICE_BASE_URL is required")
+	require.ErrorContains(t, err, "main listener max header bytes")
+}
+
+func TestValidateStartupConfigRejectsCredentialedCORSWithoutExplicitOrigins(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.CORSEnabled = true
+	cfg.CORSOrigins = " , "
+
+	err := validateStartupConfig(&cfg)
+	require.ErrorContains(t, err, "requires at least one explicit origin")
+}
+
+func TestValidateStartupConfigRejectsUnsafeCORSOrigins(t *testing.T) {
+	for _, origin := range []string{
+		"null",
+		"file://tmp/index.html",
+		"https://memory.example/path",
+		"https://memory.example?debug=true",
+		"https://memory.example#fragment",
+		"https://user@memory.example",
+	} {
+		cfg := validationTestConfig()
+		cfg.CORSEnabled = true
+		cfg.CORSOrigins = origin
+
+		err := validateStartupConfig(&cfg)
+		require.Error(t, err, origin)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_CORS_ORIGINS", origin)
+	}
+}
+
+func TestValidateStartupConfigAllowsExplicitCORSOrigins(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.CORSEnabled = true
+	cfg.CORSOrigins = "https://memory.example,http://localhost:3000"
+
+	require.NoError(t, validateStartupConfig(&cfg))
+}
+
 func TestValidateStartupConfigRequiresDeveloperBaseURLInProd(t *testing.T) {
 	cfg := validationTestConfig()
 	cfg.DeveloperFrontendEnabled = true
@@ -99,6 +152,94 @@ func TestValidateStartupConfigAllowsPrimaryPlainInTesting(t *testing.T) {
 	require.NoError(t, validateStartupConfig(&cfg))
 }
 
+func TestValidateStartupConfigRejectsOIDCTLSSkipVerifyOutsideTesting(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.OIDCTLSSkipCertificateVerify = true
+
+	err := validateStartupConfig(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY is not allowed")
+}
+
+func TestValidateStartupConfigAllowsOIDCTLSSkipVerifyInTesting(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeTesting
+	cfg.OIDCTLSSkipCertificateVerify = true
+
+	require.NoError(t, validateStartupConfig(&cfg))
+}
+
+func TestValidateStartupConfigRejectsKnownDemoSecrets(t *testing.T) {
+	t.Run("database url password", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.DBURL = "postgresql://postgres:postgres@postgresql:5432/memory_service"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_DB_URL uses a known repository demo password")
+	})
+
+	t.Run("api key", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.APIKeys = map[string]string{"agent-api-key-1": "agent"}
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_API_KEYS_* contains a known repository demo API key")
+	})
+
+	t.Run("encryption key", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_ENCRYPTION_DEK_KEY uses known repository demo key material")
+	})
+
+	t.Run("qdrant api key", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.QdrantAPIKey = "change-me"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_VECTOR_QDRANT_API_KEY uses a known repository demo value")
+	})
+
+	t.Run("infinispan password", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.InfinispanPassword = "admin"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_INFINISPAN_PASSWORD uses a known repository demo value")
+	})
+
+	t.Run("infinispan vector password", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.InfinispanVectorPassword = "admin"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD uses a known repository demo value")
+	})
+
+	t.Run("openai api key placeholder", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.OpenAIAPIKey = "none"
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY uses a placeholder value")
+	})
+}
+
+func TestValidateStartupConfigAllowsKnownDemoSecretsInTesting(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeTesting
+	cfg.APIKeys = map[string]string{"agent-api-key-1": "agent"}
+	cfg.EncryptionKey = "0000000000000000000000000000000000000000000000000000000000000000"
+	cfg.DBURL = "postgresql://postgres:postgres@postgresql:5432/memory_service"
+	cfg.QdrantAPIKey = "change-me"
+	cfg.InfinispanPassword = "admin"
+	cfg.InfinispanVectorPassword = "admin"
+	cfg.OpenAIAPIKey = "none"
+
+	require.NoError(t, validateStartupConfig(&cfg))
+}
+
 func TestValidateStartupConfigRejectsInvalidListenerLimits(t *testing.T) {
 	t.Run("main max header too small", func(t *testing.T) {
 		cfg := validationTestConfig()
@@ -123,6 +264,161 @@ func TestValidateStartupConfigRejectsInvalidListenerLimits(t *testing.T) {
 		err := validateStartupConfig(&cfg)
 		require.ErrorContains(t, err, "main listener idle timeout")
 	})
+
+	t.Run("negative body read timeout", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.BodyReadTimeout = -time.Second
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_BODY_READ_TIMEOUT")
+	})
+
+	t.Run("negative attachment body read timeout", func(t *testing.T) {
+		cfg := validationTestConfig()
+		cfg.AttachmentBodyReadTimeout = -time.Second
+
+		err := validateStartupConfig(&cfg)
+		require.ErrorContains(t, err, "MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT")
+	})
+}
+
+func TestValidateManagementRouteExposureRequiresExplicitProductionDecision(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.ManagementListenerEnabled = false
+	cfg.ManagementOnMainListener = false
+
+	err := validateManagementRouteExposure(&cfg)
+	require.ErrorContains(t, err, "management routes require a dedicated listener")
+}
+
+func TestValidateManagementRouteExposureAllowsDedicatedListener(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.ManagementListenerEnabled = true
+
+	require.NoError(t, validateManagementRouteExposure(&cfg))
+}
+
+func TestValidateManagementRouteExposureAllowsExplicitMainListener(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.ManagementOnMainListener = true
+
+	require.NoError(t, validateManagementRouteExposure(&cfg))
+}
+
+func TestValidateManagementRouteExposureRejectsConflictingSelection(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.ManagementListenerEnabled = true
+	cfg.ManagementOnMainListener = true
+
+	err := validateManagementRouteExposure(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER cannot be combined")
+}
+
+func TestValidateManagementRouteExposureAllowsTestingFallback(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeTesting
+
+	require.NoError(t, validateManagementRouteExposure(&cfg))
+}
+
+func TestValidateNetworkTransportRejectsDualTCPTransportsOutsideTesting(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = true
+
+	err := validateNetworkTransportConfig(&cfg)
+	require.ErrorContains(t, err, "main listener cannot enable both plaintext and TLS")
+}
+
+func TestValidateNetworkTransportAllowsSingleTCPTransport(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportRejectsNonLoopbackPlaintextMainWithoutOptIn(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.Host = "0.0.0.0"
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+
+	err := validateNetworkTransportConfig(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT")
+}
+
+func TestValidateNetworkTransportAllowsNonLoopbackPlaintextMainWithOptIn(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.Host = "0.0.0.0"
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+	cfg.AllowNonLoopbackPlainText = true
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportAllowsNonLoopbackTLSMainWithoutPlaintextOptIn(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.Host = "0.0.0.0"
+	cfg.Listener.EnablePlainText = false
+	cfg.Listener.EnableTLS = true
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportAllowsDualUnixSocketTransports(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.UnixSocket = "/tmp/memory-service.sock"
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = true
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportAllowsTestingDualTCPTransports(t *testing.T) {
+	cfg := config.DefaultConfig()
+	cfg.Mode = config.ModeTesting
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportRejectsNonLoopbackManagementWithoutOptIn(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+	cfg.ManagementListenerEnabled = true
+	cfg.ManagementListener.Host = "0.0.0.0"
+	cfg.ManagementListener.EnablePlainText = true
+	cfg.ManagementListener.EnableTLS = false
+
+	err := validateNetworkTransportConfig(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK")
+}
+
+func TestValidateNetworkTransportAllowsNonLoopbackManagementWithOptIn(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+	cfg.ManagementListenerEnabled = true
+	cfg.ManagementListener.Host = "0.0.0.0"
+	cfg.ManagementListener.EnablePlainText = true
+	cfg.ManagementListener.EnableTLS = false
+	cfg.ManagementAllowNonLoopback = true
+
+	require.NoError(t, validateNetworkTransportConfig(&cfg))
+}
+
+func TestValidateNetworkTransportRejectsDualManagementTCPTransports(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.Listener.EnablePlainText = true
+	cfg.Listener.EnableTLS = false
+	cfg.ManagementListenerEnabled = true
+	cfg.ManagementListener.EnablePlainText = true
+	cfg.ManagementListener.EnableTLS = true
+
+	err := validateNetworkTransportConfig(&cfg)
+	require.ErrorContains(t, err, "management listener cannot enable both plaintext and TLS")
 }
 
 func validationTestConfig() config.Config {

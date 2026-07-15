@@ -1268,8 +1268,9 @@ Feature: authenticated and browser-safe attachments
   use SSH-agent forwarding and narrow non-secret configuration.
 - [x] F-H8: Retain isolated DinD, pin its feature release, prohibit a host Docker socket, and
   document the accepted trusted-workspace development risk.
-- [ ] F-H10: Pin runtime/deployment images immutably. The repository Dockerfile stages are
-  digest-pinned; deployment manifests and demo images still need release-version/digest wiring.
+- [x] F-H10: Pin runtime/deployment images immutably. The repository Dockerfile stages,
+  Kustomize manifests, demo deployment images, and pulled Compose images are digest-pinned;
+  Compose services built locally use non-`latest` local tags instead of pullable mutable tags.
 - [x] F-H11: Make plaintext provider/fallback explicit, migration-only, and fail-closed.
 - [ ] F-H11/F-M13: Implement MSEH v4 field AAD and the resumable four-domain migration.
 - [ ] F-H12: Implement MSEH v3 64-KiB AES-GCM records, v2 read telemetry/gating, and the
@@ -1280,7 +1281,9 @@ Feature: authenticated and browser-safe attachments
 - [x] F-H14/F-M2: Implement JSON Pointer role claims, limits, and required audience policy.
 - [x] F-H15: Remove GitHub expression interpolation from release shell source.
 - [x] F-H16: Stop tracing/printing Fly secrets and remove the obsolete signing secret.
-- [ ] F-M1/F-M14: Reject credentialed wildcard CORS and other unsafe production combinations.
+- [x] F-M1/F-L4/F-M14: Reject unsafe startup combinations, including exact CORS-origin
+  validation, OIDC TLS-skip rejection, aggregate startup error reporting, and service-owned
+  known demo-secret validation.
 - [ ] F-M3: Centralize the stable REST/gRPC error and request-ID contract.
 - [ ] F-M4: Add the five-class process-local token-bucket policy and telemetry.
 - [ ] F-M6/F-M7/F-L8: Pin actions, minimize token permissions, and repair path filters.
@@ -1289,20 +1292,24 @@ Feature: authenticated and browser-safe attachments
   needs splitting before token permissions can be minimized per job.
 - [x] F-M10: Add trust-none proxy initialization, explicit CIDR parsing, production base-URL
   validation, and forwarded-origin removal.
-- [ ] F-M11/F-M12/F-M16: Add explicit bind hosts, route-aware HTTP limits, management
+- [x] F-M11/F-M12/F-M16: Add explicit bind hosts, route-aware HTTP limits, management
   selection/isolation, and plaintext/TLS deployment policy. TCP bind hosts now default to
   loopback, container deployments set explicit `0.0.0.0`, and header/idle listener limits are
-  configured; management selection/isolation, body deadlines, and TLS/plaintext policy remain.
+  configured; management selection now requires a dedicated listener or explicit main-listener
+  opt-in outside testing; dual plaintext/TLS TCP listeners are rejected outside testing; and
+  non-loopback management binds require an explicit deployment-boundary acknowledgement.
+  Route-aware body read deadlines are configured, and non-loopback plaintext API binds require
+  an explicit deployment-boundary acknowledgement.
 - [x] F-M15/F-L5: Correct active encryption and attachment-signing documentation.
 - [x] F-M17: Validate frontend attachment URL schemes.
-- [ ] F-L1/F-L2/F-L6/F-L7: Tighten remaining local/deployment hygiene. F-L2
-  `.dockerignore` coverage is tightened; debug, dev Postgres, and kind host-network hygiene
-  remain.
+- [x] F-L1/F-L2/F-L6/F-L7: Tighten remaining local/deployment hygiene.
 - [ ] Document the coordinated stop/backup/upgrade/migrate rollout and forward-only rollback
-  boundary in release notes and operator docs.
+  boundary in release notes and operator docs. Release notes and the security guide now
+  document the current startup-breaking changes plus the forward-only MSEH rollback boundary;
+  command-specific migration docs remain blocked on the v3/v4 migrators.
 - [x] Add `site/src/pages/docs/deployment/security.mdx` with the production security checklist.
 - [x] Re-enable the Deployment sidebar with only Docker and Security Hardening.
-- [ ] Refresh the Docker deployment page, configuration reference, attachment documentation,
+- [x] Refresh the Docker deployment page, configuration reference, attachment documentation,
   and FAQ links/semantics alongside the implementing changes.
 
 ## Files to Modify

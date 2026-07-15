@@ -17,5 +17,7 @@ spec:
             spec:
               template:
                 spec:
+                  # Kind-only: bind Envoy to the local test node network so host browser
+                  # traffic can reach the demo gateway. Do not reuse in production overlays.
                   hostNetwork: true
                   dnsPolicy: ClusterFirstWithHostNet

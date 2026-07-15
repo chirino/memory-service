@@ -2,11 +2,14 @@ package serve
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"os/user"
 	"strconv"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -225,6 +228,22 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Value:       cfg.MaxPageSize,
 			Usage:       "Maximum items accepted by listing endpoints",
 		},
+		&cli.DurationFlag{
+			Name:        "body-read-timeout",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_BODY_READ_TIMEOUT"),
+			Destination: &cfg.BodyReadTimeout,
+			Value:       cfg.BodyReadTimeout,
+			Usage:       "Maximum time allowed to read ordinary REST request bodies (0 disables)",
+		},
+		&cli.DurationFlag{
+			Name:        "attachment-body-read-timeout",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT"),
+			Destination: &cfg.AttachmentBodyReadTimeout,
+			Value:       cfg.AttachmentBodyReadTimeout,
+			Usage:       "Maximum time allowed to read multipart attachment upload bodies (0 disables)",
+		},
 		&cli.StringFlag{
 			Name:        "temp-dir",
 			Category:    "Server:",
@@ -238,6 +257,20 @@ func serverFlags(cfg *config.Config, state *FlagState) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG"),
 			Destination: &cfg.ManagementAccessLog,
 			Usage:       "Enable HTTP access logging for management endpoints (/health, /ready, /metrics)",
+		},
+		&cli.BoolFlag{
+			Name:        "management-on-main-listener",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER"),
+			Destination: &cfg.ManagementOnMainListener,
+			Usage:       "Explicitly serve management endpoints on the main API listener outside testing mode",
+		},
+		&cli.BoolFlag{
+			Name:        "management-allow-non-loopback",
+			Category:    "Server:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK"),
+			Destination: &cfg.ManagementAllowNonLoopback,
+			Usage:       "Explicitly allow the dedicated management listener to bind beyond loopback outside testing mode",
 		},
 		&cli.BoolFlag{
 			Name:        "admin-require-justification",
@@ -293,6 +326,14 @@ func listenerFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.Listener.EnableTLS,
 			Value:       cfg.Listener.EnableTLS,
 			Usage:       "Enable TLS HTTP/1.1 + HTTP/2 + gRPC",
+		},
+		&cli.BoolFlag{
+			Name:        "allow-non-loopback-plaintext",
+			Category:    "Network Listener:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT"),
+			Destination: &cfg.AllowNonLoopbackPlainText,
+			Value:       cfg.AllowNonLoopbackPlainText,
+			Usage:       "Explicitly allow plaintext API traffic on a non-loopback TCP bind outside testing mode",
 		},
 		&cli.BoolFlag{
 			Name:        "management-plain-text",
@@ -929,6 +970,9 @@ func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, va
 	if err := validateListenerSelections(*cfg, selections); err != nil {
 		return err
 	}
+	if cfg.ManagementOnMainListener && (selections.mgmtPortExplicit || selections.mgmtUnixSocketExplicit) {
+		return fmt.Errorf("--management-on-main-listener cannot be combined with --management-port or --management-unix-socket")
+	}
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return err
 	}
@@ -982,6 +1026,74 @@ func run(ctx context.Context, cfg config.Config) error {
 	}
 	log.Info("Server stopped")
 	return nil
+}
+
+var errRequestBodyTimeout = errors.New("request body read timeout")
+
+func bodyReadTimeoutMiddleware(bodyTimeout, attachmentBodyTimeout time.Duration) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if c.Request == nil || c.Request.Body == nil || c.Request.Body == http.NoBody {
+			c.Next()
+			return
+		}
+		timeout := bodyTimeout
+		if isStreamingRequest(c.Request) {
+			timeout = attachmentBodyTimeout
+		}
+		if timeout <= 0 {
+			c.Next()
+			return
+		}
+
+		body := newTimeoutReadCloser(c.Request.Body, timeout)
+		c.Request.Body = body
+		c.Next()
+		body.Stop()
+		if body.TimedOut() && !c.Writer.Written() {
+			c.AbortWithStatusJSON(http.StatusRequestTimeout, gin.H{
+				"code":  "request_timeout",
+				"error": "request_timeout",
+			})
+		}
+	}
+}
+
+type timeoutReadCloser struct {
+	body     io.ReadCloser
+	timer    *time.Timer
+	timedOut atomic.Bool
+}
+
+func newTimeoutReadCloser(body io.ReadCloser, timeout time.Duration) *timeoutReadCloser {
+	wrapped := &timeoutReadCloser{body: body}
+	wrapped.timer = time.AfterFunc(timeout, func() {
+		wrapped.timedOut.Store(true)
+		_ = body.Close()
+	})
+	return wrapped
+}
+
+func (b *timeoutReadCloser) Read(p []byte) (int, error) {
+	n, err := b.body.Read(p)
+	if err != nil && b.timedOut.Load() {
+		return n, errRequestBodyTimeout
+	}
+	return n, err
+}
+
+func (b *timeoutReadCloser) Close() error {
+	b.Stop()
+	return b.body.Close()
+}
+
+func (b *timeoutReadCloser) Stop() {
+	if b.timer != nil {
+		b.timer.Stop()
+	}
+}
+
+func (b *timeoutReadCloser) TimedOut() bool {
+	return b.timedOut.Load()
 }
 
 func maxBodySizeMiddleware(maxBodySize int64) gin.HandlerFunc {

@@ -28,7 +28,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: memory-service
-          image: ghcr.io/chirino/memory-service:latest
+          image: ghcr.io/chirino/memory-service:latest@sha256:c03c98f1b7ab2a04f2db5d3573aed02273a1a229890a7602e39e31667933b345
           securityContext:
             allowPrivilegeEscalation: false
             readOnlyRootFilesystem: true
@@ -50,8 +50,11 @@ spec:
           #
           # Available ConfigMap keys (see docs/configuration for details):
           #
-          # Server:       MEMORY_SERVICE_PORT, MEMORY_SERVICE_PLAIN_TEXT, MEMORY_SERVICE_TLS,
-          #               MEMORY_SERVICE_MANAGEMENT_PORT, MEMORY_SERVICE_TEMP_DIR
+          # Server:       MEMORY_SERVICE_PORT, MEMORY_SERVICE_HOST, MEMORY_SERVICE_PLAIN_TEXT,
+          #               MEMORY_SERVICE_TLS, MEMORY_SERVICE_MANAGEMENT_PORT,
+          #               MEMORY_SERVICE_MANAGEMENT_HOST, MEMORY_SERVICE_MANAGEMENT_TLS,
+          #               MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT,
+          #               MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK, MEMORY_SERVICE_TEMP_DIR
           # DB:           MEMORY_SERVICE_DB_KIND, MEMORY_SERVICE_DB_MIGRATE_AT_START,
           #               MEMORY_SERVICE_DB_MAX_OPEN_CONNS, MEMORY_SERVICE_DB_MAX_IDLE_CONNS
           # Cache:        MEMORY_SERVICE_CACHE_KIND, MEMORY_SERVICE_CACHE_EPOCH_TTL,

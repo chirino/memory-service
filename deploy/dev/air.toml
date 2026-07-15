@@ -5,6 +5,8 @@ tmp_dir = "/tmp"
   pre_cmd = []
   cmd = "CGO_ENABLED=1 go build -tags \"sqlite_fts5 sqlite_json\" ${GO_BUILD_FLAGS} -ldflags=\"${GO_LD_FLAGS}\" -o ./bin/memory-service ."
   post_cmd = []
+  # Delve listens inside the container. If you publish it through compose, keep the
+  # host mapping bound to COMPOSE_BIND_HOST=127.0.0.1.
   full_bin = "TERM=dumb ${MEMORY_SERVICE_AIR_FULL_BIN:-dlv --check-go-version=false --continue --listen=:2345 --api-version=2 --only-same-user=false --headless --accept-multiclient exec -- ./bin/memory-service serve}"
   # full_bin = "./bin/memory-service serve"
   bin = "TERM=dumb ./bin/memory-service"

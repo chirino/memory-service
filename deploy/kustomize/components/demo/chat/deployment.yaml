@@ -18,7 +18,7 @@ spec:
     spec:
       containers:
         - name: chat-quarkus
-          image: ghcr.io/chirino/memory-service-chat-quarkus:latest
+          image: ghcr.io/chirino/memory-service-chat-quarkus:latest@sha256:1bf45d8d19a4dc3414c59275946b6285829fdd5ce2355ab41ac6f8a619632739
           ports:
             - name: http
               containerPort: 8080

@@ -5,6 +5,7 @@ description: Understanding file attachments in Memory Service — upload, refere
 ---
 
 Attachments let you include binary files — images, audio, video, documents — in conversation entries, with server-managed storage, access control, signed download URLs, and automatic lifecycle management.
+For production deployments, review the [attachment hardening recommendations](/docs/deployment/security/#attachments) before exposing downloads to browsers.
 
 ## Overview
 
@@ -178,6 +179,11 @@ The Memory Service stores and serves all file types. How attachments are rendere
 | Other             | Generic file download                    |
 
 Agent frameworks like LangChain4j and Spring AI map these content types to their native multi-modal content objects when building LLM requests.
+
+When Memory Service serves a stored attachment, browser-active content types such as HTML
+and SVG are forced to download instead of rendering inline. Keep S3 direct download disabled
+when using at-rest encryption so the service can decrypt bytes and apply safe response
+headers.
 
 ## Downloading Attachments
 

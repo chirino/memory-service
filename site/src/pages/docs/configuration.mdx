@@ -23,6 +23,8 @@ Memory Service is configured through CLI flags or environment variables. Use the
 | <Cfg p="--tls-self-signed" e="MEMORY_SERVICE_TLS_SELF_SIGNED" />                         | `true`, `false`                           | `false`         | Generate an ephemeral self-signed certificate when cert/key files are omitted |
 | <Cfg p="--advertised-address" e="MEMORY_SERVICE_ADVERTISED_ADDRESS" />                   | `host:port`                               | auto-detected   | Advertised address for client redirects                                       |
 | <Cfg p="--read-header-timeout-seconds" e="MEMORY_SERVICE_READ_HEADER_TIMEOUT_SECONDS" /> | integer                                   | `5`             | HTTP read header timeout in seconds                                           |
+| <Cfg p="--body-read-timeout" e="MEMORY_SERVICE_BODY_READ_TIMEOUT" />                     | duration                                  | `30s`           | Maximum time allowed to read ordinary REST request bodies (`0` disables)      |
+| <Cfg p="--attachment-body-read-timeout" e="MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT" /> | duration                                | `5m`            | Maximum time allowed to read multipart attachment upload bodies (`0` disables) |
 | <Cfg p="--max-page-size" e="MEMORY_SERVICE_MAX_PAGE_SIZE" />                             | positive integer                          | `1000`          | Maximum items accepted by listing endpoints                                   |
 | <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                       | path                                      | system temp dir | Directory for temporary files                                                 |
 | <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />             | `true`, `false`                           | `false`         | Enable HTTP access logging for `/health`, `/ready`, `/metrics`                |
@@ -42,6 +44,7 @@ Memory Service is configured through CLI flags or environment variables. Use the
 | <Cfg p="--local-client-id" e="MEMORY_SERVICE_LOCAL_CLIENT_ID" />   | string                 | `local-agent` | Client identity used by `unix-socket-auth=local`            |
 | <Cfg p="--plain-text" e="MEMORY_SERVICE_PLAIN_TEXT" />             | `true`, `false`        | `true`        | Enable plaintext HTTP/1.1 + h2c + gRPC                      |
 | <Cfg p="--tls" e="MEMORY_SERVICE_TLS" />                           | `true`, `false`        | `true`        | Enable TLS HTTP/1.1 + HTTP/2 + gRPC                         |
+| <Cfg p="--allow-non-loopback-plaintext" e="MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT" /> | `true`, `false` | `false` | Explicitly allow plaintext API traffic on a non-loopback TCP bind outside testing mode |
 | <Cfg p="--max-header-bytes" e="MEMORY_SERVICE_MAX_HEADER_BYTES" /> | bytes                  | `1048576`     | Maximum request header bytes on the main listener           |
 | <Cfg p="--idle-timeout" e="MEMORY_SERVICE_IDLE_TIMEOUT" />         | duration               | `120s`        | HTTP keep-alive idle timeout on the main listener           |
 | <Cfg p="--trusted-proxy-cidrs" e="MEMORY_SERVICE_TRUSTED_PROXY_CIDRS" /> | IP/CIDR CSV       | _(unset)_     | Trusted TCP proxy IPs/CIDRs for client-IP resolution; unset trusts no forwarded proxies |
@@ -50,6 +53,11 @@ When a Unix socket path points into a directory that does not exist yet, Memory 
 
 TCP listeners bind to loopback by default. Container and Kubernetes deployments that expose a
 port must set `MEMORY_SERVICE_HOST=0.0.0.0` explicitly.
+
+Outside testing mode, a single TCP listener cannot serve both plaintext and TLS. Choose
+`MEMORY_SERVICE_TLS=false` for plaintext behind an ingress/TLS terminator and
+`MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT=true` to acknowledge that boundary, or
+`MEMORY_SERVICE_PLAIN_TEXT=false` when Memory Service terminates TLS itself.
 
 `unix-socket-auth=local` is valid only when the main API listener uses a Unix socket. It gives REST and gRPC the same local identity without granting privileged roles automatically. Any process running as the socket-owning Unix user is inside this trust boundary. Keep the default `credentials` mode when bearer-token or API-key authentication should remain mandatory.
 
@@ -60,14 +68,16 @@ set `MEMORY_SERVICE_BASE_URL` for the developer frontend.
 
 ### Management Network Listener
 
-By default, `/health`, `/ready`, and `/metrics` are served on the main port alongside the API. Set `--management-port` to move them onto a dedicated port, keeping them out of the main API's auth middleware — and making Prometheus scrape configuration more straightforward.
+Outside testing mode, `/health`, `/ready`, and `/metrics` require an explicit exposure decision. Set `--management-port` or `--management-unix-socket` to move them onto a dedicated listener. If you intentionally serve them on the main API listener, set `--management-on-main-listener=true`.
 
 `--management-port` and `--management-unix-socket` are mutually exclusive when both are explicitly configured. If `--management-unix-socket` is set, the default management port value is ignored for that listener.
 
 | Flag                                                                           | Values          | Default   | Description                                                                 |
 | ------------------------------------------------------------------------------ | --------------- | --------- | --------------------------------------------------------------------------- |
-| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />               | integer         | _(unset)_ | Dedicated port for health and metrics. When unset, served on the main port. |
+| <Cfg p="--management-port" e="MEMORY_SERVICE_MANAGEMENT_PORT" />               | integer         | _(unset)_ | Dedicated port for health and metrics                                      |
+| <Cfg p="--management-on-main-listener" e="MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER" /> | `true`, `false` | `false` | Explicitly acknowledge serving management routes on the main API listener outside testing mode |
 | <Cfg p="--management-host" e="MEMORY_SERVICE_MANAGEMENT_HOST" />               | host/IP         | `127.0.0.1` | Management bind host; containers should set `0.0.0.0` intentionally |
+| <Cfg p="--management-allow-non-loopback" e="MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK" /> | `true`, `false` | `false` | Explicitly allow a dedicated management listener to bind beyond loopback outside testing mode |
 | <Cfg p="--management-unix-socket" e="MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET" /> | path            | _(unset)_ | Absolute path to a Unix socket for the management server                    |
 | <Cfg p="--management-plain-text" e="MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT" />   | `true`, `false` | `true`    | Enable plaintext HTTP for management server                                 |
 | <Cfg p="--management-tls" e="MEMORY_SERVICE_MANAGEMENT_TLS" />                 | `true`, `false` | `true`    | Enable TLS for management server (uses same cert/key as main listener)      |
@@ -382,6 +392,7 @@ MEMORY_SERVICE_EVENTBUS_KIND=postgres`}
 ## Attachment Storage
 
 Configure file attachment storage, size limits, and lifecycle.
+For production attachment deployments, also review the [Security Hardening](/docs/deployment/security/#attachments) guidance on proxying downloads, active content, and durable storage.
 
 | Flag / Env Var                                                     | Values           | Default  | Description                                                                                                                            |
 | ------------------------------------------------------------------ | ---------------- | -------- | -------------------------------------------------------------------------------------------------------------------------------------- |
@@ -759,7 +770,7 @@ Memory Service supports OIDC authentication via Keycloak or any compliant provid
 | -------------------------------------------------------------------------------------------- | --------------- | -------- | ------------------------------------------------------------------------------------------------------------ |
 | <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_OIDC_ISSUER" />                                     | URL             | _(none)_ | OIDC issuer URL; enables OIDC auth                                                                           |
 | <Cfg p="--oidc-discovery-url" e="MEMORY_SERVICE_OIDC_DISCOVERY_URL" />                       | URL             | _(none)_ | Internal discovery URL when the issuer URL is not directly reachable                                         |
-| <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `true`, `false` | `false`  | Skip TLS certificate verification for OIDC discovery and JWKS requests; use only for self-signed dev issuers |
+| <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `true`, `false` | `false`  | Skip TLS certificate verification for OIDC discovery and JWKS requests; rejected outside testing mode        |
 | <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />                   | CSV             | _(none)_ | Optional OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer  |
 | <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />               | CSV             | _(none)_ | Required OIDC audiences accepted by Memory Service when OIDC is enabled                                      |
 | <Cfg p="--oidc-allow-missing-audience" e="MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE" />     | `true`, `false` | `false`  | Unsafe compatibility mode for issuer-only validation while migrating audience configuration                  |
@@ -774,13 +785,13 @@ Claim-derived roles come only from configured JSON Pointer paths. The default is
 --oidc-issuer=http://localhost:8180/realms/memory-service
 --oidc-allowed-clients=memory-service-client,frontend,developer-frontend
 --oidc-allowed-audiences=memory-service
-# Development/self-signed issuers only:
+# Testing mode with self-signed issuers only:
 --oidc-tls-insecure-skip-verify`}
   env={`# OIDC configuration
 MEMORY_SERVICE_OIDC_ISSUER=http://localhost:8180/realms/memory-service
 MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-frontend
 MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
-# Development/self-signed issuers only:
+# Testing mode with self-signed issuers only:
 MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY=true`}
 />
 
@@ -975,6 +986,11 @@ All admin API calls are logged. Each request can include a `justification` field
 | `MEMORY_SERVICE_CORS_ENABLED` | `true`, `false`         | `false`  | Enable CORS          |
 | `MEMORY_SERVICE_CORS_ORIGINS` | comma-separated origins | _(none)_ | Allowed CORS origins |
 
+Credentialed CORS requires exact `http` or `https` origins such as
+`https://app.example.com`; wildcard, `null`, path, query, and fragment values are rejected
+at startup. See [Security Hardening](/docs/deployment/security/#authentication) for the
+production stance.
+
 <ConfigBlock
   property={`# Enable CORS
 MEMORY_SERVICE_CORS_ENABLED=true
@@ -1060,8 +1076,22 @@ When `--prometheus-url` is not configured, admin stats endpoints return **501 No
 For production, use a dedicated management port so Prometheus scrapes only the metrics endpoint without going through the main API's middleware:
 
 <ConfigBlock
-  property={`# Expose health and metrics on a dedicated port\n--management-port=8085`}
-  env={`# Expose health and metrics on a dedicated port\nMEMORY_SERVICE_MANAGEMENT_PORT=8085`}
+  property={`# Expose health and metrics on a dedicated port
+--management-port=8085
+
+# In containers, bind the dedicated management listener beyond loopback only when
+# network policy or firewall rules restrict access.
+--management-host=0.0.0.0
+--management-tls=false
+--management-allow-non-loopback`}
+  env={`# Expose health and metrics on a dedicated port
+MEMORY_SERVICE_MANAGEMENT_PORT=8085
+
+# In containers, bind the dedicated management listener beyond loopback only when
+# network policy or firewall rules restrict access.
+MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0
+MEMORY_SERVICE_MANAGEMENT_TLS=false
+MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK=true`}
 />
 
 ```yaml

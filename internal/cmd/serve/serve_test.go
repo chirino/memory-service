@@ -7,7 +7,9 @@ import (
 	"net/http/httptest"
 	"slices"
 	"strings"
+	"sync"
 	"testing"
+	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
@@ -66,6 +68,53 @@ func TestMaxBodySizeMiddleware_EnforcesForNonStreamingEndpoints(t *testing.T) {
 	router.ServeHTTP(rec, req)
 
 	require.Equal(t, http.StatusRequestEntityTooLarge, rec.Code)
+}
+
+func TestBodyReadTimeoutMiddleware_TimesOutOrdinaryBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(bodyReadTimeoutMiddleware(10*time.Millisecond, time.Minute))
+	router.POST("/v1/admin/evict", readBodyNoResponseOnErrorHandler)
+
+	body := newBlockingReadCloser()
+	req := httptest.NewRequest(http.MethodPost, "/v1/admin/evict", body)
+	req.ContentLength = 1
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestTimeout, rec.Code)
+	require.JSONEq(t, `{"code":"request_timeout","error":"request_timeout"}`, rec.Body.String())
+}
+
+func TestBodyReadTimeoutMiddleware_UsesAttachmentTimeout(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(bodyReadTimeoutMiddleware(time.Minute, 10*time.Millisecond))
+	router.POST("/v1/attachments", readBodyNoResponseOnErrorHandler)
+
+	body := newBlockingReadCloser()
+	req := httptest.NewRequest(http.MethodPost, "/v1/attachments", body)
+	req.Header.Set("Content-Type", "multipart/form-data; boundary=abc123")
+	req.ContentLength = 1
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	require.Equal(t, http.StatusRequestTimeout, rec.Code)
+	require.JSONEq(t, `{"code":"request_timeout","error":"request_timeout"}`, rec.Body.String())
+}
+
+func TestBodyReadTimeoutMiddleware_SkipsRequestsWithoutBody(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	router := gin.New()
+	router.Use(bodyReadTimeoutMiddleware(time.Nanosecond, time.Nanosecond))
+	router.GET("/ready", func(c *gin.Context) {
+		c.Status(http.StatusNoContent)
+	})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequest(http.MethodGet, "/ready", nil))
+
+	require.Equal(t, http.StatusNoContent, rec.Code)
 }
 
 func TestSecurityHeadersMiddleware(t *testing.T) {
@@ -156,6 +205,35 @@ func readBodyLengthHandler(c *gin.Context) {
 	c.String(http.StatusOK, "%d", n)
 }
 
+func readBodyNoResponseOnErrorHandler(c *gin.Context) {
+	_, err := io.Copy(io.Discard, c.Request.Body)
+	if err != nil {
+		return
+	}
+	c.Status(http.StatusNoContent)
+}
+
+type blockingReadCloser struct {
+	closed chan struct{}
+	once   sync.Once
+}
+
+func newBlockingReadCloser() *blockingReadCloser {
+	return &blockingReadCloser{closed: make(chan struct{})}
+}
+
+func (b *blockingReadCloser) Read(_ []byte) (int, error) {
+	<-b.closed
+	return 0, io.ErrClosedPipe
+}
+
+func (b *blockingReadCloser) Close() error {
+	b.once.Do(func() {
+		close(b.closed)
+	})
+	return nil
+}
+
 func TestLoadServerCertificate_RequiresExplicitFiles(t *testing.T) {
 	_, err := loadServerCertificate("", "", false)
 	require.Error(t, err)
@@ -185,6 +263,9 @@ func TestFlagsIncludeOIDCTLSSkipVerify(t *testing.T) {
 
 	require.True(t, flagNames["oidc-tls-insecure-skip-verify"])
 	require.True(t, flagNames["max-page-size"])
+	require.True(t, flagNames["body-read-timeout"])
+	require.True(t, flagNames["attachment-body-read-timeout"])
+	require.True(t, flagNames["allow-non-loopback-plaintext"])
 }
 
 func TestMaxPageSizeFlagAndEnvironment(t *testing.T) {

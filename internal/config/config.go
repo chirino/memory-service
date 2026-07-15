@@ -201,6 +201,15 @@ type Config struct {
 	// (or their env vars) was explicitly provided. When false, management endpoints are
 	// served on the main port.
 	ManagementListenerEnabled bool
+	// ManagementOnMainListener explicitly acknowledges serving management routes on the main
+	// API listener outside testing mode.
+	ManagementOnMainListener bool
+	// ManagementAllowNonLoopback explicitly acknowledges binding the unauthenticated
+	// management listener beyond loopback outside testing mode.
+	ManagementAllowNonLoopback bool
+	// AllowNonLoopbackPlainText explicitly acknowledges serving plaintext API traffic beyond
+	// loopback outside testing mode, typically behind an ingress or TLS terminator.
+	AllowNonLoopbackPlainText bool
 	// ManagementAccessLog enables HTTP access logging for management endpoints (/health, /ready, /metrics).
 	// Disabled by default to suppress high-frequency probe noise from the access log.
 	ManagementAccessLog bool
@@ -255,6 +264,10 @@ type Config struct {
 
 	// Body size limit (bytes)
 	MaxBodySize int64
+	// BodyReadTimeout bounds ordinary REST request body reads. Zero disables the timeout.
+	BodyReadTimeout time.Duration
+	// AttachmentBodyReadTimeout bounds multipart attachment upload body reads. Zero disables the timeout.
+	AttachmentBodyReadTimeout time.Duration
 	// Maximum number of items a client may request from any listing endpoint.
 	MaxPageSize int
 
@@ -367,6 +380,8 @@ func DefaultConfig() Config {
 		UnixSocketAuth:               "credentials",
 		LocalClientID:                "local-agent",
 		MaxBodySize:                  20 * 1024 * 1024, // 2x attachment max-size
+		BodyReadTimeout:              30 * time.Second,
+		AttachmentBodyReadTimeout:    5 * time.Minute,
 		MaxPageSize:                  DefaultMaxPageSize,
 		DrainTimeout:                 30,
 		DBMaxOpenConns:               25,

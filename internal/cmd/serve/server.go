@@ -210,6 +210,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 	router.Use(security.MetricsMiddleware())
 	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
+	router.Use(bodyReadTimeoutMiddleware(cfg.BodyReadTimeout, cfg.AttachmentBodyReadTimeout))
 	router.Use(maxBodySizeMiddleware(cfg.MaxBodySize))
 	router.Use(maxPageSizeMiddleware(cfg))
 	if cfg.CORSEnabled {
@@ -460,6 +461,12 @@ func maxPageSizeUnaryInterceptor(cfg *config.Config) grpc.UnaryServerInterceptor
 func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	srv, err := BuildServer(ctx, cfg)
 	if err != nil {
+		return nil, err
+	}
+	if err := validateManagementRouteExposure(cfg); err != nil {
+		return nil, err
+	}
+	if err := validateNetworkTransportConfig(cfg); err != nil {
 		return nil, err
 	}
 

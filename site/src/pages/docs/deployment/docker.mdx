@@ -20,6 +20,11 @@ export const productionConfig = `services:
     environment:
       - MEMORY_SERVICE_DB_URL=postgres://postgres:\${DB_PASSWORD}@postgres:5432/memoryservice?sslmode=disable
       - MEMORY_SERVICE_HOST=0.0.0.0
+      - MEMORY_SERVICE_PLAIN_TEXT=false
+      - MEMORY_SERVICE_MANAGEMENT_PORT=8085
+      - MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0
+      - MEMORY_SERVICE_MANAGEMENT_PLAIN_TEXT=false
+      - MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK=true
       - MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp
       - MEMORY_SERVICE_TLS_CERT_FILE=/certs/server.crt
       - MEMORY_SERVICE_TLS_KEY_FILE=/certs/server.key
@@ -31,6 +36,7 @@ volumes:
   memory_service_tmp:`;
 
 Memory Service is distributed as a Docker image, making it easy to deploy in any container environment.
+Before adapting these examples for a real environment, review the [Security Hardening](/docs/deployment/security/) guide for image pinning, secret handling, TLS, management endpoints, and attachment-download safety.
 
 ## Quick Start
 
@@ -42,6 +48,7 @@ export DB_PASSWORD="$(openssl rand -base64 32)"
 docker run -d \
   --name memory-service \
   -p 8080:8080 \
+  -p 127.0.0.1:8085:8085 \
   --read-only \
   --user 10001:10001 \
   --cap-drop ALL \
@@ -49,6 +56,11 @@ docker run -d \
   --tmpfs /var/lib/memory-service/tmp:uid=10001,gid=10001,mode=0700 \
   -e MEMORY_SERVICE_DB_URL="postgres://postgres:${DB_PASSWORD}@host.docker.internal:5432/memoryservice?sslmode=disable" \
   -e MEMORY_SERVICE_HOST=0.0.0.0 \
+  -e MEMORY_SERVICE_TLS=false \
+  -e MEMORY_SERVICE_MANAGEMENT_PORT=8085 \
+  -e MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0 \
+  -e MEMORY_SERVICE_MANAGEMENT_TLS=false \
+  -e MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK=true \
   -e MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp \
   ghcr.io/chirino/memory-service:${PROJECT_VERSION}
 ```
@@ -64,7 +76,9 @@ docker compose up -d
 ```
 
 A minimal production-style compose file should keep secrets outside the file and pin the
-service image:
+service image. Keep browser-facing deployments behind TLS and keep management endpoints on
+an internal path; see [Security Hardening](/docs/deployment/security/) for the full
+production checklist.
 
 ```yaml
 services:
@@ -82,6 +96,11 @@ services:
       - MEMORY_SERVICE_DB_URL=postgres://postgres:${DB_PASSWORD}@postgres:5432/memoryservice?sslmode=disable
       - MEMORY_SERVICE_DB_MIGRATE_AT_START=true
       - MEMORY_SERVICE_HOST=0.0.0.0
+      - MEMORY_SERVICE_TLS=false
+      - MEMORY_SERVICE_MANAGEMENT_PORT=8085
+      - MEMORY_SERVICE_MANAGEMENT_HOST=0.0.0.0
+      - MEMORY_SERVICE_MANAGEMENT_TLS=false
+      - MEMORY_SERVICE_MANAGEMENT_ALLOW_NON_LOOPBACK=true
       - MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp
     volumes:
       - memory_service_tmp:/var/lib/memory-service/tmp
@@ -154,7 +173,7 @@ With this configuration, attachment bytes are stored under `/data/memory-service
 | `MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS`          | Optional comma-separated OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer | -       |
 | `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`        | Required comma-separated OIDC audiences accepted by Memory Service when OIDC is enabled                                     | -       |
 | `MEMORY_SERVICE_OIDC_ROLE_CLAIMS`              | JSON array of RFC 6901 claim paths used for claim-derived roles                                                             | `["/realm_access/roles"]` |
-| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; use only with self-signed development issuers           | `false` |
+| `MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY` | Skip TLS certificate verification for OIDC discovery/JWKS requests; rejected outside testing mode                           | `false` |
 | `MEMORY_SERVICE_API_KEYS_<CLIENT>`             | API key(s) for a client ID                                                                                                  | -       |
 
 ## Health Checks
@@ -202,6 +221,11 @@ services:
 For production deployments:
 
 <Code code={productionConfig} lang="yaml" />
+
+This example is a starting point, not a complete security boundary. Add a real database,
+OIDC audience configuration, non-plain encryption, trusted TLS material, exact CORS origins
+when browser clients are used, and deployment-specific network controls as described in
+[Security Hardening](/docs/deployment/security/).
 
 ## Multi-Container Setup
 
