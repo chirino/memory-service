@@ -1,6 +1,7 @@
 # Internal Module Facts
 
 **urfave slice destinations**: urfave/cli v3 `StringSliceFlag` replaces a nil `Destination` slice with an empty slice even when the flag is unset. Defaults consumed after CLI parsing must treat both nil and empty slices as unset, or provide an explicit flag value.
+**BDD hardened config**: BDD server runners must start from `defaultBDDConfig()`, which selects the `dek` provider, supplies the fixed test key, and explicitly serves management routes on the ephemeral main listener. `config.DefaultConfig()` leaves `plain` primary and management placement undecided; production-mode runners reject both, and `plain` cannot write MSEH v4 fields even when a key is assigned separately.
 
 **Runtime mode is not user-configurable**: `config.DefaultConfig()` uses `ModeProd`; tests and embedded test harnesses set `ModeTesting` programmatically. The serve CLI does not read `MEMORY_SERVICE_MODE`, so production hardening checks should key off `cfg.Mode` and must not document that environment variable as an escape hatch.
 **Gin proxy trust default**: The pinned Gin `v1.12.0` `gin.New()` engine trusts all IPv4/IPv6 proxies until `SetTrustedProxies` is called. Main and management routers must explicitly call `SetTrustedProxies(nil)` when no validated proxy CIDRs are configured; do not rely on the library default.

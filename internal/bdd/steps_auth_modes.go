@@ -98,7 +98,7 @@ func (am *authModeSteps) buildBaseConfig() (config.Config, error) {
 	if dbURL == "" {
 		return config.Config{}, fmt.Errorf("auth mode DB URL not set in suite extra key %q; configure in test runner", AuthModeDBURLKey)
 	}
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeProd
 	cfg.DBURL = dbURL
 	cfg.CacheType = "none"

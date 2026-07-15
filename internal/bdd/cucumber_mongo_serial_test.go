@@ -36,7 +36,7 @@ func TestFeaturesMongoSerial(t *testing.T) {
 	qdrantHost := testqdrant.StartQdrant(t)
 	prom := NewMockPrometheus(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "mongo"
 	cfg.AttachType = "fs"
@@ -46,7 +46,6 @@ func TestFeaturesMongoSerial(t *testing.T) {
 	cfg.RedisURL = redisURL
 	cfg.VectorType = "qdrant"
 	cfg.QdrantHost = qdrantHost
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

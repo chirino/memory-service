@@ -13,7 +13,7 @@ func TestFeaturesSQLiteOutbox(t *testing.T) {
 		requireCapabilities(t, "sqlite")
 	}
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DatastoreType = "sqlite"
 	cfg.CacheType = "none"
@@ -21,7 +21,6 @@ func TestFeaturesSQLiteOutbox(t *testing.T) {
 	cfg.VectorType = "none"
 	cfg.SearchSemanticEnabled = false
 	cfg.OutboxEnabled = true
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

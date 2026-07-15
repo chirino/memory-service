@@ -30,7 +30,7 @@ func TestFeaturesPgOutbox(t *testing.T) {
 	prom := NewMockPrometheus(t)
 	infinispan := testinfinispan.StartInfinispan(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeTesting
 	cfg.DBURL = dbURL
 	cfg.CacheType = "infinispan"
@@ -38,7 +38,6 @@ func TestFeaturesPgOutbox(t *testing.T) {
 	cfg.InfinispanUsername = infinispan.Username
 	cfg.InfinispanPassword = infinispan.Password
 	cfg.OutboxEnabled = true
-	cfg.EncryptionKey = testEncryptionKey
 	cfg.EncryptionDBDisabled = true
 	cfg.EncryptionAttachmentsDisabled = true
 	cfg.AdminUsers = bddAdminUsers()

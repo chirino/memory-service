@@ -25,7 +25,7 @@ func TestFeaturesPgKeycloak(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 	keycloak := testkeycloak.StartKeycloak(t)
 
-	cfg := config.DefaultConfig()
+	cfg := defaultBDDConfig()
 	cfg.Mode = config.ModeProd // to require validation of the tokens
 	cfg.DBURL = dbURL
 	cfg.CacheType = "none"
