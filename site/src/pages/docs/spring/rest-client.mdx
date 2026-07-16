@@ -60,6 +60,25 @@ ApiClient apiClient = MemoryServiceClients.createApiClient(
 );
 ```
 
+### Calling as an asserted user
+
+An API-key client listed in the server's `MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS` can attach `X-User-ID` to normal user API calls. Build a request-specific client rather than modifying the shared auto-configured `ApiClient`:
+
+```java
+MemoryServiceClientProperties requestProperties = new MemoryServiceClientProperties();
+requestProperties.setUrl("http://memory-service:8080");
+requestProperties.setApiKey(serviceApiKey);
+requestProperties.getDefaultHeaders().put("X-User-ID", userId);
+
+ApiClient requestClient = MemoryServiceClients.createApiClient(
+    requestProperties,
+    webClientBuilder.clone(),
+    null);
+ConversationsApi conversationsForUser = new ConversationsApi(requestClient);
+```
+
+`X-User-ID` is effective-user context, not a credential. Untrusted assertions are ignored, invalid credentials are rejected, and admin/system APIs retain the authenticated principal. See [Trusted Client User Identity Assertion](/docs/configuration/#trusted-client-user-identity-assertion) for API-key, OIDC, and mixed-mode configuration.
+
 ## API Overview
 
 The REST client provides several API classes:

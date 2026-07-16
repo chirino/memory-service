@@ -135,3 +135,39 @@ func TestAuthMiddlewareAppliesIdentityLimitAfterAuthentication(t *testing.T) {
 		}
 	}
 }
+
+func TestTrustedUserAssertionRunsBeforeIdentityRateLimit(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	cfg := config.DefaultConfig()
+	cfg.RateLimitIdentity = "1/1h,burst=1"
+	cfg.APIKeys = map[string]string{"key-1": "trusted-client"}
+	resolver, err := NewTokenResolver(&cfg)
+	require.NoError(t, err)
+	limiter, err := NewRateLimiter(&cfg)
+	require.NoError(t, err)
+
+	router := gin.New()
+	router.GET(
+		"/v1/test",
+		AuthMiddlewareWithAuthFailureRateLimiter(resolver, limiter),
+		NewUserIDAsserter("trusted-client").HTTPMiddleware(),
+		AuthenticatedRateLimitMiddleware(limiter),
+		RequireUser(),
+		func(c *gin.Context) { c.JSON(http.StatusOK, gin.H{"user": GetUserID(c)}) },
+	)
+
+	request := func(userID string) int {
+		req := httptest.NewRequest(http.MethodGet, "/v1/test", nil)
+		req.Header.Set("X-API-Key", "key-1")
+		req.Header.Set(HeaderUserID, userID)
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, req)
+		return rec.Code
+	}
+
+	// The same authenticated client gets a distinct identity bucket for each
+	// effective user, proving assertion ran before the rate limiter.
+	require.Equal(t, http.StatusOK, request("alice"))
+	require.Equal(t, http.StatusOK, request("bob"))
+	require.Equal(t, http.StatusTooManyRequests, request("alice"))
+}

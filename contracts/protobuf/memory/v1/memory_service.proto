@@ -9,6 +9,13 @@ option java_multiple_files = true;
 option java_package = "io.github.chirino.memory.grpc.v1";
 option go_package = "github.com/chirino/memory-service/internal/generated/pb";
 
+// Authentication and effective user identity are supplied as gRPC metadata,
+// not as request message fields. Callers authenticate with `authorization`
+// and/or `x-api-key`. The normal user services honor `x-user-id` only when the
+// authenticated client is configured in MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS;
+// otherwise the metadata is ignored. Admin and system services always ignore
+// `x-user-id`.
+
 // UUID fields are represented as 16-byte big-endian binary values.
 // Use the most significant 64 bits first, then least significant 64 bits.
 // Example conversion (Java):
@@ -630,7 +637,8 @@ message PutMemoryRequest {
   int32 ttl_seconds = 4;
   map<string, string> index = 5;
   optional int64 expected_revision = 6;
-  optional RequestActor actor = 7;
+  reserved 7;
+  reserved "actor";
 }
 
 message MemoryWriteResult {
@@ -649,7 +657,8 @@ message GetMemoryRequest {
   string key = 2;
   bool include_usage = 3;
   ArchiveFilter archived = 4;
-  optional RequestActor actor = 5;
+  reserved 5;
+  reserved "actor";
 }
 
 message UpdateMemoryRequest {
@@ -657,7 +666,8 @@ message UpdateMemoryRequest {
   string key = 2;
   optional bool archived = 3;
   optional int64 expected_revision = 4;
-  optional RequestActor actor = 5;
+  reserved 5;
+  reserved "actor";
 }
 
 message MemorySearchQuery {
@@ -689,7 +699,8 @@ message SearchMemoriesRequest {
   reserved 5;
   bool include_usage = 6;
   ArchiveFilter archived = 7;
-  optional RequestActor actor = 9;
+  reserved 9;
+  reserved "actor";
   repeated MemorySearchQuery queries = 10;
   int32 per_query_limit = 11;
 }
@@ -703,11 +714,8 @@ message ListMemoryNamespacesRequest {
   repeated string suffix = 2;
   int32 max_depth = 3;
   ArchiveFilter archived = 4;
-  optional RequestActor actor = 5;
-}
-
-message RequestActor {
-  optional string on_behalf_of_user_id = 1;
+  reserved 5;
+  reserved "actor";
 }
 
 message MemoryNamespace {
@@ -883,6 +891,7 @@ message CapabilitiesAuth {
   bool oidc_enabled = 1;
   bool api_key_enabled = 2;
   bool admin_justification_required = 3;
+  bool user_id_assertion_enabled = 4;
 }
 
 message CapabilitiesSecurity {
@@ -1146,6 +1155,8 @@ message DownloadAttachmentResponse {
 service EventStreamService {
   // Subscribe to real-time events (server streaming).
   // Events are filtered by the caller's conversation group membership.
+  // For authorized scope, a trusted client's `x-user-id` metadata selects the
+  // effective user. Admin scope ignores `x-user-id`.
   rpc SubscribeEvents(SubscribeEventsRequest) returns (stream EventNotification);
 }
 

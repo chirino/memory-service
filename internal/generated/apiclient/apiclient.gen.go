@@ -19,6 +19,7 @@ import (
 )
 
 const (
+	ApiKeyAuthScopes apiKeyAuthContextKey = "ApiKeyAuth.Scopes"
 	BearerAuthScopes bearerAuthContextKey = "BearerAuth.Scopes"
 )
 
@@ -526,6 +527,7 @@ type CapabilitiesAuth struct {
 	AdminJustificationRequired bool `json:"admin_justification_required"`
 	ApiKeyEnabled              bool `json:"api_key_enabled"`
 	OidcEnabled                bool `json:"oidc_enabled"`
+	UserIdAssertionEnabled     bool `json:"user_id_assertion_enabled"`
 }
 
 // CapabilitiesFeatures defines model for CapabilitiesFeatures.
@@ -1176,6 +1178,9 @@ type NotFound = ErrorResponse
 
 // SearchTypeUnavailable Error response when the requested search type is not available on the server.
 type SearchTypeUnavailable = SearchTypeUnavailableError
+
+// apiKeyAuthContextKey is the context key for ApiKeyAuth security scheme
+type apiKeyAuthContextKey string
 
 // bearerAuthContextKey is the context key for BearerAuth security scheme
 type bearerAuthContextKey string

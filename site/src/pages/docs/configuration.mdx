@@ -765,6 +765,78 @@ API-key-only requests authenticate a client service principal, not a user. They 
 
 In deployments without OIDC, `Authorization: Bearer <api-key>` is also accepted as API-key compatibility auth. Prefer `X-API-Key` for new clients. When OIDC is configured, the `Authorization: Bearer` slot is reserved for OIDC JWTs, so bearer API keys and raw bearer user IDs are rejected.
 
+### Trusted Client User Identity Assertion
+
+The `X-User-ID` header lets an explicitly trusted agent application use normal user-scoped APIs with a service credential. gRPC uses the equivalent `x-user-id` request metadata. The assertion is not a credential: the request must still authenticate with a valid API key or OIDC token.
+
+| Flag                                                                             | Values              | Default  | Description                                                                                 |
+| -------------------------------------------------------------------------------- | ------------------- | -------- | ------------------------------------------------------------------------------------------- |
+| <Cfg p="--trusted-user-id-clients" e="MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS" /> | exact client ID CSV | _(none)_ | Clients trusted to assert an effective user on normal user APIs; empty disables the feature |
+
+API key client IDs come from the lower-cased environment-variable suffix, with underscores preserved. For example, `MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR` resolves to client ID `cognition_processor`:
+
+<ConfigBlock
+  property={`# Configure the service credential
+# MEMORY_SERVICE_API_KEYS_<CLIENT_ID> has no equivalent CLI flag.
+MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=replace-with-a-secret
+
+# Trust the resolved client ID to assert users
+
+--trusted-user-id-clients=cognition_processor`}
+  env={`# Configure the service credential
+MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=replace-with-a-secret
+
+# Trust the resolved client ID to assert users
+
+MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=cognition_processor`}
+/>
+
+The REST request headers are:
+
+```http
+X-API-Key: replace-with-a-secret
+X-User-ID: alice
+```
+
+The equivalent gRPC request metadata is:
+
+```text
+x-api-key: replace-with-a-secret
+x-user-id: alice
+```
+
+OIDC deployments trust the validated signed `azp` claim, falling back to signed `client_id`. The trusted-user list is separate from the OIDC caller and audience boundaries:
+
+<ConfigBlock
+  property={`--oidc-issuer=https://idp.example.com/realms/memory-service
+--oidc-allowed-clients=cognition-processor
+--oidc-allowed-audiences=memory-service
+--trusted-user-id-clients=cognition-processor`}
+  env={`MEMORY_SERVICE_OIDC_ISSUER=https://idp.example.com/realms/memory-service
+MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=cognition-processor
+MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
+MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=cognition-processor`}
+/>
+
+One deployment may trust both API-key and OIDC client IDs:
+
+```bash
+MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=cognition_processor,cognition-processor
+```
+
+The behavior is deliberately narrow:
+
+- Matching is exact and case-sensitive; wildcards are not supported.
+- A normal user API uses the assertion only when the authenticated client is trusted.
+- An assertion from an untrusted client is ignored and the operation behaves as if the header were absent.
+- Invalid or missing credentials remain unauthenticated even when `X-User-ID` is present.
+- Admin and system APIs ignore the asserted user.
+- Assertion trust grants no admin, auditor, or indexer role. Configure client roles separately with settings such as `MEMORY_SERVICE_ROLES_ADMIN_CLIENTS`.
+- When a trusted OIDC client changes the effective user, roles derived from the original token user are dropped; client-derived roles and OIDC scope gates remain in effect.
+- `GET /v1/capabilities` and gRPC `SystemService/GetCapabilities` report `auth.user_id_assertion_enabled` without exposing the trusted-client list.
+
+Do not remove existing `auth_testfixtures` builds or use their raw bearer and `X-Client-ID` behavior as a production substitute for this feature.
+
 Authenticated agent/app clients can call `GET /v1/capabilities` or gRPC `SystemService/GetCapabilities` to retrieve a secret-free summary of the server's configured capabilities and backend choices. These endpoints allow either a resolved client context or an authenticated admin/auditor role; bearer-authenticated user calls without a client ID are rejected.
 
 ## OIDC Authentication

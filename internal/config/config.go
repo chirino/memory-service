@@ -240,6 +240,9 @@ type Config struct {
 	AdminClients    string
 	AuditorClients  string
 	IndexerClients  string
+	// TrustedUserIDClients is a comma-separated exact allowlist of authenticated
+	// client IDs permitted to assert an effective user on normal user APIs.
+	TrustedUserIDClients string
 
 	// OIDC client/audience allowlisting and resource/API scope gates
 	OIDCAllowedClients       string

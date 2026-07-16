@@ -301,6 +301,17 @@ func SourceRateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
 	}
 }
 
+// AuthenticatedRateLimitMiddleware enforces identity, expensive-operation,
+// and stream-open limits after authentication and any user assertion.
+func AuthenticatedRateLimitMiddleware(limiter *RateLimiter) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+			return
+		}
+		c.Next()
+	}
+}
+
 func consumeHTTPAuthFailure(c *gin.Context, limiter *RateLimiter) {
 	if limiter == nil || !limiter.enabled {
 		return
@@ -449,11 +460,23 @@ func GRPCSourceRateLimitStreamInterceptor(limiter *RateLimiter) grpc.StreamServe
 // GRPCIdentityRateLimitStreamInterceptor enforces identity and stream-open limits after stream auth resolution.
 func GRPCIdentityRateLimitStreamInterceptor(limiter *RateLimiter) grpc.StreamServerInterceptor {
 	return func(srv any, ss grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) error {
+		// Event streams can use either authorized-user or admin scope. The handler
+		// applies trusted user assertion only after it has inspected the request
+		// scope, so it also applies the identity limits at that point.
+		if info.FullMethod == "/memory.v1.EventStreamService/SubscribeEvents" {
+			return handler(srv, ss)
+		}
 		if err := applyGRPCAuthenticatedRateLimits(ss.Context(), limiter, info.FullMethod, true); err != nil {
 			return err
 		}
 		return handler(srv, ss)
 	}
+}
+
+// ApplyGRPCAuthenticatedRateLimits applies identity and operation rate limits
+// after a handler has resolved the effective identity.
+func ApplyGRPCAuthenticatedRateLimits(ctx context.Context, limiter *RateLimiter, fullMethod string, stream bool) error {
+	return applyGRPCAuthenticatedRateLimits(ctx, limiter, fullMethod, stream)
 }
 
 func applyGRPCSourceRateLimit(ctx context.Context, limiter *RateLimiter) error {

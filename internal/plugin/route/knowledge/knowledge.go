@@ -29,8 +29,8 @@ type clusterResponse struct {
 }
 
 // RegisterRoutes adds knowledge admin endpoints to the router.
-func (h *Handler) RegisterRoutes(router *gin.Engine, authMiddleware gin.HandlerFunc) {
-	admin := router.Group("/admin/v1/knowledge", authMiddleware, security.RequireAdminRole())
+func (h *Handler) RegisterRoutes(router *gin.Engine, authMiddleware, authenticatedRateLimit gin.HandlerFunc) {
+	admin := router.Group("/admin/v1/knowledge", authMiddleware, authenticatedRateLimit, security.RequireAdminRole())
 	admin.GET("/clusters", h.listClusters)
 	admin.POST("/trigger", h.triggerClustering)
 }

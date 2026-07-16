@@ -31,7 +31,7 @@ func TestFeaturesPgAPIKeys(t *testing.T) {
 		}
 	}
 
-	for _, name := range []string{"auth-api-keys-rest", "auth-api-keys-grpc"} {
+	for _, name := range []string{"auth-api-keys-rest", "auth-api-keys-grpc", "trusted-user-id-rest", "trusted-user-id-grpc"} {
 		featurePath := filepath.Join("testdata", "features", name+".feature")
 		if _, err := os.Stat(featurePath); os.IsNotExist(err) {
 			t.Skipf("Feature file not found: %s", featurePath)

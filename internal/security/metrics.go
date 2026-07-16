@@ -49,6 +49,9 @@ var (
 	// RateLimitRequestsTotal counts process-local rate-limit decisions by bounded class/outcome labels.
 	RateLimitRequestsTotal *prometheus.CounterVec
 
+	// UserIDAssertionsTotal counts bounded trusted-user assertion outcomes.
+	UserIDAssertionsTotal *prometheus.CounterVec
+
 	// EncryptionLegacyStreamReadsTotal counts legacy encrypted stream reads by MSEH version.
 	EncryptionLegacyStreamReadsTotal *prometheus.CounterVec
 
@@ -186,6 +189,14 @@ func initMetricsInner(constLabels prometheus.Labels) {
 			Help: "Total number of process-local rate-limit decisions",
 		},
 		[]string{"class", "outcome"},
+	)
+
+	UserIDAssertionsTotal = f.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "memory_service_auth_user_id_assertions_total",
+			Help: "Total number of trusted client user ID assertion decisions",
+		},
+		[]string{"outcome"},
 	)
 
 	EncryptionLegacyStreamReadsTotal = f.NewCounterVec(

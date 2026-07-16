@@ -2917,6 +2917,8 @@ const (
 type EventStreamServiceClient interface {
 	// Subscribe to real-time events (server streaming).
 	// Events are filtered by the caller's conversation group membership.
+	// For authorized scope, a trusted client's `x-user-id` metadata selects the
+	// effective user. Admin scope ignores `x-user-id`.
 	SubscribeEvents(ctx context.Context, in *SubscribeEventsRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[EventNotification], error)
 }
 
@@ -2953,6 +2955,8 @@ type EventStreamService_SubscribeEventsClient = grpc.ServerStreamingClient[Event
 type EventStreamServiceServer interface {
 	// Subscribe to real-time events (server streaming).
 	// Events are filtered by the caller's conversation group membership.
+	// For authorized scope, a trusted client's `x-user-id` metadata selects the
+	// effective user. Admin scope ignores `x-user-id`.
 	SubscribeEvents(*SubscribeEventsRequest, grpc.ServerStreamingServer[EventNotification]) error
 	mustEmbedUnimplementedEventStreamServiceServer()
 }

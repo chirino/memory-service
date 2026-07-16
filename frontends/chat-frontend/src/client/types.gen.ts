@@ -92,6 +92,7 @@ export type CapabilitiesAuth = {
   oidc_enabled: boolean;
   api_key_enabled: boolean;
   admin_justification_required: boolean;
+  user_id_assertion_enabled: boolean;
 };
 
 export type CapabilitiesSecurity = {

@@ -50,6 +50,31 @@ memory-service.client.url=http://localhost:8082
 
 When `memory-service.grpc.enabled` is not explicitly set to `true`, the starter will attempt to auto-derive gRPC settings from the REST client's `base-url`. This allows you to configure both REST and gRPC with a single URL.
 
+### Calling as an asserted user
+
+Attach lowercase `x-user-id` metadata together with the service credential, and derive a stub for each request so user identity cannot leak between concurrent calls:
+
+```java
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
+
+Metadata requestMetadata = new Metadata();
+requestMetadata.put(
+    Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER),
+    serviceApiKey);
+requestMetadata.put(
+    Metadata.Key.of("x-user-id", Metadata.ASCII_STRING_MARSHALLER),
+    userId);
+
+ConversationsServiceGrpc.ConversationsServiceBlockingStub requestStub =
+    stubs.conversationsService().withInterceptors(
+        MetadataUtils.newAttachHeadersInterceptor(requestMetadata));
+
+Conversation conversation = requestStub.createConversation(request);
+```
+
+The server honors the asserted user only for clients listed in `MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS` and only on normal user APIs. Admin and system methods ignore it. Request protobuf messages intentionally contain no identity wrapper or `RequestActor` field.
+
 ## Injecting Stubs
 
 The starter auto-configures a `ManagedChannel` and `MemoryServiceGrpcClients.MemoryServiceStubs` bean. Inject the stubs:

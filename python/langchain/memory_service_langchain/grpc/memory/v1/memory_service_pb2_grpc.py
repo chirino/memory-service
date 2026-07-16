@@ -2753,6 +2753,8 @@ class EventStreamServiceServicer(object):
     def SubscribeEvents(self, request, context):
         """Subscribe to real-time events (server streaming).
         Events are filtered by the caller's conversation group membership.
+        For authorized scope, a trusted client's `x-user-id` metadata selects the
+        effective user. Admin scope ignores `x-user-id`.
         """
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')

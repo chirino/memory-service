@@ -36,6 +36,29 @@ memory-service.client.api-key=your-api-key
 
 These properties are aliased to `quarkus.rest-client.memory-service-client.*` automatically.
 
+### Calling as an asserted user
+
+An API-key client listed in the server's `MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS` can call normal user APIs by attaching `X-User-ID` with its API key. Create the filtered client for the request so concurrent users do not share mutable header state:
+
+```java
+import io.github.chirino.memory.client.api.ConversationsApi;
+import jakarta.ws.rs.client.ClientRequestFilter;
+import java.net.URI;
+import org.eclipse.microprofile.rest.client.RestClientBuilder;
+
+ConversationsApi conversationsFor(String userId) {
+    return RestClientBuilder.newBuilder()
+        .baseUri(URI.create("http://memory-service:8080"))
+        .register((ClientRequestFilter) request -> {
+            request.getHeaders().putSingle("X-API-Key", serviceApiKey);
+            request.getHeaders().putSingle("X-User-ID", userId);
+        })
+        .build(ConversationsApi.class);
+}
+```
+
+`X-User-ID` is not authentication. Untrusted clients have the header ignored, while invalid credentials are still rejected. Admin and system APIs also ignore it. See [Trusted Client User Identity Assertion](/docs/configuration/#trusted-client-user-identity-assertion) for server configuration and OIDC behavior.
+
 ## Using MemoryServiceProxy
 
 The `MemoryServiceProxy` is a helper class that makes it easier to implement JAX-RS endpoints that proxy requests to the memory service. It handles authentication and bearer token propagation automatically.

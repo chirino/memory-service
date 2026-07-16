@@ -40,6 +40,8 @@ public class MemoryServiceDevServicesProcessor {
     private static final Logger LOG = Logger.getLogger(MemoryServiceDevServicesProcessor.class);
     private static final String FEATURE = "memory-service";
     private static final int MEMORY_SERVICE_PORT = 8080;
+    private static final String DEV_ENCRYPTION_DEK_KEY =
+            "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private static final String DEV_SERVICE_LABEL = "quarkus-dev-service-memory-service";
     private static final String IMAGE_NAME_CONFIG_KEY = "memory-service.devservices.image-name";
     private static final String IMAGE_REPOSITORY = "ghcr.io/chirino/memory-service";
@@ -277,32 +279,8 @@ public class MemoryServiceDevServicesProcessor {
                                             // registry so a locally cached tag cannot go stale.
                                             container.withImagePullPolicy(PullPolicy.alwaysPull());
                                         }
-                                        container
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_API_KEYS_AGENT",
-                                                        effectiveApiKey)
-                                                .withEnv("MEMORY_SERVICE_TLS_SELF_SIGNED", "true")
-                                                .withEnv("MEMORY_SERVICE_DB_KIND", "sqlite")
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_DB_URL",
-                                                        "file:/tmp/memory-service-dev/memory-service.db")
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_DB_MIGRATE_AT_START",
-                                                        "true")
-                                                .withEnv("MEMORY_SERVICE_CACHE_KIND", "local")
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED",
-                                                        "true")
-                                                .withEnv("MEMORY_SERVICE_VECTOR_KIND", "sqlite")
-                                                .withEnv("MEMORY_SERVICE_EMBEDDING_KIND", "local")
-                                                .withEnv("MEMORY_SERVICE_ATTACHMENTS_KIND", "fs")
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_ATTACHMENTS_FS_DIR",
-                                                        "/tmp/memory-service-dev/attachments")
-                                                .withEnv(
-                                                        "MEMORY_SERVICE_TEMP_DIR",
-                                                        "/tmp/memory-service-dev/tmp")
-                                                .withLabel(DEV_SERVICE_LABEL, "memory-service");
+                                        configureDefaultEnvironment(container, effectiveApiKey);
+                                        container.withLabel(DEV_SERVICE_LABEL, "memory-service");
 
                                         if (fixedPort != null) {
                                             container.withEnv(
@@ -416,6 +394,24 @@ public class MemoryServiceDevServicesProcessor {
             LOG.warnf(e, "Unable to load %s; Dev Services will use latest", VERSION_RESOURCE);
             return null;
         }
+    }
+
+    static void configureDefaultEnvironment(GenericContainer<?> container, String effectiveApiKey) {
+        container
+                .withEnv("MEMORY_SERVICE_API_KEYS_AGENT", effectiveApiKey)
+                .withEnv("MEMORY_SERVICE_TLS_SELF_SIGNED", "true")
+                .withEnv("MEMORY_SERVICE_DB_KIND", "sqlite")
+                .withEnv("MEMORY_SERVICE_DB_URL", "file:/tmp/memory-service-dev/memory-service.db")
+                .withEnv("MEMORY_SERVICE_DB_MIGRATE_AT_START", "true")
+                .withEnv("MEMORY_SERVICE_CACHE_KIND", "local")
+                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED", "true")
+                .withEnv("MEMORY_SERVICE_VECTOR_KIND", "sqlite")
+                .withEnv("MEMORY_SERVICE_EMBEDDING_KIND", "local")
+                .withEnv("MEMORY_SERVICE_ATTACHMENTS_KIND", "fs")
+                .withEnv("MEMORY_SERVICE_ATTACHMENTS_FS_DIR", "/tmp/memory-service-dev/attachments")
+                .withEnv("MEMORY_SERVICE_TEMP_DIR", "/tmp/memory-service-dev/tmp")
+                .withEnv("MEMORY_SERVICE_ENCRYPTION_KIND", "dek")
+                .withEnv("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", DEV_ENCRYPTION_DEK_KEY);
     }
 
     private static String findConfiguredAuthServerUrl() {

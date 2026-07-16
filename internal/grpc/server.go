@@ -339,6 +339,7 @@ func mapCapabilitiesSummary(summary servicecapabilities.Summary) *pb.Capabilitie
 			OidcEnabled:                summary.Auth.OIDCEnabled,
 			ApiKeyEnabled:              summary.Auth.APIKeyEnabled,
 			AdminJustificationRequired: summary.Auth.AdminJustificationRequired,
+			UserIdAssertionEnabled:     summary.Auth.UserIDAssertionEnabled,
 		},
 		Security: &pb.CapabilitiesSecurity{
 			EncryptionEnabled:           summary.Security.EncryptionEnabled,
@@ -2169,7 +2170,7 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		index = map[string]string{}
 	}
 
-	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	pc, err := s.memoryPolicyContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2236,7 +2237,7 @@ func (s *MemoriesServer) GetMemory(ctx context.Context, req *pb.GetMemoryRequest
 		return nil, status.Error(codes.InvalidArgument, "key is required")
 	}
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
-	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	pc, err := s.memoryPolicyContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2317,7 +2318,7 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 	if req.Archived == nil || !req.GetArchived() {
 		return nil, status.Error(codes.InvalidArgument, "archived must be true")
 	}
-	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	pc, err := s.memoryPolicyContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2375,7 +2376,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 	}
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
 	effectivePrefix := req.GetNamespacePrefix()
-	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	pc, err := s.memoryPolicyContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -2500,7 +2501,7 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	}
 
 	archived := protoArchiveFilterToEpisodic(req.GetArchived())
-	pc, err := s.memoryPolicyContext(ctx, req.GetActor())
+	pc, err := s.memoryPolicyContext(ctx)
 	if err != nil {
 		return nil, err
 	}
@@ -3095,7 +3096,7 @@ func validateMemoryNamespace(ns []string, maxDepth int) error {
 	return nil
 }
 
-func (s *MemoriesServer) memoryPolicyContext(ctx context.Context, actor *pb.RequestActor) (episodic.PolicyContext, error) {
+func (s *MemoriesServer) memoryPolicyContext(ctx context.Context) (episodic.PolicyContext, error) {
 	id, err := requireGRPCIdentity(ctx)
 	if err != nil {
 		return episodic.PolicyContext{}, err
@@ -3108,11 +3109,6 @@ func (s *MemoriesServer) memoryPolicyContext(ctx context.Context, actor *pb.Requ
 		roles = append(roles, security.RoleAuditor)
 	}
 	userID := strings.TrimSpace(id.UserID)
-	if actor != nil {
-		if onBehalfOfUserID := strings.TrimSpace(actor.GetOnBehalfOfUserId()); onBehalfOfUserID != "" {
-			userID = onBehalfOfUserID
-		}
-	}
 	return episodic.PolicyContext{
 		UserID:   userID,
 		ClientID: strings.TrimSpace(id.ClientID),
@@ -4094,9 +4090,20 @@ func (s *ResponseRecorderServer) resolveAdvertisedAddress(ctx context.Context) s
 
 type EventStreamServer struct {
 	pb.UnimplementedEventStreamServiceServer
-	Store    registrystore.MemoryStore
-	EventBus registryeventbus.EventBus
-	Config   *config.Config
+	Store          registrystore.MemoryStore
+	EventBus       registryeventbus.EventBus
+	Config         *config.Config
+	UserIDAsserter *security.UserIDAsserter
+	RateLimiter    *security.RateLimiter
+}
+
+type assertedEventStreamServer struct {
+	pb.EventStreamService_SubscribeEventsServer
+	ctx context.Context
+}
+
+func (s *assertedEventStreamServer) Context() context.Context {
+	return s.ctx
 }
 
 type AdminCheckpointServer struct {
@@ -4238,6 +4245,21 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	case pb.EventScope_EVENT_SCOPE_UNSPECIFIED, pb.EventScope_EVENT_SCOPE_AUTHORIZED, pb.EventScope_EVENT_SCOPE_ADMIN:
 	default:
 		return status.Error(codes.InvalidArgument, "invalid event scope")
+	}
+	if !adminScope && s.UserIDAsserter != nil {
+		assertedCtx, err := s.UserIDAsserter.ApplyGRPCContext(stream.Context())
+		if err != nil {
+			return err
+		}
+		stream = &assertedEventStreamServer{EventStreamService_SubscribeEventsServer: stream, ctx: assertedCtx}
+	}
+	if err := security.ApplyGRPCAuthenticatedRateLimits(
+		stream.Context(),
+		s.RateLimiter,
+		"/memory.v1.EventStreamService/SubscribeEvents",
+		true,
+	); err != nil {
+		return err
 	}
 	if adminScope {
 		if !hasGRPCAdminEventAccess(stream.Context()) {

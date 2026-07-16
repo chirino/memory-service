@@ -815,6 +815,13 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Usage:       "Comma-separated API client IDs with indexer permissions",
 		},
 		&cli.StringFlag{
+			Name:        "trusted-user-id-clients",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS"),
+			Destination: &cfg.TrustedUserIDClients,
+			Usage:       "Comma-separated exact client IDs trusted to assert X-User-ID on normal user APIs",
+		},
+		&cli.StringFlag{
 			Name:        "oidc-allowed-clients",
 			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS"),

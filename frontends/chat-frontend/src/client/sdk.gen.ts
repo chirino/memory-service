@@ -122,7 +122,10 @@ export class CapabilitiesService {
   public static getCapabilities<ThrowOnError extends boolean = true>(options?: Options<never, ThrowOnError>) {
     return (options?.client ?? client).get<GetCapabilitiesResponses, GetCapabilitiesErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/capabilities",
       ...options,
     });
@@ -167,7 +170,10 @@ export class ConversationsService {
     );
     return (options?.client ?? client).get<ListConversationsResponses, ListConversationsErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations",
       ...options,
       ...params,
@@ -193,7 +199,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations",
       ...options,
       ...params,
@@ -219,7 +228,10 @@ export class ConversationsService {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "conversationId" }] }]);
     return (options?.client ?? client).get<GetConversationResponses, GetConversationErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}",
       ...options,
       ...params,
@@ -257,7 +269,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}",
       ...options,
       ...params,
@@ -324,7 +339,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/entries",
       ...options,
       ...params,
@@ -366,7 +384,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/entries",
       ...options,
       ...params,
@@ -419,7 +440,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/entries/sync",
       ...options,
       ...params,
@@ -454,7 +478,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/forks",
       ...options,
       ...params,
@@ -491,7 +518,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/children",
       ...options,
       ...params,
@@ -518,7 +548,10 @@ export class ConversationsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/response",
       ...options,
       ...params,
@@ -560,7 +593,10 @@ export class SharingService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/ownership-transfers",
       ...options,
       ...params,
@@ -599,7 +635,10 @@ export class SharingService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/ownership-transfers",
       ...options,
       ...params,
@@ -629,7 +668,10 @@ export class SharingService {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "transferId" }] }]);
     return (options?.client ?? client).delete<DeleteTransferResponses, DeleteTransferErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/ownership-transfers/{transferId}",
       ...options,
       ...params,
@@ -651,7 +693,10 @@ export class SharingService {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "transferId" }] }]);
     return (options?.client ?? client).get<GetTransferResponses, GetTransferErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/ownership-transfers/{transferId}",
       ...options,
       ...params,
@@ -676,7 +721,10 @@ export class SharingService {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "transferId" }] }]);
     return (options?.client ?? client).post<AcceptTransferResponses, AcceptTransferErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/ownership-transfers/{transferId}/accept",
       ...options,
       ...params,
@@ -716,7 +764,10 @@ export class SharingService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/memberships",
       ...options,
       ...params,
@@ -748,7 +799,10 @@ export class SharingService {
     );
     return (options?.client ?? client).post<ShareConversationResponses, ShareConversationErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/memberships",
       ...options,
       ...params,
@@ -788,7 +842,10 @@ export class SharingService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/memberships/{userId}",
       ...options,
       ...params,
@@ -825,7 +882,10 @@ export class SharingService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/{conversationId}/memberships/{userId}",
       ...options,
       ...params,
@@ -859,7 +919,10 @@ export class SearchService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/search",
       ...options,
       ...params,
@@ -905,7 +968,10 @@ export class SearchService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/index",
       ...options,
       ...params,
@@ -957,7 +1023,10 @@ export class SearchService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/conversations/unindexed",
       ...options,
       ...params,
@@ -993,7 +1062,10 @@ export class MemoriesService {
     );
     return (options?.client ?? client).get<GetMemoryResponses, GetMemoryErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories",
       ...options,
       ...params,
@@ -1028,7 +1100,10 @@ export class MemoriesService {
     );
     return (options?.client ?? client).patch<UpdateMemoryResponses, UpdateMemoryErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories",
       ...options,
       ...params,
@@ -1052,7 +1127,10 @@ export class MemoriesService {
     const params = buildClientParams([parameters], [{ args: [{ key: "putMemoryRequest", map: "body" }] }]);
     return (options?.client ?? client).put<PutMemoryResponses, PutMemoryErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories",
       ...options,
       ...params,
@@ -1078,7 +1156,10 @@ export class MemoriesService {
     const params = buildClientParams([parameters], [{ args: [{ key: "searchMemoriesRequest", map: "body" }] }]);
     return (options?.client ?? client).post<SearchMemoriesResponses, SearchMemoriesErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories/search",
       ...options,
       ...params,
@@ -1122,7 +1203,10 @@ export class MemoriesService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories/namespaces",
       ...options,
       ...params,
@@ -1164,7 +1248,10 @@ export class MemoriesService {
     );
     return (options?.client ?? client).get<ListMemoryEventsResponses, ListMemoryEventsErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/memories/events",
       ...options,
       ...params,
@@ -1209,7 +1296,10 @@ export class AttachmentsService {
     );
     return (options?.client ?? client).post<UploadAttachmentResponses, UploadAttachmentErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/attachments",
       ...options,
       ...params,
@@ -1240,7 +1330,10 @@ export class AttachmentsService {
     const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }]);
     return (options?.client ?? client).delete<DeleteAttachmentResponses, DeleteAttachmentErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/attachments/{id}",
       ...options,
       ...params,
@@ -1279,7 +1372,10 @@ export class AttachmentsService {
     );
     return (options?.client ?? client).get<GetAttachmentResponses, GetAttachmentErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/attachments/{id}",
       ...options,
       ...params,
@@ -1323,7 +1419,10 @@ export class AttachmentsService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/attachments/{id}/download-url",
       ...options,
       ...params,
@@ -1412,7 +1511,10 @@ export class EventsService {
     );
     return (options?.client ?? client).sse.get<SubscribeEventsResponses, SubscribeEventsErrors, ThrowOnError, "data">({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/events",
       ...options,
       ...params,
@@ -1465,7 +1567,10 @@ export class AdminService {
       "data"
     >({
       responseStyle: "data",
-      security: [{ scheme: "bearer", type: "http" }],
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
       url: "/v1/admin/events",
       ...options,
       ...params,

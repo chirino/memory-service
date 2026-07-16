@@ -22,6 +22,7 @@ func init() {
 		e := &grpcEventSteps{s: s, streams: make(map[string]*grpcEventStream)}
 
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream$`, e.userIsConnectedToGRPCEventStream)
+		ctx.Step(`^the current client is connected to the gRPC event stream as "([^"]*)"$`, e.currentClientIsConnectedToGRPCEventStreamAs)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamFilteredToKinds)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)" and entry channels "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamFilteredToKindsAndEntryChannels)
 		ctx.Step(`^"([^"]*)" is connected to the gRPC event stream filtered to kinds "([^"]*)" entry channels "([^"]*)" content types "([^"]*)" and roles "([^"]*)"$`, e.userIsConnectedToGRPCEventStreamWithEntryFilters)
@@ -58,10 +59,17 @@ type grpcEventSteps struct {
 }
 
 func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entryChannels []string, entryContentTypes []string, entryRoles []string, afterCursor, detail *string) error {
+	e.s.RegisterCanonicalUsers(userID)
+	subject := e.s.IsolatedUser(userID)
+	authCtx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+subject))
+	return e.openGRPCEventStreamWithContext(userID, authCtx, kinds, entryChannels, entryContentTypes, entryRoles, afterCursor, detail)
+}
+
+func (e *grpcEventSteps) openGRPCEventStreamWithContext(streamID string, authCtx context.Context, kinds []string, entryChannels []string, entryContentTypes []string, entryRoles []string, afterCursor, detail *string) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
-	if existing, ok := e.streams[userID]; ok {
+	if existing, ok := e.streams[streamID]; ok {
 		existing.cancel()
 		<-existing.done
 	}
@@ -71,16 +79,12 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entr
 		return fmt.Errorf("gRPC address not configured in test suite")
 	}
 
-	e.s.RegisterCanonicalUsers(userID)
-	subject := e.s.IsolatedUser(userID)
-
 	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
 	if err != nil {
 		return err
 	}
 
-	ctx, cancel := context.WithCancel(context.Background())
-	ctx = metadata.NewOutgoingContext(ctx, metadata.Pairs("authorization", "Bearer "+subject))
+	ctx, cancel := context.WithCancel(authCtx)
 
 	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, &pb.SubscribeEventsRequest{
 		Kinds:             kinds,
@@ -102,7 +106,7 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entr
 		conn:   conn,
 		done:   make(chan struct{}),
 	}
-	e.streams[userID] = grpcStream
+	e.streams[streamID] = grpcStream
 
 	go func() {
 		defer close(grpcStream.done)
@@ -138,6 +142,10 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entr
 
 	time.Sleep(100 * time.Millisecond)
 	return nil
+}
+
+func (e *grpcEventSteps) currentClientIsConnectedToGRPCEventStreamAs(streamID string) error {
+	return e.openGRPCEventStreamWithContext(streamID, grpcAuthContext(e.s), nil, nil, nil, nil, nil, nil)
 }
 
 func (e *grpcEventSteps) closeAll() {

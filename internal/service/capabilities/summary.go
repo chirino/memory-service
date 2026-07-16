@@ -39,6 +39,7 @@ type AuthSummary struct {
 	OIDCEnabled                bool `json:"oidc_enabled"`
 	APIKeyEnabled              bool `json:"api_key_enabled"`
 	AdminJustificationRequired bool `json:"admin_justification_required"`
+	UserIDAssertionEnabled     bool `json:"user_id_assertion_enabled"`
 }
 
 type SecuritySummary struct {
@@ -85,6 +86,7 @@ func buildSummary(cfg *config.Config, info *debug.BuildInfo, ok bool) Summary {
 			OIDCEnabled:                strings.TrimSpace(cfg.OIDCIssuer) != "",
 			APIKeyEnabled:              len(cfg.APIKeys) > 0,
 			AdminJustificationRequired: cfg.RequireJustification,
+			UserIDAssertionEnabled:     hasCSVValue(cfg.TrustedUserIDClients),
 		},
 		Security: SecuritySummary{
 			EncryptionEnabled:           encryptionEnabled,
@@ -92,6 +94,15 @@ func buildSummary(cfg *config.Config, info *debug.BuildInfo, ok bool) Summary {
 			AttachmentEncryptionEnabled: encryptionEnabled && !cfg.EncryptionAttachmentsDisabled,
 		},
 	}
+}
+
+func hasCSVValue(raw string) bool {
+	for _, value := range strings.Split(raw, ",") {
+		if strings.TrimSpace(value) != "" {
+			return true
+		}
+	}
+	return false
 }
 
 func buildVersion(info *debug.BuildInfo, ok bool) string {
