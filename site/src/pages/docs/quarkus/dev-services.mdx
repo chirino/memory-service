@@ -42,8 +42,12 @@ The memory-service container is configured by default with:
   code={`MEMORY_SERVICE_DB_KIND=sqlite
 MEMORY_SERVICE_DB_URL=file:/tmp/memory-service-dev/memory-service.db
 MEMORY_SERVICE_DB_MIGRATE_AT_START=true
-MEMORY_SERVICE_TLS_SELF_SIGNED=true
+MEMORY_SERVICE_HOST=0.0.0.0
+MEMORY_SERVICE_PLAIN_TEXT=true
+MEMORY_SERVICE_TLS=false
+MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT=true
 MEMORY_SERVICE_CACHE_KIND=local
+MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true
 MEMORY_SERVICE_VECTOR_KIND=sqlite
 MEMORY_SERVICE_EMBEDDING_KIND=local
 MEMORY_SERVICE_ATTACHMENTS_KIND=fs
@@ -55,7 +59,7 @@ MEMORY_SERVICE_ENCRYPTION_DEK_KEY=0123456789abcdef0123456789abcdef0123456789abcd
 
 The well-known DEK is intended only for the local Dev Services container. Production deployments must configure a securely generated key or another encryption provider.
 
-If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container.
+If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container. To keep development zero-configuration, it sets `MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=true`; production deployments should always configure an audience allowlist. To exercise strict validation in Dev Services, set `memory-service.devservices.env.MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=false` and provide `memory-service.devservices.env.MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`.
 
 ## Configuration Properties
 
@@ -95,6 +99,17 @@ memory-service.devservices.port=8082
 ```
 
 When this property is not set, the Quarkus app still receives the correct dynamic port through generated config.
+
+Setting a fixed port also enables the integrated Memory Service developer frontend and configures its external base URL. The console opens without an OAuth redirect: Dev Services generates a separate browser-visible API key for the `developer_frontend` client and grants that client the admin role. The underscore matches the preserved suffix in `MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND`. The agent application's API key remains separate and does not gain admin privileges.
+
+This no-login mode is intended only for the local Dev Services container. Anyone who can reach the port can load the browser-visible admin key from `/developer/config.json`. Never copy these settings to a production deployment. To test the production OIDC login flow while using Dev Services, set:
+
+```properties
+memory-service.devservices.env.MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE=oidc
+memory-service.devservices.env.MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID=developer-frontend
+```
+
+With a random port, the integrated frontend remains disabled because its browser-facing URL cannot be known before the container starts.
 
 ### `memory-service.devservices.image-name`
 

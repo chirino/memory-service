@@ -43,6 +43,7 @@ public class MemoryServiceDevServicesProcessor {
     private static final String DEV_ENCRYPTION_DEK_KEY =
             "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
     private static final String DEV_SERVICE_LABEL = "quarkus-dev-service-memory-service";
+    private static final String DEV_FRONTEND_CLIENT_ID = "developer_frontend";
     private static final String IMAGE_NAME_CONFIG_KEY = "memory-service.devservices.image-name";
     private static final String IMAGE_REPOSITORY = "ghcr.io/chirino/memory-service";
     private static final String LATEST_IMAGE = IMAGE_REPOSITORY + ":latest";
@@ -219,6 +220,7 @@ public class MemoryServiceDevServicesProcessor {
 
         // Read optional fixed port configuration
         final Integer fixedPort = getFixedPortConfig();
+        final String developerFrontendApiKey = fixedPort == null ? null : generateRandomApiKey();
         final String configuredImageName = getConfiguredImageName();
         final String imageName = resolveImageName(configuredImageName, EXTENSION_VERSION);
         final boolean usingDefaultImage =
@@ -283,9 +285,8 @@ public class MemoryServiceDevServicesProcessor {
                                         container.withLabel(DEV_SERVICE_LABEL, "memory-service");
 
                                         if (fixedPort != null) {
-                                            container.withEnv(
-                                                    "MEMORY_SERVICE_BASE_URL",
-                                                    "http://localhost:" + fixedPort);
+                                            configureFixedPortEnvironment(
+                                                    container, fixedPort, developerFrontendApiKey);
                                         }
 
                                         // Apply additional environment variables from config
@@ -399,12 +400,15 @@ public class MemoryServiceDevServicesProcessor {
     static void configureDefaultEnvironment(GenericContainer<?> container, String effectiveApiKey) {
         container
                 .withEnv("MEMORY_SERVICE_API_KEYS_AGENT", effectiveApiKey)
-                .withEnv("MEMORY_SERVICE_TLS_SELF_SIGNED", "true")
+                .withEnv("MEMORY_SERVICE_HOST", "0.0.0.0")
+                .withEnv("MEMORY_SERVICE_PLAIN_TEXT", "true")
+                .withEnv("MEMORY_SERVICE_TLS", "false")
+                .withEnv("MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT", "true")
                 .withEnv("MEMORY_SERVICE_DB_KIND", "sqlite")
                 .withEnv("MEMORY_SERVICE_DB_URL", "file:/tmp/memory-service-dev/memory-service.db")
                 .withEnv("MEMORY_SERVICE_DB_MIGRATE_AT_START", "true")
                 .withEnv("MEMORY_SERVICE_CACHE_KIND", "local")
-                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED", "true")
+                .withEnv("MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER", "true")
                 .withEnv("MEMORY_SERVICE_VECTOR_KIND", "sqlite")
                 .withEnv("MEMORY_SERVICE_EMBEDDING_KIND", "local")
                 .withEnv("MEMORY_SERVICE_ATTACHMENTS_KIND", "fs")
@@ -412,6 +416,18 @@ public class MemoryServiceDevServicesProcessor {
                 .withEnv("MEMORY_SERVICE_TEMP_DIR", "/tmp/memory-service-dev/tmp")
                 .withEnv("MEMORY_SERVICE_ENCRYPTION_KIND", "dek")
                 .withEnv("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", DEV_ENCRYPTION_DEK_KEY);
+    }
+
+    static void configureFixedPortEnvironment(
+            GenericContainer<?> container, int fixedPort, String developerFrontendApiKey) {
+        container
+                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED", "true")
+                .withEnv("MEMORY_SERVICE_BASE_URL", "http://localhost:" + fixedPort)
+                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID", DEV_FRONTEND_CLIENT_ID)
+                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE", "api-key")
+                .withEnv("MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY", developerFrontendApiKey)
+                .withEnv("MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND", developerFrontendApiKey)
+                .withEnv("MEMORY_SERVICE_ROLES_ADMIN_CLIENTS", DEV_FRONTEND_CLIENT_ID);
     }
 
     private static String findConfiguredAuthServerUrl() {
@@ -431,8 +447,7 @@ public class MemoryServiceDevServicesProcessor {
         }
     }
 
-    private static void configureKeycloakDevService(
-            GenericContainer<?> container, String authServerUrl) {
+    static void configureKeycloakDevService(GenericContainer<?> container, String authServerUrl) {
         if (authServerUrl == null || authServerUrl.isBlank()) {
             return;
         }
@@ -444,6 +459,11 @@ public class MemoryServiceDevServicesProcessor {
         container.withEnv("MEMORY_SERVICE_OIDC_ISSUER", authServerUrl);
         // Discovery URL = internal URL reachable from container
         container.withEnv("MEMORY_SERVICE_OIDC_DISCOVERY_URL", containerAuthServerUrl);
+        // Keep Dev Services zero-configuration even for realms without an audience mapper. An
+        // explicit devservices.env override can restore strict audience validation.
+        if (!container.getEnvMap().containsKey("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE")) {
+            container.withEnv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", "true");
+        }
     }
 
     private static String hostReachableUrl(String url) {

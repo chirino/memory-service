@@ -193,9 +193,11 @@ services:
       MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
-      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor,developer_frontend
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      # Browser-visible local developer-console credential. Never use this key in production.
+      MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND: developer-frontend-api-key
       MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
       MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
       MEMORY_SERVICE_EPISODIC_POLICY_DIR: /etc/memory-service/episodic-policy
@@ -207,6 +209,9 @@ services:
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: http://localhost:3000
       MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID: developer_frontend
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE: api-key
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY: developer-frontend-api-key
       MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
 
       # ── Observability ──────────────────────────────────────────

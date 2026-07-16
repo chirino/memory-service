@@ -14,7 +14,7 @@ import {
 } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
-import { getAccessToken } from "@/api/client";
+import { getAuthHeaders } from "@/api/client";
 import { cn } from "@/lib/utils";
 import { JsonHighlight } from "./JsonHighlight";
 import type { ContentRendererProps } from "./index";
@@ -146,11 +146,7 @@ async function fetchSignedDownloadUrl(
     return safeAttachmentUrl(attachment.href);
   }
   try {
-    const headers = new Headers();
-    const token = getAccessToken();
-    if (token) {
-      headers.set("Authorization", `Bearer ${token}`);
-    }
+    const headers = getAuthHeaders();
     const response = await fetch(attachmentDownloadUrl(attachment.attachmentId, disposition), { headers });
     if (!response.ok) {
       return undefined;

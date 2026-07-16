@@ -82,39 +82,49 @@ export function Sidebar() {
       </nav>
 
       <div className="m-4 hidden border-t border-[rgba(43,39,34,0.12)] pt-6 md:block">
-        <DropdownMenu>
-          <DropdownMenuTrigger className="w-full">
-            <div className="flex items-center gap-3 rounded-xl px-1 py-2 transition-colors hover:bg-white/55">
-              <div className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-primary">
-                {getInitials()}
+        {auth.canLogout ? (
+          <DropdownMenu>
+            <DropdownMenuTrigger className="w-full">
+              <div className="flex items-center gap-3 rounded-xl px-1 py-2 transition-colors hover:bg-white/55">
+                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-primary">
+                  {getInitials()}
+                </div>
+                <div className="min-w-0 flex-1 text-left">
+                  <p className="truncate text-sm font-medium text-foreground">
+                    {(auth.user?.profile?.name as string) || (auth.user?.profile?.email as string) || "User"}
+                  </p>
+                  <p className="text-xs text-muted-foreground">{roleLabel}</p>
+                </div>
+                <ChevronDown className="h-4 w-4 text-stone" strokeWidth={1.6} />
               </div>
-              <div className="min-w-0 flex-1 text-left">
-                <p className="truncate text-sm font-medium text-foreground">
-                  {(auth.user?.profile?.name as string) || (auth.user?.profile?.email as string) || "User"}
-                </p>
-                <p className="text-xs text-muted-foreground">{roleLabel}</p>
-              </div>
-              <ChevronDown className="h-4 w-4 text-stone" strokeWidth={1.6} />
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="end" className="w-56">
+              <DropdownMenuLabel>
+                <div className="flex flex-col space-y-1">
+                  <p className="text-sm font-medium">{(auth.user?.profile?.name as string) || "User"}</p>
+                  <p className="text-xs text-muted-foreground">{(auth.user?.profile?.email as string) || ""}</p>
+                </div>
+              </DropdownMenuLabel>
+              <DropdownMenuSeparator />
+              <DropdownMenuItem onClick={auth.logout} className="cursor-pointer">
+                <LogOut className="mr-2 h-4 w-4" />
+                <span>Sign Out</span>
+              </DropdownMenuItem>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        ) : (
+          <div className="flex items-center gap-3 rounded-xl px-1 py-2">
+            <div className="flex h-11 w-11 items-center justify-center rounded-full bg-sage-soft text-sm font-semibold text-primary">
+              {getInitials()}
             </div>
-          </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
-            <DropdownMenuLabel>
-              <div className="flex flex-col space-y-1">
-                <p className="text-sm font-medium">
-                  {(auth.user?.profile?.name as string) || "User"}
-                </p>
-                <p className="text-xs text-muted-foreground">
-                  {(auth.user?.profile?.email as string) || ""}
-                </p>
-              </div>
-            </DropdownMenuLabel>
-            <DropdownMenuSeparator />
-            <DropdownMenuItem onClick={auth.logout} className="cursor-pointer">
-              <LogOut className="mr-2 h-4 w-4" />
-              <span>Sign Out</span>
-            </DropdownMenuItem>
-          </DropdownMenuContent>
-        </DropdownMenu>
+            <div className="min-w-0 flex-1 text-left">
+              <p className="truncate text-sm font-medium text-foreground">
+                {(auth.user?.profile?.name as string) || "Local Developer"}
+              </p>
+              <p className="text-xs text-muted-foreground">{roleLabel}</p>
+            </div>
+          </div>
+        )}
       </div>
     </aside>
   );

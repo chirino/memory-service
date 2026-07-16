@@ -26,7 +26,8 @@ func TestRegisterRoutesDoesNotConflictWithConfigAndSPAFallback(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://memory.example",
-		"oidc": {
+		"auth": {
+			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",
 			"clientId": "developer-frontend",
 			"redirectUri": "http://memory.example/developer/"
@@ -72,7 +73,8 @@ func TestConfigUsesRequestOriginWhenBaseURLIsUnset(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://localhost:49152",
-		"oidc": {
+		"auth": {
+			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",
 			"clientId": "developer-frontend",
 			"redirectUri": "http://localhost:49152/developer/"
@@ -98,12 +100,36 @@ func TestConfigIgnoresForwardedOriginWhenBaseURLIsUnset(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://localhost:49152",
-		"oidc": {
+		"auth": {
+			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",
 			"clientId": "developer-frontend",
 			"redirectUri": "http://localhost:49152/developer/"
 		}
 	}`, rec.Body.String())
+}
+
+func TestConfigReturnsAPIKeyAuthWithoutOIDCSettings(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := testConfig(t)
+	cfg.DeveloperFrontendAuthMode = config.DeveloperFrontendAuthAPIKey
+	cfg.DeveloperFrontendAPIKey = "local-developer-key"
+	router := gin.New()
+	require.NoError(t, RegisterRoutes(router, cfg))
+
+	rec := performDeveloperRequest(router, "/developer/config.json")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.JSONEq(t, `{
+		"apiUrl": "http://memory.example",
+		"auth": {
+			"mode": "api-key",
+			"apiKey": "local-developer-key",
+			"clientId": "developer-frontend"
+		}
+	}`, rec.Body.String())
+	require.NotContains(t, rec.Body.String(), "authority")
+	require.NotContains(t, rec.Body.String(), "redirectUri")
 }
 
 func TestRegisterRoutesFallsBackToSPAForExtensionlessDeveloperPaths(t *testing.T) {
@@ -156,6 +182,7 @@ func testConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		DeveloperFrontendEnabled:  true,
 		DeveloperFrontendDir:      dir,
+		DeveloperFrontendAuthMode: config.DeveloperFrontendAuthOIDC,
 		DeveloperFrontendClientID: "developer-frontend",
 		BaseURL:                   "http://memory.example/",
 		OIDCIssuer:                "http://keycloak.example/realms/memory-service",

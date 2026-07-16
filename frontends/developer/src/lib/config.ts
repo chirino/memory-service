@@ -1,10 +1,19 @@
+export type AppAuthConfig =
+  | {
+      mode: "oidc";
+      authority: string;
+      clientId: string;
+      redirectUri: string;
+    }
+  | {
+      mode: "api-key";
+      apiKey: string;
+      clientId: string;
+    };
+
 export interface AppConfig {
   apiUrl: string;
-  oidc: {
-    authority: string;
-    clientId: string;
-    redirectUri: string;
-  };
+  auth: AppAuthConfig;
 }
 
 let cachedConfig: AppConfig | null = null;
