@@ -26,6 +26,7 @@ func TestRegisterRoutesDoesNotConflictWithConfigAndSPAFallback(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://memory.example",
+		"cognitiveApiUrl": "",
 		"auth": {
 			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",
@@ -61,6 +62,23 @@ func TestRegisterRoutesServesStaticAssetsThroughNoRoute(t *testing.T) {
 	require.JSONEq(t, `{}`, rec.Body.String())
 }
 
+func TestCSPIncludesCognitiveAPIURLWhenConfigured(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	cfg := testConfig(t)
+	cfg.CognitiveAPIURL = "http://localhost:8090"
+	require.NoError(t, os.MkdirAll(filepath.Join(cfg.DeveloperFrontendDir, "assets"), 0o755))
+	require.NoError(t, os.WriteFile(filepath.Join(cfg.DeveloperFrontendDir, "assets", "app.js"), []byte("console.log('ok')"), 0o644))
+
+	router := gin.New()
+	require.NoError(t, RegisterRoutes(router, cfg))
+
+	rec := performDeveloperRequest(router, "/developer/assets/app.js")
+	require.Equal(t, http.StatusOK, rec.Code)
+	csp := rec.Header().Get("Content-Security-Policy")
+	require.Contains(t, csp, "connect-src 'self' http://keycloak.example http://localhost:8090")
+}
+
 func TestConfigUsesRequestOriginWhenBaseURLIsUnset(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 
@@ -73,6 +91,7 @@ func TestConfigUsesRequestOriginWhenBaseURLIsUnset(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://localhost:49152",
+		"cognitiveApiUrl": "",
 		"auth": {
 			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",
@@ -100,6 +119,7 @@ func TestConfigIgnoresForwardedOriginWhenBaseURLIsUnset(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://localhost:49152",
+		"cognitiveApiUrl": "",
 		"auth": {
 			"mode": "oidc",
 			"authority": "http://keycloak.example/realms/memory-service",

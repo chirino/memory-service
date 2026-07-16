@@ -1004,6 +1004,13 @@ func developerFrontendFlags(cfg *config.Config) []cli.Flag {
 			Usage:       "Browser-visible API key for the developer frontend in api-key mode",
 		},
 		&cli.StringFlag{
+			Name:        "cognitive-api-url",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_COGNITIVE_API_URL"),
+			Destination: &cfg.CognitiveAPIURL,
+			Usage:       "External URL for the cognitive-memory service API (e.g., http://localhost:8090)",
+		},
+		&cli.StringFlag{
 			Name:        "base-url",
 			Category:    "Developer Frontend:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_BASE_URL"),

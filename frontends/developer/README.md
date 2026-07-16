@@ -9,6 +9,7 @@ This frontend provides admin and auditor users with tools to:
 - **Browse Conversations**: View all conversations across users with detailed entry inspection
 - **Explore Memories**: Navigate episodic memories by namespace hierarchy
 - **Search**: Find conversations and memories quickly with semantic and attribute-based search
+- **Monitor Processes**: View and inspect cognitive memory processing pipelines
 
 ## Technology Stack
 
@@ -27,6 +28,7 @@ This frontend provides admin and auditor users with tools to:
 
 - Node.js 18+ and npm
 - Memory Service running (default: `http://localhost:8082`)
+- Cognitive Memory Service running (default: `http://localhost:8090`) - optional, for process monitoring
 - Keycloak or compatible OIDC provider (default: `http://localhost:8080`)
 
 ### Installation
@@ -50,6 +52,27 @@ Edit `public/config.json` to match your environment:
   }
 }
 ```
+
+**Cognitive Memory Service Configuration:**
+
+The cognitive service URL is configured at runtime via `public/config.json`:
+
+```json
+{
+  "apiUrl": "http://localhost:8082",
+  "cognitiveApiUrl": "",
+  "oidc": { ... }
+}
+```
+
+- **Development**: Leave `cognitiveApiUrl` empty. Vite dev server proxies `/api/processes/*` to `http://localhost:8090` automatically.
+- **Production**: Set `cognitiveApiUrl` to your cognitive service URL (e.g., `"https://cognitive.example.com"`), or leave empty if behind the same reverse proxy.
+
+**CORS Requirements (Production Only):**
+When `cognitiveApiUrl` points to a different origin, the cognitive-memory service must allow CORS:
+- `Access-Control-Allow-Origin: https://your-frontend-domain.com`
+- `Access-Control-Allow-Methods: GET, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type`
 
 ### Development
 
@@ -86,14 +109,18 @@ frontends/developer/
 │   │   ├── __root.tsx       # Root layout with sidebar
 │   │   ├── conversations/   # Conversation routes
 │   │   ├── memories/        # Memory routes
-│   │   └── search.tsx       # Search route
+│   │   ├── search/          # Search routes
+│   │   └── processes.tsx    # Cognitive processes route
 │   ├── components/
 │   │   ├── layout/          # Layout components (sidebar, etc.)
 │   │   ├── conversations/   # Conversation-specific components
 │   │   ├── memories/        # Memory-specific components
 │   │   ├── search/          # Search components
 │   │   └── ui/              # Reusable UI primitives
-│   ├── client/              # Generated API client
+│   ├── api/
+│   │   ├── client.ts        # Memory Service API client
+│   │   ├── cognitive-client.ts  # Cognitive Memory API client
+│   │   └── generated/       # Generated API types
 │   ├── hooks/               # Custom React hooks
 │   └── lib/
 │       ├── auth.tsx         # Authentication context
@@ -116,6 +143,7 @@ The frontend requires admin or auditor role. Users without these roles will see 
 | View entries | ✅ | ✅ |
 | View memories | ✅ | ✅ |
 | Search | ✅ | ✅ |
+| Monitor processes | ✅ | ✅ |
 | Archive conversations | ✅ | ❌ |
 | Delete memories | ✅ | ❌ |
 

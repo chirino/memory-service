@@ -349,6 +349,7 @@ type Config struct {
 	DeveloperFrontendClientID string // Client ID used by the developer frontend
 	DeveloperFrontendAuthMode string // Authentication mode for the developer frontend: oidc or api-key
 	DeveloperFrontendAPIKey   string // Browser-visible API key used only in api-key mode
+	CognitiveAPIURL           string // External URL for the cognitive-memory service API
 	BaseURL                   string // External base URL for /developer redirects and runtime config
 }
 
@@ -458,6 +459,7 @@ func DefaultConfig() Config {
 		DeveloperFrontendDir:      "",
 		DeveloperFrontendClientID: "developer-frontend",
 		DeveloperFrontendAuthMode: DeveloperFrontendAuthOIDC,
+		CognitiveAPIURL:           "",
 	}
 }
 
