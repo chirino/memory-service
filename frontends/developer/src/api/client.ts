@@ -31,5 +31,6 @@ export { client };
 // Re-export generated types and query options
 export * from "./generated/types.gen";
 export * from "./generated/@tanstack/react-query.gen";
+export * from "./generated/sdk.gen";
 
 // Made with Bob

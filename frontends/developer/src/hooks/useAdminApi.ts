@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   adminListConversationsOptions,
   adminGetConversationOptions,
@@ -6,6 +6,8 @@ import {
   adminUpdateConversationMutation,
   adminListMemoriesOptions,
   adminGetMemoryOptions,
+  adminListConversations,
+  adminListMemories,
   type AdminConversation,
   type AdminMemoryItem,
   type Entry,
@@ -24,6 +26,31 @@ export function useAdminConversations(params?: {
       query: params,
     })
   );
+}
+
+export function useAdminConversationsInfinite(params?: {
+  userId?: string;
+  archived?: "include" | "exclude" | "only";
+  ancestry?: "all" | "roots" | "children";
+  limit?: number;
+}) {
+  const limit = params?.limit ?? 50;
+  return useInfiniteQuery({
+    queryKey: ["adminListConversations", params],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const { data } = await adminListConversations({
+        query: {
+          ...params,
+          limit,
+          afterCursor: pageParam ?? undefined,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+    getNextPageParam: (lastPage) => lastPage.afterCursor ?? undefined,
+  });
 }
 
 export function useAdminConversation(conversationId: string) {
@@ -81,6 +108,30 @@ export function useAdminMemories(params?: {
       query: params,
     })
   );
+}
+
+export function useAdminMemoriesInfinite(params?: {
+  namespacePrefix?: string[];
+  keyPrefix?: string;
+  limit?: number;
+}) {
+  const limit = params?.limit ?? 50;
+  return useInfiniteQuery({
+    queryKey: ["adminListMemories", params],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const { data } = await adminListMemories({
+        query: {
+          ...params,
+          limit,
+          afterCursor: pageParam ?? undefined,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+    getNextPageParam: (lastPage) => lastPage.afterCursor ?? undefined,
+  });
 }
 
 export function useAdminMemory(memoryId: string) {

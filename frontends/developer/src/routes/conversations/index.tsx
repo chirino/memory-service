@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useMemo } from "react";
 import { Archive, ArchiveRestore, Eye, SlidersHorizontal } from "lucide-react";
-import { useAdminConversations, useArchiveConversation, useUnarchiveConversation } from "@/hooks/useAdminApi";
+import { useAdminConversationsInfinite, useArchiveConversation, useUnarchiveConversation } from "@/hooks/useAdminApi";
 import { useAuth } from "@/lib/auth";
 import { formatRelativeTime, cn } from "@/lib/utils";
 import { Button } from "@/components/ui/button";
@@ -17,13 +17,23 @@ export const Route = createFileRoute("/conversations/")({
 
 function ConversationsPage() {
   const [archiveFilter, setArchiveFilter] = useState<"exclude" | "include" | "only">("exclude");
-  const { data, isLoading, error } = useAdminConversations({ archived: archiveFilter, limit: 50 });
+  const {
+    data,
+    isLoading,
+    error,
+    hasNextPage,
+    isFetchingNextPage,
+    fetchNextPage,
+  } = useAdminConversationsInfinite({ archived: archiveFilter, limit: 50 });
   const archiveMutation = useArchiveConversation();
   const unarchiveMutation = useUnarchiveConversation();
   const auth = useAuth();
   const isAdmin = auth.hasRole("admin");
 
-  const conversations = data?.data || [];
+  const conversations = useMemo(() => {
+    const pages = data?.pages ?? [];
+    return pages.flatMap((page) => page.data ?? []);
+  }, [data]);
 
   const handleArchive = (conversationId: string) => {
     if (confirm("Archive this conversation?")) {
@@ -214,9 +224,23 @@ function ConversationsPage() {
         )}
 
         {!isLoading && !error && conversations.length > 0 && (
-          <div className="mt-4 text-center text-sm text-muted-foreground">
-            Showing {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
-          </div>
+          <>
+            {hasNextPage && (
+              <div className="mt-6 flex justify-center">
+                <button
+                  type="button"
+                  onClick={() => void fetchNextPage()}
+                  disabled={isFetchingNextPage}
+                  className="console-panel rounded-lg px-6 py-3 text-sm text-muted-foreground transition-colors hover:text-foreground disabled:cursor-wait disabled:opacity-60"
+                >
+                  {isFetchingNextPage ? "Loading more conversations..." : "Load more conversations"}
+                </button>
+              </div>
+            )}
+            <div className="mt-4 text-center text-sm text-muted-foreground">
+              Showing {conversations.length} conversation{conversations.length !== 1 ? "s" : ""}
+            </div>
+          </>
         )}
       </div>
     </div>
