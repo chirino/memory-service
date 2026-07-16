@@ -182,6 +182,7 @@ func testConfig(t *testing.T) *config.Config {
 	return &config.Config{
 		DeveloperFrontendEnabled:  true,
 		DeveloperFrontendDir:      dir,
+		DeveloperFrontendAuthMode: config.DeveloperFrontendAuthOIDC,
 		DeveloperFrontendClientID: "developer-frontend",
 		BaseURL:                   "http://memory.example/",
 		OIDCIssuer:                "http://keycloak.example/realms/memory-service",
