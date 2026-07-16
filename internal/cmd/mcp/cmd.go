@@ -194,8 +194,6 @@ func defaultEmbeddedConfig() config.Config {
 	// Embedded MCP is a single-user desktop process whose database and attachments
 	// are protected by the user's filesystem permissions. Keep it zero-configuration.
 	cfg.EncryptionAllowPlain = true
-	cfg.EncryptionDBDisabled = true
-	cfg.EncryptionAttachmentsDisabled = true
 	cfg.VectorType = ""
 	cfg.EmbedType = "none"
 	cfg.SearchSemanticEnabled = false

@@ -25,8 +25,8 @@ func TestDefaultEmbeddedConfigUsesFilesystemSecurity(t *testing.T) {
 	cfg := defaultEmbeddedConfig()
 	require.Equal(t, "plain", cfg.EncryptionProviders)
 	require.True(t, cfg.EncryptionAllowPlain)
-	require.True(t, cfg.EncryptionDBDisabled)
-	require.True(t, cfg.EncryptionAttachmentsDisabled)
+	require.False(t, cfg.EncryptionDBDisabled)
+	require.False(t, cfg.EncryptionAttachmentsDisabled)
 
 	cfg.DBURL = filepath.Join(t.TempDir(), "memory.db")
 	ensureEmbeddedAuth(&cfg)

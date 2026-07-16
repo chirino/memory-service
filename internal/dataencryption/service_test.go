@@ -145,6 +145,15 @@ func TestPrimaryPlainCanReadHeaderlessData(t *testing.T) {
 	require.Equal(t, "plain", svc.PrimaryProviderID())
 	require.False(t, svc.PrimarySupportsFieldEncryption())
 
+	fieldGot, err := svc.EncryptField([]byte("plaintext field"), "entry.content", "entry-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("plaintext field"), fieldGot)
+	require.False(t, dataencryption.HasMagic(fieldGot))
+
+	fieldGot, err = svc.DecryptField(fieldGot, "entry.content", "entry-1")
+	require.NoError(t, err)
+	require.Equal(t, []byte("plaintext field"), fieldGot)
+
 	got, err := svc.Decrypt([]byte("plaintext"))
 	require.NoError(t, err)
 	require.Equal(t, []byte("plaintext"), got)
