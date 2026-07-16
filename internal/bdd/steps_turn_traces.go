@@ -76,7 +76,11 @@ func (t *turnTraceSteps) processorIsRunningForUserWithScope(userID, scope string
 
 	t.s.RegisterCanonicalUsers(userID)
 	subject := t.s.IsolatedUser(userID)
-	clientID := t.s.IsolatedClientID("turn-traces")
+	// A user-scoped event subscription can only read context entries written by
+	// the same client. The scenarios append context as test-agent-key, so run the
+	// processor as that client as well. A distinct processor client would need
+	// admin scope to observe another client's context.
+	clientID := t.s.IsolatedClientID("test-agent-key")
 	running, err := turntraces.StartProcessor(context.Background(), turntraces.StartOptions{
 		Endpoint:           addr,
 		ClientID:           clientID,
