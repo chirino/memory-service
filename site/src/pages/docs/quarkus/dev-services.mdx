@@ -16,6 +16,7 @@ Dev Services automatically:
 - **Starts a compatible memory-service container** using the extension's `X.Y` image line for releases, or `latest` for SNAPSHOT builds
 - **Configures your application** with the correct connection URL and API key
 - **Uses self-contained local storage** inside the container for development
+- **Explicitly allows plaintext storage** for the disposable development environment
 - **Connects to Keycloak Dev Services** when your app configures OIDC
 - **Handles container lifecycle** when the application starts and stops
 - **Generates secure API keys** automatically if not configured
@@ -47,8 +48,11 @@ MEMORY_SERVICE_VECTOR_KIND=sqlite
 MEMORY_SERVICE_EMBEDDING_KIND=local
 MEMORY_SERVICE_ATTACHMENTS_KIND=fs
 MEMORY_SERVICE_ATTACHMENTS_FS_DIR=/tmp/memory-service-dev/attachments
-MEMORY_SERVICE_TEMP_DIR=/tmp/memory-service-dev/tmp`}
+MEMORY_SERVICE_TEMP_DIR=/tmp/memory-service-dev/tmp
+MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true`}
 />
+
+The plaintext encryption opt-in is intended only for the local Dev Services container. Production deployments should select and configure a real encryption provider instead.
 
 If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container.
 
@@ -111,7 +115,7 @@ The default `X.Y` and `latest` tags are mutable, so Dev Services always checks t
 
 **Type:** `String`
 **Default:** Not set
-**Description:** Extra environment variables passed through to the memory-service container. Use this for roles, CORS, feature flags, or to override the default local storage settings.
+**Description:** Extra environment variables passed through to the memory-service container after its defaults. Use this for roles, CORS, feature flags, or to override default settings such as local storage and encryption.
 
 ```properties
 memory-service.devservices.env.MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE=admin

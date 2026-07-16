@@ -1,5 +1,7 @@
 # Spring Module Facts
 
+**Chat example encryption**: `java/spring/examples/chat-spring/compose.yaml` explicitly sets `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` for local development; it does not select `dek` or provide a well-known DEK.
+
 **Conversation channel naming**: Spring integrations should use `Channel.CONTEXT` for agent-managed conversation state and reserve `Channel.HISTORY` for user-visible turns.
 
 **Frontend event proxy boundary**: Keep `MemoryServiceProxy.streamEvents(...)` generic. Frontend-facing example handlers such as `EventsController` should enforce history-only entry visibility themselves by forwarding only `entry_channel=history` entry notifications.

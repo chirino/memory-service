@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import org.junit.jupiter.api.Test;
+import org.testcontainers.containers.GenericContainer;
+import org.testcontainers.utility.DockerImageName;
 
 class MemoryServiceDevServicesProcessorTest {
 
@@ -47,5 +49,16 @@ class MemoryServiceDevServicesProcessorTest {
         assertNotNull(version);
         assertFalse(version.isBlank());
         assertFalse(version.contains("${"));
+    }
+
+    @Test
+    void defaultEnvironmentAllowsPlainEncryption() {
+        GenericContainer<?> container =
+                new GenericContainer<>(
+                        DockerImageName.parse("example.invalid/memory-service:test"));
+
+        MemoryServiceDevServicesProcessor.configureDefaultEnvironment(container, "test-api-key");
+
+        assertEquals("true", container.getEnvMap().get("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN"));
     }
 }

@@ -119,7 +119,8 @@ services:
       MEMORY_SERVICE_CORS_ORIGINS: "http://localhost:3000"
 
       # ── Encryption ─────────────────────────────────────────────
-      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
+      # Explicit plaintext opt-in for this local development environment.
+      MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN: "true"
     depends_on:
       keycloak:
         condition: service_healthy
