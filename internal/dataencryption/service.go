@@ -135,6 +135,9 @@ func (s *Service) Decrypt(ciphertext []byte) ([]byte, error) {
 
 // EncryptField encrypts a persisted field with MSEH v4 domain/identity AAD binding.
 func (s *Service) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
+	if !s.IsPrimaryReal() {
+		return s.primary.Encrypt(plaintext)
+	}
 	provider, ok := s.primary.(encrypt.FieldProvider)
 	if !ok {
 		return nil, fmt.Errorf("dataencryption: primary provider %q does not support MSEH v4 field encryption", s.primary.ID())
