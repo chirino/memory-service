@@ -986,7 +986,22 @@ func developerFrontendFlags(cfg *config.Config) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID"),
 			Destination: &cfg.DeveloperFrontendClientID,
 			Value:       cfg.DeveloperFrontendClientID,
-			Usage:       "OIDC public client ID for the developer frontend",
+			Usage:       "Client ID used by the developer frontend",
+		},
+		&cli.StringFlag{
+			Name:        "developer-frontend-auth-mode",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE"),
+			Destination: &cfg.DeveloperFrontendAuthMode,
+			Value:       cfg.DeveloperFrontendAuthMode,
+			Usage:       "Developer frontend authentication mode: oidc or api-key",
+		},
+		&cli.StringFlag{
+			Name:        "developer-frontend-api-key",
+			Category:    "Developer Frontend:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY"),
+			Destination: &cfg.DeveloperFrontendAPIKey,
+			Usage:       "Browser-visible API key for the developer frontend in api-key mode",
 		},
 		&cli.StringFlag{
 			Name:        "base-url",

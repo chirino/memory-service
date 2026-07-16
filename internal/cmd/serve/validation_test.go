@@ -96,6 +96,71 @@ func TestValidateStartupConfigAllowsDeveloperFallbackInTesting(t *testing.T) {
 	require.NoError(t, validateStartupConfig(&cfg))
 }
 
+func TestValidateStartupConfigAllowsDeveloperAPIKeyAuth(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.DeveloperFrontendEnabled = true
+	cfg.BaseURL = "http://localhost:8082"
+	cfg.DeveloperFrontendAuthMode = config.DeveloperFrontendAuthAPIKey
+	cfg.DeveloperFrontendAPIKey = "local-developer-key"
+	cfg.APIKeys = map[string]string{"local-developer-key": "developer-frontend"}
+	cfg.AdminClients = "indexer, developer-frontend"
+
+	require.NoError(t, validateStartupConfig(&cfg))
+}
+
+func TestValidateStartupConfigRejectsIncompleteDeveloperAPIKeyAuth(t *testing.T) {
+	tests := []struct {
+		name        string
+		configure   func(*config.Config)
+		errorString string
+	}{
+		{
+			name:        "missing key",
+			configure:   func(cfg *config.Config) {},
+			errorString: "MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY is required",
+		},
+		{
+			name: "key registered to another client",
+			configure: func(cfg *config.Config) {
+				cfg.DeveloperFrontendAPIKey = "local-developer-key"
+				cfg.APIKeys = map[string]string{"local-developer-key": "agent"}
+			},
+			errorString: "must be registered to client \"developer-frontend\"",
+		},
+		{
+			name: "client is not admin",
+			configure: func(cfg *config.Config) {
+				cfg.DeveloperFrontendAPIKey = "local-developer-key"
+				cfg.APIKeys = map[string]string{"local-developer-key": "developer-frontend"}
+			},
+			errorString: "must be listed in MEMORY_SERVICE_ROLES_ADMIN_CLIENTS",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := validationTestConfig()
+			cfg.DeveloperFrontendEnabled = true
+			cfg.BaseURL = "http://localhost:8082"
+			cfg.DeveloperFrontendAuthMode = config.DeveloperFrontendAuthAPIKey
+			tt.configure(&cfg)
+
+			err := validateStartupConfig(&cfg)
+			require.ErrorContains(t, err, tt.errorString)
+		})
+	}
+}
+
+func TestValidateStartupConfigRejectsUnknownDeveloperAuthMode(t *testing.T) {
+	cfg := validationTestConfig()
+	cfg.DeveloperFrontendEnabled = true
+	cfg.BaseURL = "http://localhost:8082"
+	cfg.DeveloperFrontendAuthMode = "none"
+
+	err := validateStartupConfig(&cfg)
+	require.ErrorContains(t, err, "MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE must be oidc or api-key")
+}
+
 func TestParseTrustedProxyCIDRsDefaultsToTrustNone(t *testing.T) {
 	trusted, err := parseTrustedProxyCIDRs("  , ")
 

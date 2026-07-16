@@ -7,22 +7,43 @@ client.setConfig({
   baseUrl: "",
 });
 
-// Store for access token (will be set by auth context)
+// Store the active browser credential (set by the auth context).
 let accessToken = "";
+let apiKey = "";
 
 export function setAccessToken(token: string) {
   accessToken = token;
+  apiKey = "";
 }
 
-export function getAccessToken() {
-  return accessToken;
+export function setApiKey(key: string) {
+  apiKey = key;
+  accessToken = "";
 }
 
-// Add auth token interceptor
-client.interceptors.request.use((request) => {
-  if (accessToken) {
-    request.headers.set("Authorization", `Bearer ${accessToken}`);
+export function clearCredentials() {
+  accessToken = "";
+  apiKey = "";
+}
+
+export function applyAuthHeaders(headers: Headers) {
+  headers.delete("Authorization");
+  headers.delete("X-API-Key");
+  if (apiKey) {
+    headers.set("X-API-Key", apiKey);
+  } else if (accessToken) {
+    headers.set("Authorization", `Bearer ${accessToken}`);
   }
+  return headers;
+}
+
+export function getAuthHeaders() {
+  return applyAuthHeaders(new Headers());
+}
+
+// Add the selected credential to generated client requests.
+client.interceptors.request.use((request) => {
+  applyAuthHeaders(request.headers);
   return request;
 });
 

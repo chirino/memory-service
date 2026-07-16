@@ -1,6 +1,10 @@
 # Spring Module Facts
 
 **Chat example encryption**: `java/spring/examples/chat-spring/compose.yaml` selects `MEMORY_SERVICE_ENCRYPTION_KIND=dek` with a well-known development-only DEK so encrypted local storage and public signed attachment URLs work without setup.
+**Chat example OIDC audience**: The local Compose example sets `MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=true` for zero-configuration development. Production deployments should configure `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES` instead.
+**Chat example management routes**: The local Compose example sets `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true`; hardened server startup otherwise requires a dedicated management listener.
+**Chat example listener**: The local Compose service explicitly binds `0.0.0.0`, selects plaintext HTTP, disables TLS, and acknowledges non-loopback plaintext because Docker port publishing cannot reach a loopback-only container listener.
+**Chat example developer console auth**: The integrated `/developer` console uses a separate browser-visible `developer_frontend` API-key client (matching the preserved `DEVELOPER_FRONTEND` env suffix) with an admin role, while the Spring chat frontend keeps its Keycloak login flow. Do not add it to trusted user-ID clients or send `X-User-ID` from the admin console.
 
 **Conversation channel naming**: Spring integrations should use `Channel.CONTEXT` for agent-managed conversation state and reserve `Channel.HISTORY` for user-visible turns.
 

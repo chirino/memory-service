@@ -59,13 +59,19 @@ services:
     environment:
       # Trusted agent API keys (first value is surfaced to the Spring app via the service connection)
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
-      MEMORY_SERVICE_TLS_SELF_SIGNED: "true"
+      # Browser-visible local developer-console credential. Never use this key in production.
+      MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND: developer-frontend-api-key
+      MEMORY_SERVICE_HOST: 0.0.0.0
+      MEMORY_SERVICE_PLAIN_TEXT: "true"
+      MEMORY_SERVICE_TLS: "false"
+      MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT: "true"
 
       # ── Self-contained storage ─────
       MEMORY_SERVICE_DB_KIND: sqlite
       MEMORY_SERVICE_DB_URL: file:/tmp/memory-service-dev/memory-service.db
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
       MEMORY_SERVICE_CACHE_KIND: local
+      MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER: "true"
       MEMORY_SERVICE_VECTOR_KIND: sqlite
       MEMORY_SERVICE_EMBEDDING_KIND: local
       MEMORY_SERVICE_ATTACHMENTS_KIND: fs
@@ -75,13 +81,19 @@ services:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      # Development-only issuer validation; configure allowed audiences in production.
+      MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE: "true"
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: developer_frontend
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
 
       # ── Developer Frontend ─────────────────────────────────────
       # Enable the integrated developer frontend at http://localhost:8082/developer
       MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID: developer_frontend
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE: api-key
+      MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY: developer-frontend-api-key
       MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
       MEMORY_SERVICE_CORS_ENABLED: "true"
       MEMORY_SERVICE_CORS_ORIGINS: "http://localhost:3000"

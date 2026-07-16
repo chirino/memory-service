@@ -42,6 +42,9 @@ const (
 	ModeProd    = "prod"
 	ModeTesting = "testing"
 
+	DeveloperFrontendAuthOIDC   = "oidc"
+	DeveloperFrontendAuthAPIKey = "api-key"
+
 	DefaultMaxPageSize = 1000
 )
 
@@ -343,7 +346,9 @@ type Config struct {
 	// Developer frontend configuration
 	DeveloperFrontendEnabled  bool   // Enable serving the developer frontend SPA under /developer
 	DeveloperFrontendDir      string // Directory containing built developer frontend assets
-	DeveloperFrontendClientID string // OIDC public client ID for the developer frontend
+	DeveloperFrontendClientID string // Client ID used by the developer frontend
+	DeveloperFrontendAuthMode string // Authentication mode for the developer frontend: oidc or api-key
+	DeveloperFrontendAPIKey   string // Browser-visible API key used only in api-key mode
 	BaseURL                   string // External base URL for /developer redirects and runtime config
 }
 
@@ -452,6 +457,7 @@ func DefaultConfig() Config {
 		DeveloperFrontendEnabled:  false,
 		DeveloperFrontendDir:      "",
 		DeveloperFrontendClientID: "developer-frontend",
+		DeveloperFrontendAuthMode: DeveloperFrontendAuthOIDC,
 	}
 }
 

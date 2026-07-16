@@ -69,6 +69,9 @@ deploying and maintaining that data plane.
 - Keep API-key clients scoped to the least privilege required by each agent or processor.
 - Disable wildcard credentialed CORS; list exact browser origins.
 - Keep admin APIs on a separate network path when possible.
+- Keep `MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE=oidc` in production. The `api-key`
+  mode exposes its admin credential to browsers through `/developer/config.json` and is only
+  intended for isolated local development.
 
 ### Trusted User Assertion
 

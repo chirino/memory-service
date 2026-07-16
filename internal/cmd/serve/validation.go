@@ -52,6 +52,24 @@ func validateStartupConfig(cfg *config.Config) error {
 	}
 
 	if cfg.DeveloperFrontendEnabled {
+		authMode := strings.ToLower(strings.TrimSpace(cfg.DeveloperFrontendAuthMode))
+		switch authMode {
+		case config.DeveloperFrontendAuthOIDC:
+		case config.DeveloperFrontendAuthAPIKey:
+			apiKey := strings.TrimSpace(cfg.DeveloperFrontendAPIKey)
+			clientID := strings.TrimSpace(cfg.DeveloperFrontendClientID)
+			if apiKey == "" {
+				problems = append(problems, fmt.Errorf("MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY is required when developer frontend auth mode is api-key"))
+			} else if configuredClientID, ok := cfg.APIKeys[apiKey]; !ok || !strings.EqualFold(configuredClientID, clientID) {
+				problems = append(problems, fmt.Errorf("MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY must be registered to client %q with MEMORY_SERVICE_API_KEYS_<CLIENT_ID>", clientID))
+			}
+			if !csvContainsFold(cfg.AdminClients, clientID) {
+				problems = append(problems, fmt.Errorf("developer frontend API-key client %q must be listed in MEMORY_SERVICE_ROLES_ADMIN_CLIENTS", clientID))
+			}
+		default:
+			problems = append(problems, fmt.Errorf("MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE must be oidc or api-key"))
+		}
+
 		baseURL := strings.TrimSpace(cfg.BaseURL)
 		if strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeProd) && baseURL == "" {
 			problems = append(problems, fmt.Errorf("MEMORY_SERVICE_BASE_URL is required when the developer frontend is enabled in production mode"))
@@ -67,6 +85,15 @@ func validateStartupConfig(cfg *config.Config) error {
 		}
 	}
 	return errors.Join(problems...)
+}
+
+func csvContainsFold(raw, expected string) bool {
+	for _, value := range strings.Split(raw, ",") {
+		if strings.EqualFold(strings.TrimSpace(value), strings.TrimSpace(expected)) {
+			return true
+		}
+	}
+	return false
 }
 
 func validateManagementRouteExposure(cfg *config.Config) error {

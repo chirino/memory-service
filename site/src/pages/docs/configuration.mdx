@@ -1081,18 +1081,22 @@ MEMORY_SERVICE_CORS_ORIGINS=http://localhost:3000`}
 
 The developer frontend is an optional web UI for browsing conversations, memories, and system administration. It is served directly from the memory-service binary under the `/developer` path.
 
-| Flag / Env Var                                                                             | Values          | Default              | Description                                            |
-| ------------------------------------------------------------------------------------------ | --------------- | -------------------- | ------------------------------------------------------ |
-| <Cfg p="--developer-frontend-enabled" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED" />     | `true`, `false` | `false`              | Enable the developer frontend                          |
-| <Cfg p="--developer-frontend-dir" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR" />             | path            | _(none)_             | Directory containing built frontend assets             |
-| <Cfg p="--developer-frontend-client-id" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID" /> | string          | `developer-frontend` | OIDC client ID for the frontend                        |
-| <Cfg p="--base-url" e="MEMORY_SERVICE_BASE_URL" />                                         | URL             | _(auto)_             | Base URL for OIDC redirects (auto-detected if not set) |
+| Flag / Env Var                                                                             | Values            | Default              | Description                                                   |
+| ------------------------------------------------------------------------------------------ | ----------------- | -------------------- | ------------------------------------------------------------- |
+| <Cfg p="--developer-frontend-enabled" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED" />     | `true`, `false`   | `false`              | Enable the developer frontend                                 |
+| <Cfg p="--developer-frontend-dir" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR" />             | path              | _(none)_             | Directory containing built frontend assets                    |
+| <Cfg p="--developer-frontend-client-id" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID" /> | string            | `developer-frontend` | Client ID used by the frontend                                |
+| <Cfg p="--developer-frontend-auth-mode" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE" /> | `oidc`, `api-key` | `oidc`               | Authentication mode                                           |
+| <Cfg p="--developer-frontend-api-key" e="MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY" />     | string            | _(none)_             | Browser-visible credential used only in `api-key` mode        |
+| <Cfg p="--base-url" e="MEMORY_SERVICE_BASE_URL" />                                         | URL               | _(auto)_             | External URL used by runtime configuration and OIDC redirects |
 
-The developer frontend requires:
+OIDC mode requires:
 
 - OIDC authentication to be configured
 - Admin or auditor role for access
 - Built frontend assets in the specified directory
+
+API-key mode requires the exposed key to also be registered to the configured frontend client with `MEMORY_SERVICE_API_KEYS_<CLIENT_ID>` and that client to be listed in `MEMORY_SERVICE_ROLES_ADMIN_CLIENTS`. It is a no-login local-development option: `/developer/config.json` sends the key to every browser that loads the console. Do not use API-key mode in production.
 
 <ConfigBlock
   property={`# Enable developer frontend
@@ -1109,7 +1113,7 @@ MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-fro
 
 When using the official Docker image, the developer frontend is pre-built. Set `MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED=true` to activate it.
 
-Access the developer frontend at `http://your-server:8080/developer/` after authentication.
+Access the developer frontend at `http://your-server:8080/developer/` using the configured authentication mode.
 
 ## Monitoring
 

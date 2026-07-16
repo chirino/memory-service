@@ -60,6 +60,16 @@ func RegisterRoutes(router *gin.Engine, cfg *config.Config) error {
 func configHandler(cfg *config.Config) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		baseURL := resolveBaseURL(c, cfg)
+		authMode := strings.ToLower(strings.TrimSpace(cfg.DeveloperFrontendAuthMode))
+		auth := gin.H{"mode": authMode}
+		if authMode == config.DeveloperFrontendAuthAPIKey {
+			auth["apiKey"] = cfg.DeveloperFrontendAPIKey
+			auth["clientId"] = cfg.DeveloperFrontendClientID
+		} else {
+			auth["authority"] = cfg.OIDCIssuer
+			auth["clientId"] = cfg.DeveloperFrontendClientID
+			auth["redirectUri"] = strings.TrimRight(baseURL, "/") + "/developer/"
+		}
 
 		// Set security and cache headers
 		c.Header("Content-Type", "application/json")
@@ -68,11 +78,7 @@ func configHandler(cfg *config.Config) gin.HandlerFunc {
 
 		c.JSON(http.StatusOK, gin.H{
 			"apiUrl": baseURL,
-			"oidc": gin.H{
-				"authority":   cfg.OIDCIssuer,
-				"clientId":    cfg.DeveloperFrontendClientID,
-				"redirectUri": strings.TrimRight(baseURL, "/") + "/developer/",
-			},
+			"auth":   auth,
 		})
 	}
 }

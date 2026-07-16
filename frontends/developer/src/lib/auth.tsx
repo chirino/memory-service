@@ -1,15 +1,22 @@
-import { createContext, useContext, useEffect, type ReactNode } from "react";
+import { createContext, useContext, useLayoutEffect, type ReactNode } from "react";
 import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth } from "react-oidc-context";
-import type { User } from "oidc-client-ts";
 import type { AppConfig } from "./config";
-import { setAccessToken } from "../api/client";
+import { clearCredentials, setAccessToken, setApiKey } from "../api/client";
+
+interface AuthUser {
+  profile: {
+    name?: string;
+    email?: string;
+  };
+}
 
 interface AuthContextValue {
-  user: User | null | undefined;
+  user: AuthUser | null | undefined;
   isLoading: boolean;
   isAuthenticated: boolean;
   login: () => void;
   logout: () => void;
+  canLogout: boolean;
   hasRole: (role: string) => boolean;
 }
 
@@ -29,23 +36,46 @@ interface AuthProviderProps {
 }
 
 export function AuthProvider({ config, children }: AuthProviderProps) {
+  if (config.auth.mode === "api-key") {
+    return <ApiKeyAuthContextProvider apiKey={config.auth.apiKey}>{children}</ApiKeyAuthContextProvider>;
+  }
+
   const oidcConfig = {
-    authority: config.oidc.authority,
-    client_id: config.oidc.clientId,
-    redirect_uri: config.oidc.redirectUri,
-    post_logout_redirect_uri: config.oidc.redirectUri,
+    authority: config.auth.authority,
+    client_id: config.auth.clientId,
+    redirect_uri: config.auth.redirectUri,
+    post_logout_redirect_uri: config.auth.redirectUri,
     scope: "openid profile email roles",
     automaticSilentRenew: true,
   };
 
   return (
     <OidcAuthProvider {...oidcConfig}>
-      <AuthContextProvider postLogoutRedirectUri={config.oidc.redirectUri}>{children}</AuthContextProvider>
+      <OidcAuthContextProvider postLogoutRedirectUri={config.auth.redirectUri}>{children}</OidcAuthContextProvider>
     </OidcAuthProvider>
   );
 }
 
-function AuthContextProvider({
+function ApiKeyAuthContextProvider({ children, apiKey }: { children: ReactNode; apiKey: string }) {
+  useLayoutEffect(() => {
+    setApiKey(apiKey);
+    return clearCredentials;
+  }, [apiKey]);
+
+  const value: AuthContextValue = {
+    user: { profile: { name: "Local Developer" } },
+    isLoading: false,
+    isAuthenticated: true,
+    login: () => {},
+    logout: () => {},
+    canLogout: false,
+    hasRole: (role) => role === "admin" || role === "auditor",
+  };
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+function OidcAuthContextProvider({
   children,
   postLogoutRedirectUri,
 }: {
@@ -55,7 +85,7 @@ function AuthContextProvider({
   const auth = useOidcAuth();
 
   // Update access token when user changes
-  useEffect(() => {
+  useLayoutEffect(() => {
     if (auth.user?.access_token) {
       setAccessToken(auth.user.access_token);
     } else {
@@ -69,13 +99,13 @@ function AuthContextProvider({
     if (realmAccess?.roles && Array.isArray(realmAccess.roles)) {
       return realmAccess.roles.includes(role);
     }
-    
+
     // Fallback to direct roles claim
     const roles = auth.user?.profile?.roles;
     if (Array.isArray(roles)) {
       return roles.includes(role);
     }
-    
+
     return false;
   };
 
@@ -85,6 +115,7 @@ function AuthContextProvider({
     isAuthenticated: auth.isAuthenticated,
     login: () => auth.signinRedirect(),
     logout: () => auth.signoutRedirect({ post_logout_redirect_uri: postLogoutRedirectUri }),
+    canLogout: true,
     hasRole,
   };
 
@@ -133,9 +164,7 @@ export function RequireAuth({ roles = ["admin", "auditor"], children }: RequireA
       <div className="console-shell flex h-screen items-center justify-center">
         <div className="console-panel max-w-md rounded-2xl p-10 text-center">
           <h1 className="console-title mb-4 text-3xl">Access Denied</h1>
-          <p className="mb-6 text-muted-foreground">
-            You need admin or auditor role to access this console.
-          </p>
+          <p className="mb-6 text-muted-foreground">You need admin or auditor role to access this console.</p>
           <button
             onClick={auth.logout}
             className="rounded-lg bg-destructive px-6 py-2 text-destructive-foreground hover:bg-destructive/90"

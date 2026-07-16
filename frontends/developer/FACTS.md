@@ -9,7 +9,7 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 - **TanStack Query** for data fetching and caching
 - **Tailwind CSS 4.0** with Minimal Light design system
 - **Vite** as build tool
-- **OIDC** authentication with role-based access
+- **OIDC or development-only API key** authentication with role-based access
 
 ## Architecture Patterns
 
@@ -20,10 +20,11 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 - Dynamic routes use `$param` syntax (e.g., `$conversationId.tsx`)
 
 ### Authentication
-- OIDC integration in `src/lib/auth.tsx`
+- OIDC and no-login API-key modes in `src/lib/auth.tsx`
 - Requires `admin` or `auditor` role
 - Config loaded from `/config.json` at runtime
 - `RequireAuth` wrapper in root layout enforces auth
+- API-key mode represents the browser as a synthetic `Local Developer` admin and sends only `X-API-Key`; it never sends `X-User-ID`.
 
 ### API Integration
 - Custom React Query hooks in `src/hooks/useAdminApi.ts`
@@ -103,13 +104,16 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 ```json
 {
   "apiUrl": "http://localhost:8082",
-  "oidc": {
+  "auth": {
+    "mode": "oidc",
     "authority": "http://localhost:8081/realms/memory-service",
     "clientId": "developer-frontend",
     "redirectUri": "http://localhost:3000/developer/"
   }
 }
 ```
+
+Local API-key mode uses `{"auth":{"mode":"api-key","clientId":"developer_frontend","apiKey":"..."}}`. The underscore matches the preserved suffix in `MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND`. The key is intentionally browser-visible and must remain limited to disposable local development.
 
 
 ### Build Config
