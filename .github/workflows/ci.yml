@@ -492,12 +492,103 @@ jobs:
               -o dist/memory-service .
           chmod +x dist/memory-service
 
+      - name: Smoke test binary
+        shell: bash
+        run: |
+          set -euo pipefail
+          actual="$(dist/memory-service version)"
+          if [ "$actual" != "${{ github.sha }}" ]; then
+            echo "Expected version ${{ github.sha }}, got $actual" >&2
+            exit 1
+          fi
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: ${{ steps.artifact-meta.outputs.artifact-name }}
           path: dist/memory-service
           if-no-files-found: error
+
+  test-binary-jars:
+    needs: artifacts
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+
+      - name: Set up Java
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          distribution: temurin
+          java-version: '21'
+          cache: maven
+          cache-dependency-path: '**/pom.xml'
+
+      - name: Download native binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: memory-service-*
+          path: /tmp/ci-binaries
+          merge-multiple: false
+
+      - name: Stage Maven binary inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stage=/tmp/memory-service-binaries
+          mkdir -p "$stage"
+          stage_binary() {
+            local artifact="$1"
+            local platform="$2"
+            local source="/tmp/ci-binaries/$artifact/memory-service"
+            local target="$stage/$platform"
+            if [ ! -f "$source" ]; then
+              echo "Missing native artifact $source" >&2
+              exit 1
+            fi
+            mkdir -p "$target"
+            cp "$source" "$target/memory-service"
+            chmod +x "$target/memory-service"
+            sha256sum "$target/memory-service" | sed 's#  .*/#  #' > "$target/memory-service.sha256"
+          }
+
+          stage_binary memory-service-linux-amd64 linux-amd64
+          stage_binary memory-service-linux-arm64 linux-arm64
+          stage_binary memory-service-macos-arm64 macos-arm64
+
+      - name: Build and test native binary JARs
+        run: |
+          ./java/mvnw -B -f java/pom.xml \
+            -Pbinary-jars \
+            -Dmemory-service.binaries.dir=/tmp/memory-service-binaries \
+            -Dmemory-service.packaged.test=true \
+            -pl :memory-service-binaries -am clean verify
+
+      - name: Inspect packaged resources
+        shell: bash
+        run: |
+          set -euo pipefail
+          jar tf java/memory-service-binary-linux-amd64/target/memory-service-binary-linux-amd64-*.jar \
+            | grep -Fx 'META-INF/memory-service/linux-amd64/memory-service'
+          jar tf java/memory-service-binary-linux-arm64/target/memory-service-binary-linux-arm64-*.jar \
+            | grep -Fx 'META-INF/memory-service/linux-arm64/memory-service'
+          jar tf java/memory-service-binary-macos-arm64/target/memory-service-binary-macos-arm64-*.jar \
+            | grep -Fx 'META-INF/memory-service/macos-arm64/memory-service'
+
+      - name: Validate aggregate Java module path
+        shell: bash
+        run: |
+          set -euo pipefail
+          jars=(
+            java/memory-service-process/target/memory-service-process-*.jar
+            java/memory-service-binary-linux-amd64/target/memory-service-binary-linux-amd64-*.jar
+            java/memory-service-binary-linux-arm64/target/memory-service-binary-linux-arm64-*.jar
+            java/memory-service-binary-macos-arm64/target/memory-service-binary-macos-arm64-*.jar
+            java/memory-service-binaries/target/memory-service-binaries-*.jar
+          )
+          module_path="$(IFS=:; echo "${jars[*]}")"
+          java --validate-modules --module-path "$module_path"
 
   image-manifest:
     needs: images

@@ -66,23 +66,12 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Set up Go
-        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
-        with:
-          go-version-file: go.mod
-          cache: true
-
       - name: Set up JDK 21
         uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
         with:
           java-version: '21'
           distribution: 'temurin'
           cache: maven
-          server-id: central
-          server-username: CENTRAL_USERNAME
-          server-password: CENTRAL_PASSWORD
-          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
-          gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
       - name: Prepare release ref
         id: prepare
@@ -127,7 +116,7 @@ jobs:
           set -euo pipefail
 
           VERSION="$RELEASE_VERSION"
-          ./java/mvnw -q -B -f java/pom.xml versions:set \
+          ./java/mvnw -q -B -f java/pom.xml -Pbinary-jars versions:set \
             -DnewVersion="$VERSION" \
             -DgenerateBackupPoms=false
 
@@ -138,63 +127,6 @@ jobs:
             git commit -s -m "chore(release): prepare $VERSION"
             git push
           fi
-
-      - name: Check Maven Central artifacts
-        id: maven-central
-        shell: bash
-        env:
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          VERSION="$RELEASE_VERSION"
-          URL="https://repo1.maven.org/maven2/io/github/chirino/memory-service/memory-service-parent/$VERSION/memory-service-parent-$VERSION.pom"
-
-          if curl --silent --fail --head "$URL" >/dev/null; then
-            echo "Java artifacts for $VERSION are already available in Maven Central"
-            echo "published=true" >> "$GITHUB_OUTPUT"
-          else
-            echo "Java artifacts for $VERSION are not available in Maven Central yet"
-            echo "published=false" >> "$GITHUB_OUTPUT"
-          fi
-
-      - name: Validate Java release bundle
-        if: steps.maven-central.outputs.published != 'true'
-        env:
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          go run github.com/go-task/task/v3/cmd/task release:java:bundle VERSION="$RELEASE_VERSION" -- -q -B
-
-      - name: Publish Java artifacts to Maven Central
-        if: steps.maven-central.outputs.published != 'true'
-        env:
-          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
-          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
-          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
-          RELEASE_VERSION: ${{ steps.release.outputs.version }}
-        run: |
-          set -euo pipefail
-
-          VERSION="$RELEASE_VERSION"
-          URL="https://repo1.maven.org/maven2/io/github/chirino/memory-service/memory-service-parent/$VERSION/memory-service-parent-$VERSION.pom"
-
-          set +e
-          go run github.com/go-task/task/v3/cmd/task release:java VERSION="$VERSION" -- -q -B
-          status=$?
-          set -e
-
-          if [ "$status" -eq 0 ]; then
-            exit 0
-          fi
-
-          echo "Maven Central publish failed; checking whether artifacts were published before the failure"
-          if curl --silent --fail --head --retry 6 --retry-delay 10 "$URL" >/dev/null; then
-            echo "Java artifacts for $VERSION are available in Maven Central; treating publish as complete"
-            exit 0
-          fi
-
-          exit "$status"
 
   docker-build:
     needs: prepare
@@ -367,12 +299,165 @@ jobs:
               -o dist/memory-service .
           chmod +x dist/memory-service
 
+      - name: Smoke test binary
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          actual="$(dist/memory-service version)"
+          if [ "$actual" != "$RELEASE_VERSION" ]; then
+            echo "Expected version $RELEASE_VERSION, got $actual" >&2
+            exit 1
+          fi
+
       - name: Upload binary artifact
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
         with:
           name: release-binary-${{ matrix.artifact-name }}
           path: dist/memory-service
           if-no-files-found: error
+
+  java-release:
+    needs:
+      - prepare
+      - binary-artifact
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7
+        with:
+          ref: ${{ needs.prepare.outputs.checkout-ref }}
+
+      - name: Set up Go
+        uses: actions/setup-go@924ae3a1cded613372ab5595356fb5720e22ba16 # v6.5.0
+        with:
+          go-version-file: go.mod
+          cache: true
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@1bcf9fb12cf4aa7d266a90ae39939e61372fe520 # v5.4.0
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+          cache: maven
+          server-id: central
+          server-username: CENTRAL_USERNAME
+          server-password: CENTRAL_PASSWORD
+          gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
+          gpg-passphrase: MAVEN_GPG_PASSPHRASE
+
+      - name: Download native binaries
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          pattern: release-binary-*
+          path: /tmp/release-binaries
+          merge-multiple: false
+
+      - name: Stage Maven binary inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          stage=/tmp/memory-service-binaries
+          mkdir -p "$stage"
+          stage_binary() {
+            local artifact="$1"
+            local platform="$2"
+            local source="/tmp/release-binaries/release-binary-$artifact/memory-service"
+            local target="$stage/$platform"
+            if [ ! -f "$source" ]; then
+              echo "Missing native artifact $source" >&2
+              exit 1
+            fi
+            mkdir -p "$target"
+            cp "$source" "$target/memory-service"
+            chmod +x "$target/memory-service"
+            sha256sum "$target/memory-service" | sed 's#  .*/#  #' > "$target/memory-service.sha256"
+          }
+
+          stage_binary memory-service-linux-amd64 linux-amd64
+          stage_binary memory-service-linux-arm64 linux-arm64
+          stage_binary memory-service-macos-arm64 macos-arm64
+
+      - name: Check Maven Central artifacts
+        id: maven-central
+        shell: bash
+        env:
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          base="https://repo1.maven.org/maven2/io/github/chirino/memory-service"
+          version="$RELEASE_VERSION"
+          artifacts=(
+            "memory-service-parent/$version/memory-service-parent-$version.pom"
+            "memory-service-process/$version/memory-service-process-$version.jar"
+            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.jar"
+            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.jar"
+            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.jar"
+            "memory-service-binaries/$version/memory-service-binaries-$version.jar"
+          )
+          published=true
+          for artifact in "${artifacts[@]}"; do
+            if ! curl --silent --fail --head "$base/$artifact" >/dev/null; then
+              published=false
+            fi
+          done
+          echo "published=$published" >> "$GITHUB_OUTPUT"
+
+      - name: Validate Java release bundle
+        if: steps.maven-central.outputs.published != 'true'
+        env:
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          go run github.com/go-task/task/v3/cmd/task release:java:bundle \
+            VERSION="$RELEASE_VERSION" \
+            BINARIES_DIR=/tmp/memory-service-binaries \
+            -- -q -B
+
+      - name: Publish Java artifacts to Maven Central
+        if: steps.maven-central.outputs.published != 'true'
+        env:
+          CENTRAL_USERNAME: ${{ secrets.CENTRAL_USERNAME }}
+          CENTRAL_PASSWORD: ${{ secrets.CENTRAL_PASSWORD }}
+          MAVEN_GPG_PASSPHRASE: ${{ secrets.MAVEN_GPG_PASSPHRASE }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          set +e
+          go run github.com/go-task/task/v3/cmd/task release:java \
+            VERSION="$RELEASE_VERSION" \
+            BINARIES_DIR=/tmp/memory-service-binaries \
+            -- -q -B
+          publish_status=$?
+          set -e
+          if [ "$publish_status" -eq 0 ]; then
+            exit 0
+          fi
+
+          echo "Maven Central publish failed; checking whether the complete artifact set was published"
+          base="https://repo1.maven.org/maven2/io/github/chirino/memory-service"
+          version="$RELEASE_VERSION"
+          artifacts=(
+            "memory-service-parent/$version/memory-service-parent-$version.pom"
+            "memory-service-process/$version/memory-service-process-$version.jar"
+            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.jar"
+            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.jar"
+            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.jar"
+            "memory-service-binaries/$version/memory-service-binaries-$version.jar"
+          )
+          for artifact in "${artifacts[@]}"; do
+            curl --silent --fail --head --retry 6 --retry-delay 10 "$base/$artifact" >/dev/null \
+              || exit "$publish_status"
+          done
+          echo "Complete Java artifact set is available in Maven Central"
 
   docker-manifest:
     needs:
@@ -443,6 +528,7 @@ jobs:
   finish:
     needs:
       - prepare
+      - java-release
       - docker-manifest
       - binary-artifact
     runs-on: ubuntu-latest

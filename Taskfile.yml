@@ -11,7 +11,8 @@ vars:
   OVERLAY: '{{.OVERLAY | default "postgresql-infinispan"}}'
   PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
-  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
+  JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-process,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
+  JAVA_RELEASE_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-process,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter,:memory-service-binaries"
   
 
 tasks:
@@ -505,8 +506,12 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests -Dcentral.skipPublishing=true
+        if [ -z "{{.BINARIES_DIR}}" ]; then
+          echo "Error: BINARIES_DIR is required for release binary JARs"
+          exit 1
+        fi
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release,binary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests -Dcentral.skipPublishing=true
       - |
         echo ""
         echo "Bundle created successfully for version {{.VERSION}}"
@@ -527,8 +532,12 @@ tasks:
           exit 1
           ;;
         esac
-      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release -pl {{.JAVA_PUBLISH_MODULES}} -am -DskipTests
+        if [ -z "{{.BINARIES_DIR}}" ]; then
+          echo "Error: BINARIES_DIR is required for release binary JARs"
+          exit 1
+        fi
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release,binary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "Release {{.VERSION}} published to Maven Central"
