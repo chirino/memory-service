@@ -247,6 +247,10 @@
     @apply mb-1;
   }
 
+  .sidebar-section-collapsible + .sidebar-section:not(.sidebar-section-collapsible) {
+    @apply mt-4;
+  }
+
   .sidebar-heading {
     @apply text-xs font-semibold uppercase tracking-wider text-gray-500 dark:text-gray-400 px-3;
   }
