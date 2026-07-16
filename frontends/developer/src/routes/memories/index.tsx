@@ -1,16 +1,9 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute } from "@tanstack/react-router";
 import { useState, useMemo } from "react";
-import { ChevronRight, Eye } from "lucide-react";
+import { ChevronRight } from "lucide-react";
 import { useAdminMemoriesInfinite } from "@/hooks/useAdminApi";
-import { formatRelativeTime, truncate, cn } from "@/lib/utils";
-import { Badge } from "@/components/ui/badge";
-import {
-  COGNITION_KIND_LABELS,
-  cognitionConfidence,
-  describeConfidence,
-  getCognitionKind,
-  normalizeCognitionMemoryValue,
-} from "@/lib/cognition";
+import { cn } from "@/lib/utils";
+import { MemoryCard } from "@/components/memories/MemoryCard";
 
 function getErrorMessage(error: unknown): string {
   return error instanceof Error ? error.message : "Unknown error";
@@ -197,110 +190,9 @@ function MemoriesPage() {
 
           {!isLoading && !error && memories.length > 0 && (
             <div className="space-y-3">
-              {memories.map((memory) => {
-                if (!memory.id) {
-                  return null;
-                }
-                const memoryId = memory.id;
-                const namespaceLabel = memory.namespace?.join(" / ") || "(no namespace)";
-                const cognitionKind = getCognitionKind(memory.namespace);
-
-                if (cognitionKind) {
-                  const cognitionValue = normalizeCognitionMemoryValue(memory.value);
-                  const content = typeof cognitionValue.content === "string" ? cognitionValue.content : undefined;
-                  const confidence = cognitionConfidence(cognitionValue);
-                  const subject = typeof memory.attributes?.sub === "string" ? memory.attributes.sub : undefined;
-
-                  return (
-                    <Link
-                      key={memoryId}
-                      to="/memories/$memoryId"
-                      params={{ memoryId }}
-                      className="console-panel group block rounded-xl p-5 transition-colors hover:bg-sage-soft/20"
-                    >
-                      <div className="flex items-start justify-between gap-4">
-                        <div className="min-w-0 flex-1">
-                          <div className="mb-2 flex flex-wrap items-center gap-2">
-                            <Badge>{COGNITION_KIND_LABELS[cognitionKind]}</Badge>
-                            <span className="truncate font-mono text-xs text-muted-foreground">{namespaceLabel}</span>
-                            {memory.archived && <Badge variant="secondary">Archived</Badge>}
-                          </div>
-                          <p className="text-lg font-medium leading-snug text-foreground">
-                            {content || <span className="font-mono text-base text-muted-foreground">{memory.key}</span>}
-                          </p>
-                        </div>
-                        <div className="flex shrink-0 items-center gap-3">
-                          {confidence !== null && <ConfidenceChip value={confidence} />}
-                          <ViewAffordance />
-                        </div>
-                      </div>
-
-                      <div className="mt-4 flex flex-wrap items-center gap-x-3 gap-y-1 border-t border-border pt-3 text-xs text-muted-foreground">
-                        <span>Created {formatRelativeTime(memory.createdAt)}</span>
-                        {memory.revision && <span>Rev {memory.revision}</span>}
-                        {memory.expiresAt && <span>Expires {formatRelativeTime(memory.expiresAt)}</span>}
-                        {subject && (
-                          <span>
-                            about <span className="text-foreground">{subject}</span>
-                          </span>
-                        )}
-                        <span className="font-mono">{memoryId}</span>
-                      </div>
-                    </Link>
-                  );
-                }
-
-                return (
-                  <Link
-                    key={memoryId}
-                    to="/memories/$memoryId"
-                    params={{ memoryId }}
-                    className="console-panel group block rounded-xl p-5 transition-colors hover:bg-sage-soft/20"
-                  >
-                    <div className="mb-3 flex items-start justify-between">
-                      <div className="flex-1">
-                        <div className="mb-2 flex items-center gap-2">
-                          <span className="font-mono text-sm font-medium text-foreground">{namespaceLabel}</span>
-                          {memory.archived && <Badge variant="secondary">Archived</Badge>}
-                        </div>
-                        <div className="text-lg font-semibold text-foreground">{memory.key}</div>
-                        <div className="mt-1 text-sm text-muted-foreground">
-                          Created {formatRelativeTime(memory.createdAt)}
-                          {memory.expiresAt && ` • Expires ${formatRelativeTime(memory.expiresAt)}`}
-                          {memory.revision && ` • Rev ${memory.revision}`}
-                        </div>
-                      </div>
-                      <ViewAffordance />
-                    </div>
-
-                    {/* Value preview */}
-                    <div className="console-code mt-4 rounded-lg p-4">
-                      <div className="mb-2 text-xs text-muted-foreground">Value Preview:</div>
-                      <pre className="overflow-x-auto text-sm leading-6">
-                        {truncate(JSON.stringify(memory.value, null, 2), 200)}
-                      </pre>
-                    </div>
-
-                    {/* Attributes */}
-                    {memory.attributes && Object.keys(memory.attributes).length > 0 && (
-                      <div className="mt-3 flex flex-wrap gap-2">
-                        {Object.entries(memory.attributes).slice(0, 3).map(([key, value]) => (
-                          <Badge key={key} variant="outline">
-                            {key}: {String(value)}
-                          </Badge>
-                        ))}
-                        {Object.keys(memory.attributes).length > 3 && (
-                          <Badge variant="outline">+{Object.keys(memory.attributes).length - 3} more</Badge>
-                        )}
-                      </div>
-                    )}
-
-                    <div className="mt-3 border-t border-border pt-3 text-xs text-muted-foreground">
-                      Memory ID: <span className="font-mono">{memoryId}</span>
-                    </div>
-                  </Link>
-                );
-              })}
+              {memories.map((memory) => (
+                <MemoryCard key={memory.id} memory={memory} />
+              ))}
             </div>
           )}
 
@@ -329,25 +221,6 @@ function MemoriesPage() {
   );
 }
 
-function ViewAffordance() {
-  return (
-    <span className="inline-flex items-center gap-1 text-sm font-medium text-muted-foreground transition-colors group-hover:text-foreground">
-      <Eye className="h-4 w-4" />
-      View
-    </span>
-  );
-}
 
-function ConfidenceChip({ value }: { value: number }) {
-  return (
-    <span
-      title={describeConfidence(value)}
-      className="inline-flex shrink-0 items-center gap-1.5 rounded-full bg-sage-soft/60 px-2.5 py-1 text-xs font-medium text-primary"
-    >
-      <span className="h-1.5 w-1.5 rounded-full bg-primary" />
-      {Math.round(value * 100)}%
-    </span>
-  );
-}
 
 // Made with Bob

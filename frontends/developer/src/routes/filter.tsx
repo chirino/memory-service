@@ -1,28 +1,24 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
-import { useState, useEffect } from "react";
+import { useState } from "react";
 import { Search as SearchIcon, MessageSquare, Database } from "lucide-react";
 import { useAdminConversations, useAdminMemories, type AdminConversation, type AdminMemory } from "@/hooks/useAdminApi";
 import { formatRelativeTime, truncate, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
+import { useDebounce } from "@/hooks/useDebounce";
+import { EmptySearchState } from "@/components/search/EmptySearchState";
+import { SearchLoadingState } from "@/components/search/SearchLoadingState";
+import { NoResultsState } from "@/components/search/NoResultsState";
 
-export const Route = createFileRoute("/search")({
-  component: SearchPage,
+export const Route = createFileRoute("/filter")({
+  component: FilterPage,
 });
 
 type SearchType = "conversations" | "memories" | "all";
 
-function SearchPage() {
+function FilterPage() {
   const [query, setQuery] = useState("");
+  const debouncedQuery = useDebounce(query, 300);
   const [searchType, setSearchType] = useState<SearchType>("all");
-  const [debouncedQuery, setDebouncedQuery] = useState("");
-
-  // Debounce search query
-  useEffect(() => {
-    const timer = setTimeout(() => {
-      setDebouncedQuery(query);
-    }, 300);
-    return () => clearTimeout(timer);
-  }, [query]);
 
   const shouldSearchConversations = searchType === "all" || searchType === "conversations";
   const shouldSearchMemories = searchType === "all" || searchType === "memories";
@@ -66,8 +62,8 @@ function SearchPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
-        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Search</h1>
-        <p className="console-subtitle mt-3 text-base md:text-lg">Search across conversations and memories</p>
+        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Filter</h1>
+        <p className="console-subtitle mt-3 text-base md:text-lg">Filter conversations and memories (client-side)</p>
       </div>
 
       <div className="px-5 pb-6 md:px-10">
@@ -76,7 +72,7 @@ function SearchPage() {
             <SearchIcon className="absolute left-3 top-1/2 h-5 w-5 -translate-y-1/2 text-muted-foreground" />
             <input
               type="text"
-              placeholder="Search by title, ID, namespace, key, or content..."
+              placeholder="Filter by title, ID, namespace, key, or content..."
               value={query}
               onChange={(e) => setQuery(e.target.value)}
               className="console-input w-full py-3 pl-10 pr-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
@@ -109,31 +105,11 @@ function SearchPage() {
       </div>
 
       <div className="flex-1 overflow-y-auto px-5 pb-8 md:px-10">
-        {!query && (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <SearchIcon className="mx-auto mb-4 h-12 w-12 text-primary/40" strokeWidth={1.45} />
-              <p className="text-muted-foreground">Enter a search query to get started</p>
-            </div>
-          </div>
-        )}
+        {!query && <EmptySearchState message="Enter a filter query to get started" />}
 
-        {query && isLoading && (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <div className="mb-4 inline-block h-8 w-8 animate-spin rounded-full border-4 border-primary border-t-transparent"></div>
-              <p className="text-sm text-muted-foreground">Searching...</p>
-            </div>
-          </div>
-        )}
+        {query && isLoading && <SearchLoadingState message="Filtering..." />}
 
-        {query && !isLoading && !hasResults && (
-          <div className="flex h-full items-center justify-center">
-            <div className="text-center">
-              <p className="text-muted-foreground">No results found for "{query}"</p>
-            </div>
-          </div>
-        )}
+        {query && !isLoading && !hasResults && <NoResultsState query={query} />}
 
         {query && !isLoading && hasResults && (
           <div className="space-y-8">

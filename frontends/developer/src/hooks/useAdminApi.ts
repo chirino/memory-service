@@ -3,13 +3,17 @@ import {
   adminListConversationsOptions,
   adminGetConversationOptions,
   adminGetEntriesOptions,
+  adminGetEntryOptions,
   adminUpdateConversationMutation,
   adminListMemoriesOptions,
   adminGetMemoryOptions,
   adminListConversations,
   adminListMemories,
+  adminSearchConversations,
+  adminSearchMemories,
   type AdminConversation,
   type AdminMemoryItem,
+  type AdminSearchMemoriesData,
   type Entry,
 } from "@/api/client";
 
@@ -70,6 +74,14 @@ export function useAdminConversationEntries(conversationId: string, params?: {
     adminGetEntriesOptions({
       path: { id: conversationId },
       query: params,
+    })
+  );
+}
+
+export function useAdminEntry(entryId: string) {
+  return useQuery(
+    adminGetEntryOptions({
+      path: { id: entryId },
     })
   );
 }
@@ -140,6 +152,63 @@ export function useAdminMemory(memoryId: string) {
       path: { id: memoryId },
     })
   );
+}
+
+// Search
+export function useAdminSearchConversations(params: {
+  query: string;
+  searchType?: "auto" | "semantic" | "fulltext" | string[];
+  limit?: number;
+  includeEntry?: boolean;
+  groupByConversation?: boolean;
+}) {
+  const limit = params.limit ?? 20;
+  return useInfiniteQuery({
+    queryKey: ["adminSearchConversations", params],
+    initialPageParam: null as string | null,
+    queryFn: async ({ pageParam }) => {
+      const { data } = await adminSearchConversations({
+        body: {
+          query: params.query,
+          afterCursor: pageParam ?? undefined,
+          limit,
+          includeEntry: params.includeEntry ?? true,
+        },
+        throwOnError: true,
+      });
+      return data;
+    },
+    getNextPageParam: (lastPage) => lastPage.afterCursor ?? undefined,
+    enabled: params.query.trim().length > 0,
+  });
+}
+
+export function useAdminSearchMemories(params: {
+  namespacePrefix: string[];
+  query?: string;
+  limit?: number;
+}) {
+  const limit = params.limit ?? 20;
+  return useInfiniteQuery({
+    queryKey: ["adminSearchMemories", params],
+    initialPageParam: null as string | null,
+    queryFn: async () => {
+      const body: AdminSearchMemoriesData["body"] = {
+        namespace_prefix: params.namespacePrefix,
+        limit,
+      };
+      if (params.query && params.query.trim().length > 0) {
+        body.query = params.query.trim();
+      }
+      const { data } = await adminSearchMemories({
+        body,
+        throwOnError: true,
+      });
+      return data;
+    },
+    getNextPageParam: () => undefined, // Memory search doesn't support pagination yet
+    enabled: params.query !== undefined && params.query.trim().length > 0,
+  });
 }
 
 // Re-export types with aliases for backward compatibility

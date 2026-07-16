@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Brain, MessageCircle, Search, LogOut, ChevronDown, Sprout } from "lucide-react";
+import { Brain, MessageCircle, Search, Filter, LogOut, ChevronDown, Sprout } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
@@ -14,7 +14,9 @@ import {
 const navItems = [
   { to: "/conversations", label: "Conversations", icon: MessageCircle },
   { to: "/memories", label: "Memories", icon: Brain },
-  { to: "/search", label: "Search", icon: Search },
+  { to: "/filter", label: "Filter", icon: Filter },
+  { to: "/search/conversations", label: "Search Conversations", icon: Search },
+  { to: "/search/memories", label: "Search Memories", icon: Search },
 ];
 
 export function Sidebar() {
