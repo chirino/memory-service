@@ -12,20 +12,27 @@ import io.quarkus.deployment.dev.devservices.DevServicesConfig;
 import io.quarkus.devservices.common.StartableContainer;
 import io.quarkus.devui.spi.page.CardPageBuildItem;
 import io.quarkus.devui.spi.page.Page;
+import java.io.IOException;
+import java.io.InputStream;
 import java.security.SecureRandom;
 import java.time.Duration;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Properties;
 import java.util.function.Function;
 import java.util.function.Supplier;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
 import org.testcontainers.containers.FixedHostPortGenericContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
+import org.testcontainers.images.PullPolicy;
 import org.testcontainers.utility.DockerImageName;
 
 public class MemoryServiceDevServicesProcessor {
@@ -34,6 +41,13 @@ public class MemoryServiceDevServicesProcessor {
     private static final String FEATURE = "memory-service";
     private static final int MEMORY_SERVICE_PORT = 8080;
     private static final String DEV_SERVICE_LABEL = "quarkus-dev-service-memory-service";
+    private static final String IMAGE_NAME_CONFIG_KEY = "memory-service.devservices.image-name";
+    private static final String IMAGE_REPOSITORY = "ghcr.io/chirino/memory-service";
+    private static final String LATEST_IMAGE = IMAGE_REPOSITORY + ":latest";
+    private static final String VERSION_RESOURCE = "/META-INF/memory-service-extension.properties";
+    private static final Pattern RELEASE_VERSION =
+            Pattern.compile("^(\\d+)\\.(\\d+)\\.\\d+(?:[-.].*)?$");
+    private static final String EXTENSION_VERSION = loadExtensionVersion();
     private static final int API_KEY_BYTES = 32;
     private static final String OIDC_AUTH_SERVER_URL_CONFIG_KEY = "quarkus.oidc.auth-server-url";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
@@ -203,8 +217,12 @@ public class MemoryServiceDevServicesProcessor {
 
         // Read optional fixed port configuration
         final Integer fixedPort = getFixedPortConfig();
+        final String configuredImageName = getConfiguredImageName();
+        final String imageName = resolveImageName(configuredImageName, EXTENSION_VERSION);
+        final boolean usingDefaultImage =
+                configuredImageName == null || configuredImageName.isBlank();
 
-        LOG.info("Starting memory-service dev service...");
+        LOG.infof("Starting memory-service dev service using image %s...", imageName);
 
         Map<String, Function<Startable, String>> configProviders = new HashMap<>();
         configProviders.put(
@@ -238,8 +256,7 @@ public class MemoryServiceDevServicesProcessor {
                                         GenericContainer<?> container;
                                         if (fixedPort != null) {
                                             container =
-                                                    new FixedHostPortGenericContainer<>(
-                                                                    "ghcr.io/chirino/memory-service:latest")
+                                                    new FixedHostPortGenericContainer<>(imageName)
                                                             .withExposedPorts(MEMORY_SERVICE_PORT)
                                                             .withFixedExposedPort(
                                                                     fixedPort, MEMORY_SERVICE_PORT);
@@ -251,8 +268,14 @@ public class MemoryServiceDevServicesProcessor {
                                             container =
                                                     new GenericContainer<>(
                                                                     DockerImageName.parse(
-                                                                            "ghcr.io/chirino/memory-service:latest"))
+                                                                            imageName))
                                                             .withExposedPorts(MEMORY_SERVICE_PORT);
+                                        }
+                                        if (usingDefaultImage) {
+                                            // Release defaults use a mutable X.Y compatibility tag,
+                                            // while snapshots use mutable latest. Always check the
+                                            // registry so a locally cached tag cannot go stale.
+                                            container.withImagePullPolicy(PullPolicy.alwaysPull());
                                         }
                                         container
                                                 .withEnv(
@@ -345,6 +368,54 @@ public class MemoryServiceDevServicesProcessor {
                                 MemoryServiceDevServicesProcessor::configureKeycloakDevService,
                                 true)
                         .build());
+    }
+
+    static String resolveImageName(String configuredImageName, String extensionVersion) {
+        if (configuredImageName != null && !configuredImageName.isBlank()) {
+            return configuredImageName.trim();
+        }
+        if (extensionVersion == null
+                || extensionVersion.isBlank()
+                || extensionVersion.toUpperCase(Locale.ROOT).endsWith("-SNAPSHOT")) {
+            return LATEST_IMAGE;
+        }
+
+        Matcher matcher = RELEASE_VERSION.matcher(extensionVersion.trim());
+        if (!matcher.matches()) {
+            LOG.warnf(
+                    "Unable to derive a compatibility image tag from extension version %s; using"
+                            + " latest",
+                    extensionVersion);
+            return LATEST_IMAGE;
+        }
+        return IMAGE_REPOSITORY + ":" + matcher.group(1) + "." + matcher.group(2);
+    }
+
+    private static String getConfiguredImageName() {
+        try {
+            return ConfigProvider.getConfig()
+                    .getOptionalValue(IMAGE_NAME_CONFIG_KEY, String.class)
+                    .orElse(null);
+        } catch (IllegalStateException e) {
+            LOG.debugf(e, "Unable to read %s from config.", IMAGE_NAME_CONFIG_KEY);
+            return null;
+        }
+    }
+
+    static String loadExtensionVersion() {
+        try (InputStream input =
+                MemoryServiceDevServicesProcessor.class.getResourceAsStream(VERSION_RESOURCE)) {
+            if (input == null) {
+                LOG.warnf("Unable to load %s; Dev Services will use latest", VERSION_RESOURCE);
+                return null;
+            }
+            Properties properties = new Properties();
+            properties.load(input);
+            return properties.getProperty("version");
+        } catch (IOException e) {
+            LOG.warnf(e, "Unable to load %s; Dev Services will use latest", VERSION_RESOURCE);
+            return null;
+        }
     }
 
     private static String findConfiguredAuthServerUrl() {

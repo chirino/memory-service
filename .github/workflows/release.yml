@@ -415,6 +415,12 @@ jobs:
             local tag_args=("-t" "$image_ref:$version")
             local digest_refs=()
 
+            # Stable patch releases advance their verified compatibility line.
+            # Prereleases still receive their immutable version tag only.
+            if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+              tag_args+=("-t" "$image_ref:${BASH_REMATCH[1]}.${BASH_REMATCH[2]}")
+            fi
+
             if [[ "$UPDATE_LATEST" == "true" ]]; then
               tag_args+=("-t" "$image_ref:latest")
             fi

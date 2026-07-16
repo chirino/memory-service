@@ -13,7 +13,7 @@ The Memory Service Quarkus extension provides **Dev Services** that automaticall
 
 Dev Services automatically:
 
-- **Starts a memory-service container** using the `ghcr.io/chirino/memory-service:latest` image
+- **Starts a compatible memory-service container** using the extension's `X.Y` image line for releases, or `latest` for SNAPSHOT builds
 - **Configures your application** with the correct connection URL and API key
 - **Uses self-contained local storage** inside the container for development
 - **Connects to Keycloak Dev Services** when your app configures OIDC
@@ -90,6 +90,22 @@ memory-service.devservices.port=8082
 ```
 
 When this property is not set, the Quarkus app still receives the correct dynamic port through generated config.
+
+### `memory-service.devservices.image-name`
+
+**Type:** `String`
+**Default:** `ghcr.io/chirino/memory-service:X.Y` for a released `X.Y.Z` extension; `ghcr.io/chirino/memory-service:latest` for SNAPSHOT builds
+**Description:** Overrides the container image used by Dev Services. Use an immutable version tag or digest when you need an exact server build.
+
+```properties
+# Pin an exact release
+memory-service.devservices.image-name=ghcr.io/chirino/memory-service:0.0.3
+
+# Or pin an immutable digest
+memory-service.devservices.image-name=ghcr.io/chirino/memory-service@sha256:...
+```
+
+The default `X.Y` and `latest` tags are mutable, so Dev Services always checks the registry before starting them instead of relying on a cached local copy. Explicit image overrides use Testcontainers' standard pull policy.
 
 ### `memory-service.devservices.env.*`
 
