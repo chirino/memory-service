@@ -275,7 +275,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, fmt.Errorf("auth configuration error: %w", err)
 	}
-	auth := security.AuthMiddlewareWithRateLimiter(resolver, rateLimiter)
+	auth := security.AuthMiddlewareWithAuthFailureRateLimiter(resolver, rateLimiter)
+	authenticatedRateLimit := security.AuthenticatedRateLimitMiddleware(rateLimiter)
+	userIDAsserter := security.NewUserIDAsserter(cfg.TrustedUserIDClients)
 	// Store resolver on Server so callers like embedded MCP can configure it after build.
 	var builtServer Server
 	builtServer.TokenResolver = resolver
@@ -296,7 +298,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	memoriesAdapter := routememories.NewAPIServerAdapter(episodicStore, episodicPolicy, cfg, embedder)
 
 	// Register generated wrappers on the public router.
-	registerAPIRoutes(router, auth, cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
+	registerAPIRoutes(router, auth, authenticatedRateLimit, userIDAsserter.HTTPMiddleware(), cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
 
 	// Register developer frontend routes when enabled.
 	if cfg.DeveloperFrontendEnabled {
@@ -354,7 +356,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 				Store:     knowledgeStore,
 				Clusterer: clusterer,
 			}
-			knowledgeHandler.RegisterRoutes(router, auth)
+			knowledgeHandler.RegisterRoutes(router, auth, authenticatedRateLimit)
 
 			log.Info("Knowledge clustering enabled",
 				"epsilon", cfg.KnowledgeClusteringEpsilon,
@@ -369,6 +371,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			security.GRPCRequestIDUnaryInterceptor(),
 			security.GRPCSourceRateLimitUnaryInterceptor(rateLimiter),
 			security.GRPCUnaryInterceptorWithRateLimiter(resolver, rateLimiter),
+			userIDAsserter.GRPCUnaryInterceptor(),
 			security.GRPCIdentityRateLimitUnaryInterceptor(rateLimiter),
 			maxPageSizeUnaryInterceptor(cfg),
 		),
@@ -376,6 +379,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			security.GRPCRequestIDStreamInterceptor(),
 			security.GRPCSourceRateLimitStreamInterceptor(rateLimiter),
 			security.GRPCStreamInterceptorWithRateLimiter(resolver, rateLimiter),
+			userIDAsserter.GRPCStreamInterceptor(),
 			security.GRPCIdentityRateLimitStreamInterceptor(rateLimiter),
 		),
 	)
@@ -413,9 +417,11 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		EventBus: eventBus,
 	})
 	pb.RegisterEventStreamServiceServer(grpcServer, &grpcserver.EventStreamServer{
-		Store:    store,
-		EventBus: eventBus,
-		Config:   cfg,
+		Store:          store,
+		EventBus:       eventBus,
+		Config:         cfg,
+		UserIDAsserter: userIDAsserter,
+		RateLimiter:    rateLimiter,
 	})
 	pb.RegisterAdminCheckpointServiceServer(grpcServer, &grpcserver.AdminCheckpointServer{Store: store})
 

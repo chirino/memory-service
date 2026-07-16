@@ -118,16 +118,20 @@ func (g *grpcSteps) iUseGRPCMetadata(table *godog.Table) error {
 }
 
 func (g *grpcSteps) authCtx() context.Context {
+	return grpcAuthContext(g.s)
+}
+
+func grpcAuthContext(s *cucumber.TestScenario) context.Context {
 	ctx := context.Background()
 
 	// If raw gRPC metadata override is set, use it verbatim.
-	if raw, ok := g.s.Extra[grpcMetadataOverrideKey]; ok {
+	if raw, ok := s.Extra[grpcMetadataOverrideKey]; ok {
 		if pairs, ok := raw.([]string); ok && len(pairs) > 0 {
 			return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...))
 		}
 	}
 
-	session := g.s.Session()
+	session := s.Session()
 	var pairs []string
 	if session.TestUser != nil && session.TestUser.Subject != "" {
 		pairs = append(pairs, "authorization", "Bearer "+session.TestUser.Subject)
@@ -139,6 +143,10 @@ func (g *grpcSteps) authCtx() context.Context {
 	// Forward X-API-Key if set on session headers (for API-key-only gRPC access).
 	if apiKey := session.Header.Get("X-API-Key"); apiKey != "" {
 		pairs = append(pairs, "x-api-key", apiKey)
+	}
+	// Forward X-User-ID as lowercase gRPC metadata.
+	if userID := session.Header.Get("X-User-ID"); userID != "" {
+		pairs = append(pairs, "x-user-id", userID)
 	}
 	if len(pairs) > 0 {
 		return metadata.NewOutgoingContext(ctx, metadata.Pairs(pairs...))

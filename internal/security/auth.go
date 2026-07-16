@@ -60,14 +60,20 @@ const (
 
 // Identity holds the resolved caller identity from a bearer token.
 type Identity struct {
-	UserID         string
-	ClientID       string
-	Roles          map[string]bool
-	IsAdmin        bool
-	CredentialKind CredentialKind
-	HasOIDCToken   bool
-	OIDCScopes     map[string]bool
-	OIDCScopeGates map[Permission]map[string]bool
+	// AuthenticatedUserID is the user resolved from the base credential. UserID
+	// may differ when a trusted client asserts an effective user for a user API.
+	AuthenticatedUserID string
+	UserID              string
+	ClientID            string
+	UserRoles           map[string]bool
+	ClientRoles         map[string]bool
+	Roles               map[string]bool
+	IsAdmin             bool
+	UserIDAsserted      bool
+	CredentialKind      CredentialKind
+	HasOIDCToken        bool
+	OIDCScopes          map[string]bool
+	OIDCScopeGates      map[Permission]map[string]bool
 }
 
 // Permission is a fixed Memory Service API capability that can be additionally
@@ -372,9 +378,9 @@ var (
 // It applies all configured credential policies based on the deployment configuration.
 func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (*Identity, error) {
 	if r.localUserID != "" {
-		roles := r.rolesForClient(r.localClientID)
-		r.addUserRoles(roles, r.localUserID)
-		return newIdentity(r.localUserID, r.localClientID, roles, CredentialLocalUnixSocket), nil
+		userRoles := map[string]bool{}
+		r.addUserRoles(userRoles, r.localUserID)
+		return newIdentity(r.localUserID, r.localClientID, userRoles, r.rolesForClient(r.localClientID), CredentialLocalUnixSocket), nil
 	}
 	// Embedded MCP in-process transport: resolve synthetic identity without bearer/API-key paths.
 	// The Transport value is injected only by the in-process client; remote listeners strip the
@@ -384,8 +390,7 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 			return nil, fmt.Errorf("embedded MCP transport used but embedded identity not configured")
 		}
 		clientID := r.embeddedMCPClientID
-		roles := r.rolesForClient(clientID)
-		return newIdentity(r.embeddedMCPUserID, clientID, roles, CredentialEmbeddedMCP), nil
+		return newIdentity(r.embeddedMCPUserID, clientID, nil, r.rolesForClient(clientID), CredentialEmbeddedMCP), nil
 	}
 
 	bearerToken := creds.BearerToken
@@ -415,8 +420,7 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 		if clientID == "" {
 			return nil, errors.New("missing credentials")
 		}
-		roles := r.rolesForClient(clientID)
-		return newIdentity("", clientID, roles, CredentialAPIKey), nil
+		return newIdentity("", clientID, nil, r.rolesForClient(clientID), CredentialAPIKey), nil
 	}
 
 	// Bearer token is present. Check if it looks like a JWT.
@@ -495,26 +499,25 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 			clientID = oidcClientID
 		}
 
-		// Resolve roles from token claims.
+		// Resolve roles derived from the authenticated user separately from
+		// roles derived from the authenticated client. Delegation may discard
+		// the former while preserving the latter.
+		userRoles := map[string]bool{}
 		var rawClaims map[string]any
 		if err := idToken.Claims(&rawClaims); err == nil {
-			if err := r.addTokenRoles(roles, rawClaims); err != nil {
+			if err := r.addTokenRoles(userRoles, rawClaims); err != nil {
 				return nil, errors.Join(errInvalidJWT, err)
 			}
 		}
 
-		r.addUserRoles(roles, userID)
-
-		// Client role assignment (union OIDC client and API-key client).
-		r.addClientRoles(roles, clientID)
-
-		applyAdminImplication(roles)
+		r.addUserRoles(userRoles, userID)
+		clientRoles := r.rolesForClient(clientID)
 
 		kind := CredentialOIDC
 		if apiKey != "" {
 			kind = CredentialOIDCAPIKey
 		}
-		id := newIdentity(userID, clientID, roles, kind)
+		id := newIdentity(userID, clientID, userRoles, clientRoles, kind)
 		id.HasOIDCToken = true
 		id.OIDCScopes = splitFields(claims.Scope)
 		id.OIDCScopeGates = r.oidcScopes
@@ -526,8 +529,7 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 	if r.bearerTokenIsAPIKey(bearerToken) {
 		// Bearer value is a configured API key: resolve client identity (no-OIDC compat).
 		clientID = r.apiKeys[bearerToken]
-		roles := r.rolesForClient(clientID)
-		return newIdentity("", clientID, roles, CredentialBearerAPIKey), nil
+		return newIdentity("", clientID, nil, r.rolesForClient(clientID), CredentialBearerAPIKey), nil
 	}
 
 	// No-OIDC mode: treat the bearer token as the user ID (raw bearer user).
@@ -535,13 +537,62 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 	return resolveRawBearer(r, ctx, bearerToken, clientID, roles)
 }
 
-func newIdentity(userID, clientID string, roles map[string]bool, kind CredentialKind) *Identity {
+func newIdentity(userID, clientID string, userRoles, clientRoles map[string]bool, kind CredentialKind) *Identity {
+	userRoles = cloneRoles(userRoles)
+	clientRoles = cloneRoles(clientRoles)
+	applyAdminImplication(userRoles)
+	applyAdminImplication(clientRoles)
+	roles := cloneRoles(userRoles)
+	for role, granted := range clientRoles {
+		if granted {
+			roles[role] = true
+		}
+	}
+	applyAdminImplication(roles)
 	return &Identity{
-		UserID:         userID,
-		ClientID:       clientID,
-		Roles:          roles,
-		IsAdmin:        roles[RoleAdmin],
-		CredentialKind: kind,
+		AuthenticatedUserID: userID,
+		UserID:              userID,
+		ClientID:            clientID,
+		UserRoles:           userRoles,
+		ClientRoles:         clientRoles,
+		Roles:               roles,
+		IsAdmin:             roles[RoleAdmin],
+		CredentialKind:      kind,
+	}
+}
+
+func cloneRoles(source map[string]bool) map[string]bool {
+	result := map[string]bool{}
+	for role, granted := range source {
+		if granted {
+			result[role] = true
+		}
+	}
+	return result
+}
+
+// withAssertedUser returns a request-scoped identity whose effective user is
+// asserted by the authenticated client. User-derived roles are deliberately
+// discarded; client-derived roles and OIDC scope state are preserved.
+func (id *Identity) withAssertedUser(userID string) *Identity {
+	if id == nil || userID == id.AuthenticatedUserID {
+		return id
+	}
+	roles := cloneRoles(id.ClientRoles)
+	applyAdminImplication(roles)
+	return &Identity{
+		AuthenticatedUserID: id.AuthenticatedUserID,
+		UserID:              userID,
+		ClientID:            id.ClientID,
+		UserRoles:           map[string]bool{},
+		ClientRoles:         cloneRoles(id.ClientRoles),
+		Roles:               roles,
+		IsAdmin:             roles[RoleAdmin],
+		UserIDAsserted:      true,
+		CredentialKind:      id.CredentialKind,
+		HasOIDCToken:        id.HasOIDCToken,
+		OIDCScopes:          cloneRoles(id.OIDCScopes),
+		OIDCScopeGates:      id.OIDCScopeGates,
 	}
 }
 
@@ -783,11 +834,23 @@ func AuthMiddleware(resolver *TokenResolver) gin.HandlerFunc {
 }
 
 func AuthMiddlewareWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) gin.HandlerFunc {
+	return authMiddleware(resolver, limiter, true)
+}
+
+// AuthMiddlewareWithAuthFailureRateLimiter resolves credentials and rate-limits
+// authentication failures, while deferring authenticated identity limits to
+// AuthenticatedRateLimitMiddleware. Use this when request identity may still be
+// changed by trusted user assertion middleware.
+func AuthMiddlewareWithAuthFailureRateLimiter(resolver *TokenResolver, limiter *RateLimiter) gin.HandlerFunc {
+	return authMiddleware(resolver, limiter, false)
+}
+
+func authMiddleware(resolver *TokenResolver, limiter *RateLimiter, applyIdentityRateLimit bool) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		if resolver.localUserID != "" {
 			id, _ := resolver.Resolve(c.Request.Context(), RequestCredentials{})
 			setGinIdentity(c, id)
-			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+			if applyIdentityRateLimit && !applyHTTPAuthenticatedRateLimits(c, limiter) {
 				return
 			}
 			c.Next()
@@ -809,7 +872,7 @@ func AuthMiddlewareWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter
 				return
 			}
 			setGinIdentity(c, id)
-			if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+			if applyIdentityRateLimit && !applyHTTPAuthenticatedRateLimits(c, limiter) {
 				return
 			}
 			c.Next()
@@ -858,7 +921,7 @@ func AuthMiddlewareWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter
 		}
 
 		setGinIdentity(c, id)
-		if !applyHTTPAuthenticatedRateLimits(c, limiter) {
+		if applyIdentityRateLimit && !applyHTTPAuthenticatedRateLimits(c, limiter) {
 			return
 		}
 		c.Next()

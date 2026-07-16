@@ -25,11 +25,6 @@ func TestFeaturesPgKeycloakAuthClients(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 	keycloak := testkeycloak.StartKeycloak(t)
 
-	featurePath := filepath.Join("testdata", "features-oidc", "auth-clients-rest.feature")
-	if _, err := os.Stat(featurePath); os.IsNotExist(err) {
-		t.Skipf("Feature file not found: %s", featurePath)
-	}
-
 	opts := cucumber.DefaultOptions()
 	opts.Concurrency = 1 // scenarios must run sequentially (each restarts the server)
 	for _, arg := range os.Args[1:] {
@@ -38,32 +33,38 @@ func TestFeaturesPgKeycloakAuthClients(t *testing.T) {
 		}
 	}
 
-	name := "auth-clients-rest"
-	t.Run(name, func(t *testing.T) {
-		clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
-
-		o := opts
-		o.TestingT = t
-		o.Paths = []string{featurePath}
-		defer cucumber.ApplyReportOptions(&o, t.Name())()
-
-		// The suite has no persistent server: each scenario starts its own.
-		suite := cucumber.NewTestSuite()
-		suite.APIURL = "" // will be set per-scenario by auth mode steps
-		suite.TestingT = t
-		suite.Context = &config.Config{}
-		suite.DB = &PostgresTestDB{DBURL: dbURL}
-		// Provide Keycloak as OIDC token provider and the shared DB URL for per-scenario servers.
-		suite.Extra[OIDCTokenProviderExtraKey] = keycloak
-		suite.Extra[AuthModeDBURLKey] = dbURL
-
-		status := godog.TestSuite{
-			Name:                "pg-keycloak-" + name,
-			Options:             &o,
-			ScenarioInitializer: suite.InitializeScenario,
-		}.Run()
-		if status != 0 {
-			t.Fail()
+	for _, name := range []string{"auth-clients-rest", "trusted-user-id-oidc"} {
+		featurePath := filepath.Join("testdata", "features-oidc", name+".feature")
+		if _, err := os.Stat(featurePath); os.IsNotExist(err) {
+			t.Skipf("Feature file not found: %s", featurePath)
 		}
-	})
+
+		t.Run(name, func(t *testing.T) {
+			clearFeatureDB(t, &PostgresTestDB{DBURL: dbURL})
+
+			o := opts
+			o.TestingT = t
+			o.Paths = []string{featurePath}
+			defer cucumber.ApplyReportOptions(&o, t.Name())()
+
+			// The suite has no persistent server: each scenario starts its own.
+			suite := cucumber.NewTestSuite()
+			suite.APIURL = "" // will be set per-scenario by auth mode steps
+			suite.TestingT = t
+			suite.Context = &config.Config{}
+			suite.DB = &PostgresTestDB{DBURL: dbURL}
+			// Provide Keycloak as OIDC token provider and the shared DB URL for per-scenario servers.
+			suite.Extra[OIDCTokenProviderExtraKey] = keycloak
+			suite.Extra[AuthModeDBURLKey] = dbURL
+
+			status := godog.TestSuite{
+				Name:                "pg-keycloak-" + name,
+				Options:             &o,
+				ScenarioInitializer: suite.InitializeScenario,
+			}.Run()
+			if status != 0 {
+				t.Fail()
+			}
+		})
+	}
 }

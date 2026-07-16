@@ -6,6 +6,8 @@ info:
     Admin APIs for Memory Service. These endpoints provide administrative access
     to all conversations across all users, including archived resources.
     Access requires admin or auditor role.
+    Authenticate with an OIDC bearer token or a configured `X-API-Key` client
+    credential. `X-User-ID` is ignored on every admin operation.
 tags:
   - name: Admin
     description: Administrative APIs for system-wide access to conversations and entries.
@@ -116,6 +118,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     put:
       tags: [Admin]
       summary: Upsert a memory item (admin)
@@ -144,6 +147,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     patch:
       tags: [Admin]
       summary: Update a memory item (admin)
@@ -188,6 +192,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memories/search:
     post:
       tags: [Admin]
@@ -211,6 +216,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-namespaces:
     get:
       tags: [Admin]
@@ -277,6 +283,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-policies:
     get:
       tags: [Admin]
@@ -294,6 +301,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     put:
       tags: [Admin]
       summary: Upload episodic memory policy bundle
@@ -312,6 +320,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memories/{id}:
     get:
       tags: [Admin]
@@ -349,6 +358,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     delete:
       tags: [Admin]
       summary: Force-delete an episodic memory by ID
@@ -368,6 +378,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/entries/{id}:
     get:
       tags: [Admin]
@@ -403,6 +414,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-index/status:
     get:
       tags: [Admin]
@@ -419,6 +431,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-index/trigger:
     post:
       tags: [Admin]
@@ -435,6 +448,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-usage:
     get:
       tags: [Admin]
@@ -469,6 +483,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /admin/v1/memory-usage/top:
     get:
       tags: [Admin]
@@ -510,6 +525,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations:
     get:
       tags: [Admin]
@@ -622,6 +638,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/{id}:
     get:
       tags: [Admin]
@@ -656,6 +673,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     patch:
       tags: [Admin]
       summary: Update any conversation (admin only)
@@ -690,6 +708,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/{id}/entries:
     get:
       tags: [Admin]
@@ -805,6 +824,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/{id}/memberships:
     get:
       tags: [Admin]
@@ -861,6 +881,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/{id}/forks:
     get:
       tags: [Admin]
@@ -899,6 +920,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/{id}/children:
     get:
       tags: [Admin]
@@ -941,6 +963,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/conversations/search:
     post:
       tags: [Admin]
@@ -981,6 +1004,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/evict:
     post:
       tags: [Admin]
@@ -1042,6 +1066,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/events:
     get:
       tags: [Admin]
@@ -1116,6 +1141,7 @@ paths:
           description: Replay requested but outbox support is unavailable.
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/checkpoints/{clientId}:
     get:
       tags: [Admin]
@@ -1147,6 +1173,7 @@ paths:
                 $ref: '#/components/schemas/ErrorResponse'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     put:
       tags: [Admin]
       summary: Upsert an admin client checkpoint
@@ -1183,6 +1210,7 @@ paths:
           description: Admin role required.
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   ############################################################
   # Admin Attachments
   ############################################################
@@ -1256,6 +1284,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/attachments/{id}:
     get:
       tags: [Admin]
@@ -1291,6 +1320,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
     delete:
       tags: [Admin]
       summary: Delete any attachment (admin only)
@@ -1322,6 +1352,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/attachments/{id}/content:
     get:
       tags: [Admin]
@@ -1382,6 +1413,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/attachments/{id}/download-url:
     get:
       tags: [Admin]
@@ -1429,6 +1461,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   ############################################################
   # Admin Stats
   ############################################################
@@ -1470,6 +1503,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/error-rate:
     get:
       tags: [Admin Stats]
@@ -1508,6 +1542,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/latency-p95:
     get:
       tags: [Admin Stats]
@@ -1546,6 +1581,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/cache-hit-rate:
     get:
       tags: [Admin Stats]
@@ -1584,6 +1620,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/db-pool-utilization:
     get:
       tags: [Admin Stats]
@@ -1623,6 +1660,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/summary:
     get:
       tags: [Admin Stats]
@@ -1651,6 +1689,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/store-latency-p95:
     get:
       tags: [Admin Stats]
@@ -1694,6 +1733,7 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
   /v1/admin/stats/store-throughput:
     get:
       tags: [Admin Stats]
@@ -1737,12 +1777,18 @@ paths:
           $ref: '#/components/responses/Error'
       security:
         - BearerAuth: []
+        - ApiKeyAuth: []
 components:
   securitySchemes:
     BearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
+    ApiKeyAuth:
+      type: apiKey
+      in: header
+      name: X-API-Key
+      description: Configured service credential that resolves an authenticated client ID.
   parameters:
     StatsStart:
       name: start

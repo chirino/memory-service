@@ -19,10 +19,12 @@ var serialFeatureFiles = map[string]bool{
 // authModeFeatureFiles is the set of feature files that require dedicated
 // auth-mode/auth-fixture runners and should not be picked up by general BDD runners.
 var authModeFeatureFiles = map[string]bool{
-	"admin-memories-rest.feature": true,
-	"admin-memories-grpc.feature": true,
-	"auth-api-keys-rest.feature":  true,
-	"auth-api-keys-grpc.feature":  true,
+	"admin-memories-rest.feature":  true,
+	"admin-memories-grpc.feature":  true,
+	"auth-api-keys-rest.feature":   true,
+	"auth-api-keys-grpc.feature":   true,
+	"trusted-user-id-rest.feature": true,
+	"trusted-user-id-grpc.feature": true,
 }
 
 func isSerialFeature(path string) bool {

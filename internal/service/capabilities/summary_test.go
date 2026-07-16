@@ -24,6 +24,7 @@ func TestBuildSummaryMapsConfiguredCapabilities(t *testing.T) {
 		S3DirectDownload:              true,
 		OIDCIssuer:                    "https://issuer.example",
 		APIKeys:                       map[string]string{"key": "client"},
+		TrustedUserIDClients:          "client",
 		RequireJustification:          true,
 		EncryptionProviders:           "dek,plain",
 		EncryptionDBDisabled:          false,
@@ -46,11 +47,18 @@ func TestBuildSummaryMapsConfiguredCapabilities(t *testing.T) {
 	if !summary.Features.OutboxEnabled || !summary.Features.SemanticSearchEnabled || !summary.Features.FulltextSearchEnabled {
 		t.Fatalf("unexpected features summary: %+v", summary.Features)
 	}
-	if !summary.Auth.OIDCEnabled || !summary.Auth.APIKeyEnabled || !summary.Auth.AdminJustificationRequired {
+	if !summary.Auth.OIDCEnabled || !summary.Auth.APIKeyEnabled || !summary.Auth.AdminJustificationRequired || !summary.Auth.UserIDAssertionEnabled {
 		t.Fatalf("unexpected auth summary: %+v", summary.Auth)
 	}
 	if !summary.Security.EncryptionEnabled || !summary.Security.DBEncryptionEnabled || !summary.Security.AttachmentEncryptionEnabled {
 		t.Fatalf("unexpected security summary: %+v", summary.Security)
+	}
+}
+
+func TestBuildSummaryDisablesUserIDAssertionForEmptyCSV(t *testing.T) {
+	summary := buildSummary(&config.Config{TrustedUserIDClients: " ,  ,"}, nil, false)
+	if summary.Auth.UserIDAssertionEnabled {
+		t.Fatalf("expected empty trusted-client CSV to disable user ID assertion")
 	}
 }
 

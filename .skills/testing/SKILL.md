@@ -18,3 +18,11 @@ rg -n "FAIL|ERROR|panic|--- FAIL:" test.log
 ```
 
 Prefer searching the redirected log for the failing scenario and stack trace context.
+
+## Canonical User Isolation
+
+The gRPC text-protobuf helper rewrites quoted canonical users such as `"alice"`
+to scenario-isolated IDs. When production authentication metadata must match a
+user ID embedded in a protobuf body (for example `user/<id>` memory namespaces),
+set the metadata from `TestScenario.IsolatedUser` rather than using a literal
+canonical name.

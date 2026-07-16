@@ -20,6 +20,7 @@ Feature: Client capabilities REST API
     And the response body field "features.fulltext_search_enabled" should not be null
     And the response body field "auth.oidc_enabled" should not be null
     And the response body field "auth.api_key_enabled" should not be null
+    And the response body field "auth.user_id_assertion_enabled" should not be null
     And the response body field "security.encryption_enabled" should not be null
 
   Scenario: Authenticated admin without client context can fetch capabilities

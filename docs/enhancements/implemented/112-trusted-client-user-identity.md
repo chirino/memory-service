@@ -1,16 +1,16 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 112: Trusted Client User Identity Assertion
 
-> **Status**: Proposed.
+> **Status**: Implemented.
 
 ## Summary
 
 Allow explicitly trusted clients to select the effective user for normal user-scoped Memory Service operations by sending `X-User-ID` over REST or `x-user-id` in gRPC request metadata. Authentication remains based on OIDC and/or API keys, the trust decision is based on the authenticated client ID, and the protobuf request messages do not carry identity fields.
 
-This enhancement implements [GitHub issue #401](https://github.com/chirino/memory-service/issues/401) and replaces the gRPC-only `RequestActor.on_behalf_of_user_id` mechanism described by [Enhancement 101](101-grpc-api-parity-for-cognition.md).
+This enhancement implements [GitHub issue #401](https://github.com/chirino/memory-service/issues/401) and replaces the gRPC-only `RequestActor.on_behalf_of_user_id` mechanism described by [Enhancement 101](../101-grpc-api-parity-for-cognition.md).
 
 ## Motivation
 
@@ -76,11 +76,12 @@ x-api-key: replace-with-a-secret
 x-user-id: alice
 ```
 
-OIDC clients use the signed `azp` claim, falling back to signed `client_id`, as already defined by [Enhancement 107](implemented/107-explicit-auth-credential-modes.md):
+OIDC clients use the signed `azp` claim, falling back to signed `client_id`, as already defined by [Enhancement 107](107-explicit-auth-credential-modes.md):
 
 ```bash
 MEMORY_SERVICE_OIDC_ISSUER=https://idp.example.com/realms/example
 MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=cognition-processor
+MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
 MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=cognition-processor
 ```
 
@@ -90,6 +91,7 @@ A deployment may support OIDC callers and API-key callers at the same time. If t
 MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR=replace-with-a-secret
 MEMORY_SERVICE_OIDC_ISSUER=https://idp.example.com/realms/example
 MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=cognition-processor
+MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
 MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=cognition_processor,cognition-processor
 ```
 
@@ -195,7 +197,7 @@ For authorized event streams, subscription membership and event routing use the 
 
 ### REST Contract
 
-Document these request headers in `contracts/openapi/openapi.yml`:
+Document API-key authentication in `contracts/openapi/openapi.yml`:
 
 ```yaml
 components:
@@ -204,17 +206,9 @@ components:
       type: apiKey
       in: header
       name: X-API-Key
-    UserIdAssertion:
-      type: apiKey
-      in: header
-      name: X-User-ID
-      description: >-
-        Non-secret effective-user assertion. Honored only on normal user APIs
-        when the authenticated client is explicitly trusted. Never valid as a
-        stand-alone credential.
 ```
 
-User operation security descriptions must make clear that `UserIdAssertion` is optional with a valid bearer credential, required for API-key-only access to APIs that require a user, and never a credential on its own. Admin OpenAPI documentation should add the existing `ApiKeyAuth` credential where applicable but must not advertise `UserIdAssertion` for admin operations.
+Document `X-User-ID` in API-level prose rather than as an OpenAPI security scheme. It is identity context, not a credential, and modeling it as a security scheme causes some generators to pass the same configured authentication token to both bearer and assertion headers. The description must explain that it is optional with a valid bearer credential, required for API-key-only access to APIs that require a user, and honored only for trusted clients. Admin OpenAPI documentation should add the existing `ApiKeyAuth` credential where applicable and state that `X-User-ID` is ignored.
 
 The server reads the header in middleware. Do not add it as a body/query field or thread it through generated operation request structs.
 
@@ -412,27 +406,27 @@ Add unit tests for:
 
 ## Tasks
 
-- [ ] Add `TrustedUserIDClients` configuration, environment variable, CLI flag, parsing, and validation.
-- [ ] Extend security identity resolution to preserve authenticated/effective user IDs and user/client role provenance.
-- [ ] Implement REST trusted-user assertion middleware and add it to every normal user wrapper before `RequireUser` and identity rate limiting.
-- [ ] Implement gRPC unary and stream trusted-user assertion interceptors for every normal user service.
-- [ ] Confirm admin/system REST routes and gRPC methods ignore asserted-user metadata.
-- [ ] Apply effective identity consistently to policy input, ownership, membership, search, attachments, recordings, rate limits, and authorized event streams.
-- [ ] Remove `RequestActor` handling from the gRPC memory server.
-- [ ] Remove and reserve the five protobuf `actor` fields, delete `RequestActor`, and regenerate Go, Java, and Python protobuf clients.
-- [ ] Document `X-API-Key`, `X-User-ID`, and their security relationship in the OpenAPI contracts without adding request body/query fields.
-- [ ] Add `user_id_assertion_enabled` to REST and gRPC capabilities and regenerate affected clients.
-- [ ] Add low-cardinality assertion metrics and structured security logging.
-- [ ] Add unit tests and production-mode REST/gRPC BDD scenarios without changing existing `auth_testfixtures` tests.
-- [ ] Update site configuration, deployment-security, REST, and gRPC client documentation with API-key and OIDC examples.
-- [ ] Update Enhancement 101 and `internal/FACTS.md` to remove the obsolete `RequestActor` behavior after implementation.
-- [ ] Validate the downstream `cognition-processor-quarkus` migration to per-request gRPC metadata.
+- [x] Add `TrustedUserIDClients` configuration, environment variable, CLI flag, parsing, and validation.
+- [x] Extend security identity resolution to preserve authenticated/effective user IDs and user/client role provenance.
+- [x] Implement REST trusted-user assertion middleware and add it to every normal user wrapper before `RequireUser` and identity rate limiting.
+- [x] Implement gRPC unary and stream trusted-user assertion interceptors for every normal user service.
+- [x] Confirm admin/system REST routes and gRPC methods ignore asserted-user metadata.
+- [x] Apply effective identity consistently to policy input, ownership, membership, search, attachments, recordings, rate limits, and authorized event streams.
+- [x] Remove `RequestActor` handling from the gRPC memory server.
+- [x] Remove and reserve the five protobuf `actor` fields, delete `RequestActor`, and regenerate Go, Java, and Python protobuf clients.
+- [x] Document `X-API-Key` as an OpenAPI security scheme and `X-User-ID` in OpenAPI prose without adding request fields.
+- [x] Add `user_id_assertion_enabled` to REST and gRPC capabilities and regenerate affected clients.
+- [x] Add low-cardinality assertion metrics and structured security logging.
+- [x] Add unit tests and production-mode REST/gRPC BDD scenarios without changing existing `auth_testfixtures` tests.
+- [x] Update site configuration, deployment-security, REST, and gRPC client documentation with API-key and OIDC examples.
+- [x] Update Enhancement 101 and `internal/FACTS.md` to remove the obsolete `RequestActor` behavior after implementation.
+- [x] Validate the downstream `cognition-processor-quarkus` migration to per-request gRPC metadata.
 
 ## Files to Modify
 
 | File or area | Change |
 | --- | --- |
-| `docs/enhancements/112-trusted-client-user-identity.md` | Keep the proposal synchronized with implementation decisions and status. |
+| `docs/enhancements/implemented/112-trusted-client-user-identity.md` | Keep the implemented design synchronized with runtime behavior and verification. |
 | `internal/config/config.go` | Add `TrustedUserIDClients`. |
 | `internal/cmd/serve/serve.go` | Register `--trusted-user-id-clients` and its environment source. |
 | `internal/security/auth.go` | Preserve identity/role provenance and support effective request identity. |

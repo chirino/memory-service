@@ -1,6 +1,7 @@
 import * as React from "react";
 import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams } from "react-oidc-context";
 import { WebStorageStateStore, type User } from "oidc-client-ts";
+import type { Auth } from "@/client/client";
 import { OpenAPI } from "@/client-compat";
 
 // Frontend config fetched from the backend at /config.json
@@ -133,7 +134,14 @@ let isRenewing = false;
 
 // Token resolver function - checks expiration and renews on-demand
 // This is called by the OpenAPI client before each API request
-const tokenResolver = async (): Promise<string> => {
+const tokenResolver = async (auth: Auth): Promise<string | undefined> => {
+  // This frontend authenticates with OIDC. The generated client also knows
+  // about API-key authentication, but the OIDC token must never be reused as
+  // an X-API-Key value.
+  if (auth.scheme !== "bearer") {
+    return undefined;
+  }
+
   const now = Math.floor(Date.now() / 1000);
 
   // Check if token is expired or about to expire

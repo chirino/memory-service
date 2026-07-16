@@ -16,6 +16,7 @@ Feature: Client capabilities gRPC API
     And the gRPC response field "tech.eventBus" should not be null
     And the gRPC response field "features.outboxEnabled" should not be null
     And the gRPC response field "auth.apiKeyEnabled" should not be null
+    And the gRPC response field "auth.userIdAssertionEnabled" should not be null
     And the gRPC response field "security.encryptionEnabled" should not be null
 
   Scenario: Authenticated admin without client context can fetch capabilities

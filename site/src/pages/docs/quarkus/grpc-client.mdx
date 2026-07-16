@@ -35,6 +35,31 @@ quarkus.grpc.clients.search.host=localhost
 quarkus.grpc.clients.search.port=9000
 ```
 
+### Calling as an asserted user
+
+Use lowercase `x-user-id` metadata together with the API key or bearer credential. Derive an immutable stub for each request; do not attach changing user metadata to a shared injected stub:
+
+```java
+import io.grpc.Metadata;
+import io.grpc.stub.MetadataUtils;
+
+Metadata requestMetadata = new Metadata();
+requestMetadata.put(
+    Metadata.Key.of("x-api-key", Metadata.ASCII_STRING_MARSHALLER),
+    serviceApiKey);
+requestMetadata.put(
+    Metadata.Key.of("x-user-id", Metadata.ASCII_STRING_MARSHALLER),
+    userId);
+
+ConversationsServiceGrpc.ConversationsServiceBlockingStub requestStub =
+    conversationsClient.withInterceptors(
+        MetadataUtils.newAttachHeadersInterceptor(requestMetadata));
+
+Conversation conversation = requestStub.createConversation(request);
+```
+
+The server honors `x-user-id` only when the authenticated client is listed in `MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS`. The metadata works across all normal user services and authorized event streams; admin and system methods ignore it. Identity is call metadata, so request messages do not contain `RequestActor` or another identity field.
+
 ## Available Services
 
 The Memory Service gRPC API is split into multiple services:

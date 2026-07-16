@@ -70,6 +70,17 @@ deploying and maintaining that data plane.
 - Disable wildcard credentialed CORS; list exact browser origins.
 - Keep admin APIs on a separate network path when possible.
 
+### Trusted User Assertion
+
+- Treat `MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS` as a security boundary. Use exact client IDs and trust only agent applications that authenticate end users before setting `X-User-ID` or gRPC `x-user-id` metadata.
+- Keep assertion trust separate from `MEMORY_SERVICE_ROLES_ADMIN_CLIENTS`, auditor roles, and indexer roles. Trusting a client to select a user must not grant administrative access.
+- Require a valid API key or OIDC token on every asserted request. `X-User-ID` is identity context, not a credential.
+- Strip public callers' inbound `X-User-ID` at gateways unless they are intended to control the asserted identity. Memory Service's trusted-client check remains mandatory even behind a gateway.
+- Protect API keys as secrets and rotate them independently of the trusted-client allowlist. Removing a client from the allowlist should stop delegation without invalidating its other authorized client operations.
+- Preserve both the authenticated client identity and effective user in security logs, but never log bearer tokens or API keys.
+- Attach user metadata per request or per derived gRPC stub. Do not mutate a shared client stub or global header map where concurrent users could leak identity into one another's calls.
+- Verify that admin and system APIs ignore asserted-user metadata and that assertions from untrusted clients behave exactly like absent metadata.
+
 ## Rate Limits and Diagnostics
 
 - Preserve `X-Request-ID` through ingress and gateway layers and include it in support

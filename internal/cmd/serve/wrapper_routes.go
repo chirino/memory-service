@@ -31,8 +31,10 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface, eventBus registryeventbus.EventBus) {
+func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRateLimit gin.HandlerFunc, userAssertion gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface, eventBus registryeventbus.EventBus) {
 	authMiddleware := func(c *gin.Context) { auth(c) }
+	authenticatedRateLimitMiddleware := func(c *gin.Context) { authenticatedRateLimit(c) }
+	userAssertionMiddleware := func(c *gin.Context) { userAssertion(c) }
 	requireUserMiddleware := func(c *gin.Context) { security.RequireUser()(c) }
 
 	apiErrorHandler := func(c *gin.Context, err error, statusCode int) {
@@ -65,6 +67,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			ErrorHandler: apiErrorHandler,
 			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
 				authMiddleware,
+				userAssertionMiddleware,
+				authenticatedRateLimitMiddleware,
 				requireUserMiddleware,
 				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
 			},
@@ -77,6 +81,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			ErrorHandler: apiErrorHandler,
 			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
 				authMiddleware,
+				authenticatedRateLimitMiddleware,
 				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
 			},
 		}
@@ -86,7 +91,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	apiWrapper := &generatedapi.ServerInterfaceWrapper{
 		Handler:            apiHandler,
 		ErrorHandler:       apiErrorHandler,
-		HandlerMiddlewares: []generatedapi.MiddlewareFunc{authMiddleware, requireUserMiddleware},
+		HandlerMiddlewares: []generatedapi.MiddlewareFunc{authMiddleware, userAssertionMiddleware, authenticatedRateLimitMiddleware, requireUserMiddleware},
 	}
 
 	capabilitiesWrapper := authOnlyWrapperFor(security.PermissionSystemRead)
@@ -116,6 +121,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 			},
 			HandlerMiddlewares: []generatedapi.MiddlewareFunc{
 				authMiddleware,
+				userAssertionMiddleware,
+				authenticatedRateLimitMiddleware,
 				requireUserMiddleware,
 				func(c *gin.Context) { security.RequireOIDCScope(permission)(c) },
 			},
@@ -127,6 +134,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, cfg *config.Con
 	adminWrapper := &generatedadmin.ServerInterfaceWrapper{
 		Handler: &proxyAdminServer{
 			auth:            auth,
+			authRateLimit:   authenticatedRateLimit,
 			cfg:             cfg,
 			store:           store,
 			attachStore:     attachStore,
@@ -383,6 +391,7 @@ func (p *proxyAPIServer) AdminSubscribeEvents(c *gin.Context, _ generatedapi.Adm
 
 type proxyAdminServer struct {
 	auth            gin.HandlerFunc
+	authRateLimit   gin.HandlerFunc
 	cfg             *config.Config
 	store           registrystore.MemoryStore
 	attachStore     registryattach.AttachmentStore
@@ -400,6 +409,12 @@ func (p *proxyAdminServer) authorize(c *gin.Context, permission security.Permiss
 	p.auth(c)
 	if c.IsAborted() {
 		return false
+	}
+	if p.authRateLimit != nil {
+		p.authRateLimit(c)
+		if c.IsAborted() {
+			return false
+		}
 	}
 	security.RequireOIDCScope(permission)(c)
 	return !c.IsAborted()

@@ -62,12 +62,15 @@ func init() {
 		// API key and client role configuration steps
 		ctx.Step(`^API key "([^"]*)" maps to client "([^"]*)"$`, am.apiKeyMapsToClient)
 		ctx.Step(`^client "([^"]*)" has the "([^"]*)" role$`, am.clientHasRole)
+		ctx.Step(`^client "([^"]*)" is trusted to assert user IDs$`, am.clientIsTrustedToAssertUserIDs)
 		// Credential steps
 		ctx.Step(`^I authenticate with API key header "([^"]*)"$`, am.authenticateWithAPIKeyHeader)
 		ctx.Step(`^I authenticate with bearer API key "([^"]*)"$`, am.authenticateWithBearerAPIKey)
 		ctx.Step(`^I authenticate as bearer user "([^"]*)" with API key "([^"]*)"$`, am.authenticateAsBearerUserWithAPIKey)
 		ctx.Step(`^I authenticate with both OIDC user "([^"]*)" and API key "([^"]*)"$`, am.authenticateWithOIDCUserAndAPIKey)
 		ctx.Step(`^I authenticate with only API key header "([^"]*)"$`, am.authenticateWithOnlyAPIKeyHeader)
+		ctx.Step(`^I add the "([^"]*)" header value "([^"]*)"$`, am.addHeaderValue)
+		ctx.Step(`^I assert isolated user "([^"]*)" with X-User-ID$`, am.assertIsolatedUserWithXUserID)
 
 		ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
 			am.cleanup()
@@ -78,11 +81,12 @@ func init() {
 
 // authModeSteps manages per-scenario memory-service instances for auth-mode BDD scenarios.
 type authModeSteps struct {
-	s           *cucumber.TestScenario
-	shutdown    func()
-	resolver    *security.TokenResolver // non-nil after startServer
-	apiKeys     map[string]string       // key → clientID (configured for this scenario's server)
-	clientRoles map[string]string       // clientID → role
+	s                    *cucumber.TestScenario
+	shutdown             func()
+	resolver             *security.TokenResolver // non-nil after startServer
+	apiKeys              map[string]string       // key → clientID (configured for this scenario's server)
+	clientRoles          map[string]string       // clientID → role
+	trustedUserIDClients []string                // clients allowed to assert X-User-ID
 }
 
 func (am *authModeSteps) cleanup() {
@@ -138,6 +142,7 @@ func (am *authModeSteps) buildOIDCConfig() (config.Config, error) {
 // startServer starts a memory-service with the given config and updates the scenario's APIURL.
 func (am *authModeSteps) startServer(cfg *config.Config) error {
 	am.cleanup()
+	cfg.TrustedUserIDClients = strings.Join(am.trustedUserIDClients, ",")
 	ctx := config.WithContext(context.Background(), cfg)
 	srv, err := serve.StartServer(ctx, cfg)
 	if err != nil {
@@ -147,6 +152,11 @@ func (am *authModeSteps) startServer(cfg *config.Config) error {
 	am.s.Extra["grpcAddr"] = fmt.Sprintf("localhost:%d", srv.Running.Port)
 	am.resolver = serve.GetTokenResolver(srv)
 	am.shutdown = func() { _ = srv.Shutdown(context.Background()) }
+	return nil
+}
+
+func (am *authModeSteps) clientIsTrustedToAssertUserIDs(clientID string) error {
+	am.trustedUserIDClients = append(am.trustedUserIDClients, clientID)
 	return nil
 }
 
@@ -381,6 +391,16 @@ func (am *authModeSteps) authenticateWithOIDCUserAndAPIKey(userID, apiKey string
 	// Then add the API key header alongside.
 	session := am.s.Session()
 	session.Header.Set("X-API-Key", apiKey)
+	return nil
+}
+
+func (am *authModeSteps) addHeaderValue(name, value string) error {
+	am.s.Session().Header.Add(name, value)
+	return nil
+}
+
+func (am *authModeSteps) assertIsolatedUserWithXUserID(userID string) error {
+	am.s.Session().Header.Set("X-User-ID", am.s.IsolatedUser(userID))
 	return nil
 }
 
