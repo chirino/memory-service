@@ -1,6 +1,7 @@
 package io.github.chirino.memoryservice.process;
 
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.net.InetSocketAddress;
 import java.net.StandardProtocolFamily;
 import java.net.UnixDomainSocketAddress;
@@ -131,26 +132,30 @@ public final class FakeMemoryServiceMain {
         try {
             while (true) {
                 try (SocketChannel client = server.accept()) {
-                    readHeaders(client);
-                    boolean ready = exposesReady && !"never-ready".equals(mode);
-                    byte[] body =
-                            (ready ? "{\"status\":\"ready\"}" : "{\"status\":\"starting\"}")
-                                    .getBytes(StandardCharsets.UTF_8);
-                    String status = ready ? "200 OK" : "503 Service Unavailable";
-                    ByteBuffer response =
-                            ByteBuffer.wrap(
-                                    ("HTTP/1.1 "
-                                                    + status
-                                                    + "\r\n"
-                                                    + "Content-Type: application/json\r\n"
-                                                    + "Content-Length: "
-                                                    + body.length
-                                                    + "\r\nConnection: close\r\n\r\n")
-                                            .getBytes(StandardCharsets.US_ASCII));
-                    while (response.hasRemaining()) {
-                        client.write(response);
+                    try {
+                        readHeaders(client);
+                        boolean ready = exposesReady && !"never-ready".equals(mode);
+                        byte[] body =
+                                (ready ? "{\"status\":\"ready\"}" : "{\"status\":\"starting\"}")
+                                        .getBytes(StandardCharsets.UTF_8);
+                        String status = ready ? "200 OK" : "503 Service Unavailable";
+                        ByteBuffer response =
+                                ByteBuffer.wrap(
+                                        ("HTTP/1.1 "
+                                                        + status
+                                                        + "\r\n"
+                                                        + "Content-Type: application/json\r\n"
+                                                        + "Content-Length: "
+                                                        + body.length
+                                                        + "\r\nConnection: close\r\n\r\n")
+                                                .getBytes(StandardCharsets.US_ASCII));
+                        while (response.hasRemaining()) {
+                            client.write(response);
+                        }
+                        client.write(ByteBuffer.wrap(body));
+                    } catch (IOException ignored) {
+                        // Readiness probes may disconnect after reading the response status.
                     }
-                    client.write(ByteBuffer.wrap(body));
                 }
             }
         } catch (Exception e) {
@@ -158,7 +163,7 @@ public final class FakeMemoryServiceMain {
         }
     }
 
-    private static void readHeaders(SocketChannel client) throws Exception {
+    private static void readHeaders(SocketChannel client) throws IOException {
         ByteArrayOutputStream request = new ByteArrayOutputStream();
         ByteBuffer buffer = ByteBuffer.allocate(512);
         while (request.size() < 8192) {

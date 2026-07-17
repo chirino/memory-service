@@ -24,6 +24,9 @@ concurrency:
 permissions:
   contents: read
 
+env:
+  MAVEN_ARGS: --no-transfer-progress
+
 jobs:
   verify-generated:
     runs-on: ubuntu-latest

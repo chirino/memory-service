@@ -21,6 +21,7 @@ COPY java/.mvn ./java/.mvn
 
 COPY ./java/chat-frontend/pom.xml ./java/chat-frontend/pom.xml
 COPY ./java/memory-service-contracts/pom.xml ./java/memory-service-contracts/pom.xml
+COPY ./java/memory-service-process/pom.xml ./java/memory-service-process/pom.xml
 COPY ./java/pom.xml ./java/pom.xml
 COPY ./java/quarkus/examples/chat-quarkus/pom.xml ./java/quarkus/examples/chat-quarkus/pom.xml
 COPY ./java/quarkus/examples/pom.xml ./java/quarkus/examples/pom.xml
@@ -38,14 +39,14 @@ COPY ./java/spring/memory-service-spring-boot-autoconfigure/pom.xml ./java/sprin
 COPY ./java/spring/memory-service-spring-boot-docker-compose-starter/pom.xml ./java/spring/memory-service-spring-boot-docker-compose-starter/pom.xml
 COPY ./java/spring/memory-service-spring-boot-starter/pom.xml ./java/spring/memory-service-spring-boot-starter/pom.xml
 COPY ./java/spring/pom.xml ./java/spring/pom.xml
-RUN ./java/mvnw -B -q -f java/pom.xml -Daether.connector.basic.threads=8 -Daether.metadataResolver.threads=8 -Daether.syncContext.named.time=120 quarkus:go-offline
+RUN ./java/mvnw -B -q --no-transfer-progress -f java/pom.xml -Daether.connector.basic.threads=8 -Daether.metadataResolver.threads=8 -Daether.syncContext.named.time=120 quarkus:go-offline
 
 # Copy the frontend build into the chat app resources
 COPY --chmod=755 --from=frontend-builder /build/dist ./java/quarkus/examples/chat-quarkus/src/main/resources/META-INF/resources
 
 # Copy the source code and build the app
 COPY . .
-RUN ./java/mvnw -B -q -f java/pom.xml -am -pl :memory-service-extension-deployment,:chat-quarkus clean install -DskipTests
+RUN ./java/mvnw -B -q --no-transfer-progress -f java/pom.xml -am -pl :memory-service-extension-deployment,:chat-quarkus clean install -DskipTests
 
 FROM registry.access.redhat.com/ubi9/openjdk-25:1.24-2.1782292660
 
