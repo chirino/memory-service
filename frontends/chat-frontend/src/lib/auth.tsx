@@ -2,7 +2,7 @@ import * as React from "react";
 import { AuthProvider as OidcAuthProvider, useAuth as useOidcAuth, hasAuthParams } from "react-oidc-context";
 import { WebStorageStateStore, type User } from "oidc-client-ts";
 import type { Auth } from "@/client/client";
-import { OpenAPI } from "@/client-compat";
+import { client as OpenAPI } from "@/client/client.gen";
 
 // Frontend config fetched from the backend at /config.json
 interface FrontendConfig {

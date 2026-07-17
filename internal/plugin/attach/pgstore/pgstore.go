@@ -9,7 +9,6 @@ import (
 	"io"
 	"net/url"
 	"os"
-	"strconv"
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -38,10 +37,6 @@ func load(ctx context.Context) (registryattach.AttachmentStore, error) {
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: %w", err)
 	}
-	// Migrate legacy chunk table for backward-compat reads of old Go-stored attachments.
-	if err := db.AutoMigrate(&fileChunkRecord{}); err != nil {
-		return nil, fmt.Errorf("pgstore: auto-migrate attachment_file_chunks: %w", err)
-	}
 	return &PgAttachmentStore{db: db, tempDir: cfg.ResolvedTempDir()}, nil
 }
 
@@ -49,18 +44,6 @@ type PgAttachmentStore struct {
 	db      *gorm.DB
 	tempDir string
 }
-
-var _ registryattach.AtomicAttachmentReplacer = (*PgAttachmentStore)(nil)
-
-// fileChunkRecord is kept only for backward-compat reads of attachments written by older Go versions.
-type fileChunkRecord struct {
-	StorageKey string    `gorm:"column:storage_key;type:uuid;primaryKey"`
-	Seq        int       `gorm:"column:seq;primaryKey"`
-	Data       []byte    `gorm:"column:data;type:bytea;not null"`
-	CreatedAt  time.Time `gorm:"column:created_at;autoCreateTime"`
-}
-
-func (fileChunkRecord) TableName() string { return "attachment_file_chunks" }
 
 // Store buffers the upload to a temp file then writes it to a PostgreSQL LargeObject,
 // matching Java's DatabaseFileStore behaviour. Returns the numeric OID as the storage key.
@@ -92,93 +75,9 @@ func (s *PgAttachmentStore) Store(ctx context.Context, data io.Reader, maxSize i
 	}, nil
 }
 
-func (s *PgAttachmentStore) Replace(ctx context.Context, storageKey string, data io.Reader, contentType string) (*registryattach.FileStoreResult, error) {
-	tmp, total, digest, cleanup, err := s.bufferUpload(data, -1, "memory-service-pg-replace-*")
-	if err != nil {
-		return nil, err
-	}
-	defer cleanup()
-
-	if !isLegacyChunkKey(storageKey) {
-		oid, err := strconv.ParseInt(storageKey, 10, 64)
-		if err != nil {
-			return nil, fmt.Errorf("pgstore: invalid large object storage key: %w", err)
-		}
-		err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-			if err := tx.Exec("SELECT lo_unlink(?)", oid).Error; err != nil {
-				return fmt.Errorf("pgstore: unlink existing large object: %w", err)
-			}
-			if err := tx.Exec("SELECT lo_create(?)", oid).Error; err != nil {
-				return fmt.Errorf("pgstore: recreate large object: %w", err)
-			}
-			return writeLargeObject(tx, oid, tmp)
-		})
-		if err != nil {
-			return nil, err
-		}
-		return &registryattach.FileStoreResult{
-			StorageKey: storageKey,
-			Size:       total,
-			SHA256:     digest,
-		}, nil
-	}
-
-	err = s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		var count int64
-		if err := tx.Model(&fileChunkRecord{}).
-			Where("storage_key = ?", storageKey).
-			Count(&count).Error; err != nil {
-			return fmt.Errorf("pgstore: count existing chunks: %w", err)
-		}
-		if count == 0 {
-			return fmt.Errorf("attachment not found: %s", storageKey)
-		}
-		if err := tx.Where("storage_key = ?", storageKey).Delete(&fileChunkRecord{}).Error; err != nil {
-			return fmt.Errorf("pgstore: delete existing chunks: %w", err)
-		}
-
-		buf := make([]byte, pgLargeObjectChunkSize)
-		seq := 0
-		for {
-			n, readErr := tmp.Read(buf)
-			if n > 0 {
-				rec := fileChunkRecord{
-					StorageKey: storageKey,
-					Seq:        seq,
-					Data:       append([]byte(nil), buf[:n]...),
-				}
-				if err := tx.Create(&rec).Error; err != nil {
-					return fmt.Errorf("pgstore: insert replacement chunk: %w", err)
-				}
-				seq++
-			}
-			if readErr == io.EOF {
-				break
-			}
-			if readErr != nil {
-				return fmt.Errorf("pgstore: read replacement buffer: %w", readErr)
-			}
-		}
-		return nil
-	})
-	if err != nil {
-		return nil, err
-	}
-	return &registryattach.FileStoreResult{
-		StorageKey: storageKey,
-		Size:       total,
-		SHA256:     digest,
-	}, nil
-}
-
-// Retrieve fetches attachment data. Numeric storage keys are Java/Go LargeObjects stored via
-// lo_put; UUID keys fall back to the legacy attachment_file_chunks table written by older Go code.
+// Retrieve fetches attachment data from a PostgreSQL LargeObject.
 func (s *PgAttachmentStore) Retrieve(ctx context.Context, storageKey string) (io.ReadCloser, error) {
-	// Determine storage type by key format: numeric = LargeObject, UUID = legacy chunks.
-	if !isLegacyChunkKey(storageKey) {
-		return s.retrieveLargeObject(ctx, storageKey)
-	}
-	return s.retrieveChunks(ctx, storageKey)
+	return s.retrieveLargeObject(ctx, storageKey)
 }
 
 // retrieveLargeObject reads from pg_largeobject using the numeric OID storage key.
@@ -229,62 +128,7 @@ func (s *PgAttachmentStore) retrieveLargeObject(ctx context.Context, storageKey 
 	return tempfiles.NewDeleteOnClose(tmp), nil
 }
 
-// retrieveChunks reads legacy Go-written attachments from attachment_file_chunks (UUID key).
-func (s *PgAttachmentStore) retrieveChunks(ctx context.Context, storageKey string) (io.ReadCloser, error) {
-	tmp, err := tempfiles.Create(s.tempDir, "memory-service-pg-attachment-*")
-	if err != nil {
-		return nil, fmt.Errorf("pgstore: create temp file: %w", err)
-	}
-	cleanup := func() {
-		_ = tmp.Close()
-		_ = os.Remove(tmp.Name())
-	}
-
-	rows, err := s.db.WithContext(ctx).
-		Model(&fileChunkRecord{}).
-		Where("storage_key = ?", storageKey).
-		Order("seq ASC").
-		Rows()
-	if err != nil {
-		cleanup()
-		return nil, fmt.Errorf("attachment not found: %s", storageKey)
-	}
-	defer rows.Close()
-
-	found := false
-	for rows.Next() {
-		found = true
-		var rec fileChunkRecord
-		if err := s.db.ScanRows(rows, &rec); err != nil {
-			cleanup()
-			return nil, fmt.Errorf("pgstore: decode chunk: %w", err)
-		}
-		if _, err := tmp.Write(rec.Data); err != nil {
-			cleanup()
-			return nil, fmt.Errorf("pgstore: spool chunk: %w", err)
-		}
-	}
-	if err := rows.Err(); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("pgstore: iterate chunks: %w", err)
-	}
-	if !found {
-		cleanup()
-		return nil, fmt.Errorf("attachment not found: %s", storageKey)
-	}
-	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
-		cleanup()
-		return nil, fmt.Errorf("pgstore: rewind temp file: %w", err)
-	}
-	return tempfiles.NewDeleteOnClose(tmp), nil
-}
-
 func (s *PgAttachmentStore) Delete(ctx context.Context, storageKey string) error {
-	// UUID key = legacy chunk table.
-	if isLegacyChunkKey(storageKey) {
-		return s.db.WithContext(ctx).Where("storage_key = ?", storageKey).Delete(&fileChunkRecord{}).Error
-	}
-	// Numeric key = LargeObject.
 	return s.db.WithContext(ctx).Exec("SELECT lo_unlink(?)", storageKey).Error
 }
 
@@ -346,13 +190,4 @@ func writeLargeObject(tx *gorm.DB, oid int64, tmp *os.File) error {
 		}
 	}
 	return nil
-}
-
-func isLegacyChunkKey(storageKey string) bool {
-	for _, c := range storageKey {
-		if c == '-' {
-			return true
-		}
-	}
-	return false
 }

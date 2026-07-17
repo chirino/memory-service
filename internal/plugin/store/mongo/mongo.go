@@ -84,7 +84,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	defer client.Disconnect(ctx)
 
 	db := client.Database("memory_service")
-	if err := mongoRequireSchema110OrEmpty(ctx, db); err != nil {
+	if err := mongoRequireCurrentSchemaOrEmpty(ctx, db); err != nil {
 		return err
 	}
 
@@ -222,7 +222,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	if _, err := db.Collection("schema_metadata").UpdateOne(
 		ctx,
 		bson.M{"_id": "core_schema_version"},
-		bson.M{"$set": bson.M{"value": "110", "updated_at": time.Now()}},
+		bson.M{"$set": bson.M{"value": "1", "updated_at": time.Now()}},
 		options.UpdateOne().SetUpsert(true),
 	); err != nil {
 		return fmt.Errorf("mongo migration: failed to write schema metadata: %w", err)
@@ -235,7 +235,8 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 	return nil
 }
 
-func mongoRequireSchema110OrEmpty(ctx context.Context, db *mongo.Database) error {
+func mongoRequireCurrentSchemaOrEmpty(ctx context.Context, db *mongo.Database) error {
+	const expectedVersion = "1"
 	names, err := db.ListCollectionNames(ctx, bson.M{})
 	if err != nil {
 		return fmt.Errorf("mongo migration: failed to inspect collections: %w", err)
@@ -267,7 +268,7 @@ func mongoRequireSchema110OrEmpty(ctx context.Context, db *mongo.Database) error
 	}
 	if !hasMetadata {
 		if hasCoreCollection {
-			return fmt.Errorf("mongo migration: existing pre-110 MongoDB schema detected; reset the datastore before applying squashed schema 110")
+			return fmt.Errorf("mongo migration: existing incompatible MongoDB schema detected; reset the datastore before applying schema version %s", expectedVersion)
 		}
 		return nil
 	}
@@ -277,13 +278,13 @@ func mongoRequireSchema110OrEmpty(ctx context.Context, db *mongo.Database) error
 	}
 	err = db.Collection("schema_metadata").FindOne(ctx, bson.M{"_id": "core_schema_version"}).Decode(&meta)
 	if errors.Is(err, mongo.ErrNoDocuments) {
-		return fmt.Errorf("mongo migration: schema metadata is missing core_schema_version; reset the datastore before applying squashed schema 110")
+		return fmt.Errorf("mongo migration: schema metadata is missing core_schema_version; reset the datastore before applying schema version %s", expectedVersion)
 	}
 	if err != nil {
 		return fmt.Errorf("mongo migration: failed to read schema metadata: %w", err)
 	}
-	if meta.Value != "110" {
-		return fmt.Errorf("mongo migration: unsupported MongoDB schema version %s; reset the datastore before applying squashed schema 110", meta.Value)
+	if meta.Value != expectedVersion {
+		return fmt.Errorf("mongo migration: unsupported MongoDB schema version %s; reset the datastore before applying schema version %s", meta.Value, expectedVersion)
 	}
 	return nil
 }
@@ -338,29 +339,6 @@ func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) err
 var ForceImport = 0
 
 // --- Encryption helpers ---
-
-func (s *MongoStore) encrypt(plaintext []byte) ([]byte, error) {
-	if s.enc == nil || plaintext == nil {
-		return plaintext, nil
-	}
-	return s.enc.Encrypt(plaintext)
-}
-
-func (s *MongoStore) decrypt(ciphertext []byte) ([]byte, error) {
-	if s.enc == nil || ciphertext == nil {
-		return ciphertext, nil
-	}
-	return s.enc.Decrypt(ciphertext)
-}
-
-func (s *MongoStore) decryptString(data []byte) string {
-	plain, err := s.decrypt(data)
-	if err != nil {
-		log.Warn("dek: decryption failed, returning raw bytes", "error", err)
-		return string(data)
-	}
-	return string(plain)
-}
 
 const conversationTitleFieldDomain = "conversation.title"
 const entryContentFieldDomain = "entry.content"
@@ -635,23 +613,6 @@ func (s *MongoStore) conversationSummaryFromDoc(ctx context.Context, doc convDoc
 	}, nil
 }
 
-func (s *MongoStore) conversationForkSummaryFromDoc(ctx context.Context, doc convDoc) (registrystore.ConversationForkSummary, error) {
-	if err := s.hydrateConversationFork(ctx, &doc); err != nil {
-		return registrystore.ConversationForkSummary{}, err
-	}
-	title, err := s.decryptConversationTitle(doc.ID, doc.Title)
-	if err != nil {
-		return registrystore.ConversationForkSummary{}, fmt.Errorf("decrypt conversation title: %w", err)
-	}
-	return registrystore.ConversationForkSummary{
-		ID:                     doc.ID,
-		Title:                  title,
-		ForkedAtEntryID:        doc.ForkedAtEntryID,
-		ForkedAtConversationID: doc.ForkedAtConversationID,
-		CreatedAt:              doc.CreatedAt,
-	}, nil
-}
-
 func (s *MongoStore) rootConversationIDs(ctx context.Context, groupIDs []string) ([]string, error) {
 	filter := bson.M{"parent_conversation_id": bson.M{"$exists": false}}
 	if len(groupIDs) > 0 {
@@ -666,30 +627,6 @@ func (s *MongoStore) rootConversationIDs(ctx context.Context, groupIDs []string)
 	}
 	if err := cur.All(ctx, &docs); err != nil {
 		return nil, fmt.Errorf("failed to decode root conversation ancestry: %w", err)
-	}
-	ids := make([]string, 0, len(docs))
-	for _, doc := range docs {
-		ids = append(ids, doc.ID)
-	}
-	return ids, nil
-}
-
-func (s *MongoStore) directForkChildIDs(ctx context.Context, groupID string, parentID string) ([]string, error) {
-	cur, err := s.conversationAncestry().Find(ctx,
-		bson.M{
-			"conversation_group_id":  groupID,
-			"parent_conversation_id": parentID,
-		},
-		options.Find().SetProjection(bson.M{"_id": 1}),
-	)
-	if err != nil {
-		return nil, fmt.Errorf("failed to list direct fork ancestry: %w", err)
-	}
-	var docs []struct {
-		ID string `bson:"_id"`
-	}
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, fmt.Errorf("failed to decode direct fork ancestry: %w", err)
 	}
 	ids := make([]string, 0, len(docs))
 	for _, doc := range docs {
@@ -2386,7 +2323,7 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 		return &registrystore.SyncResult{NoOp: true, Epoch: latestEpoch}, nil
 	}
 
-	appendContent := entry.Content
+	var appendContent json.RawMessage
 	var epochToUse int64
 	epochIncremented := false
 	if latestEpoch != nil {
@@ -3562,73 +3499,6 @@ func (s *MongoStore) UpdateAttachment(ctx context.Context, userID string, attach
 	return &attachment, nil
 }
 
-func (s *MongoStore) ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
-	filter := bson.M{"archived_at": bson.M{"$exists": false}}
-	if conversationID == "" {
-		filter["user_id"] = userID
-		filter["entry_id"] = bson.M{"$exists": false}
-	} else {
-		groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
-		if err != nil {
-			return nil, nil, err
-		}
-		cur, err := s.entries().Find(ctx, bson.M{
-			"conversation_id":       string(conversationID),
-			"conversation_group_id": groupID,
-		}, options.Find().SetProjection(bson.M{"_id": 1}))
-		if err != nil {
-			return nil, nil, fmt.Errorf("list attachments failed: %w", err)
-		}
-		var entryIDs []entryDoc
-		if err := cur.All(ctx, &entryIDs); err != nil {
-			return nil, nil, fmt.Errorf("list attachments failed: %w", err)
-		}
-		ids := make([]string, 0, len(entryIDs))
-		for _, d := range entryIDs {
-			ids = append(ids, d.ID)
-		}
-		if len(ids) == 0 {
-			return []model.Attachment{}, nil, nil
-		}
-		filter["entry_id"] = bson.M{"$in": ids}
-	}
-
-	if afterCursor != nil {
-		var cursorDoc attachmentDoc
-		err := s.attachments().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
-		if err == nil {
-			filter["created_at"] = bson.M{"$gt": cursorDoc.CreatedAt}
-		}
-	}
-
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: 1}}).SetLimit(int64(limit + 1))
-	cur, err := s.attachments().Find(ctx, filter, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("list attachments failed: %w", err)
-	}
-	var docs []attachmentDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode attachments: %w", err)
-	}
-
-	hasMore := len(docs) > limit
-	if hasMore {
-		docs = docs[:limit]
-	}
-
-	result := make([]model.Attachment, len(docs))
-	for i, d := range docs {
-		result[i] = s.attachmentDocToModel(d)
-	}
-
-	var nextCursor *string
-	if hasMore && len(result) > 0 {
-		c := result[len(result)-1].ID.String()
-		nextCursor = &c
-	}
-	return result, nextCursor, nil
-}
-
 func (s *MongoStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var doc attachmentDoc
 	err := s.attachments().FindOne(ctx, bson.M{
@@ -3966,52 +3836,6 @@ func (s *MongoStore) buildAncestryStack(ctx context.Context, target convDoc) ([]
 	return stack, nil
 }
 
-func advanceForkAncestorForNilStopDocs(ancestry []forkAncestorDoc, ancestorIndex *int, current *forkAncestorDoc, isTarget *bool) bool {
-	// Nil stop points mean "exclude all inherited entries from this ancestor".
-	for !*isTarget && current.StopAtEntryID == nil {
-		*ancestorIndex = *ancestorIndex + 1
-		if *ancestorIndex >= len(ancestry) {
-			return false
-		}
-		*current = ancestry[*ancestorIndex]
-		*isTarget = *ancestorIndex == len(ancestry)-1
-	}
-	return true
-}
-
-func filterEntriesByAncestryDocs(allEntries []entryDoc, ancestry []forkAncestorDoc) []entryDoc {
-	if len(ancestry) == 0 {
-		return allEntries
-	}
-
-	result := make([]entryDoc, 0, len(allEntries))
-	ancestorIndex := 0
-	current := ancestry[ancestorIndex]
-	isTarget := ancestorIndex == len(ancestry)-1
-	if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
-		return result
-	}
-
-	for _, entry := range allEntries {
-		if entry.ConversationID != current.ConversationID {
-			continue
-		}
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-			continue
-		}
-		result = append(result, entry)
-	}
-	return result
-}
-
 func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore.MemoryEpochFilter {
 	if filter == nil || filter.Mode == "" {
 		return registrystore.MemoryEpochFilter{Mode: registrystore.MemoryEpochModeLatest}
@@ -4089,71 +3913,6 @@ func filterEntriesForAllForksDocs(entries []entryDoc, channel model.Channel, cli
 		}
 		return result
 	}
-}
-
-func filterMemoryEntriesWithEpochDocs(allEntries []entryDoc, ancestry []forkAncestorDoc, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
-	epoch := normalizeEpochFilter(epochFilter)
-	result := make([]entryDoc, 0, len(allEntries))
-	maxEpochSeen := int64(0)
-	maxEpochInitialized := false
-
-	if len(ancestry) == 0 {
-		return result
-	}
-
-	ancestorIndex := 0
-	current := ancestry[ancestorIndex]
-	isTarget := ancestorIndex == len(ancestry)-1
-	if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
-		return result
-	}
-
-	for _, entry := range allEntries {
-		if entry.ConversationID != current.ConversationID {
-			continue
-		}
-
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStopDocs(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-			continue
-		}
-
-		if strings.EqualFold(entry.Channel, string(model.ChannelContext)) && entry.ClientID != nil && *entry.ClientID == clientID {
-			entryEpoch := int64(0)
-			if entry.Epoch != nil {
-				entryEpoch = *entry.Epoch
-			}
-
-			switch epoch.Mode {
-			case registrystore.MemoryEpochModeAll:
-				result = append(result, entry)
-			case registrystore.MemoryEpochModeEpoch:
-				if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
-					result = append(result, entry)
-				}
-			default:
-				// latest
-				if !maxEpochInitialized || entryEpoch > maxEpochSeen {
-					result = result[:0]
-					maxEpochSeen = entryEpoch
-					maxEpochInitialized = true
-				}
-				if entryEpoch == maxEpochSeen {
-					result = append(result, entry)
-				}
-			}
-		}
-
-	}
-
-	return result
 }
 
 func filterVisibleMemoryEntriesWithEpochDocs(entries []entryDoc, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []entryDoc {
@@ -5487,136 +5246,6 @@ func (s *MongoStore) boundedGroupHistoryDocs(ctx context.Context, groupID string
 		beforeCursor = &c
 	}
 	return docs, nil, beforeCursor, nil
-}
-
-// boundedHistoryBackwardDocs performs a bounded DESC-order read of history
-// entry docs across the ancestry stack, collecting at most limit+1 docs then
-// reversing to return a page in ascending order.
-func (s *MongoStore) boundedHistoryBackwardDocs(ctx context.Context, ancestry []forkAncestorDoc, beforeEntryID *string, tail bool, limit int) ([]entryDoc, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-	need := limit + 1
-	collected := make([]entryDoc, 0, need)
-	startSegment := len(ancestry) - 1
-
-	var anchorDoc *entryDoc
-	var anchorConvID string
-
-	if beforeEntryID != nil {
-		var doc entryDoc
-		err := s.entries().FindOne(ctx, bson.M{"_id": *beforeEntryID}).Decode(&doc)
-		if err != nil {
-			if err == mongo.ErrNoDocuments {
-				return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found"}
-			}
-			return nil, nil, nil, err
-		}
-		anchorDoc = &doc
-		anchorConvID = doc.ConversationID
-		if !strings.EqualFold(doc.Channel, string(model.ChannelHistory)) {
-			return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
-		}
-
-		onPath := false
-		for i, a := range ancestry {
-			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
-					return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
-				}
-				if i < len(ancestry)-1 {
-					var stopDoc entryDoc
-					if err := s.entries().FindOne(ctx, bson.M{"_id": *a.StopAtEntryID}).Decode(&stopDoc); err != nil {
-						return nil, nil, nil, err
-					}
-					if !entryDocOrderLess(doc, stopDoc) {
-						return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
-					}
-				}
-				startSegment = i
-				onPath = true
-				break
-			}
-		}
-		if !onPath {
-			return nil, nil, nil, &registrystore.BadRequestError{Message: "beforeCursor entry not found in visible results"}
-		}
-	}
-
-	descSort := bson.D{
-		{Key: "created_at", Value: -1},
-		{Key: "seq", Value: -1},
-		{Key: "_id", Value: -1},
-	}
-
-	for i := startSegment; i >= 0 && len(collected) < need; i-- {
-		seg := ancestry[i]
-		isTarget := i == len(ancestry)-1
-
-		if !isTarget && seg.StopAtEntryID == nil {
-			continue
-		}
-
-		filter := bson.M{
-			"conversation_id": seg.ConversationID,
-			"channel":         string(model.ChannelHistory),
-		}
-
-		// For ancestor segments, include entries strictly before the stop entry.
-		if !isTarget && seg.StopAtEntryID != nil {
-			var stopDoc entryDoc
-			err := s.entries().FindOne(ctx, bson.M{"_id": *seg.StopAtEntryID}).Decode(&stopDoc)
-			if err != nil && err != mongo.ErrNoDocuments {
-				return nil, nil, nil, err
-			}
-			if err == nil {
-				addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(stopDoc))
-			}
-		}
-
-		// Apply anchor bound for beforeCursor.
-		if beforeEntryID != nil && seg.ConversationID == anchorConvID && anchorDoc != nil {
-			addMongoEntryBeforeBound(filter, mongoEntryBeforeBound(*anchorDoc))
-		}
-
-		remaining := need - len(collected)
-		opts := options.Find().SetSort(descSort).SetLimit(int64(remaining))
-		cur, err := s.entries().Find(ctx, filter, opts)
-		if err != nil {
-			return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
-		}
-		var batch []entryDoc
-		if err := cur.All(ctx, &batch); err != nil {
-			return nil, nil, nil, fmt.Errorf("bounded history decode failed: %w", err)
-		}
-		collected = append(collected, batch...)
-	}
-
-	// Reverse to ascending order.
-	for lo, hi := 0, len(collected)-1; lo < hi; lo, hi = lo+1, hi-1 {
-		collected[lo], collected[hi] = collected[hi], collected[lo]
-	}
-
-	hasMore := len(collected) > limit
-	if hasMore {
-		collected = collected[1:] // drop the oldest probe entry
-		// beforeCursor = first entry of the page (signals older entries exist).
-		c := collected[0].ID
-		beforeCursor := &c
-		// afterCursor: when beforeEntryID was set, there are newer entries beyond the anchor.
-		var afterCursor *string
-		if beforeEntryID != nil && len(collected) > 0 {
-			ac := collected[len(collected)-1].ID
-			afterCursor = &ac
-		}
-		return collected, afterCursor, beforeCursor, nil
-	}
-	var afterCursor *string
-	if beforeEntryID != nil && len(collected) > 0 {
-		c := collected[len(collected)-1].ID
-		afterCursor = &c
-	}
-	return collected, afterCursor, nil, nil
 }
 
 func entryDocOrderLess(left, right entryDoc) bool {

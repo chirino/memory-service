@@ -549,14 +549,6 @@ func eventBusFlags(cfg *config.Config) []cli.Flag {
 			Value:       cfg.SSEKeepaliveInterval,
 			Usage:       "Interval between SSE keepalive comments",
 		},
-		&cli.DurationFlag{
-			Name:        "sse-membership-cache-ttl",
-			Category:    "Event Bus:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_SSE_MEMBERSHIP_CACHE_TTL"),
-			Destination: &cfg.SSEMembershipCacheTTL,
-			Value:       cfg.SSEMembershipCacheTTL,
-			Usage:       "TTL for local conversation-group to members cache entries",
-		},
 		&cli.IntFlag{
 			Name:        "sse-max-connections-per-user",
 			Category:    "Event Bus:",
@@ -653,33 +645,10 @@ func encryptionFlags(cfg *config.Config) []cli.Flag {
 			Value:       cfg.EncryptionAllowPlain,
 			Usage:       "Explicitly allow the plain provider as the primary provider outside testing (unsafe)",
 		},
-		&cli.BoolFlag{
-			Name:        "encryption-legacy-plain-read-enabled",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED"),
-			Destination: &cfg.EncryptionLegacyPlainReadEnabled,
-			Usage:       "Permit headerless legacy plaintext reads when plain is registered as a fallback provider",
-		},
-		&cli.BoolFlag{
-			Name:        "encryption-legacy-byte-v1-read-enabled",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED"),
-			Destination: &cfg.EncryptionLegacyByteV1ReadEnabled,
-			Value:       cfg.EncryptionLegacyByteV1ReadEnabled,
-			Usage:       "Permit legacy MSEH v1 byte-encrypted field reads during migration",
-		},
-		&cli.BoolFlag{
-			Name:        "encryption-legacy-stream-v2-read-enabled",
-			Category:    "Encryption:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED"),
-			Destination: &cfg.EncryptionLegacyStreamV2ReadEnabled,
-			Value:       cfg.EncryptionLegacyStreamV2ReadEnabled,
-			Usage:       "Permit legacy MSEH v2 AES-CTR attachment stream reads during migration",
-		},
 		&cli.StringFlag{
 			Name:        "encryption-dek-key",
 			Category:    "Encryption: DEK:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY", "MEMORY_SERVICE_ENCRYPTION_KEY"),
+			Sources:     cli.EnvVars("MEMORY_SERVICE_ENCRYPTION_DEK_KEY"),
 			Destination: &cfg.EncryptionKey,
 			Usage:       "Comma-separated AES keys for the 'dek' provider (hex or base64, 32 bytes). First is primary; additional keys are legacy (decryption-only key rotation). Also derives attachment URL signing keys.",
 		},
@@ -834,13 +803,6 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"),
 			Destination: &cfg.OIDCAllowedAudiences,
 			Usage:       "Comma-separated OIDC audiences accepted by memory-service",
-		},
-		&cli.BoolFlag{
-			Name:        "oidc-allow-missing-audience",
-			Category:    "Authorization:",
-			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE"),
-			Destination: &cfg.OIDCAllowMissingAudience,
-			Usage:       "Temporarily allow issuer-only OIDC validation without configured audiences (unsafe compatibility mode)",
 		},
 	}
 	for _, desc := range security.PermissionDescriptors() {
@@ -1014,7 +976,7 @@ func developerFrontendFlags(cfg *config.Config) []cli.Flag {
 }
 
 func ApplyParsedFlags(cfg *config.Config, cmd *cli.Command, state *FlagState, validateListeners bool) error {
-	if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
+	if err := cfg.ApplyEnvOverrides(); err != nil {
 		return err
 	}
 	// Let plugins apply post-parse transformations (e.g. env var forwarding).

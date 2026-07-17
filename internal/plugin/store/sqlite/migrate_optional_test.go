@@ -28,6 +28,9 @@ func TestSQLiteMigratorCreatesCoreTablesWithoutOptionalExtensions(t *testing.T) 
 
 	db, _, err := SharedDB(ctx)
 	require.NoError(t, err)
+	var schemaVersion string
+	require.NoError(t, db.Raw("SELECT value FROM schema_metadata WHERE key = ?", "core_schema_version").Scan(&schemaVersion).Error)
+	require.Equal(t, "1", schemaVersion)
 
 	for _, table := range []string{
 		"schema_metadata",
@@ -48,6 +51,26 @@ func TestSQLiteMigratorCreatesCoreTablesWithoutOptionalExtensions(t *testing.T) 
 		require.NoError(t, err, table)
 		require.Equal(t, int64(1), count, table)
 	}
+}
+
+func TestSQLiteMigratorRejectsEarlierSchemaVersion(t *testing.T) {
+	t.Parallel()
+
+	cfg := &config.Config{
+		DatastoreType:           "sqlite",
+		DBURL:                   filepath.Join(t.TempDir(), "memory.db"),
+		DatastoreMigrateAtStart: true,
+	}
+	ctx := config.WithContext(context.Background(), cfg)
+	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
+
+	db, _, err := SharedDB(ctx)
+	require.NoError(t, err)
+	require.NoError(t, db.Exec("UPDATE schema_metadata SET value = ? WHERE key = ?", "110", "core_schema_version").Error)
+
+	err = (&sqliteMigrator{}).Migrate(ctx)
+	require.ErrorContains(t, err, "unsupported SQLite schema version 110")
+	require.ErrorContains(t, err, "schema version 1")
 }
 
 func TestSQLiteSearchReturnsEmptyWhenFTS5IsUnavailable(t *testing.T) {

@@ -6,6 +6,8 @@ status: proposed
 
 > **Status**: Proposed.
 
+> **Compatibility note**: The legacy encryption-format and OIDC compatibility portions of this proposal are superseded by [Enhancement 114](implemented/114-clean-break-schema-and-compatibility-reset.md). The remaining hardening findings remain current.
+
 ## Summary
 
 This review partially agrees with the original findings. The deployment-default,

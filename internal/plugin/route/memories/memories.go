@@ -30,20 +30,6 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-// MountRoutes mounts the episodic memory REST endpoints on the given router.
-func MountRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, auth gin.HandlerFunc, embedder registryembed.Embedder) {
-	if store == nil {
-		return
-	}
-	g := r.Group("/v1", auth)
-	g.PUT("/memories", func(c *gin.Context) { putMemory(c, store, policy, cfg) })
-	g.GET("/memories", func(c *gin.Context) { getMemory(c, store, policy, cfg) })
-	g.PATCH("/memories", func(c *gin.Context) { updateMemory(c, store, policy, cfg) })
-	g.POST("/memories/search", func(c *gin.Context) { searchMemories(c, store, policy, cfg, embedder) })
-	g.GET("/memories/namespaces", func(c *gin.Context) { listNamespaces(c, store, policy, cfg) })
-	g.GET("/memories/events", func(c *gin.Context) { listMemoryEvents(c, store, policy, cfg) })
-}
-
 func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
 	var req generatedapi.PutMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
@@ -144,12 +130,34 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 	}
 }
 
-func getMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	params := generatedapi.GetMemoryParams{
-		Ns:  c.QueryArray("ns"),
-		Key: c.Query("key"),
-	}
+// HandlePutMemory handles the generated public put-memory operation.
+func HandlePutMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+	putMemory(c, store, policy, cfg)
+}
+
+// HandleGetMemory handles the generated public get-memory operation.
+func HandleGetMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.GetMemoryParams) {
 	getMemoryWithParams(c, store, policy, cfg, params)
+}
+
+// HandleUpdateMemory handles the generated public update-memory operation.
+func HandleUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
+	updateMemoryWithParams(c, store, policy, cfg, params)
+}
+
+// HandleSearchMemories handles the generated public memory-search operation.
+func HandleSearchMemories(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, embedder registryembed.Embedder) {
+	searchMemories(c, store, policy, cfg, embedder)
+}
+
+// HandleListMemoryNamespaces handles the generated public namespace-list operation.
+func HandleListMemoryNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryNamespacesParams) {
+	listNamespacesWithParams(c, store, policy, cfg, params)
+}
+
+// HandleListMemoryEvents handles the generated public memory-event-list operation.
+func HandleListMemoryEvents(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryEventsParams) {
+	listMemoryEventsWithParams(c, store, policy, cfg, params)
 }
 
 func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.GetMemoryParams) {
@@ -219,14 +227,6 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 	}); err != nil {
 		handleError(c, err)
 	}
-}
-
-func updateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	params := generatedapi.UpdateMemoryParams{
-		Ns:  c.QueryArray("ns"),
-		Key: c.Query("key"),
-	}
-	updateMemoryWithParams(c, store, policy, cfg, params)
 }
 
 func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
@@ -457,21 +457,6 @@ func rejectObsoleteSearchFields(c *gin.Context) error {
 	return nil
 }
 
-func listNamespaces(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	params := generatedapi.ListMemoryNamespacesParams{}
-	if prefix := c.QueryArray("prefix"); len(prefix) > 0 {
-		params.Prefix = &prefix
-	}
-	if suffix := c.QueryArray("suffix"); len(suffix) > 0 {
-		params.Suffix = &suffix
-	}
-	if c.Query("max_depth") != "" {
-		maxDepth := queryInt(c, "max_depth", 0)
-		params.MaxDepth = &maxDepth
-	}
-	listNamespacesWithParams(c, store, policy, cfg, params)
-}
-
 func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryNamespacesParams) {
 	prefix := []string{}
 	if params.Prefix != nil {
@@ -540,39 +525,6 @@ func listNamespacesWithParams(c *gin.Context, store registryepisodic.EpisodicSto
 	}); err != nil {
 		handleError(c, err)
 	}
-}
-
-func listMemoryEvents(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	after, err := queryTime(c, "after")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'after' timestamp; use RFC 3339 format"})
-		return
-	}
-	before, err := queryTime(c, "before")
-	if err != nil {
-		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid 'before' timestamp; use RFC 3339 format"})
-		return
-	}
-	params := generatedapi.ListMemoryEventsParams{
-		After:       after,
-		Before:      before,
-		AfterCursor: queryPtr(c, "after_cursor"),
-	}
-	if ns := c.QueryArray("ns"); len(ns) > 0 {
-		params.Ns = &ns
-	}
-	if kindsRaw := c.QueryArray("kinds"); len(kindsRaw) > 0 {
-		kinds := make([]generatedapi.ListMemoryEventsParamsKinds, 0, len(kindsRaw))
-		for _, k := range kindsRaw {
-			kinds = append(kinds, generatedapi.ListMemoryEventsParamsKinds(k))
-		}
-		params.Kinds = &kinds
-	}
-	if limitRaw := c.Query("limit"); limitRaw != "" {
-		limit := queryInt(c, "limit", 50)
-		params.Limit = &limit
-	}
-	listMemoryEventsWithParams(c, store, policy, cfg, params)
 }
 
 func listMemoryEventsWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.ListMemoryEventsParams) {
@@ -673,44 +625,6 @@ func toAPIMemoryEventItem(e registryepisodic.MemoryEvent) generatedapi.MemoryEve
 		Attributes: mapRef(e.Attributes),
 		ExpiresAt:  expiresAt,
 	}
-}
-
-// --- Admin endpoints ---
-
-// MountAdminRoutes mounts admin endpoints for episodic memories.
-func MountAdminRoutes(r *gin.Engine, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, indexer *service.EpisodicIndexer, auth gin.HandlerFunc, requireAdmin gin.HandlerFunc) {
-	if store == nil {
-		return
-	}
-	g := r.Group("/admin/v1", auth, requireAdmin)
-
-	g.GET("/memory-policies", func(c *gin.Context) {
-		HandleAdminGetMemoryPolicies(c, policy)
-	})
-
-	g.PUT("/memory-policies", func(c *gin.Context) {
-		HandleAdminPutMemoryPolicies(c, policy, cfg)
-	})
-
-	g.DELETE("/memories/:id", func(c *gin.Context) {
-		HandleAdminDeleteMemory(c, store)
-	})
-
-	g.GET("/memory-index/status", func(c *gin.Context) {
-		HandleAdminGetMemoryIndexStatus(c, store)
-	})
-
-	g.POST("/memory-index/trigger", func(c *gin.Context) {
-		HandleAdminTriggerMemoryIndex(c, indexer)
-	})
-
-	g.GET("/memory-usage", func(c *gin.Context) {
-		HandleAdminGetMemoryUsage(c, store, cfg)
-	})
-
-	g.GET("/memory-usage/top", func(c *gin.Context) {
-		HandleAdminListTopMemoryUsage(c, store, cfg)
-	})
 }
 
 func ensureAdmin(c *gin.Context) bool {
@@ -1753,25 +1667,6 @@ func queryBool(c *gin.Context, key string, def bool) bool {
 		return false
 	}
 	return def
-}
-
-func queryPtr(c *gin.Context, key string) *string {
-	if v := c.Query(key); v != "" {
-		return &v
-	}
-	return nil
-}
-
-func queryTime(c *gin.Context, key string) (*time.Time, error) {
-	raw := strings.TrimSpace(c.Query(key))
-	if raw == "" {
-		return nil, nil
-	}
-	t, err := time.Parse(time.RFC3339, raw)
-	if err != nil {
-		return nil, err
-	}
-	return &t, nil
 }
 
 func persistPolicyBundle(dir string, bundle episodic.PolicyBundle) error {

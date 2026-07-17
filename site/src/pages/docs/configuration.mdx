@@ -211,10 +211,9 @@ Response Recording and Resumption lets clients reconnect to in-progress streamin
 
 Redis provides a fast, distributed cache with full support for the context entries cache and response recording manager.
 
-| Flag                                                     | Values      | Default                  | Description                            |
-| -------------------------------------------------------- | ----------- | ------------------------ | -------------------------------------- |
-| <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL   | `redis://localhost:6379` | Redis connection URL                   |
-| `MEMORY_SERVICE_CACHE_REDIS_CLIENT`                      | client name | default                  | Optional: specify a named Redis client |
+| Flag                                                     | Values    | Default                  | Description          |
+| -------------------------------------------------------- | --------- | ------------------------ | -------------------- |
+| <Cfg p="--redis-hosts" e="MEMORY_SERVICE_REDIS_HOSTS" /> | Redis URL | `redis://localhost:6379` | Redis connection URL |
 
 <ConfigBlock property={`# Enable Redis cache (response recording manager will automatically use it)
 --cache-kind=redis
@@ -255,16 +254,14 @@ MEMORY_SERVICE_CACHE_LOCAL_MAX_BYTES=64M`}/>
 
 ### Cache: Infinispan Configuration
 
-Infinispan provides a distributed cache with configurable cache names for context entries and response recordings.
+Infinispan provides a distributed cache for context entries and response recordings.
 
-| Flag                                                                     | Values      | Default               | Description                                   |
-| ------------------------------------------------------------------------ | ----------- | --------------------- | --------------------------------------------- |
-| <Cfg p="--infinispan-host" e="MEMORY_SERVICE_INFINISPAN_HOST" />         | `host:port` | `localhost:11222`     | Infinispan server host                        |
-| <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string      | _(none)_              | Infinispan username                           |
-| <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string      | _(none)_              | Infinispan password                           |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT`                        | duration    | `PT30S`               | Startup timeout for Infinispan connection     |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME`              | string      | `memory-entries`      | Infinispan cache name for context entries     |
-| `MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME`         | string      | `response-recordings` | Infinispan cache name for response recordings |
+| Flag                                                                     | Values      | Default           | Description                               |
+| ------------------------------------------------------------------------ | ----------- | ----------------- | ----------------------------------------- |
+| <Cfg p="--infinispan-host" e="MEMORY_SERVICE_INFINISPAN_HOST" />         | `host:port` | `localhost:11222` | Infinispan server host                    |
+| <Cfg p="--infinispan-username" e="MEMORY_SERVICE_INFINISPAN_USERNAME" /> | string      | _(none)_          | Infinispan username                       |
+| <Cfg p="--infinispan-password" e="MEMORY_SERVICE_INFINISPAN_PASSWORD" /> | string      | _(none)_          | Infinispan password                       |
+| `MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT`                        | duration    | `PT30S`           | Startup timeout for Infinispan connection |
 
 <ConfigBlock property={`# Enable Infinispan cache (response recording manager will automatically use it)
 --cache-kind=infinispan
@@ -307,7 +304,6 @@ per-user channel fan-out. PostgreSQL remains supported, but it is better suited 
 | Flag / Env Var                                                                             | Values   | Default | Description                                                                            |
 | ------------------------------------------------------------------------------------------ | -------- | ------- | -------------------------------------------------------------------------------------- |
 | <Cfg p="--sse-keepalive-interval" e="MEMORY_SERVICE_SSE_KEEPALIVE_INTERVAL" />             | duration | `30s`   | Interval between SSE keepalive comments                                                |
-| <Cfg p="--sse-membership-cache-ttl" e="MEMORY_SERVICE_SSE_MEMBERSHIP_CACHE_TTL" />         | duration | `5m`    | TTL for local conversation-group membership cache                                      |
 | <Cfg p="--sse-max-connections-per-user" e="MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER" /> | integer  | `5`     | Max concurrent SSE connections per user; older local streams are evicted when exceeded |
 | <Cfg p="--sse-subscriber-buffer-size" e="MEMORY_SERVICE_SSE_SUBSCRIBER_BUFFER_SIZE" />     | integer  | `64`    | Per-subscriber channel buffer; full buffer triggers eviction                           |
 
@@ -479,19 +475,17 @@ See [Attachments](/docs/concepts/attachments/) for details on how attachments wo
 
 Memory Service supports transparent encryption of stored data using AES-256-GCM. Configure encryption by selecting one or more providers via `--encryption-kind`. The first provider is primary — used for all new encryptions. Additional providers are decryption-only fallbacks, enabling zero-downtime key rotation.
 
-| Flag / Env Var                                                                                             | Values              | Default | Description                                                                                    |
-| ---------------------------------------------------------------------------------------------------------- | ------------------- | ------- | ---------------------------------------------------------------------------------------------- |
-| <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" />                                           | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data   |
-| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" />                             | `true`, `false`     | `false` | Disable at-rest encryption for the database even when an encryption provider is active         |
-| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" />           | `true`, `false`     | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
-| <Cfg p="--encryption-allow-plain" e="MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN" />                             | `true`, `false`     | `false` | Explicitly allow `plain` as the primary provider outside testing; unsafe for production data   |
-| <Cfg p="--encryption-legacy-plain-read-enabled" e="MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED" /> | `true`, `false`     | `false` | Permit headerless legacy plaintext reads when `plain` is configured as a fallback provider     |
+| Flag / Env Var                                                                                   | Values              | Default | Description                                                                                    |
+| ------------------------------------------------------------------------------------------------ | ------------------- | ------- | ---------------------------------------------------------------------------------------------- |
+| <Cfg p="--encryption-kind" e="MEMORY_SERVICE_ENCRYPTION_KIND" />                                 | comma-separated IDs | `plain` | Ordered list of providers (`plain`, `dek`, `vault`, `kms`); first provider encrypts new data   |
+| <Cfg p="--encryption-db-disabled" e="MEMORY_SERVICE_ENCRYPTION_DB_DISABLED" />                   | `true`, `false`     | `false` | Disable at-rest encryption for the database even when an encryption provider is active         |
+| <Cfg p="--encryption-attachments-disabled" e="MEMORY_SERVICE_ENCRYPTION_ATTACHMENTS_DISABLED" /> | `true`, `false`     | `false` | Disable at-rest encryption for the attachment store even when an encryption provider is active |
+| <Cfg p="--encryption-allow-plain" e="MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN" />                   | `true`, `false`     | `false` | Explicitly allow `plain` as the primary provider outside testing; unsafe for production data   |
 
 Outside testing, `plain` as the primary provider is rejected unless
-`MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is set deliberately. To migrate old headerless
-plaintext values after enabling a real provider, include `plain` as a fallback provider and
-set `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true` only for the migration window.
-Malformed `MSEH` envelopes always fail closed and are never treated as plaintext.
+`MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN=true` is set deliberately. Encrypted fields accept only
+MSEH v4 and encrypted attachment streams accept only MSEH v3. Headerless values are accepted
+only when `plain` is primary; malformed or unsupported envelopes fail closed.
 
 ### Encryption: DEK (AES-256-GCM)
 
@@ -592,7 +586,7 @@ When a non-`plain` provider is the primary provider, file attachments are encryp
 
 ### Key rotation
 
-To rotate between providers, list the new provider first and the old provider as a fallback in `--encryption-kind`. New data is always encrypted by the first (primary) provider; existing ciphertext is decrypted by trying each provider in order. Headerless legacy plaintext is read only when `plain` is listed as a fallback and `encryption-legacy-plain-read-enabled` is set.
+To rotate between providers, list the new provider first and the old provider as a fallback in `--encryption-kind`. New data is always encrypted by the first (primary) provider; existing current-format ciphertext is decrypted by trying each provider in order.
 
 **Example: migrate from `dek` to `vault`:**
 
@@ -660,14 +654,15 @@ The `infinispan` vector backend uses the Infinispan REST API v3 for vector searc
 - If `MEMORY_SERVICE_VECTOR_INFINISPAN_CACHE_NAME` is unset, memory-service derives a cache name from the embedding model and dimensions.
 - `MEMORY_SERVICE_VECTOR_INFINISPAN_URL`, `MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME`, and `MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD` also accept the shared `MEMORY_SERVICE_INFINISPAN_*` connection values as fallbacks.
 
-| Flag / Env Var                                                                             | Default                  | Description                                     |
-| ------------------------------------------------------------------------------------------ | ------------------------ | ----------------------------------------------- |
-| <Cfg p="--vector-infinispan-url" e="MEMORY_SERVICE_VECTOR_INFINISPAN_URL" />               | `http://localhost:11222` | Infinispan REST endpoint URL                    |
-| <Cfg p="--vector-infinispan-cache-name" e="MEMORY_SERVICE_VECTOR_INFINISPAN_CACHE_NAME" /> | _(auto)_                 | Optional explicit cache name override           |
-| <Cfg p="--vector-infinispan-username" e="MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME" />     | _(none)_                 | Authentication username                         |
-| <Cfg p="--vector-infinispan-password" e="MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD" />     | _(none)_                 | Authentication password                         |
-| <Cfg p="--vector-infinispan-auth-type" e="MEMORY_SERVICE_VECTOR_INFINISPAN_AUTH_TYPE" />   | `digest`                 | Auth mechanism: `basic` or `digest`             |
-| <Cfg p="--vector-infinispan-use-tls" e="MEMORY_SERVICE_VECTOR_INFINISPAN_USE_TLS" />       | `false`                  | Enable TLS for the Infinispan vector connection |
+| Flag / Env Var                                                                             | Default                  | Description                           |
+| ------------------------------------------------------------------------------------------ | ------------------------ | ------------------------------------- |
+| <Cfg p="--vector-infinispan-url" e="MEMORY_SERVICE_VECTOR_INFINISPAN_URL" />               | `http://localhost:11222` | Infinispan REST endpoint URL          |
+| <Cfg p="--vector-infinispan-cache-name" e="MEMORY_SERVICE_VECTOR_INFINISPAN_CACHE_NAME" /> | _(auto)_                 | Optional explicit cache name override |
+| <Cfg p="--vector-infinispan-username" e="MEMORY_SERVICE_VECTOR_INFINISPAN_USERNAME" />     | _(none)_                 | Authentication username               |
+| <Cfg p="--vector-infinispan-password" e="MEMORY_SERVICE_VECTOR_INFINISPAN_PASSWORD" />     | _(none)_                 | Authentication password               |
+| <Cfg p="--vector-infinispan-auth-type" e="MEMORY_SERVICE_VECTOR_INFINISPAN_AUTH_TYPE" />   | `digest`                 | Auth mechanism: `basic` or `digest`   |
+
+Use an `https://` value for `MEMORY_SERVICE_VECTOR_INFINISPAN_URL` when TLS is required.
 
 <ConfigBlock
   property={`# Infinispan vector store
@@ -763,7 +758,7 @@ Clients include the API key in requests via the `X-API-Key` header. The API key 
 
 API-key-only requests authenticate a client service principal, not a user. They can call admin or operational APIs when that client ID has the required role, but they cannot call normal user-scoped APIs such as conversation listing, conversation entry APIs, user event streams, or memory APIs because those endpoints require a user principal for ownership and policy checks.
 
-In deployments without OIDC, `Authorization: Bearer <api-key>` is also accepted as API-key compatibility auth. Prefer `X-API-Key` for new clients. When OIDC is configured, the `Authorization: Bearer` slot is reserved for OIDC JWTs, so bearer API keys and raw bearer user IDs are rejected.
+API keys are accepted only through `X-API-Key`. When OIDC is configured, the `Authorization: Bearer` slot is reserved for OIDC JWTs; raw bearer user IDs are rejected by production builds.
 
 ### Trusted Client User Identity Assertion
 
@@ -850,10 +845,9 @@ Memory Service supports OIDC authentication via Keycloak or any compliant provid
 | <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `true`, `false` | `false`               | Skip TLS certificate verification for OIDC discovery and JWKS requests; rejected outside testing mode       |
 | <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />                   | CSV             | _(none)_              | Optional OIDC client IDs allowed to call Memory Service; empty allows any client from the configured issuer |
 | <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />               | CSV             | _(none)_              | Required OIDC audiences accepted by Memory Service when OIDC is enabled                                     |
-| <Cfg p="--oidc-allow-missing-audience" e="MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE" />     | `true`, `false` | `false`               | Unsafe compatibility mode for issuer-only validation while migrating audience configuration                 |
 | <Cfg p="--oidc-role-claim" e="MEMORY_SERVICE_OIDC_ROLE_CLAIMS" />                            | JSON Pointer(s) | `/realm_access/roles` | RFC 6901 claim path(s) used for claim-derived roles; env value is a JSON array of pointer strings           |
 
-When OIDC is enabled, startup requires successful issuer discovery and at least one allowed audience. Allowed clients are optional; when configured, both the client and audience checks must pass. Allowed clients are matched against signed `azp` or `client_id` token claims. Allowed audiences are matched against the signed `aud` claim. Use `--oidc-allow-missing-audience` only as a temporary migration setting.
+When OIDC is enabled, startup requires successful issuer discovery and at least one allowed audience. Allowed clients are optional; when configured, both the client and audience checks must pass. Allowed clients are matched against signed `azp` or `client_id` token claims. Allowed audiences are matched against the signed `aud` claim.
 
 Claim-derived roles come only from configured JSON Pointer paths. The default is Keycloak-compatible `/realm_access/roles`; `scope`, top-level `roles`, and `groups` are not role sources unless explicitly configured. The `scope` claim remains available for resource/API scope gates.
 
@@ -887,7 +881,7 @@ Accepted credential shapes:
 | --------------------------- | ------------------------------------------------------------------------------------------------------------------------ |
 | OIDC only                   | OIDC JWTs whose client and/or audience claims match the configured boundary                                              |
 | OIDC plus API keys          | OIDC JWTs; OIDC JWTs paired with `X-API-Key`; and `X-API-Key`-only service-principal requests for admin/operational APIs |
-| API keys without OIDC       | `X-API-Key` service principals and `Authorization: Bearer <api-key>` compatibility requests                              |
+| API keys without OIDC       | `X-API-Key` service principals                                                                                           |
 | Production default binaries | Raw bearer user IDs such as `Authorization: Bearer alice` are rejected, even when paired with a valid API key            |
 | Test fixture binaries       | Raw bearer user IDs are accepted only when built with the `auth_testfixtures` tag and running in testing mode            |
 

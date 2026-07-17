@@ -13,7 +13,7 @@ import (
 )
 
 // TestFeaturesPgAPIKeys exercises no-OIDC production-mode API-key authentication:
-// API-key-only admin access, bearer API-key compatibility, user-scoped API rejection,
+// API-key-only admin access, user-scoped API rejection,
 // and gRPC API-key auth scenarios.
 // This runner uses NO auth_testfixtures tag and runs in production (ModeProd) auth mode.
 func TestFeaturesPgAPIKeys(t *testing.T) {

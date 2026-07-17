@@ -9,7 +9,7 @@ import (
 	"strings"
 )
 
-// DecodeEncryptionKey supports both legacy hex keys and Java-style base64 keys.
+// DecodeEncryptionKey accepts AES keys encoded as hex or base64.
 func DecodeEncryptionKey(raw string) ([]byte, error) {
 	value := strings.TrimSpace(raw)
 	if value == "" {

@@ -45,10 +45,6 @@ func (s *PostgresStore) writeDBFor(ctx context.Context, op string) (*gorm.DB, er
 	return s.db.WithContext(ctx), nil
 }
 
-func (s *PostgresStore) txFor(ctx context.Context) *gorm.DB {
-	return s.dbFor(ctx)
-}
-
 func (s *PostgresStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
 	if outer, ok := scopeFromContext(ctx); ok && outer != nil {
 		return fn(ctx)

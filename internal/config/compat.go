@@ -11,9 +11,9 @@ import (
 	"time"
 )
 
-// ApplyJavaCompatFromEnv reads Java-style environment variables that are not
-// represented by dedicated CLI flags in the Go serve command.
-func (c *Config) ApplyJavaCompatFromEnv() error {
+// ApplyEnvOverrides reads environment variables that are not represented by
+// dedicated CLI flags in the Go serve command.
+func (c *Config) ApplyEnvOverrides() error {
 	if c == nil {
 		return nil
 	}
@@ -38,12 +38,9 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	if err = applyInt64Env("MEMORY_SERVICE_CACHE_LOCAL_BUFFER_ITEMS", &c.CacheLocalBufferItems); err != nil {
 		return err
 	}
-	applyStringEnv("MEMORY_SERVICE_CACHE_REDIS_CLIENT", &c.CacheRedisClient)
 	if err = applyDurationEnv("MEMORY_SERVICE_CACHE_INFINISPAN_STARTUP_TIMEOUT", &c.InfinispanStartupTimeout); err != nil {
 		return err
 	}
-	applyStringEnv("MEMORY_SERVICE_CACHE_INFINISPAN_MEMORY_ENTRIES_CACHE_NAME", &c.InfinispanMemoryEntriesCacheName)
-	applyStringEnv("MEMORY_SERVICE_CACHE_INFINISPAN_RESPONSE_RECORDINGS_CACHE_NAME", &c.InfinispanResponseRecordingsCacheName)
 	if err = applyDurationEnv("MEMORY_SERVICE_RESPONSE_RESUMER_TEMP_FILE_RETENTION", &c.ResumerTempFileRetention); err != nil {
 		return err
 	}
@@ -112,9 +109,6 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 			c.OIDCRoleClaims = values
 		}
 	}
-	if err = applyBoolEnv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", &c.OIDCAllowMissingAudience); err != nil {
-		return err
-	}
 	if err = applyBoolEnv("MEMORY_SERVICE_CORS_ENABLED", &c.CORSEnabled); err != nil {
 		return err
 	}
@@ -122,19 +116,6 @@ func (c *Config) ApplyJavaCompatFromEnv() error {
 	applyStringEnv("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS", &c.TrustedProxyCIDRs)
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_KIND", &c.EncryptionProviders)
 	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN", &c.EncryptionAllowPlain); err != nil {
-		return err
-	}
-	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", &c.EncryptionLegacyPlainReadEnabled); err != nil {
-		return err
-	}
-	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED", &c.EncryptionLegacyByteV1ReadEnabled); err != nil {
-		return err
-	}
-	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED", &c.EncryptionLegacyStreamV2ReadEnabled); err != nil {
-		return err
-	}
-	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_TYPE", &c.EncryptionProviderDEKType)
-	if err = applyBoolEnv("MEMORY_SERVICE_ENCRYPTION_PROVIDER_DEK_ENABLED", &c.EncryptionProviderDEKEnabled); err != nil {
 		return err
 	}
 	applyStringEnv("MEMORY_SERVICE_ENCRYPTION_VAULT_TRANSIT_KEY", &c.EncryptionVaultTransitKey)
@@ -181,7 +162,7 @@ func (c *Config) QdrantAddress() string {
 	}
 	host := strings.TrimSpace(c.QdrantHost)
 	port := c.QdrantPort
-	if parsedHost, parsedPort, ok := splitHostPortCompat(host); ok {
+	if parsedHost, parsedPort, ok := splitHostPort(host); ok {
 		host = parsedHost
 		port = parsedPort
 	}
@@ -194,7 +175,7 @@ func (c *Config) QdrantAddress() string {
 	return net.JoinHostPort(host, strconv.Itoa(port))
 }
 
-func splitHostPortCompat(raw string) (string, int, bool) {
+func splitHostPort(raw string) (string, int, bool) {
 	v := strings.TrimSpace(raw)
 	if v == "" {
 		return "", 0, false

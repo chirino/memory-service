@@ -21,7 +21,6 @@ func MarkReady() {
 func init() {
 	registryroute.Register(registryroute.Plugin{
 		Order: 0,
-		Type:  registryroute.RouteTypeManagement,
 		Loader: func(r *gin.Engine) error {
 			// Liveness: process is up
 			r.GET("/health", func(c *gin.Context) {

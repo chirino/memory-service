@@ -16,9 +16,3 @@ type contextKey struct{}
 func WithIntent(ctx context.Context, intent Intent) context.Context {
 	return context.WithValue(ctx, contextKey{}, intent)
 }
-
-// FromContext returns the transaction intent recorded on ctx, if any.
-func FromContext(ctx context.Context) (Intent, bool) {
-	intent, ok := ctx.Value(contextKey{}).(Intent)
-	return intent, ok
-}

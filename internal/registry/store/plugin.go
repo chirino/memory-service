@@ -368,7 +368,6 @@ type MemoryStore interface {
 	// Attachments
 	CreateAttachment(ctx context.Context, userID string, conversationID string, attachment model.Attachment) (*model.Attachment, error)
 	UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update AttachmentUpdate) (*model.Attachment, error)
-	ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error)
 	GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error)
 	DeleteAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) error
 

@@ -25,9 +25,13 @@ type plainProvider struct {
 
 func (p *plainProvider) ID() string { return "plain" }
 
-func (p *plainProvider) Encrypt(plaintext []byte) ([]byte, error) { return plaintext, nil }
+func (p *plainProvider) EncryptField(plaintext []byte, _, _ string) ([]byte, error) {
+	return plaintext, nil
+}
 
-func (p *plainProvider) Decrypt(ciphertext []byte) ([]byte, error) { return ciphertext, nil }
+func (p *plainProvider) DecryptField(ciphertext []byte, _, _ string) ([]byte, error) {
+	return ciphertext, nil
+}
 
 func (p *plainProvider) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	return &nopWriteCloser{dst}, nil

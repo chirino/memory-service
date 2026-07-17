@@ -1,5 +1,4 @@
 import { useQuery } from "@tanstack/react-query";
-import type { ApiError } from "@/client-compat";
 import { getAccessToken } from "@/lib/auth";
 
 /**
@@ -8,7 +7,7 @@ import { getAccessToken } from "@/lib/auth";
  * @returns Query result with array of conversation IDs that can be resumed
  */
 export function useResumeCheck(conversationIds: string[]) {
-  return useQuery<string[], ApiError, string[]>({
+  return useQuery<string[], Error, string[]>({
     queryKey: ["resume-check", conversationIds.sort().join(",")],
     queryFn: async (): Promise<string[]> => {
       if (conversationIds.length === 0) {

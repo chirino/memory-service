@@ -126,20 +126,6 @@ type adminOffsetCursor struct {
 	Offset int `json:"offset"`
 }
 
-func (s *mongoEpisodicStore) encrypt(plaintext []byte) ([]byte, error) {
-	if s.enc == nil || plaintext == nil {
-		return plaintext, nil
-	}
-	return s.enc.Encrypt(plaintext)
-}
-
-func (s *mongoEpisodicStore) decrypt(ciphertext []byte) ([]byte, error) {
-	if s.enc == nil || ciphertext == nil {
-		return ciphertext, nil
-	}
-	return s.enc.Decrypt(ciphertext)
-}
-
 const memoryValueFieldDomain = "memory.value"
 
 func (s *mongoEpisodicStore) encryptMemoryValue(id uuid.UUID, plaintext []byte) ([]byte, error) {

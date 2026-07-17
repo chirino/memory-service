@@ -7,22 +7,13 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	"github.com/urfave/cli/v3"
-
-	// Import core (non-excludable) plugins to trigger init() registration.
-	_ "github.com/chirino/memory-service/internal/plugin/attach/filesystem"
-	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
-	_ "github.com/chirino/memory-service/internal/plugin/encrypt/plain"
 )
 
 // Command returns the migrate sub-command.
 func Command() *cli.Command {
 	return &cli.Command{
 		Name:  "migrate",
-		Usage: "Run database migrations",
-		Commands: []*cli.Command{
-			attachmentsCommand(),
-			encryptionFieldsCommand(),
-		},
+		Usage: "Initialize or converge the current datastore schema",
 		Flags: []cli.Flag{
 			&cli.StringFlag{
 				Name:     "db-url",
@@ -33,12 +24,12 @@ func Command() *cli.Command {
 			&cli.StringFlag{
 				Name:    "db-kind",
 				Sources: cli.EnvVars("MEMORY_SERVICE_DB_KIND"),
-				Usage:   "Store backend (postgres|mongo)",
+				Usage:   "Store backend (postgres|sqlite|mongo)",
 				Value:   "postgres",
 			},
 			&cli.StringFlag{
 				Name:    "vector-qdrant-host",
-				Sources: cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
+				Sources: cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST"),
 				Usage:   "Qdrant host:port",
 				Value:   "localhost:6334",
 			},
@@ -48,7 +39,7 @@ func Command() *cli.Command {
 			cfg.DBURL = cmd.String("db-url")
 			cfg.DatastoreType = cmd.String("db-kind")
 			cfg.QdrantHost = cmd.String("vector-qdrant-host")
-			if err := cfg.ApplyJavaCompatFromEnv(); err != nil {
+			if err := cfg.ApplyEnvOverrides(); err != nil {
 				return err
 			}
 			ctx = config.WithContext(ctx, &cfg)

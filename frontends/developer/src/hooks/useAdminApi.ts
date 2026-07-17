@@ -8,9 +8,6 @@ import {
   adminGetMemoryOptions,
   adminListConversations,
   adminListMemories,
-  type AdminConversation,
-  type AdminMemoryItem,
-  type Entry,
 } from "@/api/client";
 
 // Conversations
@@ -141,9 +138,5 @@ export function useAdminMemory(memoryId: string) {
     })
   );
 }
-
-// Re-export types with aliases for backward compatibility
-export type { AdminConversation, Entry as AdminConversationEntry };
-export type AdminMemory = AdminMemoryItem;
 
 // Made with Bob

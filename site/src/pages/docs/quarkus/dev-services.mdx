@@ -59,7 +59,7 @@ MEMORY_SERVICE_ENCRYPTION_DEK_KEY=0123456789abcdef0123456789abcdef0123456789abcd
 
 The well-known DEK is intended only for the local Dev Services container. Production deployments must configure a securely generated key or another encryption provider.
 
-If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container. To keep development zero-configuration, it sets `MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=true`; production deployments should always configure an audience allowlist. To exercise strict validation in Dev Services, set `memory-service.devservices.env.MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE=false` and provide `memory-service.devservices.env.MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES`.
+If the app uses Keycloak Dev Services, the extension also passes the OIDC issuer and internal discovery URL to the memory-service container and defaults `MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service`. The generated default Keycloak realm is customized to include that audience in access tokens. Imported or custom realms must provide a matching audience mapper; override `memory-service.devservices.env.MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES` when they issue a different audience.
 
 ## Configuration Properties
 

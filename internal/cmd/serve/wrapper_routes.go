@@ -2,7 +2,6 @@ package serve
 
 import (
 	"net/http"
-	"strings"
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/episodic"
@@ -31,21 +30,13 @@ import (
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
-func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRateLimit gin.HandlerFunc, userAssertion gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, memoriesAdapter generatedapi.ServerInterface, eventBus registryeventbus.EventBus) {
+func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRateLimit gin.HandlerFunc, userAssertion gin.HandlerFunc, cfg *config.Config, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, signingKeys [][]byte, embedder registryembed.Embedder, vectorStore registryvector.VectorStore, resumer *internalresumer.Store, resumerEnabled bool, episodicStore registryepisodic.EpisodicStore, episodicPolicy *episodic.PolicyEngine, episodicIndexer *service.EpisodicIndexer, eventBus registryeventbus.EventBus) {
 	authMiddleware := func(c *gin.Context) { auth(c) }
 	authenticatedRateLimitMiddleware := func(c *gin.Context) { authenticatedRateLimit(c) }
 	userAssertionMiddleware := func(c *gin.Context) { userAssertion(c) }
 	requireUserMiddleware := func(c *gin.Context) { security.RequireUser()(c) }
 
 	apiErrorHandler := func(c *gin.Context, err error, statusCode int) {
-		// Keep legacy parity for invalid UUID conversation ids on entry listing.
-		if statusCode == http.StatusBadRequest &&
-			c.Request.Method == http.MethodGet &&
-			c.FullPath() == "/v1/conversations/:conversationId/entries" &&
-			strings.Contains(err.Error(), "Invalid format for parameter conversationId") {
-			c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
-			return
-		}
 		c.JSON(statusCode, gin.H{"error": err.Error()})
 	}
 
@@ -58,6 +49,8 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRa
 		vectorStore:    vectorStore,
 		resumer:        resumer,
 		resumerEnabled: resumerEnabled,
+		episodicStore:  episodicStore,
+		episodicPolicy: episodicPolicy,
 		eventBus:       eventBus,
 	}
 
@@ -115,7 +108,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRa
 
 	memoriesWrapperFor := func(permission security.Permission) *generatedapi.ServerInterfaceWrapper {
 		return &generatedapi.ServerInterfaceWrapper{
-			Handler: memoriesAdapter,
+			Handler: apiHandler,
 			ErrorHandler: func(c *gin.Context, err error, statusCode int) {
 				c.JSON(statusCode, gin.H{"error": err.Error()})
 			},
@@ -264,6 +257,8 @@ type proxyAPIServer struct {
 	vectorStore    registryvector.VectorStore
 	resumer        *internalresumer.Store
 	resumerEnabled bool
+	episodicStore  registryepisodic.EpisodicStore
+	episodicPolicy *episodic.PolicyEngine
 	eventBus       registryeventbus.EventBus
 }
 
@@ -345,23 +340,23 @@ func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ string, 
 func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ string) {
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
-func (p *proxyAPIServer) UpdateMemory(c *gin.Context, _ generatedapi.UpdateMemoryParams) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "UpdateMemory is handled by memories wrapper"})
+func (p *proxyAPIServer) UpdateMemory(c *gin.Context, params generatedapi.UpdateMemoryParams) {
+	routememories.HandleUpdateMemory(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
 }
-func (p *proxyAPIServer) GetMemory(c *gin.Context, _ generatedapi.GetMemoryParams) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "GetMemory is handled by memories wrapper"})
+func (p *proxyAPIServer) GetMemory(c *gin.Context, params generatedapi.GetMemoryParams) {
+	routememories.HandleGetMemory(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
 }
 func (p *proxyAPIServer) PutMemory(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "PutMemory is handled by memories wrapper"})
+	routememories.HandlePutMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
 }
-func (p *proxyAPIServer) ListMemoryEvents(c *gin.Context, _ generatedapi.ListMemoryEventsParams) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "ListMemoryEvents is handled by memories wrapper"})
+func (p *proxyAPIServer) ListMemoryEvents(c *gin.Context, params generatedapi.ListMemoryEventsParams) {
+	routememories.HandleListMemoryEvents(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
 }
-func (p *proxyAPIServer) ListMemoryNamespaces(c *gin.Context, _ generatedapi.ListMemoryNamespacesParams) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "ListMemoryNamespaces is handled by memories wrapper"})
+func (p *proxyAPIServer) ListMemoryNamespaces(c *gin.Context, params generatedapi.ListMemoryNamespacesParams) {
+	routememories.HandleListMemoryNamespaces(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
 }
 func (p *proxyAPIServer) SearchMemories(c *gin.Context) {
-	c.JSON(http.StatusNotImplemented, gin.H{"error": "SearchMemories is handled by memories wrapper"})
+	routememories.HandleSearchMemories(c, p.episodicStore, p.episodicPolicy, p.cfg, p.embedder)
 }
 func (p *proxyAPIServer) ListPendingTransfers(c *gin.Context, _ generatedapi.ListPendingTransfersParams) {
 	routetransfers.HandleListTransfers(c, p.store)

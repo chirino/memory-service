@@ -111,18 +111,3 @@ func ApplyAll(cfg *config.Config, cmd *cli.Command) {
 		}
 	}
 }
-
-// --- context helpers ---
-
-type contextKey struct{}
-
-// WithContext stores an EventBus in the context.
-func WithContext(ctx context.Context, bus EventBus) context.Context {
-	return context.WithValue(ctx, contextKey{}, bus)
-}
-
-// FromContext retrieves an EventBus from the context.
-func FromContext(ctx context.Context) EventBus {
-	bus, _ := ctx.Value(contextKey{}).(EventBus)
-	return bus
-}

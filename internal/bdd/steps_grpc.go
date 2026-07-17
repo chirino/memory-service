@@ -154,10 +154,6 @@ func grpcAuthContext(s *cucumber.TestScenario) context.Context {
 	return ctx
 }
 
-func uuidToBytes(id uuid.UUID) []byte {
-	return id[:]
-}
-
 // protoToMap converts a proto message to a JSON-like map using protojson.
 // Uses camelCase field names and converts base64 UUID bytes to string UUIDs.
 func protoToMap(msg proto.Message) (map[string]any, error) {

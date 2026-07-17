@@ -21,21 +21,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// MountRoutes mounts entry routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.HandlerFunc) {
-	g := r.Group("/v1", auth)
-
-	g.GET("/conversations/:conversationId/entries", func(c *gin.Context) {
-		listEntries(c, store)
-	})
-	g.POST("/conversations/:conversationId/entries", func(c *gin.Context) {
-		appendEntry(c, store, nil)
-	})
-	g.POST("/conversations/:conversationId/entries/sync", func(c *gin.Context) {
-		syncMemory(c, store, nil)
-	})
-}
-
 // HandleListEntries exposes list entries handling for wrapper-native adapters.
 func HandleListEntries(c *gin.Context, store registrystore.MemoryStore) {
 	listEntries(c, store)

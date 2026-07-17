@@ -538,13 +538,6 @@ func lc4jEventText(raw json.RawMessage) string {
 	return strings.Join(parts, "")
 }
 
-func contextCount(turn *openTurn) int {
-	if len(turn.ContextEntries) > 0 {
-		return len(turn.ContextEntries)
-	}
-	return len(turn.ContextEntryIDs)
-}
-
 func contextEntries(turn *openTurn) []ContextEntryData {
 	if len(turn.ContextEntries) == 0 {
 		out := make([]ContextEntryData, 0, len(turn.ContextEntryIDs))

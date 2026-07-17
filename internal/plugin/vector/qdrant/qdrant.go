@@ -82,7 +82,7 @@ func init() {
 				&cli.StringFlag{
 					Name:        "vector-qdrant-host",
 					Category:    "Vector Store:",
-					Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "MEMORY_SERVICE_QDRANT_HOST"),
+					Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_QDRANT_HOST"),
 					Destination: &cfg.QdrantHost,
 					Value:       cfg.QdrantAddress(),
 					Usage:       "Qdrant host or host:port",

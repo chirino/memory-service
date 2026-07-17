@@ -10,21 +10,9 @@ import (
 // RouterLoader initializes routes on the gin engine.
 type RouterLoader func(r *gin.Engine) error
 
-// RouteType distinguishes which server a plugin's routes belong to.
-type RouteType int
-
-const (
-	// RouteTypeMain registers routes on the main API server.
-	RouteTypeMain RouteType = iota
-	// RouteTypeManagement registers routes on the management server (health, metrics).
-	// When no dedicated management port is configured, these are mounted on the main server.
-	RouteTypeManagement
-)
-
-// Plugin represents a route plugin with an order for deterministic mount sequence.
+// Plugin represents a management-route plugin with deterministic mount order.
 type Plugin struct {
 	Order  int
-	Type   RouteType
 	Loader RouterLoader
 }
 
@@ -45,24 +33,11 @@ func sorted() []Plugin {
 	return plugins
 }
 
-// MainRouteLoaders returns loaders for RouteTypeMain plugins, sorted by order.
-func MainRouteLoaders() []RouterLoader {
-	var loaders []RouterLoader
-	for _, p := range sorted() {
-		if p.Type == RouteTypeMain {
-			loaders = append(loaders, p.Loader)
-		}
-	}
-	return loaders
-}
-
-// ManagementRouteLoaders returns loaders for RouteTypeManagement plugins, sorted by order.
+// ManagementRouteLoaders returns registered loaders sorted by order.
 func ManagementRouteLoaders() []RouterLoader {
 	var loaders []RouterLoader
 	for _, p := range sorted() {
-		if p.Type == RouteTypeManagement {
-			loaders = append(loaders, p.Loader)
-		}
+		loaders = append(loaders, p.Loader)
 	}
 	return loaders
 }

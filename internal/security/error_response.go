@@ -143,52 +143,21 @@ func normalizeErrorBody(status int, requestID string, raw []byte) gin.H {
 		}
 	}
 
-	if legacyCode, _ := body["error"].(string); legacyCode == "search_type_unavailable" {
-		body["code"] = "search_type_unavailable"
-		if message, _ := body["message"].(string); message != "" {
-			body["error"] = message
+	if _, ok := body["code"].(string); !ok {
+		if codeFromError, _ := body["error"].(string); isStableErrorCode(codeFromError) {
+			body["code"] = codeFromError
+		} else {
+			body["code"] = defaultRESTErrorCode(status)
 		}
-		details := detailsMap(body)
-		if available, ok := body["availableTypes"]; ok {
-			details["availableTypes"] = available
-		}
-		if len(details) > 0 {
-			body["details"] = details
-		}
-	} else {
-		if _, ok := body["code"].(string); !ok {
-			if codeFromError, _ := body["error"].(string); isStableErrorCode(codeFromError) {
-				body["code"] = codeFromError
-			} else {
-				body["code"] = defaultRESTErrorCode(status)
-			}
-		}
-		if _, ok := body["error"].(string); !ok {
-			body["error"] = defaultRESTErrorMessage(status)
-		}
+	}
+	if _, ok := body["error"].(string); !ok {
+		body["error"] = defaultRESTErrorMessage(status)
 	}
 
-	if field, ok := body["field"]; ok {
-		details := detailsMap(body)
-		if _, exists := details["field"]; !exists {
-			details["field"] = field
-		}
-		body["details"] = details
-	}
 	if requestID != "" {
 		body["requestId"] = requestID
 	}
 	return body
-}
-
-func detailsMap(body gin.H) gin.H {
-	if details, ok := body["details"].(map[string]any); ok {
-		return gin.H(details)
-	}
-	if details, ok := body["details"].(gin.H); ok {
-		return details
-	}
-	return gin.H{}
 }
 
 func isStableErrorCode(value string) bool {

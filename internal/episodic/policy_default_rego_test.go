@@ -3,15 +3,14 @@ package episodic
 import (
 	"context"
 	"fmt"
+	"path/filepath"
 	"testing"
 
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 const defaultPolicyAssertionsRego = `
 package memories.tests
-
-import future.keywords.if
 
 # --- authz assertions ---
 
@@ -174,6 +173,14 @@ func TestDefaultPoliciesRegoAssertions(t *testing.T) {
 				t.Fatalf("rego assertion failed: %s", query)
 			}
 		})
+	}
+}
+
+func TestCognitionPoliciesCompileWithRegoV1(t *testing.T) {
+	policyDir := filepath.Join("..", "..", "deploy", "episodic-policies", "cognition")
+	_, err := NewPolicyEngine(context.Background(), policyDir)
+	if err != nil {
+		t.Fatalf("compile cognition policies: %v", err)
 	}
 }
 

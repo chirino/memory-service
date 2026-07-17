@@ -15,27 +15,6 @@ import (
 	"github.com/google/uuid"
 )
 
-// MountRoutes mounts ownership transfer routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.HandlerFunc) {
-	g := r.Group("/v1", auth)
-
-	g.GET("/ownership-transfers", func(c *gin.Context) {
-		listTransfers(c, store)
-	})
-	g.POST("/ownership-transfers", func(c *gin.Context) {
-		createTransfer(c, store)
-	})
-	g.GET("/ownership-transfers/:transferId", func(c *gin.Context) {
-		getTransfer(c, store)
-	})
-	g.DELETE("/ownership-transfers/:transferId", func(c *gin.Context) {
-		deleteTransfer(c, store)
-	})
-	g.POST("/ownership-transfers/:transferId/accept", func(c *gin.Context) {
-		acceptTransfer(c, store)
-	})
-}
-
 // HandleListTransfers exposes the transfer list handler for wrapper-native adapters.
 func HandleListTransfers(c *gin.Context, store registrystore.MemoryStore) {
 	listTransfers(c, store)
@@ -182,11 +161,7 @@ func handleError(c *gin.Context, err error) {
 			resp["code"] = conflict.Code
 		}
 		if len(conflict.Details) > 0 {
-			resp["details"] = gin.H{}
-		}
-		for k, v := range conflict.Details {
-			resp[k] = v
-			resp["details"].(gin.H)[k] = v
+			resp["details"] = conflict.Details
 		}
 		c.JSON(http.StatusConflict, resp)
 	case errors.As(err, &forbidden):

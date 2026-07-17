@@ -15,7 +15,6 @@ import (
 	"github.com/chirino/memory-service/internal/plugin/attach/encrypt"
 	routedeveloper "github.com/chirino/memory-service/internal/plugin/route/developer"
 	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
-	routememories "github.com/chirino/memory-service/internal/plugin/route/memories"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
 	storemetrics "github.com/chirino/memory-service/internal/plugin/store/metrics"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
@@ -79,12 +78,6 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err := resolveUnixSocketAuth(cfg); err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyStreamV2ReadEnabled {
-		log.Warn("Legacy MSEH v2 attachment stream reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED after encrypted attachment migration completes")
-	}
-	if !strings.EqualFold(strings.TrimSpace(cfg.Mode), config.ModeTesting) && cfg.EncryptionLegacyByteV1ReadEnabled {
-		log.Warn("Legacy MSEH v1 field reads are enabled; disable MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED after encrypted field migration completes")
-	}
 	log.Info("Initializing memory service",
 		"httpPort", cfg.Listener.Port,
 		"httpSocket", strings.TrimSpace(cfg.Listener.UnixSocket),
@@ -132,9 +125,6 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	encSvc, err := dataencryption.New(ctx, cfg)
 	if err != nil {
 		return nil, fmt.Errorf("failed to initialize encryption service: %w", err)
-	}
-	if !cfg.EncryptionDBDisabled && encSvc.IsPrimaryReal() && !encSvc.PrimarySupportsFieldEncryption() {
-		return nil, fmt.Errorf("database encryption requires primary encryption provider %q to support MSEH v4 field encryption; disable database encryption during migration or choose a provider with field-AAD support", encSvc.PrimaryProviderID())
 	}
 	ctx = dataencryption.WithContext(ctx, encSvc)
 
@@ -205,13 +195,6 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	router.Use(maxPageSizeMiddleware(cfg))
 	if cfg.CORSEnabled {
 		router.Use(corsMiddleware(cfg.CORSOrigins))
-	}
-
-	// Mount main route plugins on the main router.
-	for _, loader := range registryroute.MainRouteLoaders() {
-		if err := loader(router); err != nil {
-			return nil, fmt.Errorf("failed to load routes: %w", err)
-		}
 	}
 
 	// Initialize attachment store (optional).
@@ -295,10 +278,8 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		log.Warn("Attachment signing keys unavailable; signed download URLs disabled", "err", signingKeysErr)
 	}
 
-	memoriesAdapter := routememories.NewAPIServerAdapter(episodicStore, episodicPolicy, cfg, embedder)
-
 	// Register generated wrappers on the public router.
-	registerAPIRoutes(router, auth, authenticatedRateLimit, userIDAsserter.HTTPMiddleware(), cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, memoriesAdapter, eventBus)
+	registerAPIRoutes(router, auth, authenticatedRateLimit, userIDAsserter.HTTPMiddleware(), cfg, store, attachStore, attachSigningKeys, embedder, vectorStore, resumer, resumerEnabled, episodicStore, episodicPolicy, episodicIdx, eventBus)
 
 	// Register developer frontend routes when enabled.
 	if cfg.DeveloperFrontendEnabled {

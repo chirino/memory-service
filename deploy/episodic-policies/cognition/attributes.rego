@@ -1,7 +1,5 @@
 package memories.attributes
 
-import future.keywords.if
-
 # Optional cognition policy for deployments that want type-aware memory search.
 # It preserves the built-in namespace/sub attributes and adds only safe, compact
 # cognition metadata. Do not extract raw content, citations, prompts, provider IDs,

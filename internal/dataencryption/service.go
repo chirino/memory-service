@@ -9,7 +9,6 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
-	"github.com/chirino/memory-service/internal/security"
 )
 
 type contextKey struct{}
@@ -29,10 +28,8 @@ func FromContext(ctx context.Context) *Service {
 // encryptions; all registered providers are available for decryption routing via
 // the MSEH ProviderID field.
 type Service struct {
-	primary                 encrypt.Provider
-	byID                    map[string]encrypt.Provider
-	legacyPlainReadEnabled  bool
-	legacyByteV1ReadEnabled bool
+	primary encrypt.Provider
+	byID    map[string]encrypt.Provider
 }
 
 // New constructs a Service from cfg.EncryptionProviders (comma-separated list).
@@ -40,9 +37,7 @@ type Service struct {
 func New(ctx context.Context, cfg *config.Config) (*Service, error) {
 	names := strings.Split(cfg.EncryptionProviders, ",")
 	svc := &Service{
-		byID:                    make(map[string]encrypt.Provider),
-		legacyPlainReadEnabled:  cfg.EncryptionLegacyPlainReadEnabled,
-		legacyByteV1ReadEnabled: cfg.EncryptionLegacyByteV1ReadEnabled,
+		byID: make(map[string]encrypt.Provider),
 	}
 
 	for i, name := range names {
@@ -76,81 +71,15 @@ func (s *Service) IsPrimaryReal() bool {
 	return s.primary.ID() != "plain"
 }
 
-// PrimaryProviderID returns the configured primary provider ID.
-func (s *Service) PrimaryProviderID() string {
-	if s == nil || s.primary == nil {
-		return ""
-	}
-	return s.primary.ID()
-}
-
-// PrimarySupportsFieldEncryption reports whether the primary provider can write
-// MSEH v4 persisted-field envelopes with domain/identity AAD.
-func (s *Service) PrimarySupportsFieldEncryption() bool {
-	if s == nil || s.primary == nil {
-		return false
-	}
-	_, ok := s.primary.(encrypt.FieldProvider)
-	return ok
-}
-
-// Encrypt delegates to the primary provider.
-func (s *Service) Encrypt(plaintext []byte) ([]byte, error) {
-	return s.primary.Encrypt(plaintext)
-}
-
-// Decrypt routes to the provider named in the MSEH header when present. When
-// "plain" is registered in the provider list and legacy plaintext reads are
-// explicitly enabled, one additional case is handled:
-//
-//   - Scenario 1 (migration): no MSEH header → return bytes as-is via "plain".
-//     Covers data written before encryption was enabled (e.g. providers = "dek,plain"):
-//     old rows have no MSEH header and must not be routed to the primary ("dek"),
-//     which would fail expecting an envelope.
-//
-// Malformed MSEH is always a hard error. It never falls back to plaintext.
-func (s *Service) Decrypt(ciphertext []byte) ([]byte, error) {
-	plain := s.byID["plain"]
-
-	if HasMagic(ciphertext) {
-		h, _, err := ReadHeader(bytes.NewReader(ciphertext))
-		if err != nil {
-			return nil, err
-		}
-		if h != nil {
-			provider, ok := s.byID[h.ProviderID]
-			if !ok {
-				return nil, fmt.Errorf("dataencryption: unknown provider %q in MSEH header", h.ProviderID)
-			}
-			return provider.Decrypt(ciphertext)
-		}
-	}
-
-	// No MSEH header — Scenario 1: route to "plain" only when explicitly enabled.
-	if plain != nil && s.legacyPlainReadEnabled {
-		return plain.Decrypt(ciphertext)
-	}
-	return s.primary.Decrypt(ciphertext)
-}
-
 // EncryptField encrypts a persisted field with MSEH v4 domain/identity AAD binding.
 func (s *Service) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
-	if !s.IsPrimaryReal() {
-		return s.primary.Encrypt(plaintext)
-	}
-	provider, ok := s.primary.(encrypt.FieldProvider)
-	if !ok {
-		return nil, fmt.Errorf("dataencryption: primary provider %q does not support MSEH v4 field encryption", s.primary.ID())
-	}
-	return provider.EncryptField(plaintext, domain, identity)
+	return s.primary.EncryptField(plaintext, domain, identity)
 }
 
-// DecryptField decrypts a persisted field. MSEH v4 values are authenticated with
-// the supplied domain and identity; legacy MSEH v1 values are readable only when
-// the explicit migration compatibility flag is enabled.
+// DecryptField decrypts a persisted field. Encrypted values must use MSEH v4 and
+// are authenticated with the supplied domain and identity. Headerless values are
+// accepted only when plain is the primary provider.
 func (s *Service) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
-	plain := s.byID["plain"]
-
 	if HasMagic(ciphertext) {
 		h, _, err := ReadHeader(bytes.NewReader(ciphertext))
 		if err != nil {
@@ -160,28 +89,15 @@ func (s *Service) DecryptField(ciphertext []byte, domain, identity string) ([]by
 		if !ok {
 			return nil, fmt.Errorf("dataencryption: unknown provider %q in MSEH header", h.ProviderID)
 		}
-		switch h.Version {
-		case VersionFieldAESGCM:
-			fieldProvider, ok := provider.(encrypt.FieldProvider)
-			if !ok {
-				return nil, fmt.Errorf("dataencryption: provider %q does not support MSEH v4 field decryption", h.ProviderID)
-			}
-			return fieldProvider.DecryptField(ciphertext, domain, identity)
-		case VersionAESGCM:
-			if !s.legacyByteV1ReadEnabled {
-				return nil, fmt.Errorf("dataencryption: legacy MSEH v1 field read is disabled")
-			}
-			security.RecordLegacyEncryptedFieldRead(fmt.Sprintf("%d", h.Version), h.ProviderID, domain)
-			return provider.Decrypt(ciphertext)
-		default:
+		if h.Version != VersionFieldAESGCM {
 			return nil, fmt.Errorf("dataencryption: unsupported MSEH v%d field envelope", h.Version)
 		}
+		return provider.DecryptField(ciphertext, domain, identity)
 	}
-
-	if plain != nil && s.legacyPlainReadEnabled {
-		return plain.Decrypt(ciphertext)
+	if s.primary.ID() != "plain" {
+		return nil, fmt.Errorf("dataencryption: expected MSEH v%d field envelope", VersionFieldAESGCM)
 	}
-	return s.primary.Decrypt(ciphertext)
+	return s.primary.DecryptField(ciphertext, domain, identity)
 }
 
 // EncryptStream delegates to the primary provider.
@@ -189,16 +105,9 @@ func (s *Service) EncryptStream(dst io.Writer) (io.WriteCloser, error) {
 	return s.primary.EncryptStream(dst)
 }
 
-// DecryptStream peeks at the first 4 bytes to detect MSEH magic. If found, reads
-// the full header and routes to the matching provider. The same explicit legacy
-// plaintext fallback as Decrypt applies here:
-//
-//   - Scenario 1 (migration): no MSEH magic + "plain" registered → pass stream through.
-//
-// Malformed MSEH is always a hard error. It never falls back to plaintext.
+// DecryptStream routes current MSEH v3 streams by provider. Headerless streams
+// are accepted only when plain is the primary provider.
 func (s *Service) DecryptStream(src io.Reader) (io.Reader, error) {
-	plain := s.byID["plain"]
-
 	buf := make([]byte, 4)
 	n, _ := io.ReadFull(src, buf)
 	peeked := buf[:n]
@@ -213,6 +122,9 @@ func (s *Service) DecryptStream(src io.Reader) (io.Reader, error) {
 		if !ok {
 			return nil, fmt.Errorf("dataencryption: unknown provider %q in MSEH header", h.ProviderID)
 		}
+		if h.Version != VersionAttachmentStreamAESGCM {
+			return nil, fmt.Errorf("dataencryption: unsupported MSEH v%d attachment stream", h.Version)
+		}
 		encHeader := &encrypt.Header{
 			Version:    h.Version,
 			ProviderID: h.ProviderID,
@@ -222,9 +134,8 @@ func (s *Service) DecryptStream(src io.Reader) (io.Reader, error) {
 		return provider.DecryptStream(combined, encHeader)
 	}
 
-	// No MSEH magic — Scenario 1: route to "plain" only when explicitly enabled.
-	if plain != nil && s.legacyPlainReadEnabled {
-		return plain.DecryptStream(combined, nil)
+	if s.primary.ID() != "plain" {
+		return nil, fmt.Errorf("dataencryption: expected MSEH v%d attachment stream", VersionAttachmentStreamAESGCM)
 	}
 	return s.primary.DecryptStream(combined, nil)
 }

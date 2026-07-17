@@ -21,11 +21,6 @@ type PostgresKnowledgeStore struct {
 	db *gorm.DB
 }
 
-// NewPostgresKnowledgeStore creates a new PostgreSQL-backed knowledge store.
-func NewPostgresKnowledgeStore(db *gorm.DB) *PostgresKnowledgeStore {
-	return &PostgresKnowledgeStore{db: db}
-}
-
 // OpenPostgresKnowledgeStore opens a new gorm.DB connection for the knowledge store.
 func OpenPostgresKnowledgeStore(dbURL string) (*PostgresKnowledgeStore, error) {
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{

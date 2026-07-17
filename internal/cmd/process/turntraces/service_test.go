@@ -228,7 +228,7 @@ type failingEventClient struct {
 }
 
 func (c failingEventClient) Subscribe(context.Context, processruntime.SubscribeRequest) (processruntime.EventStream, error) {
-	return failingStream{err: c.err}, nil
+	return failingStream(c), nil
 }
 
 type failingStream struct {

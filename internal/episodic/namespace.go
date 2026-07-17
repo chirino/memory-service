@@ -61,16 +61,6 @@ func NamespacePrefixPattern(prefixEncoded string) string {
 	return escaped + namespaceSep + "%"
 }
 
-// NamespaceMatchesExact returns true if encoded equals the encoded prefix exactly.
-func NamespaceMatchesExact(encoded, prefixEncoded string) bool {
-	return encoded == prefixEncoded
-}
-
-// NamespaceHasPrefix returns true if encoded == prefixEncoded OR starts with prefixEncoded + RS.
-func NamespaceHasPrefix(encoded, prefixEncoded string) bool {
-	return encoded == prefixEncoded || strings.HasPrefix(encoded, prefixEncoded+namespaceSep)
-}
-
 // NamespaceTruncate returns the first depth segments of the encoded namespace,
 // re-encoded. If depth >= actual depth, returns the encoded namespace unchanged.
 func NamespaceTruncate(encoded string, depth int) string {
@@ -79,11 +69,6 @@ func NamespaceTruncate(encoded string, depth int) string {
 		return encoded
 	}
 	return strings.Join(parts[:depth], namespaceSep)
-}
-
-// NamespaceDepth returns the number of segments in the encoded namespace.
-func NamespaceDepth(encoded string) int {
-	return strings.Count(encoded, namespaceSep) + 1
 }
 
 // MatchesSuffix returns true if the decoded namespace ends with each segment in suffix.

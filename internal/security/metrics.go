@@ -9,7 +9,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/charmbracelet/log"
 	"github.com/gin-gonic/gin"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
@@ -52,25 +51,9 @@ var (
 	// UserIDAssertionsTotal counts bounded trusted-user assertion outcomes.
 	UserIDAssertionsTotal *prometheus.CounterVec
 
-	// EncryptionLegacyStreamReadsTotal counts legacy encrypted stream reads by MSEH version.
-	EncryptionLegacyStreamReadsTotal *prometheus.CounterVec
-
-	// EncryptionLegacyFieldReadsTotal counts legacy encrypted field reads by MSEH version and bounded domain.
-	EncryptionLegacyFieldReadsTotal *prometheus.CounterVec
-
 	// SecurityUnsafeConfig records explicit operator acknowledgements for unsafe settings.
 	SecurityUnsafeConfig *prometheus.GaugeVec
 )
-
-var legacyStreamReadWarning struct {
-	sync.Mutex
-	last time.Time
-}
-
-var legacyFieldReadWarning struct {
-	sync.Mutex
-	last time.Time
-}
 
 var validLabelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
 
@@ -199,22 +182,6 @@ func initMetricsInner(constLabels prometheus.Labels) {
 		[]string{"outcome"},
 	)
 
-	EncryptionLegacyStreamReadsTotal = f.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "memory_service_encryption_legacy_stream_reads_total",
-			Help: "Total number of legacy encrypted stream reads by MSEH version",
-		},
-		[]string{"version"},
-	)
-
-	EncryptionLegacyFieldReadsTotal = f.NewCounterVec(
-		prometheus.CounterOpts{
-			Name: "memory_service_encryption_legacy_field_reads_total",
-			Help: "Total number of legacy encrypted persisted-field reads by MSEH version and field domain",
-		},
-		[]string{"version", "domain"},
-	)
-
 	SecurityUnsafeConfig = f.NewGaugeVec(
 		prometheus.GaugeOpts{
 			Name: "memory_service_security_unsafe_config",
@@ -237,51 +204,5 @@ func MetricsMiddleware() gin.HandlerFunc {
 
 		httpRequestsTotal.WithLabelValues(c.Request.Method, strconv.Itoa(c.Writer.Status())).Inc()
 		httpRequestDuration.WithLabelValues(c.Request.Method).Observe(duration.Seconds())
-	}
-}
-
-// RecordLegacyEncryptedStreamRead records and rate-limited-warns on compatibility
-// reads of legacy encrypted attachment streams.
-func RecordLegacyEncryptedStreamRead(version string, provider string) {
-	if EncryptionLegacyStreamReadsTotal != nil {
-		EncryptionLegacyStreamReadsTotal.WithLabelValues(version).Inc()
-	}
-
-	now := time.Now()
-	legacyStreamReadWarning.Lock()
-	defer legacyStreamReadWarning.Unlock()
-	if now.Sub(legacyStreamReadWarning.last) < time.Minute {
-		return
-	}
-	legacyStreamReadWarning.last = now
-	log.Warn("decrypting legacy encrypted attachment stream", "mseh_version", version, "provider", provider)
-}
-
-// RecordLegacyEncryptedFieldRead records and rate-limited-warns on compatibility
-// reads of legacy encrypted persisted fields.
-func RecordLegacyEncryptedFieldRead(version string, provider string, domain string) {
-	domain = boundedFieldDomain(domain)
-	if EncryptionLegacyFieldReadsTotal != nil {
-		EncryptionLegacyFieldReadsTotal.WithLabelValues(version, domain).Inc()
-	}
-
-	now := time.Now()
-	legacyFieldReadWarning.Lock()
-	defer legacyFieldReadWarning.Unlock()
-	if now.Sub(legacyFieldReadWarning.last) < time.Minute {
-		return
-	}
-	legacyFieldReadWarning.last = now
-	log.Warn("decrypting legacy encrypted field", "mseh_version", version, "provider", provider, "domain", domain)
-}
-
-func boundedFieldDomain(domain string) string {
-	switch domain {
-	case "conversation.title", "entry.content", "admin-checkpoint.value", "memory.value":
-		return domain
-	case "":
-		return "unknown"
-	default:
-		return "other"
 	}
 }

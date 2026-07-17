@@ -214,11 +214,11 @@ the store build datastore-side predicates for the requested descendant's visible
 forward, backward, tail, `fromSeq`, and `upToEntryId` pagination. `forks=all` remains group-scoped and uses
 bounded group queries.
 
-### Schema Reset Requirement for Version 110
+### Schema Version 1 Baseline
 
-Schema version 110 squashes previous datastore migrations and changes the persisted fork lineage model. Existing
-pre-110 PostgreSQL, SQLite, and MongoDB datastores must be reset before startup. The service writes schema metadata
-for fresh version-110 stores and rejects older layouts with an explicit reset error.
+The breaking release squashes all earlier datastore migrations into schema version 1. Existing PostgreSQL,
+SQLite, and MongoDB datastores from pre-release builds must be reset before startup. The service writes schema
+metadata for fresh version-1 stores and rejects incompatible layouts with an explicit reset error.
 
 ### Soft Deletes with Retention Indexes
 

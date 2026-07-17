@@ -34,7 +34,6 @@ func (p *PostgresTestDB) ClearAll(ctx context.Context) error {
 	tables := []string{
 		"tasks",
 		"entries",
-		"attachment_file_chunks",
 		"attachment_files",
 		"attachments",
 		"conversation_ownership_transfers",

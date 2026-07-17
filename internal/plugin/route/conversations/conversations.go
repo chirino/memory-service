@@ -15,7 +15,6 @@ import (
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
-	registryroute "github.com/chirino/memory-service/internal/registry/route"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
@@ -23,43 +22,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
-
-func init() {
-	registryroute.Register(registryroute.Plugin{
-		Order: 100,
-		Loader: func(r *gin.Engine) error {
-			return nil // routes are mounted by the serve command after store init
-		},
-	})
-}
-
-// MountRoutes mounts conversation routes on the given router group.
-// Called after store initialization so the store is available.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Config, auth gin.HandlerFunc, resumer *internalresumer.Store, resumerEnabled bool) {
-	g := r.Group("/v1", auth)
-
-	g.GET("/conversations", func(c *gin.Context) {
-		listConversations(c, store)
-	})
-	g.POST("/conversations", func(c *gin.Context) {
-		createConversation(c, store, nil)
-	})
-	g.GET("/conversations/:conversationId", func(c *gin.Context) {
-		getConversation(c, store)
-	})
-	g.PATCH("/conversations/:conversationId", func(c *gin.Context) {
-		updateConversation(c, store, nil)
-	})
-	g.GET("/conversations/:conversationId/forks", func(c *gin.Context) {
-		listForks(c, store)
-	})
-	g.GET("/conversations/:conversationId/children", func(c *gin.Context) {
-		listChildConversations(c, store)
-	})
-	g.DELETE("/conversations/:conversationId/response", func(c *gin.Context) {
-		cancelResponse(c, store, resumer, resumerEnabled)
-	})
-}
 
 // HandleListConversations exposes list conversation handling for wrapper-native adapters.
 func HandleListConversations(c *gin.Context, store registrystore.MemoryStore) {
@@ -542,7 +504,11 @@ func handleError(c *gin.Context, err error) {
 	case errors.As(err, &notFound):
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": err.Error()})
 	case errors.As(err, &validation):
-		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error(), "field": validation.Field})
+		c.JSON(http.StatusBadRequest, gin.H{
+			"code":    "validation_error",
+			"error":   err.Error(),
+			"details": gin.H{"field": validation.Field},
+		})
 	case errors.As(err, &conflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})
 	case errors.As(err, &forbidden):

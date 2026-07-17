@@ -235,10 +235,6 @@ func withMemoryWrite[T any](ctx context.Context, store registrystore.MemoryStore
 	return out, nil
 }
 
-func inMemoryRead(ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) error) error {
-	return store.InReadTx(ctx, fn)
-}
-
 func inMemoryWrite(ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) error) error {
 	return store.InWriteTx(ctx, fn)
 }
@@ -1431,9 +1427,7 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 	var content json.RawMessage
 	if len(entry.GetContent()) > 0 {
 		list, _ := structpb.NewList(nil)
-		for _, v := range entry.GetContent() {
-			list.Values = append(list.Values, v)
-		}
+		list.Values = append(list.Values, entry.GetContent()...)
 		content, _ = list.MarshalJSON()
 	}
 
@@ -1495,9 +1489,7 @@ func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequ
 	var syncContent json.RawMessage
 	if len(entry.GetContent()) > 0 {
 		list, _ := structpb.NewList(nil)
-		for _, v := range entry.GetContent() {
-			list.Values = append(list.Values, v)
-		}
+		list.Values = append(list.Values, entry.GetContent()...)
 		syncContent, _ = list.MarshalJSON()
 	}
 
@@ -4026,9 +4018,7 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 	}
 
 	resp := &pb.CheckRecordingsResponse{}
-	for _, idStr := range active {
-		resp.ConversationIds = append(resp.ConversationIds, idStr)
-	}
+	resp.ConversationIds = append(resp.ConversationIds, active...)
 	return resp, nil
 }
 

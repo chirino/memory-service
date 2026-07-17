@@ -29,6 +29,5 @@ func TestHandleErrorCopiesConflictDetailsIntoStableDetails(t *testing.T) {
 	require.NoError(t, json.Unmarshal(w.Body.Bytes(), &body))
 	require.Equal(t, "TRANSFER_ALREADY_PENDING", body["code"])
 	require.Equal(t, "a transfer is already pending for this conversation", body["error"])
-	require.Equal(t, "transfer-1", body["existingTransferId"])
 	require.Equal(t, map[string]any{"existingTransferId": "transfer-1"}, body["details"])
 }
