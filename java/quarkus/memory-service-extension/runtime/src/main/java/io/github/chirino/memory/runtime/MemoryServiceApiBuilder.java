@@ -19,12 +19,10 @@ public class MemoryServiceApiBuilder {
     @Inject
     public MemoryServiceApiBuilder(
             @ConfigProperty(name = "memory-service.client.url") Optional<String> clientUrl,
-            @ConfigProperty(name = "quarkus.rest-client.memory-service-client.url")
-                    Optional<String> quarkusRestClientUrl,
             @ConfigProperty(name = "memory-service.client.api-key") Optional<String> apiKey,
             ObjectMapper objectMapper) {
         this(
-                resolveClientUrl(clientUrl, quarkusRestClientUrl),
+                MemoryServiceClientUrl.parse(clientUrl.orElse("http://localhost:8080")),
                 apiKey.orElse(null),
                 null,
                 objectMapper);
@@ -57,7 +55,8 @@ public class MemoryServiceApiBuilder {
 
     public MemoryServiceApiBuilder withUrl(String url) {
         return new MemoryServiceApiBuilder(
-                resolveClientUrl(Optional.ofNullable(url), Optional.empty()),
+                MemoryServiceClientUrl.parse(
+                        Optional.ofNullable(url).orElse("http://localhost:8080")),
                 apiKey,
                 bearerToken,
                 objectMapper);
@@ -105,11 +104,5 @@ public class MemoryServiceApiBuilder {
                                             .putSingle("Authorization", "Bearer " + bearerToken));
         }
         return builder.build(clazz);
-    }
-
-    private static MemoryServiceClientUrl resolveClientUrl(
-            Optional<String> clientUrl, Optional<String> legacyUrl) {
-        return MemoryServiceClientUrl.parse(
-                clientUrl.orElseGet(() -> legacyUrl.orElse("http://localhost:8080")));
     }
 }

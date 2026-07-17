@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { useState, useEffect } from "react";
 import { Search as SearchIcon, MessageSquare, Database } from "lucide-react";
-import { useAdminConversations, useAdminMemories, type AdminConversation, type AdminMemory } from "@/hooks/useAdminApi";
+import { type AdminConversation, type AdminMemoryItem } from "@/api/client";
+import { useAdminConversations, useAdminMemories } from "@/hooks/useAdminApi";
 import { formatRelativeTime, truncate, cn } from "@/lib/utils";
 import { Badge } from "@/components/ui/badge";
 
@@ -50,7 +51,7 @@ function SearchPage() {
     : [];
 
   const filteredMemories = debouncedQuery && memoriesData?.items
-    ? memoriesData.items.filter((memory: AdminMemory) => {
+    ? memoriesData.items.filter((memory: AdminMemoryItem) => {
         const searchLower = debouncedQuery.toLowerCase();
         return (
           memory.key?.toLowerCase().includes(searchLower) ||

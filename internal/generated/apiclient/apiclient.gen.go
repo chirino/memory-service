@@ -1094,10 +1094,6 @@ type SearchResultKind string
 
 // SearchTypeUnavailableError Error response when the requested search type is not available on the server.
 type SearchTypeUnavailableError struct {
-	// AvailableTypes Deprecated compatibility alias for details.availableTypes.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	AvailableTypes *[]string `json:"availableTypes,omitempty"`
-
 	// Code Stable machine-readable error code.
 	Code string `json:"code"`
 
@@ -1106,10 +1102,6 @@ type SearchTypeUnavailableError struct {
 
 	// Error Safe human-readable error message.
 	Error string `json:"error"`
-
-	// Message Deprecated compatibility alias for error.
-	// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-	Message *string `json:"message,omitempty"`
 
 	// RequestId Request correlation identifier, also returned in the X-Request-ID header.
 	RequestId string `json:"requestId"`
@@ -5818,10 +5810,6 @@ type CreateOwnershipTransferResp struct {
 		Details *map[string]interface{} `json:"details,omitempty"`
 		Error   string                  `json:"error"`
 
-		// ExistingTransferId Deprecated compatibility alias for details.existingTransferId.
-		// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-		ExistingTransferId *openapi_types.UUID `json:"existingTransferId,omitempty"`
-
 		// RequestId Request correlation identifier, also returned in the X-Request-ID header.
 		RequestId string `json:"requestId"`
 	}
@@ -7630,10 +7618,6 @@ func ParseCreateOwnershipTransferResp(rsp *http.Response) (*CreateOwnershipTrans
 			// Details Structured non-sensitive error details.
 			Details *map[string]interface{} `json:"details,omitempty"`
 			Error   string                  `json:"error"`
-
-			// ExistingTransferId Deprecated compatibility alias for details.existingTransferId.
-			// Deprecated: this property has been marked as deprecated upstream, but no `x-deprecated-reason` was set
-			ExistingTransferId *openapi_types.UUID `json:"existingTransferId,omitempty"`
 
 			// RequestId Request correlation identifier, also returned in the X-Request-ID header.
 			RequestId string `json:"requestId"`

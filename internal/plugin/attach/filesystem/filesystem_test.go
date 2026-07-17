@@ -2,8 +2,6 @@ package filesystem
 
 import (
 	"context"
-	"crypto/sha256"
-	"fmt"
 	"io"
 	"os"
 	"path/filepath"
@@ -42,31 +40,6 @@ func TestAttachmentStoreRoundTrip(t *testing.T) {
 	_, err = os.Stat(path)
 	require.Error(t, err)
 	require.True(t, os.IsNotExist(err))
-}
-
-func TestAttachmentStoreReplace(t *testing.T) {
-	t.Parallel()
-
-	store := &AttachmentStore{rootDir: t.TempDir()}
-	original, err := store.Store(context.Background(), strings.NewReader("before"), 1024, "text/plain")
-	require.NoError(t, err)
-
-	replaced, err := store.Replace(context.Background(), original.StorageKey, strings.NewReader("after"), "text/plain")
-	require.NoError(t, err)
-	require.Equal(t, original.StorageKey, replaced.StorageKey)
-	require.Equal(t, int64(len("after")), replaced.Size)
-	require.Equal(t, fmt.Sprintf("%x", sha256.Sum256([]byte("after"))), replaced.SHA256)
-
-	reader, err := store.Retrieve(context.Background(), original.StorageKey)
-	require.NoError(t, err)
-	body, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	require.NoError(t, reader.Close())
-	require.Equal(t, "after", string(body))
-
-	_, err = store.Replace(context.Background(), original.StorageKey+"missing", strings.NewReader("nope"), "text/plain")
-	require.Error(t, err)
-	require.Contains(t, err.Error(), "attachment not found")
 }
 
 func TestAttachmentStoreRejectsInvalidStorageKey(t *testing.T) {

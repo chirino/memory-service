@@ -161,10 +161,6 @@ type TestScenario struct {
 	cleanupScenario func(context.Context) error
 }
 
-func (s *TestScenario) Logf(format string, args ...any) {
-	s.Suite.TestingT.Logf(format, args...)
-}
-
 func (s *TestScenario) User() *TestUser {
 	s.Suite.Mu.Lock()
 	defer s.Suite.Mu.Unlock()

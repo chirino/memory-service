@@ -59,7 +59,7 @@ Feature: Ownership Transfers REST API
     }
     """
     Then the response status should be 409
-    And the response body should contain "existingTransferId"
+    And the response body should contain "details.existingTransferId"
     And the response body "code" should be "TRANSFER_ALREADY_PENDING"
 
   Scenario: Cannot transfer to non-member

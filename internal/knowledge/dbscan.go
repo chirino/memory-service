@@ -2,7 +2,6 @@ package knowledge
 
 import (
 	"math"
-	"sort"
 
 	"github.com/google/uuid"
 )
@@ -174,14 +173,4 @@ func ComputeCentroid(embeddings [][]float64, indices []int) []float64 {
 		centroid[d] /= n
 	}
 	return centroid
-}
-
-// SortedClusterLabels returns cluster labels sorted by label number.
-func SortedClusterLabels(clusters map[int][]int) []int {
-	labels := make([]int, 0, len(clusters))
-	for k := range clusters {
-		labels = append(labels, k)
-	}
-	sort.Ints(labels)
-	return labels
 }

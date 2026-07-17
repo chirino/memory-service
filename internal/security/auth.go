@@ -48,8 +48,6 @@ const (
 	CredentialAPIKey CredentialKind = "api-key"
 	// CredentialOIDCAPIKey — OIDC JWT bearer token paired with X-API-Key.
 	CredentialOIDCAPIKey CredentialKind = "oidc-api-key"
-	// CredentialBearerAPIKey — bearer API key compatibility for no-OIDC deployments.
-	CredentialBearerAPIKey CredentialKind = "bearer-api-key"
 	// CredentialEmbeddedMCP — in-process embedded MCP synthetic identity.
 	// Accepted only when RequestCredentials.Transport == "embedded-mcp"; never from network traffic.
 	CredentialEmbeddedMCP     CredentialKind = "embedded-mcp"
@@ -271,11 +269,8 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 
 	if oidcIssuer != "" {
 		oidcEnabled = true
-		if len(splitCSV(cfg.OIDCAllowedAudiences)) == 0 && !cfg.OIDCAllowMissingAudience {
+		if len(splitCSV(cfg.OIDCAllowedAudiences)) == 0 {
 			return nil, fmt.Errorf("OIDC allowed audiences are required when OIDC is enabled; set MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES")
-		}
-		if cfg.OIDCAllowMissingAudience {
-			log.Warn("OIDC audience validation compatibility mode is enabled; configure MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES before production use")
 		}
 
 		ctx := context.Background()
@@ -524,14 +519,6 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 		return id, nil
 	}
 
-	// OIDC not configured: bearer token mode.
-	// If the bearer value matches a configured API key, it's a no-OIDC bearer API-key compatibility request.
-	if r.bearerTokenIsAPIKey(bearerToken) {
-		// Bearer value is a configured API key: resolve client identity (no-OIDC compat).
-		clientID = r.apiKeys[bearerToken]
-		return newIdentity("", clientID, nil, r.rolesForClient(clientID), CredentialBearerAPIKey), nil
-	}
-
 	// No-OIDC mode: treat the bearer token as the user ID (raw bearer user).
 	// This is only accepted in testing mode with the auth_testfixtures build tag.
 	return resolveRawBearer(r, ctx, bearerToken, clientID, roles)
@@ -764,15 +751,6 @@ func checkIdentityOIDCScope(id *Identity, permission Permission) error {
 		}
 	}
 	return fmt.Errorf("OIDC token missing required scope for %s", permission)
-}
-
-func (r *TokenResolver) bearerTokenIsAPIKey(bearerToken string) bool {
-	for key := range r.apiKeys {
-		if key == bearerToken {
-			return true
-		}
-	}
-	return false
 }
 
 // --- Gin HTTP middleware ---
@@ -1053,11 +1031,6 @@ func resolveGRPCIdentityWithRateLimiter(ctx context.Context, resolver *TokenReso
 	return context.WithValue(ctx, grpcIdentityKey{}, id)
 }
 
-// GRPCUnaryInterceptor returns a gRPC unary server interceptor that resolves caller identity.
-func GRPCUnaryInterceptor(resolver *TokenResolver) grpc.UnaryServerInterceptor {
-	return GRPCUnaryInterceptorWithRateLimiter(resolver, nil)
-}
-
 // GRPCUnaryInterceptorWithRateLimiter returns a gRPC unary server interceptor that resolves
 // caller identity and charges invalid credentials against the auth-failure bucket.
 func GRPCUnaryInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateLimiter) grpc.UnaryServerInterceptor {
@@ -1069,11 +1042,6 @@ func GRPCUnaryInterceptorWithRateLimiter(resolver *TokenResolver, limiter *RateL
 	) (any, error) {
 		return handler(resolveGRPCIdentityWithRateLimiter(ctx, resolver, limiter), req)
 	}
-}
-
-// GRPCStreamInterceptor returns a gRPC stream server interceptor that resolves caller identity.
-func GRPCStreamInterceptor(resolver *TokenResolver) grpc.StreamServerInterceptor {
-	return GRPCStreamInterceptorWithRateLimiter(resolver, nil)
 }
 
 // GRPCStreamInterceptorWithRateLimiter returns a gRPC stream server interceptor that resolves

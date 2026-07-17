@@ -7,7 +7,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestApplyJavaCompatFromEnv(t *testing.T) {
+func TestApplyEnvOverrides(t *testing.T) {
 	t.Setenv("MEMORY_SERVICE_ATTACHMENTS_MAX_SIZE", "12M")
 	t.Setenv("MEMORY_SERVICE_ATTACHMENTS_DEFAULT_EXPIRES_IN", "PT2H")
 	t.Setenv("MEMORY_SERVICE_ATTACHMENTS_MAX_EXPIRES_IN", "PT6H")
@@ -20,15 +20,11 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	t.Setenv("MEMORY_SERVICE_VECTOR_QDRANT_PORT", "7443")
 	t.Setenv("MEMORY_SERVICE_VECTOR_QDRANT_HOST", "qdrant.example")
 	t.Setenv("MEMORY_SERVICE_OIDC_ROLE_CLAIMS", `["/realm_access/roles","/groups"]`)
-	t.Setenv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", "true")
 	t.Setenv("MEMORY_SERVICE_TRUSTED_PROXY_CIDRS", "10.0.0.0/24")
 	t.Setenv("MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN", "true")
-	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED", "true")
-	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED", "false")
-	t.Setenv("MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED", "false")
 
 	cfg := DefaultConfig()
-	err := cfg.ApplyJavaCompatFromEnv()
+	err := cfg.ApplyEnvOverrides()
 	require.NoError(t, err)
 
 	require.Equal(t, int64(12*1024*1024), cfg.AttachmentMaxSize)
@@ -43,19 +39,15 @@ func TestApplyJavaCompatFromEnv(t *testing.T) {
 	require.Equal(t, "qdrant.example", cfg.QdrantHost)
 	require.Equal(t, 7443, cfg.QdrantPort)
 	require.Equal(t, []string{"/realm_access/roles", "/groups"}, cfg.OIDCRoleClaims)
-	require.True(t, cfg.OIDCAllowMissingAudience)
 	require.Equal(t, "10.0.0.0/24", cfg.TrustedProxyCIDRs)
 	require.True(t, cfg.EncryptionAllowPlain)
-	require.True(t, cfg.EncryptionLegacyPlainReadEnabled)
-	require.False(t, cfg.EncryptionLegacyByteV1ReadEnabled)
-	require.False(t, cfg.EncryptionLegacyStreamV2ReadEnabled)
 }
 
-func TestApplyJavaCompatFromEnvRejectsInvalidOIDCRoleClaims(t *testing.T) {
+func TestApplyEnvOverridesRejectsInvalidOIDCRoleClaims(t *testing.T) {
 	t.Setenv("MEMORY_SERVICE_OIDC_ROLE_CLAIMS", `/groups`)
 
 	cfg := DefaultConfig()
-	err := cfg.ApplyJavaCompatFromEnv()
+	err := cfg.ApplyEnvOverrides()
 	require.ErrorContains(t, err, "invalid MEMORY_SERVICE_OIDC_ROLE_CLAIMS")
 }
 

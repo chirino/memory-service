@@ -38,7 +38,6 @@ func (m *MongoTestDB) ClearAll(ctx context.Context) error {
 	collections := []string{
 		"tasks",
 		"entries",
-		"attachment_file_chunks",
 		"attachments",
 		"conversation_ownership_transfers",
 		"conversation_memberships",

@@ -12,9 +12,9 @@ import (
 // TestRoundTrip verifies that WriteHeader and ReadHeader are inverses.
 func TestRoundTrip(t *testing.T) {
 	headers := []dataencryption.Header{
-		{Version: 1, ProviderID: "dek", Nonce: make([]byte, 12)},
-		{Version: 1, ProviderID: "vault", Nonce: make([]byte, 12)},
-		{Version: 1, ProviderID: "kms", Nonce: bytes.Repeat([]byte{0xAB}, 12)},
+		{Version: dataencryption.VersionFieldAESGCM, ProviderID: "dek", Nonce: make([]byte, 12)},
+		{Version: dataencryption.VersionFieldAESGCM, ProviderID: "vault", Nonce: make([]byte, 12)},
+		{Version: dataencryption.VersionAttachmentStreamAESGCM, ProviderID: "kms", Nonce: bytes.Repeat([]byte{0xAB}, 24)},
 	}
 	for _, h := range headers {
 		var buf bytes.Buffer
@@ -33,7 +33,7 @@ func TestRoundTrip(t *testing.T) {
 func TestHasMagic(t *testing.T) {
 	var buf bytes.Buffer
 	require.NoError(t, dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version: 1, ProviderID: "dek", Nonce: make([]byte, 12),
+		Version: dataencryption.VersionFieldAESGCM, ProviderID: "dek", Nonce: make([]byte, 12),
 	}))
 	ciphertext := append(buf.Bytes(), []byte("payload")...)
 
@@ -58,7 +58,7 @@ func TestWireFormat(t *testing.T) {
 
 	var buf bytes.Buffer
 	require.NoError(t, dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version:    1,
+		Version:    dataencryption.VersionFieldAESGCM,
 		ProviderID: "dek",
 		Nonce:      iv,
 	}))
@@ -72,9 +72,9 @@ func TestWireFormat(t *testing.T) {
 	protoLen := int(b[4]) // should be < 128
 	proto := b[5 : 5+protoLen]
 
-	// Field 1: version=1 → tag 0x08, value 0x01
+	// Field 1: version=4 → tag 0x08, value 0x04
 	require.Equal(t, byte(0x08), proto[0])
-	require.Equal(t, byte(0x01), proto[1])
+	require.Equal(t, byte(0x04), proto[1])
 
 	// Field 2: provider_id="dek" → tag 0x12, len 0x03, "dek"
 	require.Equal(t, byte(0x12), proto[2])

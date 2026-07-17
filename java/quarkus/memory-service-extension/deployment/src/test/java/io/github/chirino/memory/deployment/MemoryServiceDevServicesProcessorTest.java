@@ -4,8 +4,15 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertSame;
 
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.Test;
+import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.ProtocolMapperRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.utility.DockerImageName;
 
@@ -128,7 +135,7 @@ class MemoryServiceDevServicesProcessorTest {
     }
 
     @Test
-    void keycloakEnvironmentRelaxesAudienceRequirement() {
+    void keycloakEnvironmentConfiguresDefaultAudience() {
         GenericContainer<?> container =
                 new GenericContainer<>(
                         DockerImageName.parse("example.invalid/memory-service:test"));
@@ -143,24 +150,59 @@ class MemoryServiceDevServicesProcessorTest {
                 "http://host.docker.internal:8081/realms/memory-service",
                 container.getEnvMap().get("MEMORY_SERVICE_OIDC_DISCOVERY_URL"));
         assertEquals(
-                "true", container.getEnvMap().get("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE"));
-        assertFalse(container.getEnvMap().containsKey("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"));
+                "memory-service",
+                container.getEnvMap().get("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"));
     }
 
     @Test
-    void keycloakEnvironmentPreservesStrictAudienceOverride() {
+    void keycloakEnvironmentPreservesAudienceOverride() {
         GenericContainer<?> container =
                 new GenericContainer<>(DockerImageName.parse("example.invalid/memory-service:test"))
-                        .withEnv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", "false")
                         .withEnv("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES", "custom-audience");
 
         MemoryServiceDevServicesProcessor.configureKeycloakDevService(
                 container, "http://localhost:8081/realms/custom");
 
         assertEquals(
-                "false", container.getEnvMap().get("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE"));
-        assertEquals(
                 "custom-audience",
                 container.getEnvMap().get("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES"));
+    }
+
+    @Test
+    void defaultKeycloakRealmIssuesMemoryServiceAudience() {
+        ClientRepresentation first = new ClientRepresentation();
+        first.setClientId("quarkus-app");
+        ClientRepresentation second = new ClientRepresentation();
+        second.setClientId("another-client");
+        RealmRepresentation realm = new RealmRepresentation();
+        realm.setClients(new ArrayList<>(List.of(first, second)));
+
+        MemoryServiceDevServicesProcessor.addMemoryServiceAudienceToDefaultRealm(realm);
+
+        for (ClientRepresentation client : realm.getClients()) {
+            assertEquals(1, client.getProtocolMappers().size());
+            ProtocolMapperRepresentation mapper = client.getProtocolMappers().get(0);
+            assertEquals("openid-connect", mapper.getProtocol());
+            assertEquals("oidc-audience-mapper", mapper.getProtocolMapper());
+            assertEquals("memory-service", mapper.getConfig().get("included.custom.audience"));
+            assertEquals("true", mapper.getConfig().get("access.token.claim"));
+            assertEquals("false", mapper.getConfig().get("id.token.claim"));
+        }
+    }
+
+    @Test
+    void defaultKeycloakRealmPreservesExistingAudienceMapper() {
+        ProtocolMapperRepresentation existing = new ProtocolMapperRepresentation();
+        existing.setProtocolMapper("oidc-audience-mapper");
+        existing.setConfig(Map.of("included.custom.audience", "memory-service"));
+        ClientRepresentation client = new ClientRepresentation();
+        client.setProtocolMappers(new ArrayList<>(List.of(existing)));
+        RealmRepresentation realm = new RealmRepresentation();
+        realm.setClients(new ArrayList<>(List.of(client)));
+
+        MemoryServiceDevServicesProcessor.addMemoryServiceAudienceToDefaultRealm(realm);
+
+        assertEquals(1, client.getProtocolMappers().size());
+        assertSame(existing, client.getProtocolMappers().get(0));
     }
 }

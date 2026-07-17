@@ -131,9 +131,7 @@ func routeFromMDX(projectRoot, mdxPath string) (string, error) {
 		return "", fmt.Errorf("unexpected docs path %s", mdxPath)
 	}
 	route := "/" + strings.TrimSuffix(rel, ".mdx")
-	if strings.HasSuffix(route, "/index") {
-		route = strings.TrimSuffix(route, "/index")
-	}
+	route = strings.TrimSuffix(route, "/index")
 	return route, nil
 }
 

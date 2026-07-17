@@ -112,13 +112,6 @@ func init() {
 					Value:       "digest",
 					Usage:       "Infinispan auth mechanism (basic|digest)",
 				},
-				&cli.BoolFlag{
-					Name:        "vector-infinispan-use-tls",
-					Category:    "Vector Store:",
-					Sources:     cli.EnvVars("MEMORY_SERVICE_VECTOR_INFINISPAN_USE_TLS"),
-					Destination: &cfg.InfinispanVectorUseTLS,
-					Usage:       "Enable TLS for Infinispan connection",
-				},
 			}
 		},
 	})

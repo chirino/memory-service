@@ -7,7 +7,6 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
-	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
 	"github.com/stretchr/testify/require"
 )
@@ -20,8 +19,7 @@ const legacyKeyHex = "a1b2c3d4e5f6a7b8c9d0e1f2a3b4c5d6e7f8a9b0c1d2e3f4a5b6c7d8e9
 // keys[0] is primary; any additional keys are legacy (decryption-only).
 func makeCfg(keys ...string) *config.Config {
 	return &config.Config{
-		EncryptionKey:                       joinKeys(keys),
-		EncryptionLegacyStreamV2ReadEnabled: true,
+		EncryptionKey: joinKeys(keys),
 	}
 }
 
@@ -48,32 +46,31 @@ func newProvider(t *testing.T, keys ...string) encrypt.Provider {
 	return p
 }
 
-// TestEncryptDecryptRoundTrip verifies basic encrypt→decrypt.
-func TestEncryptDecryptRoundTrip(t *testing.T) {
+func TestEncryptDecryptFieldRoundTrip(t *testing.T) {
 	p := newProvider(t, testKeyHex)
 	plaintext := []byte("hello, MSEH encryption")
 
-	ct, err := p.Encrypt(plaintext)
+	ct, err := p.EncryptField(plaintext, "entry.content", "entry-1")
 	require.NoError(t, err)
 	require.True(t, dataencryption.HasMagic(ct), "encrypted output must have MSEH magic")
 
-	got, err := p.Decrypt(ct)
+	got, err := p.DecryptField(ct, "entry.content", "entry-1")
 	require.NoError(t, err)
 	require.Equal(t, plaintext, got)
 }
 
-// TestDecryptWithKeyRotation verifies that a ciphertext encrypted with the legacy key
+// TestDecryptFieldWithKeyRotation verifies that a ciphertext encrypted with the legacy key
 // can be decrypted by a provider that has the old key as the second entry.
-func TestDecryptWithKeyRotation(t *testing.T) {
+func TestDecryptFieldWithKeyRotation(t *testing.T) {
 	// Encrypt with the legacy key as primary.
 	legacyProvider := newProvider(t, legacyKeyHex)
 	plaintext := []byte("key rotation test")
-	ct, err := legacyProvider.Encrypt(plaintext)
+	ct, err := legacyProvider.EncryptField(plaintext, "entry.content", "entry-1")
 	require.NoError(t, err)
 
 	// Decrypt with new primary + old key as legacy second entry.
 	rotatedProvider := newProvider(t, testKeyHex, legacyKeyHex)
-	got, err := rotatedProvider.Decrypt(ct)
+	got, err := rotatedProvider.DecryptField(ct, "entry.content", "entry-1")
 	require.NoError(t, err)
 	require.Equal(t, plaintext, got)
 }
@@ -163,50 +160,16 @@ func TestDecryptStreamWithKeyRotation(t *testing.T) {
 	require.Equal(t, plaintext, plainBuf.Bytes())
 }
 
-func TestDecryptStreamRejectsLegacyV2WhenDisabled(t *testing.T) {
-	plaintext := []byte("legacy stream read gate payload")
-	encrypted := encryptLegacyV2Stream(t, plaintext, testKeyHex)
-
-	cfg := makeCfg(testKeyHex)
-	cfg.EncryptionProviders = "dek"
-	cfg.EncryptionLegacyStreamV2ReadEnabled = false
-	svc, err := dataencryption.New(context.Background(), cfg)
-	require.NoError(t, err)
-
-	_, err = svc.DecryptStream(bytes.NewReader(encrypted))
-	require.ErrorContains(t, err, "legacy MSEH v2 stream reads are disabled")
-}
-
-func encryptLegacyV2Stream(t *testing.T, plaintext []byte, keyHex string) []byte {
-	t.Helper()
-	key, err := config.DecodeEncryptionKey(keyHex)
-	require.NoError(t, err)
-	nonce, err := dekpkg.NewCTRNonce(key)
-	require.NoError(t, err)
-	var encBuf bytes.Buffer
-	require.NoError(t, dataencryption.WriteHeader(&encBuf, dataencryption.Header{
-		Version:    dataencryption.VersionAESCTR,
-		ProviderID: "dek",
-		Nonce:      nonce,
-	}))
-	w, err := dekpkg.NewCTREncryptWriter(&encBuf, key, nonce)
-	require.NoError(t, err)
-	_, err = w.Write(plaintext)
-	require.NoError(t, err)
-	require.NoError(t, w.Close())
-	return encBuf.Bytes()
-}
-
 // TestMSEHProviderIDField verifies the MSEH header contains provider_id="dek".
 func TestMSEHProviderIDField(t *testing.T) {
 	p := newProvider(t, testKeyHex)
-	ct, err := p.Encrypt([]byte("probe"))
+	ct, err := p.EncryptField([]byte("probe"), "entry.content", "entry-1")
 	require.NoError(t, err)
 
 	h, hasMagic, err := dataencryption.ReadHeader(bytes.NewReader(ct))
 	require.NoError(t, err)
 	require.True(t, hasMagic)
 	require.Equal(t, "dek", h.ProviderID)
-	require.Equal(t, uint32(dataencryption.VersionAESGCM), h.Version)
+	require.Equal(t, uint32(dataencryption.VersionFieldAESGCM), h.Version)
 	require.Len(t, h.Nonce, 12)
 }

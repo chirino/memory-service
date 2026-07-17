@@ -7,7 +7,7 @@ CREATE TABLE IF NOT EXISTS schema_metadata (
 );
 
 INSERT INTO schema_metadata (key, value, updated_at)
-VALUES ('core_schema_version', '110', CURRENT_TIMESTAMP)
+VALUES ('core_schema_version', '1', CURRENT_TIMESTAMP)
 ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
 
 CREATE TABLE IF NOT EXISTS conversation_groups (

@@ -35,21 +35,6 @@ type cursorToken struct {
 	Cursors map[string]string `json:"cursors,omitempty"`
 }
 
-// MountRoutes mounts search routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, cfg *config.Config, auth gin.HandlerFunc, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
-	g := r.Group("/v1", auth)
-
-	g.POST("/conversations/search", func(c *gin.Context) {
-		searchConversations(c, store, cfg, embedder, vectorStore)
-	})
-	g.POST("/conversations/index", func(c *gin.Context) {
-		indexConversations(c, store)
-	})
-	g.GET("/conversations/unindexed", func(c *gin.Context) {
-		listUnindexed(c, store)
-	})
-}
-
 // HandleSearchConversations exposes conversation search for wrapper-native adapters.
 func HandleSearchConversations(c *gin.Context, store registrystore.MemoryStore, cfg *config.Config, embedder registryembed.Embedder, vectorStore registryvector.VectorStore) {
 	searchConversations(c, store, cfg, embedder, vectorStore)
@@ -117,7 +102,7 @@ func searchConversationsInReadTx(c *gin.Context, store registrystore.MemoryStore
 	fulltextAvailable := cfg == nil || cfg.SearchFulltextEnabled
 	availableTypes := availableSearchTypes(semanticAvailable, fulltextAvailable)
 
-	cursorMap, cursorTypes, err := decodeAfterCursor(req.AfterCursor, searchTypes)
+	cursorMap, cursorTypes, err := decodeAfterCursor(req.AfterCursor)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
 		return
@@ -192,34 +177,6 @@ func executeAutoSearch(
 			nextCursors[t] = *results.AfterCursor
 		}
 		c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": encodeAfterCursor([]string{t}, nextCursors)})
-		return
-	}
-
-	// For legacy/plain cursors or typed cursors without explicit `types`, continue
-	// the backend that supplied the cursor instead of re-running auto selection.
-	if cursorMap[searchTypeSemantic] != "" || cursorMap[searchTypeFulltext] != "" {
-		preferred := searchTypeSemantic
-		if cursorMap[searchTypeSemantic] == "" {
-			preferred = searchTypeFulltext
-		}
-		if len(missingSearchTypes([]string{preferred}, semanticAvailable, fulltextAvailable)) > 0 {
-			searchTypeUnavailable(c, availableTypes)
-			return
-		}
-		results, err := executeSearchType(c.Request.Context(), store, embedder, vectorStore, userID, query, preferred, cursorPtr(cursorMap[preferred]), limit, includeEntry, groupByConversation)
-		if err != nil {
-			if errors.Is(err, errInvalidAfterCursor) {
-				c.JSON(http.StatusBadRequest, gin.H{"code": "validation_error", "error": err.Error()})
-				return
-			}
-			handleError(c, err)
-			return
-		}
-		nextCursors := map[string]string{}
-		if results.AfterCursor != nil {
-			nextCursors[preferred] = *results.AfterCursor
-		}
-		c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": encodeAfterCursor([]string{preferred}, nextCursors)})
 		return
 	}
 
@@ -317,9 +274,11 @@ func missingSearchTypes(searchTypes []string, semanticAvailable, fulltextAvailab
 
 func searchTypeUnavailable(c *gin.Context, availableTypes []string) {
 	c.JSON(http.StatusNotImplemented, gin.H{
-		"error":          "search_type_unavailable",
-		"message":        "One or more requested search types are not available on this server.",
-		"availableTypes": availableTypes,
+		"code":  "search_type_unavailable",
+		"error": "One or more requested search types are not available on this server.",
+		"details": gin.H{
+			"availableTypes": availableTypes,
+		},
 	})
 }
 
@@ -390,7 +349,7 @@ func normalizeSearchTypes(raw any) ([]string, error) {
 	return result, nil
 }
 
-func decodeAfterCursor(afterCursor *string, requestedTypes []string) (map[string]string, []string, error) {
+func decodeAfterCursor(afterCursor *string) (map[string]string, []string, error) {
 	cursorMap := map[string]string{}
 	if afterCursor == nil {
 		return cursorMap, nil, nil
@@ -402,30 +361,22 @@ func decodeAfterCursor(afterCursor *string, requestedTypes []string) (map[string
 	}
 
 	decoded, err := base64.RawURLEncoding.DecodeString(raw)
-	if err == nil {
-		var token cursorToken
-		if uErr := json.Unmarshal(decoded, &token); uErr == nil && len(token.Cursors) > 0 {
-			for k, v := range token.Cursors {
-				if strings.TrimSpace(v) != "" {
-					cursorMap[k] = v
-				}
-			}
-			return cursorMap, token.Types, nil
+	if err != nil {
+		return nil, nil, fmt.Errorf("%w: malformed cursor", errInvalidAfterCursor)
+	}
+	var token cursorToken
+	if err := json.Unmarshal(decoded, &token); err != nil || len(token.Types) == 0 || len(token.Cursors) == 0 {
+		return nil, nil, fmt.Errorf("%w: malformed cursor", errInvalidAfterCursor)
+	}
+	for k, v := range token.Cursors {
+		if strings.TrimSpace(v) != "" {
+			cursorMap[k] = v
 		}
 	}
-
-	if len(requestedTypes) == 1 {
-		t := requestedTypes[0]
-		if t == searchTypeAuto {
-			// Legacy behavior prior to typed/opaque cursors was fulltext cursor only.
-			cursorMap[searchTypeFulltext] = raw
-			return cursorMap, nil, nil
-		}
-		cursorMap[t] = raw
-		return cursorMap, nil, nil
+	if len(cursorMap) == 0 {
+		return nil, nil, fmt.Errorf("%w: malformed cursor", errInvalidAfterCursor)
 	}
-
-	return nil, nil, fmt.Errorf("%w: malformed multi-search cursor", errInvalidAfterCursor)
+	return cursorMap, token.Types, nil
 }
 
 func encodeAfterCursor(searchTypes []string, cursors map[string]string) *string {

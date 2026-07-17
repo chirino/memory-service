@@ -108,28 +108,8 @@ deploying and maintaining that data plane.
   malformed proxy CIDRs, dual plaintext/TLS TCP listeners, missing management-listener
   decisions, non-loopback management binds without an explicit acknowledgement, or a missing
   developer frontend base URL.
-- Stop all old replicas before deploying MSEH v3 attachment-stream writes or MSEH v4 field
-  writes. Mixed old/new memory-service binaries are not a supported deployment mode for
-  those formats.
-- Take a coordinated database backup and attachment-object backup before running encryption
-  migrations. Keep that backup until legacy-read metrics are zero for the installation's
-  normal retention window.
-- Inventory and rewrite legacy attachment streams with `memory-service migrate attachments
---to-stream-version=3 --dry-run`, then rerun without `--dry-run` after reviewing the
-  counts. The command skips non-v2/already-v3 objects and refuses to mutate stores that do
-  not support atomic replacement.
-- Inventory and rewrite legacy database fields with `memory-service migrate
-encryption-fields --to-version=4 --dry-run`, then rerun without `--dry-run` after
-  reviewing the counts. The command scans conversation titles, entry content, admin
-  checkpoint values, and episodic memory values, skips already-v4 values, and conditionally
-  updates each value only if it has not changed since it was read.
-- Treat MSEH v3/v4 writes as forward-only for old binaries. After the first new-version write
-  or migration replacement, rollback to a binary that does not understand that version
-  requires restoring the coordinated pre-upgrade backup.
-- Keep compatibility flags such as
-  `MEMORY_SERVICE_ENCRYPTION_LEGACY_PLAIN_READ_ENABLED=true`,
-  `MEMORY_SERVICE_ENCRYPTION_LEGACY_BYTE_V1_READ_ENABLED=true`, and
-  `MEMORY_SERVICE_ENCRYPTION_LEGACY_STREAM_V2_READ_ENABLED=true` enabled only for the
-  documented migration window, then remove them after verification.
-- After upgrading, verify that legacy-read and unsafe-config metrics remain at zero before
-  removing compatibility flags or retiring the pre-upgrade backup.
+- Stop all old replicas before the breaking release. Mixed old/new binaries are unsupported.
+- Take coordinated database and attachment-object backups, then reset the datastore and
+  attachment store before startup initializes schema version 1.
+- Rollback requires restoring both backups; the breaking release does not read pre-release
+  schemas, MSEH v1 fields, or MSEH v2 attachment streams.

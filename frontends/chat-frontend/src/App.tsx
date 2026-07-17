@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import type { ChildConversationSummary, Conversation, ConversationSummary } from "@/client";
 import { ConversationsService } from "@/client";
-import { type ApiError, OpenAPI } from "@/client-compat";
+import { client as OpenAPI } from "@/client/client.gen";
 import { ChatPanel } from "@/components/chat-panel";
 import { ChatSidebar } from "@/components/chat-sidebar";
 import { ProfileContextPanel } from "@/components/profile-context-panel";
@@ -119,7 +119,7 @@ function App() {
   useEventStream();
   const streamingConversations = useStreamingConversations();
 
-  const conversationsQuery = useQuery<ConversationSummary[], ApiError, ConversationSummary[]>({
+  const conversationsQuery = useQuery<ConversationSummary[], Error, ConversationSummary[]>({
     queryKey: ["conversations", archiveFilter],
     queryFn: async (): Promise<ConversationSummary[]> => {
       const response = (await ConversationsService.listConversations({
@@ -144,7 +144,7 @@ function App() {
     selectedConversationId && resolvedConversationIds.has(selectedConversationId),
   );
 
-  const selectedConversationQuery = useQuery<Conversation, ApiError>({
+  const selectedConversationQuery = useQuery<Conversation, Error>({
     queryKey: ["conversation", selectedConversationId],
     enabled: isResolvedSelectedConversation,
     queryFn: async (): Promise<Conversation> => {
@@ -173,7 +173,7 @@ function App() {
     }
   }, [hasProfileContextFeature, mainView, profileContextAvailabilityQuery.isFetched]);
 
-  const selectedConversationChildrenQuery = useQuery<ChildConversationSummary[], ApiError, ChildConversationSummary[]>({
+  const selectedConversationChildrenQuery = useQuery<ChildConversationSummary[], Error, ChildConversationSummary[]>({
     queryKey: ["conversation-sidebar-children", selectedConversationId],
     enabled: isResolvedSelectedConversation,
     queryFn: async (): Promise<ChildConversationSummary[]> => {

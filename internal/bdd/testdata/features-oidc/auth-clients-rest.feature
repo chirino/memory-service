@@ -17,8 +17,8 @@ Feature: OIDC client and API key authentication
   # When both OIDCAllowedClients and OIDCAllowedAudiences are configured, both checks
   # must pass independently.
 
-  Scenario: OIDC mode accepts a valid issuer token without client or audience filters
-    Given memory-service is running with OIDC and no allowed client or audience filters
+  Scenario: OIDC mode accepts a valid token without a client filter
+    Given memory-service is running with OIDC and no allowed client filter
     And I login via OIDC as user "bob" with password "bob"
     When I call GET "/v1/conversations"
     Then the response status should be 200

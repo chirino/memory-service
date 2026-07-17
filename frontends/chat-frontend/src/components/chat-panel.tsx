@@ -15,7 +15,6 @@ import {
 } from "@/components/conversation";
 import { ConversationsUI } from "@/components/conversations-ui";
 import type { Conversation as ApiConversation, ConversationForkNavigation, Entry } from "@/client";
-import type { ApiError } from "@/client-compat";
 import { ConversationsService } from "@/client";
 import { useSseStream } from "@/hooks/useSseStream";
 import type { StreamAttachmentRef, StreamStartParams } from "@/hooks/useStreamTypes";
@@ -431,8 +430,8 @@ function ChatPanelContent({
   hasOlderEntries,
   isLoadingOlderEntries,
 }: ChatPanelContentProps & {
-  forksQuery: ReturnType<typeof useQuery<ConversationForkNavigation, ApiError, ConversationForkNavigation>>;
-  conversationQuery: ReturnType<typeof useQuery<ApiConversation, ApiError, ApiConversation>>;
+  forksQuery: ReturnType<typeof useQuery<ConversationForkNavigation, Error, ConversationForkNavigation>>;
+  conversationQuery: ReturnType<typeof useQuery<ApiConversation, Error, ApiConversation>>;
   forkOptionsByEntryId: Map<string, ForkOption[]>;
   loadOlderEntries: () => Promise<unknown>;
   hasOlderEntries: boolean;
@@ -1213,7 +1212,7 @@ export function ChatPanel({
   }, [sseStream]);
 
   const isResolvedConversation = Boolean(conversationId && knownConversationIds?.has(conversationId));
-  const forksQuery = useQuery<ConversationForkNavigation, ApiError, ConversationForkNavigation>({
+  const forksQuery = useQuery<ConversationForkNavigation, Error, ConversationForkNavigation>({
     queryKey: ["conversation-forks", conversationId],
     enabled: isResolvedConversation,
     queryFn: async (): Promise<ConversationForkNavigation> => {
@@ -1223,7 +1222,7 @@ export function ChatPanel({
     },
   });
 
-  const conversationQuery = useQuery<ApiConversation, ApiError, ApiConversation>({
+  const conversationQuery = useQuery<ApiConversation, Error, ApiConversation>({
     queryKey: ["conversation", conversationId],
     enabled: isResolvedConversation,
     queryFn: async (): Promise<ApiConversation> => {

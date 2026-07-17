@@ -20,14 +20,6 @@ Feature: No-OIDC API key authentication
     When I call GET "/v1/conversations"
     Then the response status should be 401
 
-  Scenario: No-OIDC mode accepts bearer API key compatibility
-    Given API key "agent-api-key-1" maps to client "agent"
-    And client "agent" has the "admin" role
-    And memory-service is running with API keys and no OIDC
-    And I authenticate with bearer API key "agent-api-key-1"
-    When I call GET "/v1/admin/conversations"
-    Then the response status should be 200
-
   Scenario: No-OIDC production mode rejects raw bearer user plus API-key client
     Given API key "agent-api-key-1" maps to client "agent"
     And client "agent" has the "admin" role

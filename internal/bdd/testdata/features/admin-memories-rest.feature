@@ -135,9 +135,9 @@ Feature: Admin Memory REST API
     Given I call PUT "/admin/v1/memory-policies" with body:
     """
     {
-      "authz": "package memories.authz\nimport future.keywords.if\ndefault decision = {\"allow\": true}",
-      "attributes": "package memories.attributes\nimport future.keywords.if\ndefault attributes = {}\nattributes = {\"admin_user_id\": input.context.user_id, \"admin_role\": input.context.jwt_claims.roles[0]} if { count(input.context.jwt_claims.roles) > 0 }",
-      "filter": "package memories.filter\nimport future.keywords.if\nnamespace_prefix := input.namespace_prefix\nattribute_filter := {}"
+      "authz": "package memories.authz\ndefault decision = {\"allow\": true}",
+      "attributes": "package memories.attributes\ndefault attributes = {}\nattributes = {\"admin_user_id\": input.context.user_id, \"admin_role\": input.context.jwt_claims.roles[0]} if { count(input.context.jwt_claims.roles) > 0 }",
+      "filter": "package memories.filter\nnamespace_prefix := input.namespace_prefix\nattribute_filter := {}"
     }
     """
     And the response status should be 204

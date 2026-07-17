@@ -107,13 +107,7 @@ type Config struct {
 	// Cache backend type
 	CacheType string // "local", "redis", "infinispan", or "none"
 
-	// Optional named Redis client (Java parity surface).
-	CacheRedisClient string
-
-	// Infinispan cache options (Java parity surface).
-	InfinispanStartupTimeout              time.Duration
-	InfinispanMemoryEntriesCacheName      string
-	InfinispanResponseRecordingsCacheName string
+	InfinispanStartupTimeout time.Duration
 
 	// Memory entries cache TTL.
 	CacheEpochTTL time.Duration
@@ -161,8 +155,6 @@ type Config struct {
 	InfinispanVectorUsername    string
 	InfinispanVectorPassword    string
 	InfinispanVectorAuthType    string // "basic" or "digest"
-	InfinispanVectorUseTLS      bool
-	InfinispanVectorVerifySSL   bool
 
 	// Embedding type
 	EmbedType string // "none", "local", or "openai"
@@ -248,17 +240,14 @@ type Config struct {
 	TrustedUserIDClients string
 
 	// OIDC client/audience allowlisting and resource/API scope gates
-	OIDCAllowedClients       string
-	OIDCAllowedAudiences     string
-	OIDCAllowMissingAudience bool
-	OIDCRoleClaims           []string
-	OIDCScopes               map[string]string // permission key -> comma-separated accepted OIDC scopes
+	OIDCAllowedClients   string
+	OIDCAllowedAudiences string
+	OIDCRoleClaims       []string
+	OIDCScopes           map[string]string // permission key -> comma-separated accepted OIDC scopes
 
 	// Encryption
-	EncryptionProviders          string
-	EncryptionProviderDEKType    string
-	EncryptionProviderDEKEnabled bool
-	EncryptionVaultTransitKey    string
+	EncryptionProviders       string
+	EncryptionVaultTransitKey string
 	// EncryptionKMSKeyID is the AWS KMS key ID or ARN used by the "kms" provider.
 	EncryptionKMSKeyID string
 	// EncryptionKey is a comma-separated list of AES keys for the "dek" provider.
@@ -273,12 +262,6 @@ type Config struct {
 	EncryptionAttachmentsDisabled bool
 	// EncryptionAllowPlain explicitly permits the plain provider as the primary provider outside testing.
 	EncryptionAllowPlain bool
-	// EncryptionLegacyPlainReadEnabled permits headerless ciphertext/plaintext reads through the plain provider.
-	EncryptionLegacyPlainReadEnabled bool
-	// EncryptionLegacyByteV1ReadEnabled permits legacy MSEH v1 byte-encrypted field reads during migration.
-	EncryptionLegacyByteV1ReadEnabled bool
-	// EncryptionLegacyStreamV2ReadEnabled permits legacy MSEH v2 AES-CTR attachment stream reads.
-	EncryptionLegacyStreamV2ReadEnabled bool
 
 	// Body size limit (bytes)
 	MaxBodySize int64
@@ -322,7 +305,6 @@ type Config struct {
 
 	// SSE event stream
 	SSEKeepaliveInterval     time.Duration
-	SSEMembershipCacheTTL    time.Duration
 	SSEMaxConnectionsPerUser int
 	SSESubscriberBufferSize  int
 	OutboxEnabled            bool
@@ -355,32 +337,29 @@ type Config struct {
 // DefaultConfig returns a Config with sensible defaults.
 func DefaultConfig() Config {
 	return Config{
-		Mode:                                  ModeProd,
-		DatastoreType:                         "postgres",
-		DatastoreMigrateAtStart:               true,
-		CacheType:                             "none",
-		CacheRedisClient:                      "default",
-		InfinispanStartupTimeout:              30 * time.Second,
-		InfinispanMemoryEntriesCacheName:      "memory-entries",
-		InfinispanResponseRecordingsCacheName: "response-recordings",
-		CacheEpochTTL:                         10 * time.Minute,
-		CacheLocalMaxBytes:                    64 * 1024 * 1024,
-		CacheLocalNumCounters:                 100000,
-		CacheLocalBufferItems:                 64,
-		AttachType:                            "db",
-		AttachmentMaxSize:                     10 * 1024 * 1024, // 10 MB
-		AttachmentDefaultExpiresIn:            time.Hour,
-		AttachmentMaxExpiresIn:                24 * time.Hour,
-		AttachmentCleanupInterval:             5 * time.Minute,
-		AttachmentDownloadURLExpiresIn:        5 * time.Minute,
-		VectorType:                            "",
-		VectorMigrateAtStart:                  true,
-		VectorIndexerBatchSize:                500,
-		EmbedType:                             "local",
-		OpenAIModelName:                       "text-embedding-3-small",
-		OpenAIBaseURL:                         "https://api.openai.com/v1",
-		SearchSemanticEnabled:                 true,
-		SearchFulltextEnabled:                 true,
+		Mode:                           ModeProd,
+		DatastoreType:                  "postgres",
+		DatastoreMigrateAtStart:        true,
+		CacheType:                      "none",
+		InfinispanStartupTimeout:       30 * time.Second,
+		CacheEpochTTL:                  10 * time.Minute,
+		CacheLocalMaxBytes:             64 * 1024 * 1024,
+		CacheLocalNumCounters:          100000,
+		CacheLocalBufferItems:          64,
+		AttachType:                     "db",
+		AttachmentMaxSize:              10 * 1024 * 1024, // 10 MB
+		AttachmentDefaultExpiresIn:     time.Hour,
+		AttachmentMaxExpiresIn:         24 * time.Hour,
+		AttachmentCleanupInterval:      5 * time.Minute,
+		AttachmentDownloadURLExpiresIn: 5 * time.Minute,
+		VectorType:                     "",
+		VectorMigrateAtStart:           true,
+		VectorIndexerBatchSize:         500,
+		EmbedType:                      "local",
+		OpenAIModelName:                "text-embedding-3-small",
+		OpenAIBaseURL:                  "https://api.openai.com/v1",
+		SearchSemanticEnabled:          true,
+		SearchFulltextEnabled:          true,
 		Listener: ListenerConfig{
 			Port:              8080,
 			Host:              "127.0.0.1",
@@ -397,43 +376,38 @@ func DefaultConfig() Config {
 			MaxHeaderBytes:  64 << 10,
 			IdleTimeout:     30 * time.Second,
 		},
-		UnixSocketAuth:                      "credentials",
-		LocalClientID:                       "local-agent",
-		RateLimitMode:                       "local",
-		RateLimitSource:                     "600/1m,burst=100",
-		RateLimitIdentity:                   "1200/1m,burst=200",
-		RateLimitAuthFailure:                "30/1m,burst=10",
-		RateLimitExpensive:                  "60/1m,burst=10",
-		RateLimitStreamOpen:                 "30/1m,burst=5",
-		MaxBodySize:                         20 * 1024 * 1024, // 2x attachment max-size
-		BodyReadTimeout:                     30 * time.Second,
-		AttachmentBodyReadTimeout:           5 * time.Minute,
-		MaxPageSize:                         DefaultMaxPageSize,
-		DrainTimeout:                        30,
-		DBMaxOpenConns:                      25,
-		DBMaxIdleConns:                      5,
-		EvictionBatchSize:                   1000,
-		EvictionBatchDelay:                  100,
-		ResumerTempFileRetention:            30 * time.Minute,
-		QdrantHost:                          "localhost",
-		QdrantPort:                          6334,
-		QdrantCollectionPrefix:              "memory-service",
-		QdrantStartupTimeout:                30 * time.Second,
-		S3DirectDownload:                    false,
-		AdminOIDCRole:                       "admin",
-		AuditorOIDCRole:                     "auditor",
-		EncryptionProviders:                 "plain",
-		EncryptionProviderDEKType:           "dek",
-		EncryptionProviderDEKEnabled:        true,
-		EncryptionLegacyByteV1ReadEnabled:   true,
-		EncryptionLegacyStreamV2ReadEnabled: true,
+		UnixSocketAuth:            "credentials",
+		LocalClientID:             "local-agent",
+		RateLimitMode:             "local",
+		RateLimitSource:           "600/1m,burst=100",
+		RateLimitIdentity:         "1200/1m,burst=200",
+		RateLimitAuthFailure:      "30/1m,burst=10",
+		RateLimitExpensive:        "60/1m,burst=10",
+		RateLimitStreamOpen:       "30/1m,burst=5",
+		MaxBodySize:               20 * 1024 * 1024, // 2x attachment max-size
+		BodyReadTimeout:           30 * time.Second,
+		AttachmentBodyReadTimeout: 5 * time.Minute,
+		MaxPageSize:               DefaultMaxPageSize,
+		DrainTimeout:              30,
+		DBMaxOpenConns:            25,
+		DBMaxIdleConns:            5,
+		EvictionBatchSize:         1000,
+		EvictionBatchDelay:        100,
+		ResumerTempFileRetention:  30 * time.Minute,
+		QdrantHost:                "localhost",
+		QdrantPort:                6334,
+		QdrantCollectionPrefix:    "memory-service",
+		QdrantStartupTimeout:      30 * time.Second,
+		S3DirectDownload:          false,
+		AdminOIDCRole:             "admin",
+		AuditorOIDCRole:           "auditor",
+		EncryptionProviders:       "plain",
 
 		// Event bus defaults
 		EventBusType:             "local",
 		EventBusOutboundBuffer:   200,
 		EventBusBatchSize:        100,
 		SSEKeepaliveInterval:     30 * time.Second,
-		SSEMembershipCacheTTL:    5 * time.Minute,
 		SSEMaxConnectionsPerUser: 5,
 		SSESubscriberBufferSize:  64,
 		OutboxEnabled:            false,

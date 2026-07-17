@@ -692,11 +692,6 @@ paths:
                     type: object
                     additionalProperties: true
                     description: Structured non-sensitive error details.
-                  existingTransferId:
-                    type: string
-                    format: uuid
-                    description: Deprecated compatibility alias for details.existingTransferId.
-                    deprecated: true
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -1829,18 +1824,6 @@ components:
           type: object
           additionalProperties: true
           description: Structured non-sensitive error details, including availableTypes when known.
-        message:
-          type: string
-          description: Deprecated compatibility alias for error.
-          deprecated: true
-          example: One or more requested search types are not available on this server.
-        availableTypes:
-          type: array
-          items:
-            type: string
-          description: Deprecated compatibility alias for details.availableTypes.
-          deprecated: true
-          example: [fulltext]
     CapabilitiesResponse:
       type: object
       required: [version, tech, features, auth, security]

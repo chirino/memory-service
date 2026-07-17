@@ -2,7 +2,6 @@ package episodic
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -10,7 +9,7 @@ import (
 	"sync"
 
 	"github.com/charmbracelet/log"
-	"github.com/open-policy-agent/opa/rego"
+	"github.com/open-policy-agent/opa/v1/rego"
 )
 
 // PolicyContext contains the caller's identity for OPA policy evaluation.
@@ -52,9 +51,6 @@ type PolicyBundle struct {
 const defaultAuthzRego = `
 package memories.authz
 
-import future.keywords.if
-import future.keywords.in
-
 default decision = {"allow": false, "reason": "access denied"}
 
 # Users may access their own namespace subtree.
@@ -84,8 +80,6 @@ decision = {"allow": false, "reason": "too many index fields (max 8)"} if {
 const defaultAttrExtractRego = `
 package memories.attributes
 
-import future.keywords.if
-
 # Persist namespace root + owner as plaintext attributes for search filtering.
 default attributes = {}
 
@@ -96,9 +90,6 @@ attributes = {"namespace": input.namespace[0], "sub": input.namespace[1]} if {
 
 const defaultFilterInjectRego = `
 package memories.filter
-
-import future.keywords.if
-import future.keywords.in
 
 # Non-admin callers are constrained to their own user subtree.
 # If the request is already narrower under user/<user>, keep it.
@@ -282,14 +273,6 @@ func (e *PolicyEngine) EvaluateAuthz(ctx context.Context, operation string, name
 		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
 	}
 
-	// Backward-compatible fallback if a policy still returns a boolean.
-	if allow, ok := results[0].Expressions[0].Value.(bool); ok {
-		if allow {
-			return AuthzDecision{Allow: true}, nil
-		}
-		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
-	}
-
 	raw, _ := results[0].Expressions[0].Value.(map[string]interface{})
 	if raw == nil {
 		return AuthzDecision{Allow: false, Reason: "access denied"}, nil
@@ -428,103 +411,4 @@ func toStringSlice(v interface{}) []string {
 		return t
 	}
 	return nil
-}
-
-// ParseAttributeFilter parses a flat JSON attribute filter map from the request.
-// Returns it as-is; validation happens at query time.
-func ParseAttributeFilter(raw json.RawMessage) (map[string]interface{}, error) {
-	if raw == nil {
-		return nil, nil
-	}
-	var m map[string]interface{}
-	if err := json.Unmarshal(raw, &m); err != nil {
-		return nil, fmt.Errorf("invalid attribute filter: %w", err)
-	}
-	return m, nil
-}
-
-// BuildSQLFilter builds a parameterized SQL WHERE clause fragment and args for
-// the given attribute filter. Keys match JSONB fields in policy_attributes.
-// Supported forms: bare scalar, {"in": [...]}, {"gt"|"gte"|"lt"|"lte": value}.
-func BuildSQLFilter(filter map[string]interface{}) (string, []interface{}) {
-	if len(filter) == 0 {
-		return "", nil
-	}
-	var clauses []string
-	var args []interface{}
-
-	for key, val := range filter {
-		switch v := val.(type) {
-		case map[string]interface{}:
-			// Range / set membership expressions
-			if members, ok := v["in"]; ok {
-				list := toInterfaceSlice(members)
-				if len(list) > 0 {
-					placeholders := make([]string, len(list))
-					for i, m := range list {
-						args = append(args, jsonScalar(m))
-						placeholders[i] = fmt.Sprintf("$%d", len(args))
-					}
-					clauses = append(clauses,
-						fmt.Sprintf("policy_attributes->>'%s' = ANY(ARRAY[%s])",
-							escapeSQLIdent(key), strings.Join(placeholders, ",")))
-				}
-			}
-			for op, rhs := range v {
-				var sqlOp string
-				switch op {
-				case "gt":
-					sqlOp = ">"
-				case "gte":
-					sqlOp = ">="
-				case "lt":
-					sqlOp = "<"
-				case "lte":
-					sqlOp = "<="
-				default:
-					continue
-				}
-				args = append(args, rhs)
-				clauses = append(clauses,
-					fmt.Sprintf("(policy_attributes->>'%s')::numeric %s $%d",
-						escapeSQLIdent(key), sqlOp, len(args)))
-			}
-		default:
-			// Bare scalar: equality
-			args = append(args, jsonScalar(v))
-			clauses = append(clauses,
-				fmt.Sprintf("policy_attributes->>'%s' = $%d", escapeSQLIdent(key), len(args)))
-		}
-	}
-	if len(clauses) == 0 {
-		return "", nil
-	}
-	return strings.Join(clauses, " AND "), args
-}
-
-func jsonScalar(v interface{}) string {
-	switch t := v.(type) {
-	case string:
-		return t
-	case bool:
-		if t {
-			return "true"
-		}
-		return "false"
-	default:
-		b, _ := json.Marshal(t)
-		return strings.Trim(string(b), `"`)
-	}
-}
-
-func toInterfaceSlice(v interface{}) []interface{} {
-	switch t := v.(type) {
-	case []interface{}:
-		return t
-	}
-	return nil
-}
-
-func escapeSQLIdent(s string) string {
-	return strings.ReplaceAll(s, "'", "''")
 }

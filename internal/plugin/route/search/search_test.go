@@ -49,24 +49,16 @@ func TestDecodeAfterCursor(t *testing.T) {
 		)
 		require.NotNil(t, encoded)
 
-		got, types, err := decodeAfterCursor(encoded, []string{searchTypeSemantic, searchTypeFulltext})
+		got, types, err := decodeAfterCursor(encoded)
 		require.NoError(t, err)
 		require.Equal(t, []string{searchTypeSemantic, searchTypeFulltext}, types)
 		require.Equal(t, "11111111-1111-1111-1111-111111111111", got[searchTypeSemantic])
 		require.Equal(t, "22222222-2222-2222-2222-222222222222", got[searchTypeFulltext])
 	})
 
-	t.Run("legacy auto cursor maps to fulltext", func(t *testing.T) {
-		raw := "33333333-3333-3333-3333-333333333333"
-		got, types, err := decodeAfterCursor(&raw, []string{searchTypeAuto})
-		require.NoError(t, err)
-		require.Nil(t, types)
-		require.Equal(t, raw, got[searchTypeFulltext])
-	})
-
-	t.Run("malformed cursor rejected for multi search", func(t *testing.T) {
+	t.Run("plain cursor rejected", func(t *testing.T) {
 		raw := "not-a-valid-token"
-		_, _, err := decodeAfterCursor(&raw, []string{searchTypeSemantic, searchTypeFulltext})
+		_, _, err := decodeAfterCursor(&raw)
 		require.ErrorContains(t, err, errInvalidAfterCursor.Error())
 	})
 }

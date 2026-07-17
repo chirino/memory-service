@@ -101,7 +101,7 @@ func (m *postgresMigrator) Migrate(ctx context.Context) error {
 	}
 	defer sqlDB.Close()
 
-	if err := postgresRequireSchema110OrEmpty(ctx, sqlDB); err != nil {
+	if err := postgresRequireCurrentSchemaOrEmpty(ctx, sqlDB); err != nil {
 		return err
 	}
 
@@ -113,9 +113,9 @@ func (m *postgresMigrator) Migrate(ctx context.Context) error {
 	return nil
 }
 
-func postgresRequireSchema110OrEmpty(ctx context.Context, db *sql.DB) error {
+func postgresRequireCurrentSchemaOrEmpty(ctx context.Context, db *sql.DB) error {
 	const versionKey = "core_schema_version"
-	const expectedVersion = "110"
+	const expectedVersion = "1"
 
 	var hasMetadata bool
 	if err := db.QueryRowContext(ctx, "SELECT to_regclass('public.schema_metadata') IS NOT NULL").Scan(&hasMetadata); err != nil {
@@ -146,7 +146,7 @@ func postgresRequireSchema110OrEmpty(ctx context.Context, db *sql.DB) error {
 			return fmt.Errorf("migration: failed to inspect existing schema: %w", err)
 		}
 		if hasCoreTables {
-			return fmt.Errorf("migration: existing pre-110 PostgreSQL schema detected; reset the datastore before applying squashed schema 110")
+			return fmt.Errorf("migration: existing incompatible PostgreSQL schema detected; reset the datastore before applying schema version %s", expectedVersion)
 		}
 		return nil
 	}
@@ -154,13 +154,13 @@ func postgresRequireSchema110OrEmpty(ctx context.Context, db *sql.DB) error {
 	var version string
 	err := db.QueryRowContext(ctx, "SELECT value FROM schema_metadata WHERE key = $1", versionKey).Scan(&version)
 	if errors.Is(err, sql.ErrNoRows) {
-		return fmt.Errorf("migration: schema metadata is missing %s; reset the datastore before applying squashed schema 110", versionKey)
+		return fmt.Errorf("migration: schema metadata is missing %s; reset the datastore before applying schema version %s", versionKey, expectedVersion)
 	}
 	if err != nil {
 		return fmt.Errorf("migration: failed to read schema metadata: %w", err)
 	}
 	if version != expectedVersion {
-		return fmt.Errorf("migration: unsupported PostgreSQL schema version %s; reset the datastore before applying squashed schema 110", version)
+		return fmt.Errorf("migration: unsupported PostgreSQL schema version %s; reset the datastore before applying schema version %s", version, expectedVersion)
 	}
 	return nil
 }
@@ -213,29 +213,6 @@ func conversationIDPtrString(id *string) string {
 		return ""
 	}
 	return string(*id)
-}
-
-func (s *PostgresStore) encrypt(plaintext []byte) ([]byte, error) {
-	if s.enc == nil || plaintext == nil {
-		return plaintext, nil
-	}
-	return s.enc.Encrypt(plaintext)
-}
-
-func (s *PostgresStore) decrypt(ciphertext []byte) ([]byte, error) {
-	if s.enc == nil || ciphertext == nil {
-		return ciphertext, nil
-	}
-	return s.enc.Decrypt(ciphertext)
-}
-
-func (s *PostgresStore) decryptString(data []byte) string {
-	plain, err := s.decrypt(data)
-	if err != nil {
-		log.Warn("dek: decryption failed, returning raw bytes", "error", err)
-		return string(data) // fallback for unencrypted data
-	}
-	return string(plain)
 }
 
 const conversationTitleFieldDomain = "conversation.title"
@@ -297,7 +274,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	}
 
 	if forkedAtConversationID != nil && startedByConversationID != nil {
-		return nil, &ValidationError{Field: "lineage", Message: "fork and started-by lineage cannot both be set"}
+		return nil, &registrystore.ValidationError{Field: "lineage", Message: "fork and started-by lineage cannot both be set"}
 	}
 
 	// If forking, look up the source conversation's group
@@ -309,7 +286,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	if forkedAtConversationID != nil {
 		var parent model.Conversation
 		if err := db.Where("id = ? AND archived_at IS NULL", *forkedAtConversationID).First(&parent).Error; err != nil {
-			return nil, &NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(*forkedAtConversationID)}
 		}
 		sourceConv = &parent
 		// Verify user has access
@@ -320,14 +297,14 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		if forkedAtEntryID != nil {
 			var entry model.Entry
 			if err := db.Where("id = ? AND conversation_group_id = ?", *forkedAtEntryID, parent.ConversationGroupID).First(&entry).Error; err != nil {
-				return nil, &NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
+				return nil, &registrystore.NotFoundError{Resource: "entry", ID: forkedAtEntryID.String()}
 			}
 			if entry.Channel != model.ChannelHistory && entry.Channel != model.ChannelJournal {
-				return nil, &ValidationError{Field: "forkedAtEntryId", Message: "can only fork at history or journal entries"}
+				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "can only fork at history or journal entries"}
 			}
 			if entry.Channel == model.ChannelJournal {
 				if clientID == "" || entry.ClientID == nil || *entry.ClientID != clientID {
-					return nil, &ForbiddenError{}
+					return nil, &registrystore.ForbiddenError{}
 				}
 			}
 			ownerDepth, err := s.visibleAncestryDepthForEntry(ctx, parent, entry)
@@ -335,7 +312,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 				return nil, err
 			}
 			if ownerDepth == nil {
-				return nil, &ValidationError{Field: "forkedAtEntryId", Message: "forkedAtEntryId must be visible in the parent conversation ancestry"}
+				return nil, &registrystore.ValidationError{Field: "forkedAtEntryId", Message: "forkedAtEntryId must be visible in the parent conversation ancestry"}
 			}
 			anchorOwnerDepth = ownerDepth
 		}
@@ -347,7 +324,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 			return nil, findResult.Error
 		}
 		if findResult.RowsAffected == 0 {
-			return nil, &NotFoundError{Resource: "conversation", ID: string(*startedByConversationID)}
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(*startedByConversationID)}
 		}
 		if _, err := s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 			return nil, err
@@ -358,7 +335,7 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 				return nil, err
 			}
 			if !visible {
-				return nil, &ValidationError{Field: "startedByEntryId", Message: "startedByEntryId must be visible in the parent conversation ancestry"}
+				return nil, &registrystore.ValidationError{Field: "startedByEntryId", Message: "startedByEntryId must be visible in the parent conversation ancestry"}
 			}
 		}
 		actualGroupID = groupID
@@ -646,7 +623,7 @@ func (s *PostgresStore) GetConversation(ctx context.Context, userID string, conv
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	access, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader)
 	if err != nil {
@@ -687,7 +664,7 @@ func (s *PostgresStore) UpdateConversation(ctx context.Context, userID string, c
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelWriter); err != nil {
 		return nil, err
@@ -720,7 +697,7 @@ func (s *PostgresStore) ArchiveConversation(ctx context.Context, userID string, 
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -753,7 +730,7 @@ func (s *PostgresStore) UnarchiveConversation(ctx context.Context, userID string
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return err
@@ -815,7 +792,7 @@ func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, co
 		return nil, err
 	}
 	if accessLevel == model.AccessLevelOwner {
-		return nil, &ValidationError{Field: "accessLevel", Message: "cannot share with owner access; use ownership transfer"}
+		return nil, &registrystore.ValidationError{Field: "accessLevel", Message: "cannot share with owner access; use ownership transfer"}
 	}
 
 	membership := model.ConversationMembership{
@@ -831,7 +808,7 @@ func (s *PostgresStore) ShareConversation(ctx context.Context, userID string, co
 	result := db.Create(&membership)
 	if result.Error != nil {
 		if strings.Contains(result.Error.Error(), "duplicate key") {
-			return nil, &ConflictError{Message: "user already has access to this conversation"}
+			return nil, &registrystore.ConflictError{Message: "user already has access to this conversation"}
 		}
 		return nil, fmt.Errorf("failed to share conversation: %w", result.Error)
 	}
@@ -844,7 +821,7 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 		return nil, err
 	}
 	if accessLevel == model.AccessLevelOwner {
-		return nil, &ValidationError{Field: "accessLevel", Message: "cannot set owner access; use ownership transfer"}
+		return nil, &registrystore.ValidationError{Field: "accessLevel", Message: "cannot set owner access; use ownership transfer"}
 	}
 
 	db, err := s.writeDBFor(ctx, "update membership")
@@ -858,7 +835,7 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 		return nil, fmt.Errorf("failed to update membership: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, &NotFoundError{Resource: "membership", ID: memberUserID}
+		return nil, &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
 	}
 
 	var m model.ConversationMembership
@@ -870,7 +847,7 @@ func (s *PostgresStore) UpdateMembership(ctx context.Context, userID string, con
 		return nil, fmt.Errorf("failed to reload membership: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return nil, &NotFoundError{Resource: "membership", ID: memberUserID}
+		return nil, &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
 	}
 	return &m, nil
 }
@@ -887,10 +864,10 @@ func (s *PostgresStore) DeleteMembership(ctx context.Context, userID string, con
 		return err
 	}
 	if err := db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).First(&m).Error; err != nil {
-		return &NotFoundError{Resource: "membership", ID: memberUserID}
+		return &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
 	}
 	if m.AccessLevel == model.AccessLevelOwner {
-		return &ValidationError{Field: "userId", Message: "cannot remove the owner"}
+		return &registrystore.ValidationError{Field: "userId", Message: "cannot remove the owner"}
 	}
 
 	// Java parity: removing the pending transfer recipient cancels the transfer.
@@ -919,7 +896,7 @@ func (s *PostgresStore) ListForks(ctx context.Context, userID string, conversati
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, err
@@ -1009,7 +986,7 @@ func (s *PostgresStore) ListChildConversations(ctx context.Context, userID strin
 		return nil, nil, findResult.Error
 	}
 	if findResult.RowsAffected == 0 {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, nil, err
@@ -1133,10 +1110,10 @@ func (s *PostgresStore) ListPendingTransfers(ctx context.Context, userID string,
 func (s *PostgresStore) GetTransfer(ctx context.Context, userID string, transferID uuid.UUID) (*registrystore.OwnershipTransferDto, error) {
 	var t model.OwnershipTransfer
 	if err := s.db.WithContext(ctx).Where("id = ?", transferID).First(&t).Error; err != nil {
-		return nil, &NotFoundError{Resource: "transfer", ID: transferID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
 	if t.FromUserID != userID && t.ToUserID != userID {
-		return nil, &NotFoundError{Resource: "transfer", ID: transferID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
 	return &registrystore.OwnershipTransferDto{
 		ID:                  t.ID,
@@ -1163,20 +1140,20 @@ func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID stri
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelOwner); err != nil {
 		return nil, err
 	}
 	if userID == toUserID {
-		return nil, &ValidationError{Field: "newOwnerUserId", Message: "cannot transfer to yourself"}
+		return nil, &registrystore.ValidationError{Field: "newOwnerUserId", Message: "cannot transfer to yourself"}
 	}
 	// Parity with Java behavior: recipient must already be a conversation member.
 	var recipient model.ConversationMembership
 	if err := s.db.WithContext(ctx).
 		Where("conversation_group_id = ? AND user_id = ?", conv.ConversationGroupID, toUserID).
 		First(&recipient).Error; err != nil {
-		return nil, &ValidationError{Field: "newOwnerUserId", Message: "recipient must already be a member"}
+		return nil, &registrystore.ValidationError{Field: "newOwnerUserId", Message: "recipient must already be a member"}
 	}
 
 	transfer := model.OwnershipTransfer{
@@ -1195,13 +1172,13 @@ func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID stri
 				Limit(1).
 				Find(&existing)
 			if findResult.Error == nil && findResult.RowsAffected > 0 {
-				return nil, &ConflictError{
+				return nil, &registrystore.ConflictError{
 					Message: "a transfer is already pending for this conversation",
 					Code:    "TRANSFER_ALREADY_PENDING",
 					Details: map[string]interface{}{"existingTransferId": existing.ID.String()},
 				}
 			}
-			return nil, &ConflictError{Message: "a transfer is already pending for this conversation", Code: "TRANSFER_ALREADY_PENDING"}
+			return nil, &registrystore.ConflictError{Message: "a transfer is already pending for this conversation", Code: "TRANSFER_ALREADY_PENDING"}
 		}
 		return nil, fmt.Errorf("failed to create transfer: %w", err)
 	}
@@ -1218,10 +1195,10 @@ func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID stri
 func (s *PostgresStore) AcceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
 	var t model.OwnershipTransfer
 	if err := s.db.WithContext(ctx).Where("id = ?", transferID).First(&t).Error; err != nil {
-		return &NotFoundError{Resource: "transfer", ID: transferID.String()}
+		return &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
 	if t.ToUserID != userID {
-		return &ForbiddenError{}
+		return &registrystore.ForbiddenError{}
 	}
 
 	return s.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
@@ -1265,10 +1242,10 @@ func (s *PostgresStore) AcceptTransfer(ctx context.Context, userID string, trans
 func (s *PostgresStore) DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
 	var t model.OwnershipTransfer
 	if err := s.db.WithContext(ctx).Where("id = ?", transferID).First(&t).Error; err != nil {
-		return &NotFoundError{Resource: "transfer", ID: transferID.String()}
+		return &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
 	if t.FromUserID != userID && t.ToUserID != userID {
-		return &ForbiddenError{}
+		return &registrystore.ForbiddenError{}
 	}
 	s.db.WithContext(ctx).Where("id = ?", transferID).Delete(&model.OwnershipTransfer{})
 	return nil
@@ -1283,7 +1260,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		return nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, model.AccessLevelReader); err != nil {
 		return nil, err
@@ -1313,10 +1290,10 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 	}
 
 	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && clientID == nil {
-		return nil, &ForbiddenError{}
+		return nil, &registrystore.ForbiddenError{}
 	}
 	if (effectiveChannel == model.ChannelContext || effectiveChannel == model.ChannelJournal) && conv.ClientID != "" && clientID != nil && conv.ClientID != *clientID {
-		return nil, &ForbiddenError{}
+		return nil, &registrystore.ForbiddenError{}
 	}
 
 	if allForks && effectiveChannel == model.ChannelHistory {
@@ -1379,7 +1356,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 		}
 		page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(entries, afterEntryID, beforeEntryID, tail, limit)
 		if err != nil {
-			return nil, &BadRequestError{Message: err.Error()}
+			return nil, &registrystore.BadRequestError{Message: err.Error()}
 		}
 		if err := decryptEntries(s, page); err != nil {
 			return nil, err
@@ -1511,7 +1488,7 @@ func (s *PostgresStore) GetEntries(ctx context.Context, userID string, conversat
 
 	page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(filtered, afterEntryID, beforeEntryID, tail, limit)
 	if err != nil {
-		return nil, &BadRequestError{Message: err.Error()}
+		return nil, &registrystore.BadRequestError{Message: err.Error()}
 	}
 	if err := decryptEntries(s, page); err != nil {
 		return nil, err
@@ -1526,7 +1503,7 @@ func (s *PostgresStore) GetEntryGroupID(ctx context.Context, entryID uuid.UUID) 
 		return uuid.Nil, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return uuid.Nil, &NotFoundError{Resource: "entry", ID: entryID.String()}
+		return uuid.Nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
 	}
 	return entry.ConversationGroupID, nil
 }
@@ -1536,7 +1513,7 @@ func (s *PostgresStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID
 	result := s.dbFor(ctx).Where("id = ?", entryID).First(&entry)
 	if result.Error != nil {
 		if errors.Is(result.Error, gorm.ErrRecordNotFound) {
-			return nil, &NotFoundError{Resource: "entry", ID: entryID.String()}
+			return nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
 		}
 		return nil, result.Error
 	}
@@ -1552,7 +1529,7 @@ func (s *PostgresStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID
 
 func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conversationID string, entries []registrystore.CreateEntryRequest, clientID *string, agentID *string, epoch *int64) ([]model.Entry, error) {
 	if err := registrystore.ValidateEntryEpochChannels(entries, epoch); err != nil {
-		return nil, &ValidationError{Field: "epoch", Message: err.Error()}
+		return nil, &registrystore.ValidationError{Field: "epoch", Message: err.Error()}
 	}
 	db, err := s.writeDBFor(ctx, "append entries")
 	if err != nil {
@@ -1638,7 +1615,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		for _, req := range entries {
 			ch := model.Channel(strings.ToLower(req.Channel))
 			if (ch == model.ChannelContext || ch == model.ChannelJournal) && conv.ClientID != "" && conv.ClientID != *clientID {
-				return nil, &ForbiddenError{}
+				return nil, &registrystore.ForbiddenError{}
 			}
 		}
 	}
@@ -1675,7 +1652,7 @@ func (s *PostgresStore) AppendEntries(ctx context.Context, userID string, conver
 		}
 		if err := db.Create(&entry).Error; err != nil {
 			if _, ok := pgUniqueViolation(err); ok {
-				return nil, &ConflictError{Message: "duplicate seq value in this conversation"}
+				return nil, &registrystore.ConflictError{Message: "duplicate seq value in this conversation"}
 			}
 			return nil, fmt.Errorf("failed to append entry: %w", err)
 		}
@@ -1775,7 +1752,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		return nil, err
 	}
 	if conv.ClientID != "" && conv.ClientID != clientID {
-		return nil, &ForbiddenError{}
+		return nil, &registrystore.ForbiddenError{}
 	}
 	if autoCreated && s.entriesCache != nil {
 		if err := s.entriesCache.Remove(ctx, conversationID, scopedAgentCacheKey(clientID, valueOrEmpty(agentID))); err != nil {
@@ -1819,7 +1796,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 		return &registrystore.SyncResult{NoOp: true, Epoch: latestEpoch}, nil
 	}
 
-	appendContent := entry.Content
+	var appendContent json.RawMessage
 	var epochToUse int64
 	epochIncremented := false
 	if latestEpoch != nil {
@@ -1876,7 +1853,7 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 	}
 	if err := db.Create(&newEntry).Error; err != nil {
 		if _, ok := pgUniqueViolation(err); ok {
-			return nil, &ConflictError{Message: "duplicate seq value in this conversation"}
+			return nil, &registrystore.ConflictError{Message: "duplicate seq value in this conversation"}
 		}
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
@@ -2356,7 +2333,7 @@ func (s *PostgresStore) AdminGetConversation(ctx context.Context, conversationID
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if err := s.hydrateConversationFork(ctx, &conv); err != nil {
 		return nil, err
@@ -2392,7 +2369,7 @@ func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conver
 		return err
 	}
 	if !found {
-		return &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if archived {
 		now := time.Now()
@@ -2401,7 +2378,7 @@ func (s *PostgresStore) AdminSetConversationArchived(ctx context.Context, conver
 		return nil
 	}
 	if conv.ArchivedAt == nil {
-		return &ConflictError{Message: "conversation is not archived"}
+		return &registrystore.ConflictError{Message: "conversation is not archived"}
 	}
 	s.db.WithContext(ctx).Model(&model.ConversationGroup{}).Where("id = ?", conv.ConversationGroupID).Update("archived_at", nil)
 	s.db.WithContext(ctx).Model(&model.Conversation{}).Where("conversation_group_id = ?", conv.ConversationGroupID).Update("archived_at", nil)
@@ -2481,7 +2458,7 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	limit := query.Limit
@@ -2624,7 +2601,7 @@ func (s *PostgresStore) AdminGetEntries(ctx context.Context, conversationID stri
 
 	page, afterCursor, beforeCursor, err := registrystore.PaginateEntries(filtered, query.AfterCursor, query.BeforeCursor, query.Tail, limit)
 	if err != nil {
-		return nil, &BadRequestError{Message: err.Error()}
+		return nil, &registrystore.BadRequestError{Message: err.Error()}
 	}
 	if err := decryptEntries(s, page); err != nil {
 		return nil, err
@@ -2638,7 +2615,7 @@ func (s *PostgresStore) AdminListMemberships(ctx context.Context, conversationID
 		return nil, nil, err
 	}
 	if !found {
-		return nil, nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
 	tx := s.db.WithContext(ctx).Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC")
@@ -2670,7 +2647,7 @@ func (s *PostgresStore) AdminListForks(ctx context.Context, conversationID strin
 		return nil, err
 	}
 	if !found {
-		return nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	return s.ListForks(ctx, conv.OwnerUserID, conversationID)
 }
@@ -2779,7 +2756,7 @@ func (s *PostgresStore) AdminListAttachments(ctx context.Context, query registry
 	case "", "all":
 		// no-op
 	default:
-		return nil, nil, &ValidationError{Field: "status", Message: "invalid status"}
+		return nil, nil, &registrystore.ValidationError{Field: "status", Message: "invalid status"}
 	}
 
 	if query.AfterCursor != nil {
@@ -2829,7 +2806,7 @@ func (s *PostgresStore) AdminGetAttachment(ctx context.Context, attachmentID uui
 		Take(&r).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+			return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 		}
 		return nil, fmt.Errorf("admin get attachment failed: %w", err)
 	}
@@ -2846,7 +2823,7 @@ func (s *PostgresStore) AdminDeleteAttachment(ctx context.Context, attachmentID 
 		return fmt.Errorf("admin delete attachment failed: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	return nil
 }
@@ -3015,7 +2992,7 @@ func (s *PostgresStore) AdminGetAttachmentByStorageKey(ctx context.Context, stor
 		Take(&r).Error
 	if err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return nil, &NotFoundError{Resource: "attachment", ID: storageKey}
+			return nil, &registrystore.NotFoundError{Resource: "attachment", ID: storageKey}
 		}
 		return nil, fmt.Errorf("admin get attachment by storage key failed: %w", err)
 	}
@@ -3038,10 +3015,10 @@ func (s *PostgresStore) requireAccess(ctx context.Context, userID string, groupI
 		return "", fmt.Errorf("failed to check access: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return "", &ForbiddenError{}
+		return "", &registrystore.ForbiddenError{}
 	}
 	if !m.AccessLevel.IsAtLeast(minLevel) {
-		return "", &ForbiddenError{}
+		return "", &registrystore.ForbiddenError{}
 	}
 	return m.AccessLevel, nil
 }
@@ -3348,18 +3325,6 @@ func (s *PostgresStore) visibleHistoryEntriesQuery(ctx context.Context, conv mod
 		Where(visibleAncestryEntrySQL("e", "ca", "boundary"))
 }
 
-func (s *PostgresStore) visibleHistoryEntryByID(ctx context.Context, conv model.Conversation, entryID string) (model.Entry, bool, error) {
-	var entry model.Entry
-	result := s.visibleHistoryEntriesQuery(ctx, conv).
-		Where("e.id = ?", entryID).
-		Limit(1).
-		Find(&entry)
-	if result.Error != nil {
-		return model.Entry{}, false, result.Error
-	}
-	return entry, result.RowsAffected > 0, nil
-}
-
 func (s *PostgresStore) entryExists(ctx context.Context, entryID string) (bool, error) {
 	var entry model.Entry
 	result := s.dbFor(ctx).
@@ -3379,130 +3344,9 @@ func (s *PostgresStore) cursorEntryError(ctx context.Context, cursorName, entryI
 		return err
 	}
 	if !exists {
-		return &BadRequestError{Message: cursorName + " entry not found"}
+		return &registrystore.BadRequestError{Message: cursorName + " entry not found"}
 	}
-	return &BadRequestError{Message: cursorName + " entry not found in visible results"}
-}
-
-func whereEntryOrderBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
-	return sqlentry.WhereEntryOrderBeforeAlias(tx, alias, bound, sqlentry.UUIDValue)
-}
-
-func whereEntryOrderStrictlyAfterAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
-	return sqlentry.WhereEntryOrderStrictlyAfterAlias(tx, alias, bound, sqlentry.UUIDValue)
-}
-
-func whereEntryOrderAtOrBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
-	return sqlentry.WhereEntryOrderAtOrBeforeAlias(tx, alias, bound, sqlentry.UUIDValue)
-}
-
-func whereSeqOrderBeforeAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
-	return sqlentry.WhereSeqOrderBeforeAlias(tx, alias, bound, sqlentry.UUIDValue)
-}
-
-func whereSeqOrderStrictlyAfterAlias(tx *gorm.DB, alias string, bound model.Entry) *gorm.DB {
-	return sqlentry.WhereSeqOrderStrictlyAfterAlias(tx, alias, bound, sqlentry.UUIDValue)
-}
-
-func (s *PostgresStore) visibleHistoryFromSeqQuery(ctx context.Context, conv model.Conversation, fromSeq uint32) *gorm.DB {
-	return s.visibleHistoryEntriesQuery(ctx, conv).
-		Where("e.seq IS NOT NULL AND e.seq >= ?", fromSeq)
-}
-
-func (s *PostgresStore) visibleHistoryFromSeqEntryByID(ctx context.Context, conv model.Conversation, fromSeq uint32, entryID string) (model.Entry, bool, error) {
-	var entry model.Entry
-	result := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
-		Where("e.id = ?", entryID).
-		Limit(1).
-		Find(&entry)
-	if result.Error != nil {
-		return model.Entry{}, false, result.Error
-	}
-	return entry, result.RowsAffected > 0, nil
-}
-
-func (s *PostgresStore) boundedVisibleHistoryFromSeq(ctx context.Context, conv model.Conversation, fromSeq uint32, afterEntryID, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-
-	if tail || beforeEntryID != nil {
-		tx := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
-			Order("e.seq DESC, e.id DESC").
-			Limit(limit + 1)
-		if beforeEntryID != nil {
-			anchor, ok, err := s.visibleHistoryFromSeqEntryByID(ctx, conv, fromSeq, *beforeEntryID)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			if !ok {
-				return nil, nil, nil, s.cursorEntryError(ctx, "beforeCursor", *beforeEntryID)
-			}
-			tx = whereSeqOrderBeforeAlias(tx, "e", anchor)
-		}
-
-		var entries []model.Entry
-		if err := tx.Find(&entries).Error; err != nil {
-			return nil, nil, nil, fmt.Errorf("bounded fromSeq history scan failed: %w", err)
-		}
-		for lo, hi := 0, len(entries)-1; lo < hi; lo, hi = lo+1, hi-1 {
-			entries[lo], entries[hi] = entries[hi], entries[lo]
-		}
-		hasMore := len(entries) > limit
-		if hasMore {
-			entries = entries[1:]
-			c := entries[0].ID.String()
-			beforeCursor := &c
-			var afterCursor *string
-			if beforeEntryID != nil && len(entries) > 0 {
-				ac := entries[len(entries)-1].ID.String()
-				afterCursor = &ac
-			}
-			return entries, afterCursor, beforeCursor, nil
-		}
-		var afterCursor *string
-		if beforeEntryID != nil && len(entries) > 0 {
-			c := entries[len(entries)-1].ID.String()
-			afterCursor = &c
-		}
-		return entries, afterCursor, nil, nil
-	}
-
-	tx := s.visibleHistoryFromSeqQuery(ctx, conv, fromSeq).
-		Order("e.seq ASC, e.id ASC").
-		Limit(limit + 1)
-	if afterEntryID != nil {
-		anchor, ok, err := s.visibleHistoryFromSeqEntryByID(ctx, conv, fromSeq, *afterEntryID)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if !ok {
-			return nil, nil, nil, s.cursorEntryError(ctx, "afterCursor", *afterEntryID)
-		}
-		tx = whereSeqOrderStrictlyAfterAlias(tx, "e", anchor)
-	}
-
-	var entries []model.Entry
-	if err := tx.Find(&entries).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("bounded fromSeq history scan failed: %w", err)
-	}
-	hasMore := len(entries) > limit
-	if hasMore {
-		entries = entries[:limit]
-		afterCursor := entries[len(entries)-1].ID.String()
-		var beforeCursor *string
-		if afterEntryID != nil && len(entries) > 0 {
-			bc := entries[0].ID.String()
-			beforeCursor = &bc
-		}
-		return entries, &afterCursor, beforeCursor, nil
-	}
-	var beforeCursor *string
-	if afterEntryID != nil && len(entries) > 0 {
-		c := entries[0].ID.String()
-		beforeCursor = &c
-	}
-	return entries, nil, beforeCursor, nil
+	return &registrystore.BadRequestError{Message: cursorName + " entry not found in visible results"}
 }
 
 func (s *PostgresStore) groupHistoryEntriesQuery(ctx context.Context, groupID uuid.UUID, fromSeq *uint32) *gorm.DB {
@@ -3514,18 +3358,6 @@ func (s *PostgresStore) groupHistoryEntriesQuery(ctx context.Context, groupID uu
 		tx = tx.Where("e.seq IS NOT NULL AND e.seq >= ?", *fromSeq)
 	}
 	return tx
-}
-
-func (s *PostgresStore) groupHistoryEntryByID(ctx context.Context, groupID uuid.UUID, fromSeq *uint32, entryID string) (model.Entry, bool, error) {
-	var entry model.Entry
-	result := s.groupHistoryEntriesQuery(ctx, groupID, fromSeq).
-		Where("e.id = ?", entryID).
-		Limit(1).
-		Find(&entry)
-	if result.Error != nil {
-		return model.Entry{}, false, result.Error
-	}
-	return entry, result.RowsAffected > 0, nil
 }
 
 func (s *PostgresStore) groupEntriesQuery(ctx context.Context, groupID uuid.UUID) *gorm.DB {
@@ -3581,10 +3413,10 @@ func (s *PostgresStore) runBoundedSQLQuery(ctx context.Context, base *gorm.DB, f
 		BaseTransform:    transform,
 		CursorEntryError: s.cursorEntryError,
 		LimitError: func(max int) error {
-			return &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", max)}
+			return &registrystore.BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", max)}
 		},
 		EntryNotFound: func(entryID string) error {
-			return &NotFoundError{Resource: "entry", ID: entryID}
+			return &registrystore.NotFoundError{Resource: "entry", ID: entryID}
 		},
 		EntryIDValue: sqlentry.UUIDValue,
 		ScanErr:      scanErr,
@@ -3655,98 +3487,6 @@ func (s *PostgresStore) boundedGroupAllChannels(ctx context.Context, groupID uui
 	}, "bounded group all-channel scan failed")
 }
 
-func (s *PostgresStore) boundedVisibleHistoryBackward(ctx context.Context, conv model.Conversation, beforeEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-
-	tx := s.visibleHistoryEntriesQuery(ctx, conv).
-		Order("e.created_at DESC, e.seq DESC NULLS LAST, e.id DESC").
-		Limit(limit + 1)
-
-	if beforeEntryID != nil {
-		anchor, ok, err := s.visibleHistoryEntryByID(ctx, conv, *beforeEntryID)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if !ok {
-			return nil, nil, nil, s.cursorEntryError(ctx, "beforeCursor", *beforeEntryID)
-		}
-		tx = whereEntryOrderBeforeAlias(tx, "e", anchor)
-	}
-
-	var entries []model.Entry
-	if err := tx.Find(&entries).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
-	}
-	for lo, hi := 0, len(entries)-1; lo < hi; lo, hi = lo+1, hi-1 {
-		entries[lo], entries[hi] = entries[hi], entries[lo]
-	}
-
-	hasMore := len(entries) > limit
-	if hasMore {
-		entries = entries[1:]
-		c := entries[0].ID.String()
-		beforeCursor := &c
-		var afterCursor *string
-		if beforeEntryID != nil && len(entries) > 0 {
-			ac := entries[len(entries)-1].ID.String()
-			afterCursor = &ac
-		}
-		return entries, afterCursor, beforeCursor, nil
-	}
-	var afterCursor *string
-	if beforeEntryID != nil && len(entries) > 0 {
-		c := entries[len(entries)-1].ID.String()
-		afterCursor = &c
-	}
-	return entries, afterCursor, nil, nil
-}
-
-func (s *PostgresStore) boundedVisibleHistoryForward(ctx context.Context, conv model.Conversation, afterEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-
-	tx := s.visibleHistoryEntriesQuery(ctx, conv).
-		Order("e.created_at ASC, e.seq ASC NULLS FIRST, e.id ASC").
-		Limit(limit + 1)
-
-	if afterEntryID != nil {
-		anchor, ok, err := s.visibleHistoryEntryByID(ctx, conv, *afterEntryID)
-		if err != nil {
-			return nil, nil, nil, err
-		}
-		if !ok {
-			return nil, nil, nil, s.cursorEntryError(ctx, "afterCursor", *afterEntryID)
-		}
-		tx = whereEntryOrderStrictlyAfterAlias(tx, "e", anchor)
-	}
-
-	var entries []model.Entry
-	if err := tx.Find(&entries).Error; err != nil {
-		return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
-	}
-
-	hasMore := len(entries) > limit
-	if hasMore {
-		entries = entries[:limit]
-		afterCursor := entries[len(entries)-1].ID.String()
-		var beforeCursor *string
-		if afterEntryID != nil && len(entries) > 0 {
-			bc := entries[0].ID.String()
-			beforeCursor = &bc
-		}
-		return entries, &afterCursor, beforeCursor, nil
-	}
-	var beforeCursor *string
-	if afterEntryID != nil && len(entries) > 0 {
-		c := entries[0].ID.String()
-		beforeCursor = &c
-	}
-	return entries, nil, beforeCursor, nil
-}
-
 func (s *PostgresStore) buildAncestryStack(ctx context.Context, target model.Conversation) ([]forkAncestor, error) {
 	var rows []model.ConversationAncestry
 	if err := s.dbFor(ctx).
@@ -3795,202 +3535,6 @@ func (s *PostgresStore) visibleAncestryDepthForEntry(ctx context.Context, target
 	return nil, nil
 }
 
-func advanceForkAncestorForNilStop(ancestry []forkAncestor, ancestorIndex *int, current *forkAncestor, isTarget *bool) bool {
-	// Nil stop points mean "exclude all inherited entries from this ancestor".
-	for !*isTarget && current.StopAtEntryID == nil {
-		*ancestorIndex = *ancestorIndex + 1
-		if *ancestorIndex >= len(ancestry) {
-			return false
-		}
-		*current = ancestry[*ancestorIndex]
-		*isTarget = *ancestorIndex == len(ancestry)-1
-	}
-	return true
-}
-
-func filterEntriesByAncestry(allEntries []model.Entry, ancestry []forkAncestor) []model.Entry {
-	if len(ancestry) == 0 {
-		return allEntries
-	}
-
-	result := make([]model.Entry, 0, len(allEntries))
-	ancestorIndex := 0
-	current := ancestry[ancestorIndex]
-	isTarget := ancestorIndex == len(ancestry)-1
-	if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
-		return result
-	}
-
-	for _, entry := range allEntries {
-		if entry.ConversationID != current.ConversationID {
-			continue
-		}
-
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-			continue
-		}
-		result = append(result, entry)
-	}
-	return result
-}
-
-// boundedHistoryBackward performs a bounded DESC-order read of history entries
-// across the ancestry stack, collecting at most limit+1 rows then reversing
-// to return a page in ascending order. This avoids loading the entire
-// conversation group for tail and beforeCursor requests.
-//
-// ancestry is ordered oldest-to-newest (root first, target last).
-// When beforeEntryID is set the anchor must be on the ancestry path; we start
-// strictly before it. When tail=true we start from the newest entry.
-func (s *PostgresStore) boundedHistoryBackward(ctx context.Context, ancestry []forkAncestor, beforeEntryID *string, tail bool, limit int) ([]model.Entry, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-	need := limit + 1
-	collected := make([]model.Entry, 0, need)
-	startSegment := len(ancestry) - 1
-
-	// When beforeCursor is used we resolve the anchor entry first.
-	var anchorCreatedAt *time.Time
-	var anchorSeq *uint32
-	var anchorID *uuid.UUID
-	var anchorConvID string
-
-	if beforeEntryID != nil {
-		var anchor model.Entry
-		result := s.dbFor(ctx).
-			Where("id = ?", *beforeEntryID).
-			Select("id, conversation_id, channel, created_at, seq").
-			Limit(1).Find(&anchor)
-		if result.Error != nil {
-			return nil, nil, nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found"}
-		}
-		anchorCreatedAt = &anchor.CreatedAt
-		anchorSeq = anchor.Seq
-		anchorID = &anchor.ID
-		anchorConvID = anchor.ConversationID
-
-		if anchor.Channel != model.ChannelHistory {
-			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
-		}
-
-		// Verify the anchor is in the visible portion of an ancestry segment and
-		// start scanning there so newer child segments cannot leak into the page.
-		onPath := false
-		for i, a := range ancestry {
-			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
-					return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
-				}
-				if i < len(ancestry)-1 {
-					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
-					if err != nil {
-						return nil, nil, nil, err
-					}
-					if !entryOrderLess(anchor, stopAt) {
-						return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
-					}
-				}
-				startSegment = i
-				onPath = true
-				break
-			}
-		}
-		if !onPath {
-			return nil, nil, nil, &BadRequestError{Message: "beforeCursor entry not found in visible results"}
-		}
-	}
-
-	// Iterate segments newest-to-oldest.
-	for i := startSegment; i >= 0 && len(collected) < need; i-- {
-		seg := ancestry[i]
-		isTarget := i == len(ancestry)-1
-
-		// When StopAtEntryID is nil for a non-target ancestor, the entire
-		// ancestor segment is excluded from the visible history (the fork
-		// happened at nothing, meaning this ancestor contributed no history
-		// to the child — skip it).
-		if !isTarget && seg.StopAtEntryID == nil {
-			continue
-		}
-
-		tx := s.dbFor(ctx).
-			Where("conversation_id = ? AND channel = ?", seg.ConversationID, model.ChannelHistory).
-			Order("created_at DESC, seq DESC NULLS LAST, id DESC")
-
-		// For ancestor segments, include entries strictly before StopAtEntryID.
-		// Fetch the stop entry's sort key, then bound the DESC scan.
-		if !isTarget && seg.StopAtEntryID != nil {
-			var stopAt model.Entry
-			stopResult := s.dbFor(ctx).
-				Where("id = ?", seg.StopAtEntryID).
-				Select("id, created_at, seq").
-				Limit(1).Find(&stopAt)
-			if stopResult.Error != nil {
-				return nil, nil, nil, stopResult.Error
-			}
-			if stopResult.RowsAffected > 0 {
-				tx = whereEntryOrderBefore(tx, stopAt)
-			}
-		}
-
-		// Apply anchor bound for beforeCursor: skip entries at or after anchor.
-		if beforeEntryID != nil && seg.ConversationID == anchorConvID {
-			// Strict before anchor: rows where (created_at, seq, id) < anchor.
-			tx = whereEntryOrderBefore(tx, model.Entry{ID: *anchorID, CreatedAt: *anchorCreatedAt, Seq: anchorSeq})
-		}
-
-		remaining := need - len(collected)
-		tx = tx.Limit(remaining)
-
-		var batch []model.Entry
-		if err := tx.Find(&batch).Error; err != nil {
-			return nil, nil, nil, fmt.Errorf("bounded history scan failed: %w", err)
-		}
-		collected = append(collected, batch...)
-	}
-
-	// collected is in DESC order across segments; reverse to get ASC.
-	for lo, hi := 0, len(collected)-1; lo < hi; lo, hi = lo+1, hi-1 {
-		collected[lo], collected[hi] = collected[hi], collected[lo]
-	}
-
-	// Determine cursors using the limit+1 probe.
-	hasMore := len(collected) > limit
-	if hasMore {
-		collected = collected[1:] // drop the oldest probe entry
-		// beforeCursor = first entry of the page (signals older entries exist).
-		c := collected[0].ID.String()
-		beforeCursor := &c
-		// afterCursor: when beforeEntryID was set, there are newer entries beyond the anchor.
-		var afterCursor *string
-		if beforeEntryID != nil && len(collected) > 0 {
-			ac := collected[len(collected)-1].ID.String()
-			afterCursor = &ac
-		}
-		return collected, afterCursor, beforeCursor, nil
-	}
-	// No older page exists.
-	var afterCursor *string
-	if beforeEntryID != nil && len(collected) > 0 {
-		// There are newer entries (the anchor and beyond).
-		c := collected[len(collected)-1].ID.String()
-		afterCursor = &c
-	}
-	return collected, afterCursor, nil, nil
-}
-
 func (s *PostgresStore) entryOrderKey(ctx context.Context, entryID uuid.UUID) (model.Entry, error) {
 	var entry model.Entry
 	result := s.dbFor(ctx).Where("id = ?", entryID).Select("id, created_at, seq").Limit(1).Find(&entry)
@@ -3998,7 +3542,7 @@ func (s *PostgresStore) entryOrderKey(ctx context.Context, entryID uuid.UUID) (m
 		return model.Entry{}, result.Error
 	}
 	if result.RowsAffected == 0 {
-		return model.Entry{}, &NotFoundError{Resource: "entry", ID: entryID.String()}
+		return model.Entry{}, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
 	}
 	return entry, nil
 }
@@ -4018,163 +3562,6 @@ func entryOrderLess(left, right model.Entry) bool {
 		return *left.Seq < *right.Seq
 	}
 	return left.ID.String() < right.ID.String()
-}
-
-func whereEntryOrderBefore(tx *gorm.DB, bound model.Entry) *gorm.DB {
-	if bound.Seq == nil {
-		return tx.Where(
-			"created_at < ? OR (created_at = ? AND seq IS NULL AND id < ?)",
-			bound.CreatedAt, bound.CreatedAt, bound.ID,
-		)
-	}
-	return tx.Where(
-		"created_at < ? OR (created_at = ? AND (seq IS NULL OR seq < ? OR (seq = ? AND id < ?)))",
-		bound.CreatedAt, bound.CreatedAt, *bound.Seq, *bound.Seq, bound.ID,
-	)
-}
-
-// whereEntryOrderStrictlyAfter adds a predicate matching entries strictly after
-// bound in the (created_at, seq NULLS FIRST, id) composite order.
-func whereEntryOrderStrictlyAfter(tx *gorm.DB, bound model.Entry) *gorm.DB {
-	if bound.Seq == nil {
-		return tx.Where(
-			"created_at > ? OR (created_at = ? AND (seq IS NOT NULL OR id > ?))",
-			bound.CreatedAt, bound.CreatedAt, bound.ID,
-		)
-	}
-	return tx.Where(
-		"created_at > ? OR (created_at = ? AND (seq > ? OR (seq = ? AND id > ?)))",
-		bound.CreatedAt, bound.CreatedAt, *bound.Seq, *bound.Seq, bound.ID,
-	)
-}
-
-// boundedHistoryForward performs a bounded ASC-order read of history entries
-// across the ancestry stack, collecting at most limit+1 rows to determine
-// whether a next page exists.
-//
-// ancestry is ordered oldest-to-newest (root first, target last).
-// When afterEntryID is set the anchor must be on the ancestry path; we start
-// strictly after it.  When afterEntryID is nil we start from the beginning.
-func (s *PostgresStore) boundedHistoryForward(ctx context.Context, ancestry []forkAncestor, afterEntryID *string, limit int) ([]model.Entry, *string, *string, error) {
-	if limit <= 0 || limit > config.MaxPageSizeFromContext(ctx) {
-		return nil, nil, nil, &BadRequestError{Message: fmt.Sprintf("limit must be between 1 and %d", config.MaxPageSizeFromContext(ctx))}
-	}
-	need := limit + 1
-	collected := make([]model.Entry, 0, need)
-
-	startSegment := 0
-
-	var anchorCreatedAt *time.Time
-	var anchorSeq *uint32
-	var anchorID *uuid.UUID
-	var anchorConvID string
-
-	if afterEntryID != nil {
-		var anchor model.Entry
-		result := s.dbFor(ctx).
-			Where("id = ?", *afterEntryID).
-			Select("id, conversation_id, channel, created_at, seq").
-			Limit(1).Find(&anchor)
-		if result.Error != nil {
-			return nil, nil, nil, result.Error
-		}
-		if result.RowsAffected == 0 {
-			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found"}
-		}
-		if anchor.Channel != model.ChannelHistory {
-			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
-		}
-		anchorCreatedAt = &anchor.CreatedAt
-		anchorSeq = anchor.Seq
-		anchorID = &anchor.ID
-		anchorConvID = anchor.ConversationID
-
-		onPath := false
-		for i, a := range ancestry {
-			if a.ConversationID == anchorConvID {
-				if i < len(ancestry)-1 && a.StopAtEntryID == nil {
-					return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
-				}
-				if i < len(ancestry)-1 {
-					stopAt, err := s.entryOrderKey(ctx, *a.StopAtEntryID)
-					if err != nil {
-						return nil, nil, nil, err
-					}
-					if !entryOrderLess(anchor, stopAt) {
-						return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
-					}
-				}
-				startSegment = i
-				onPath = true
-				break
-			}
-		}
-		if !onPath {
-			return nil, nil, nil, &BadRequestError{Message: "afterCursor entry not found in visible results"}
-		}
-	}
-
-	for i := startSegment; i < len(ancestry) && len(collected) < need; i++ {
-		seg := ancestry[i]
-		isTarget := i == len(ancestry)-1
-
-		if !isTarget && seg.StopAtEntryID == nil {
-			continue
-		}
-
-		tx := s.dbFor(ctx).
-			Where("conversation_id = ? AND channel = ?", seg.ConversationID, model.ChannelHistory).
-			Order("created_at ASC, seq ASC NULLS FIRST, id ASC")
-
-		if !isTarget && seg.StopAtEntryID != nil {
-			stopAt, err := s.entryOrderKey(ctx, *seg.StopAtEntryID)
-			if err != nil {
-				return nil, nil, nil, err
-			}
-			tx = whereEntryOrderBefore(tx, stopAt)
-		}
-
-		if afterEntryID != nil && seg.ConversationID == anchorConvID {
-			tx = whereEntryOrderStrictlyAfter(tx, model.Entry{ID: *anchorID, CreatedAt: *anchorCreatedAt, Seq: anchorSeq})
-		}
-
-		remaining := need - len(collected)
-		tx = tx.Limit(remaining)
-
-		var batch []model.Entry
-		if err := tx.Find(&batch).Error; err != nil {
-			return nil, nil, nil, fmt.Errorf("bounded history forward scan failed: %w", err)
-		}
-		collected = append(collected, batch...)
-	}
-
-	hasMore := len(collected) > limit
-	if hasMore {
-		collected = collected[:limit]
-	}
-
-	if len(collected) == 0 {
-		return []model.Entry{}, nil, nil, nil
-	}
-
-	var afterCursor *string
-	if hasMore {
-		c := collected[len(collected)-1].ID.String()
-		afterCursor = &c
-	}
-	var beforeCursor *string
-	if afterEntryID != nil {
-		c := collected[0].ID.String()
-		beforeCursor = &c
-	}
-	return collected, afterCursor, beforeCursor, nil
-}
-
-func derefInt64(p *int64) int64 {
-	if p == nil {
-		return -9223372036854775808
-	}
-	return *p
 }
 
 func normalizeEpochFilter(filter *registrystore.MemoryEpochFilter) registrystore.MemoryEpochFilter {
@@ -4284,71 +3671,6 @@ func filterEntriesForAllForks(entries []model.Entry, channel model.Channel, clie
 		}
 		return result
 	}
-}
-
-func filterMemoryEntriesWithEpoch(allEntries []model.Entry, ancestry []forkAncestor, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
-	epoch := normalizeEpochFilter(epochFilter)
-	result := make([]model.Entry, 0, len(allEntries))
-	maxEpochSeen := int64(0)
-	maxEpochInitialized := false
-
-	if len(ancestry) == 0 {
-		return result
-	}
-
-	ancestorIndex := 0
-	current := ancestry[ancestorIndex]
-	isTarget := ancestorIndex == len(ancestry)-1
-	if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
-		return result
-	}
-
-	for _, entry := range allEntries {
-		if entry.ConversationID != current.ConversationID {
-			continue
-		}
-
-		if !isTarget && current.StopAtEntryID != nil && entry.ID == *current.StopAtEntryID {
-			ancestorIndex++
-			if ancestorIndex < len(ancestry) {
-				current = ancestry[ancestorIndex]
-				isTarget = ancestorIndex == len(ancestry)-1
-				if !advanceForkAncestorForNilStop(ancestry, &ancestorIndex, &current, &isTarget) {
-					break
-				}
-			}
-			continue
-		}
-
-		if entry.Channel == model.ChannelContext && entry.ClientID != nil && *entry.ClientID == clientID {
-			entryEpoch := int64(0)
-			if entry.Epoch != nil {
-				entryEpoch = *entry.Epoch
-			}
-
-			switch epoch.Mode {
-			case registrystore.MemoryEpochModeAll:
-				result = append(result, entry)
-			case registrystore.MemoryEpochModeEpoch:
-				if epoch.Epoch != nil && entryEpoch == *epoch.Epoch {
-					result = append(result, entry)
-				}
-			default:
-				// latest
-				if !maxEpochInitialized || entryEpoch > maxEpochSeen {
-					result = result[:0]
-					maxEpochSeen = entryEpoch
-					maxEpochInitialized = true
-				}
-				if entryEpoch == maxEpochSeen {
-					result = append(result, entry)
-				}
-			}
-		}
-
-	}
-
-	return result
 }
 
 func filterVisibleMemoryEntriesWithEpoch(entries []model.Entry, clientID, agentID string, epochFilter *registrystore.MemoryEpochFilter) []model.Entry {
@@ -4532,10 +3854,10 @@ func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, con
 func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update registrystore.AttachmentUpdate) (*model.Attachment, error) {
 	var attachment model.Attachment
 	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
-		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	if attachment.UserID != userID {
-		return nil, &ForbiddenError{}
+		return nil, &registrystore.ForbiddenError{}
 	}
 
 	values := map[string]any{}
@@ -4574,60 +3896,21 @@ func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, att
 	}
 
 	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
-		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	return &attachment, nil
-}
-
-func (s *PostgresStore) ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
-	tx := s.db.WithContext(ctx).Where("archived_at IS NULL")
-
-	if conversationID == "" {
-		// Contract path does not include conversation id; list caller-owned unlinked attachments.
-		tx = tx.Where("user_id = ? AND entry_id IS NULL", userID)
-	} else {
-		groupID, err := s.getGroupID(ctx, userID, conversationID, model.AccessLevelReader)
-		if err != nil {
-			return nil, nil, err
-		}
-		tx = tx.Where(
-			"entry_id IN (SELECT id FROM entries WHERE conversation_id = ? AND conversation_group_id = ?)",
-			conversationID, groupID,
-		)
-	}
-
-	tx = tx.Order("created_at ASC").Limit(limit + 1)
-	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM attachments WHERE id = ?)", *afterCursor)
-	}
-
-	var attachments []model.Attachment
-	if err := tx.Find(&attachments).Error; err != nil {
-		return nil, nil, fmt.Errorf("list attachments failed: %w", err)
-	}
-
-	hasMore := len(attachments) > limit
-	if hasMore {
-		attachments = attachments[:limit]
-	}
-	var cursor *string
-	if hasMore && len(attachments) > 0 {
-		c := attachments[len(attachments)-1].ID.String()
-		cursor = &c
-	}
-	return attachments, cursor, nil
 }
 
 func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
 	var attachment model.Attachment
 	if err := s.db.WithContext(ctx).Where("id = ? AND archived_at IS NULL", attachmentID).First(&attachment).Error; err != nil {
-		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 
 	// Unlinked attachments are only visible to the uploader.
 	if attachment.EntryID == nil {
 		if attachment.UserID != userID {
-			return nil, &ForbiddenError{}
+			return nil, &registrystore.ForbiddenError{}
 		}
 		return &attachment, nil
 	}
@@ -4645,7 +3928,7 @@ func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conver
 		if attachment.UserID == userID {
 			return &attachment, nil
 		}
-		return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 
 	var sawForbidden bool
@@ -4653,7 +3936,7 @@ func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conver
 		if _, err := s.requireAccess(ctx, userID, entry.ConversationGroupID, model.AccessLevelReader); err == nil {
 			return &attachment, nil
 		} else {
-			var forbidden *ForbiddenError
+			var forbidden *registrystore.ForbiddenError
 			if errors.As(err, &forbidden) {
 				sawForbidden = true
 				continue
@@ -4662,9 +3945,9 @@ func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conver
 		}
 	}
 	if sawForbidden {
-		return nil, &ForbiddenError{}
+		return nil, &registrystore.ForbiddenError{}
 	}
-	return nil, &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 }
 
 func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) error {
@@ -4675,10 +3958,10 @@ func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, con
 
 	// Only the uploader can delete, and only before attachment is linked to an entry.
 	if attachment.UserID != userID {
-		return &ForbiddenError{}
+		return &registrystore.ForbiddenError{}
 	}
 	if attachment.EntryID != nil {
-		return &ConflictError{Message: "linked attachments cannot be deleted"}
+		return &registrystore.ConflictError{Message: "linked attachments cannot be deleted"}
 	}
 
 	result := s.db.WithContext(ctx).Where("id = ?", attachmentID).Delete(&model.Attachment{})
@@ -4686,7 +3969,7 @@ func (s *PostgresStore) DeleteAttachment(ctx context.Context, userID string, con
 		return fmt.Errorf("delete attachment failed: %w", result.Error)
 	}
 	if result.RowsAffected == 0 {
-		return &NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+		return &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
 	return nil
 }
@@ -4708,7 +3991,7 @@ func (s *PostgresStore) getGroupID(ctx context.Context, userID string, conversat
 		return uuid.Nil, err
 	}
 	if !found {
-		return uuid.Nil, &NotFoundError{Resource: "conversation", ID: string(conversationID)}
+		return uuid.Nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 	if _, err := s.requireAccess(ctx, userID, conv.ConversationGroupID, minLevel); err != nil {
 		return uuid.Nil, err

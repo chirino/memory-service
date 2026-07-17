@@ -25,7 +25,6 @@ import (
 	dekpkg "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	"github.com/chirino/memory-service/internal/plugin/encrypt/dekstore"
 	"github.com/chirino/memory-service/internal/registry/encrypt"
-	"github.com/chirino/memory-service/internal/security"
 	"github.com/urfave/cli/v3"
 )
 
@@ -201,31 +200,6 @@ func (p *kmsProvider) currentKeys() [][]byte {
 	return result
 }
 
-// Encrypt encrypts plaintext with the primary DEK using AES-256-GCM + MSEH envelope.
-func (p *kmsProvider) Encrypt(plaintext []byte) ([]byte, error) {
-	if err := p.ensureLoaded(); err != nil {
-		return nil, err
-	}
-	p.mu.RLock()
-	pk := p.keys[0]
-	p.mu.RUnlock()
-
-	iv, ciphertext, err := dekpkg.AESGCMSeal(pk, plaintext)
-	if err != nil {
-		return nil, err
-	}
-	var buf bytes.Buffer
-	if err := dataencryption.WriteHeader(&buf, dataencryption.Header{
-		Version:    dataencryption.VersionAESGCM,
-		ProviderID: "kms",
-		Nonce:      iv,
-	}); err != nil {
-		return nil, err
-	}
-	buf.Write(ciphertext)
-	return buf.Bytes(), nil
-}
-
 // EncryptField encrypts plaintext with the primary DEK using AES-256-GCM + MSEH v4 field AAD.
 func (p *kmsProvider) EncryptField(plaintext []byte, domain, identity string) ([]byte, error) {
 	if err := p.ensureLoaded(); err != nil {
@@ -257,26 +231,6 @@ func (p *kmsProvider) EncryptField(plaintext []byte, domain, identity string) ([
 	return buf.Bytes(), nil
 }
 
-// Decrypt unwraps MSEH-wrapped ciphertext using the cached DEKs (primary first, then legacy).
-func (p *kmsProvider) Decrypt(ciphertext []byte) ([]byte, error) {
-	if err := p.ensureLoaded(); err != nil {
-		return nil, err
-	}
-	if !dataencryption.HasMagic(ciphertext) {
-		return nil, fmt.Errorf("kms: expected MSEH envelope")
-	}
-	r := bytes.NewReader(ciphertext)
-	h, _, err := dataencryption.ReadHeader(r)
-	if err != nil {
-		return nil, err
-	}
-	payload := make([]byte, r.Len())
-	if _, err := io.ReadFull(r, payload); err != nil {
-		return nil, fmt.Errorf("kms: reading ciphertext: %w", err)
-	}
-	return p.gcmOpen(h.Nonce, payload)
-}
-
 // DecryptField decrypts an MSEH v4 field ciphertext with domain/identity AAD.
 func (p *kmsProvider) DecryptField(ciphertext []byte, domain, identity string) ([]byte, error) {
 	if err := p.ensureLoaded(); err != nil {
@@ -291,7 +245,7 @@ func (p *kmsProvider) DecryptField(ciphertext []byte, domain, identity string) (
 		return nil, err
 	}
 	if h.Version != dataencryption.VersionFieldAESGCM {
-		return p.Decrypt(ciphertext)
+		return nil, fmt.Errorf("kms: unsupported MSEH field version %d", h.Version)
 	}
 	headerPrefix := ciphertext[:len(ciphertext)-r.Len()]
 	payload := make([]byte, r.Len())
@@ -333,25 +287,14 @@ func (p *kmsProvider) DecryptStream(src io.Reader, header *encrypt.Header) (io.R
 	if header == nil {
 		return nil, fmt.Errorf("kms: DecryptStream requires a parsed MSEH header")
 	}
-	if header.Version == dataencryption.VersionAttachmentStreamAESGCM {
-		key, err := dekpkg.SelectGCMStreamKey(p.currentKeys(), header.Nonce)
-		if err != nil {
-			return nil, fmt.Errorf("kms: %w", err)
-		}
-		return dekpkg.NewGCMStreamDecryptReader(src, key, p.ID(), header.Nonce)
-	}
-	if header.Version != dataencryption.VersionAESCTR {
+	if header.Version != dataencryption.VersionAttachmentStreamAESGCM {
 		return nil, fmt.Errorf("kms: unsupported MSEH stream version %d", header.Version)
 	}
-	if p.cfg != nil && !p.cfg.EncryptionLegacyStreamV2ReadEnabled {
-		return nil, fmt.Errorf("kms: legacy MSEH v2 stream reads are disabled")
-	}
-	security.RecordLegacyEncryptedStreamRead("2", p.ID())
-	key, err := dekpkg.SelectCTRKey(p.currentKeys(), header.Nonce)
+	key, err := dekpkg.SelectGCMStreamKey(p.currentKeys(), header.Nonce)
 	if err != nil {
 		return nil, fmt.Errorf("kms: %w", err)
 	}
-	return dekpkg.NewCTRDecryptReader(src, key, header.Nonce)
+	return dekpkg.NewGCMStreamDecryptReader(src, key, p.ID(), header.Nonce)
 }
 
 // AttachmentSigningKeys derives HKDF-SHA256 signing keys from all loaded plaintext DEKs.
@@ -373,10 +316,6 @@ func (p *kmsProvider) AttachmentSigningKeys(_ context.Context) ([][]byte, error)
 
 // gcmOpen tries decrypting payload with all cached keys. If all fail it refreshes
 // the key cache from the DB (handles a rotated primary) and retries once.
-func (p *kmsProvider) gcmOpen(iv, payload []byte) ([]byte, error) {
-	return p.gcmOpenWithAAD(iv, payload, nil)
-}
-
 func (p *kmsProvider) gcmOpenWithAAD(iv, payload, aad []byte) ([]byte, error) {
 	if plain, err := p.tryKeys(iv, payload, aad, p.currentKeys()); err == nil {
 		return plain, nil

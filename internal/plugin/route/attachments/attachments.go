@@ -15,7 +15,6 @@ import (
 	"os"
 	"strconv"
 	"strings"
-	"syscall"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -29,38 +28,6 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
-
-// MountRoutes mounts attachment routes.
-// signingKeys is the ordered set of HMAC keys for download URL signing (primary first);
-// pass nil to disable signed download URL support.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, auth gin.HandlerFunc, signingKeys [][]byte) {
-	if attachStore == nil {
-		return
-	}
-
-	v1 := r.Group("/v1")
-	v1.POST("/attachments", auth, func(c *gin.Context) {
-		upload(c, store, attachStore, cfg)
-	})
-	v1.GET("/attachments/:attachmentId", auth, func(c *gin.Context) {
-		getAttachment(c, store, attachStore, cfg)
-	})
-	v1.DELETE("/attachments/:attachmentId", auth, func(c *gin.Context) {
-		deleteAttachment(c, store, attachStore)
-	})
-	v1.GET("/attachments/:attachmentId/download-url", auth, func(c *gin.Context) {
-		var primaryKey []byte
-		if len(signingKeys) > 0 {
-			primaryKey = signingKeys[0]
-		}
-		downloadURL(c, store, attachStore, cfg, primaryKey)
-	})
-	if len(signingKeys) > 0 {
-		v1.GET("/attachments/download/:token/:filename", func(c *gin.Context) {
-			downloadByToken(c, store, attachStore, signingKeys)
-		})
-	}
-}
 
 // HandleUpload exposes attachment upload/create for wrapper-native adapters.
 func HandleUpload(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config) {
@@ -807,16 +774,6 @@ func validateSourceIP(ip net.IP) error {
 		}
 	}
 	return nil
-}
-
-func isPrivateNetworkError(err error) bool {
-	if err == nil {
-		return false
-	}
-	if strings.Contains(err.Error(), "URLs targeting localhost or private networks are not allowed") {
-		return true
-	}
-	return errors.Is(err, syscall.EPERM)
 }
 
 func NewSourceURLTransportForTest(allowPrivate bool) http.RoundTripper {

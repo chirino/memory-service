@@ -14,12 +14,6 @@ import (
 
 const defaultTTL = 10 * time.Minute
 
-// LoadFromURL creates a MemoryEntriesCache from a Redis-compatible URL.
-// This is exported so other plugins (e.g. Infinispan RESP) can reuse the implementation.
-func LoadFromURL(ctx context.Context, redisURL string) (registrycache.MemoryEntriesCache, error) {
-	return LoadFromURLWithTTL(ctx, redisURL, defaultTTL)
-}
-
 // LoadFromURLWithTTL creates a cache with an explicit memory-entry TTL.
 func LoadFromURLWithTTL(ctx context.Context, redisURL string, ttl time.Duration) (registrycache.MemoryEntriesCache, error) {
 	opts, err := goredis.ParseURL(redisURL)
@@ -27,12 +21,6 @@ func LoadFromURLWithTTL(ctx context.Context, redisURL string, ttl time.Duration)
 		return nil, fmt.Errorf("redis cache: invalid URL: %w", err)
 	}
 	return LoadFromOptionsWithTTL(ctx, opts, ttl)
-}
-
-// LoadFromOptions creates a MemoryEntriesCache from go-redis Options.
-// This allows callers to customize options (e.g. Protocol for RESP2).
-func LoadFromOptions(ctx context.Context, opts *goredis.Options) (registrycache.MemoryEntriesCache, error) {
-	return LoadFromOptionsWithTTL(ctx, opts, defaultTTL)
 }
 
 func LoadFromOptionsWithTTL(ctx context.Context, opts *goredis.Options, ttl time.Duration) (registrycache.MemoryEntriesCache, error) {

@@ -1,12 +1,12 @@
 # Datastore Reset Notes
 
-Memory Service schema version 110 squashes earlier datastore migrations and changes fork lineage persistence.
+Memory Service schema version 1 is a clean baseline that squashes all earlier datastore migrations.
 
 ## When reset is required
 
-Reset PostgreSQL, SQLite, and MongoDB datastores before starting a build that contains schema version 110 if the datastore was created by any earlier schema version.
+Reset PostgreSQL, SQLite, and MongoDB datastores before starting this breaking release if the datastore was created by any earlier build.
 
-The service writes schema metadata for fresh version-110 stores and rejects older layouts with a clear startup error. This is intentional: version 110 removes direct fork columns/documents and stores fork lineage in `conversation_ancestry`.
+The service writes schema metadata for fresh version-1 stores and rejects older layouts with a clear startup error.
 
 ## What changes
 
@@ -17,10 +17,10 @@ The service writes schema metadata for fresh version-110 stores and rejects olde
 
 ## Local development reset
 
-For local development, remove the backing datastore volume or database file, then restart the service so it can initialize the version-110 baseline.
+For local development, remove the backing datastore volume or database file, then restart the service so it can initialize the version-1 baseline.
 
 - SQLite: delete the local SQLite database file configured by `DBURL`.
 - PostgreSQL: drop/recreate the development database or remove the local Docker volume.
 - MongoDB: drop/recreate the development database or remove the local Docker volume.
 
-Do not point a version-110 build at a pre-110 production datastore without a planned reset.
+Do not point this release at an existing production datastore without a planned reset.

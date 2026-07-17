@@ -21,10 +21,6 @@ import (
 var magic = [4]byte{0x4D, 0x53, 0x45, 0x48} // "MSEH"
 
 const (
-	// VersionAESGCM is the legacy MSEH format used by byte-slice encryption APIs.
-	VersionAESGCM uint32 = 1
-	// VersionAESCTR is the legacy unauthenticated AES-CTR stream format used for attachment streams.
-	VersionAESCTR uint32 = 2
 	// VersionAttachmentStreamAESGCM is the authenticated record stream format used for attachments.
 	VersionAttachmentStreamAESGCM uint32 = 3
 	// VersionFieldAESGCM is the authenticated field format using domain/identity AAD.

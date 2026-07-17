@@ -258,11 +258,6 @@ func (m *metricsStore) UpdateAttachment(ctx context.Context, userID string, atta
 	return m.inner.UpdateAttachment(ctx, userID, attachmentID, update)
 }
 
-func (m *metricsStore) ListAttachments(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]model.Attachment, *string, error) {
-	defer observe("list_attachments", time.Now())
-	return m.inner.ListAttachments(ctx, userID, conversationID, afterCursor, limit)
-}
-
 func (m *metricsStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
 	defer observe("get_attachment", time.Now())
 	return m.inner.GetAttachment(ctx, userID, conversationID, attachmentID)

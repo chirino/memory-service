@@ -49,7 +49,7 @@ func init() {
 	cucumber.StepModules = append(cucumber.StepModules, func(ctx *godog.ScenarioContext, s *cucumber.TestScenario) {
 		am := &authModeSteps{s: s}
 		// Server setup steps
-		ctx.Step(`^memory-service is running with OIDC and no allowed client or audience filters$`, am.memoryServiceWithOIDCNoClientOrAudienceFilters)
+		ctx.Step(`^memory-service is running with OIDC and no allowed client filter$`, am.memoryServiceWithOIDCNoClientFilter)
 		ctx.Step(`^memory-service is running with OIDC allowed client "([^"]*)"$`, am.memoryServiceWithOIDCAllowedClient)
 		ctx.Step(`^memory-service is running with OIDC allowed clients "([^"]*)"$`, am.memoryServiceWithOIDCAllowedClients)
 		ctx.Step(`^memory-service is running with OIDC allowed client "([^"]*)" and API keys$`, am.memoryServiceWithOIDCAllowedClientAndAPIKeys)
@@ -204,8 +204,8 @@ func (am *authModeSteps) clientHasRole(clientID, role string) error {
 
 // --- Server setup steps ---
 
-func (am *authModeSteps) memoryServiceWithOIDCNoClientOrAudienceFilters() error {
-	return am.startOIDCAudienceServer("", "")
+func (am *authModeSteps) memoryServiceWithOIDCNoClientFilter() error {
+	return am.startOIDCAudienceServer("", "memory-service")
 }
 
 func (am *authModeSteps) memoryServiceWithOIDCAllowedClient(clientID string) error {
@@ -257,8 +257,6 @@ func (am *authModeSteps) startOIDCAudienceServer(allowedClients, allowedAudience
 	}
 	cfg.OIDCAllowedClients = allowedClients
 	cfg.OIDCAllowedAudiences = allowedAudiences
-	cfg.OIDCAllowMissingAudience = strings.TrimSpace(allowedAudiences) == ""
-
 	return am.startServer(&cfg)
 }
 

@@ -36,24 +36,6 @@ func toMembershipResponse(conversationID string, membership model.ConversationMe
 	}
 }
 
-// MountRoutes mounts membership routes.
-func MountRoutes(r *gin.Engine, store registrystore.MemoryStore, auth gin.HandlerFunc) {
-	g := r.Group("/v1", auth)
-
-	g.GET("/conversations/:conversationId/memberships", func(c *gin.Context) {
-		listMemberships(c, store)
-	})
-	g.POST("/conversations/:conversationId/memberships", func(c *gin.Context) {
-		shareConversation(c, store, nil)
-	})
-	g.PATCH("/conversations/:conversationId/memberships/:userId", func(c *gin.Context) {
-		updateMembership(c, store, nil)
-	})
-	g.DELETE("/conversations/:conversationId/memberships/:userId", func(c *gin.Context) {
-		deleteMembership(c, store, nil)
-	})
-}
-
 // HandleListMemberships exposes the list memberships handler for wrapper-native adapters.
 func HandleListMemberships(c *gin.Context, store registrystore.MemoryStore) {
 	listMemberships(c, store)

@@ -62,11 +62,11 @@ func TestNewTokenResolverOIDCSelfSignedIssuerRequiresExplicitTLSBypass(t *testin
 	cfg.OIDCDiscoveryURL = server.URL
 	cfg.OIDCAllowedAudiences = "memory-service"
 
-	resolver, err := NewTokenResolver(&cfg)
+	_, err := NewTokenResolver(&cfg)
 	require.Error(t, err) // discovery must fail since the TLS cert is self-signed
 
 	cfg.OIDCTLSSkipCertificateVerify = true
-	resolver, err = NewTokenResolver(&cfg)
+	resolver, err := NewTokenResolver(&cfg)
 	require.NoError(t, err)
 	require.NotNil(t, resolver.verifier)
 	require.Empty(t, resolver.allowedClients)
@@ -81,10 +81,6 @@ func TestNewTokenResolverRequiresOIDCAudience(t *testing.T) {
 	require.ErrorContains(t, err, "OIDC allowed audiences are required")
 	require.Nil(t, resolver)
 
-	cfg.OIDCAllowMissingAudience = true
-	resolver, err = NewTokenResolver(&cfg)
-	require.ErrorContains(t, err, "OIDC provider discovery failed")
-	require.Nil(t, resolver)
 }
 
 func TestExtractTokenRolesUsesDefaultRealmAccessPointerOnly(t *testing.T) {

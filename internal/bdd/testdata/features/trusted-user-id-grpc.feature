@@ -77,9 +77,9 @@ Feature: Trusted client user identity assertion over gRPC
     And client "agent" is trusted to assert user IDs
     And memory-service is running with API keys and no OIDC
     And I use gRPC metadata:
-      | authorization | Bearer agent-api-key-1 |
-      | x-user-id     | alice                  |
-      | x-user-id     | bob                    |
+      | x-api-key | agent-api-key-1 |
+      | x-user-id | alice           |
+      | x-user-id | bob             |
     When I send gRPC request "ConversationsService/ListConversations" with body:
       """
       """

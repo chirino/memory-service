@@ -10,17 +10,16 @@ import (
 )
 
 // Provider is the SPI for pluggable encryption providers.
-// Each provider handles its own MSEH envelope writing on encrypt and
-// accepts MSEH, legacy bare, or plaintext formats on decrypt.
+// Each provider handles the current persisted-field and attachment-stream formats.
 type Provider interface {
 	// ID returns the provider identifier written into the MSEH header (e.g. "plain", "dek", "vault").
 	ID() string
 
-	// Encrypt returns MSEH-wrapped ciphertext (or plaintext for the plain provider).
-	Encrypt(plaintext []byte) ([]byte, error)
+	// EncryptField encrypts a persisted field with domain/identity binding.
+	EncryptField(plaintext []byte, domain, identity string) ([]byte, error)
 
-	// Decrypt accepts MSEH-wrapped ciphertext, legacy bare nonce||ciphertext, or plaintext.
-	Decrypt(ciphertext []byte) ([]byte, error)
+	// DecryptField decrypts a persisted field with domain/identity binding.
+	DecryptField(ciphertext []byte, domain, identity string) ([]byte, error)
 
 	// EncryptStream writes the MSEH header to dst then returns a WriteCloser that
 	// encrypts written bytes for streaming storage.
@@ -34,12 +33,6 @@ type Provider interface {
 	// download URL signing (primary first, legacy rotation keys after).
 	// Returns nil if this provider does not support signed URLs.
 	AttachmentSigningKeys(ctx context.Context) ([][]byte, error)
-}
-
-// FieldProvider is the optional provider extension for MSEH v4 persisted-field encryption.
-type FieldProvider interface {
-	EncryptField(plaintext []byte, domain, identity string) ([]byte, error)
-	DecryptField(ciphertext []byte, domain, identity string) ([]byte, error)
 }
 
 // Header is passed to DecryptStream after DataEncryptionService has parsed the

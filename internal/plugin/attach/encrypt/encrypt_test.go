@@ -26,8 +26,6 @@ func TestEncryptStoreStreamsCiphertext(t *testing.T) {
 
 	store, err := attachencrypt.Wrap(inner, svc)
 	require.NoError(t, err)
-	_, supportsReplace := store.(registryattach.AtomicAttachmentReplacer)
-	require.False(t, supportsReplace)
 
 	plaintext := bytes.Repeat([]byte("stream-me"), 512)
 	result, err := store.Store(context.Background(), bytes.NewReader(plaintext), int64(len(plaintext)), "text/plain")
@@ -62,37 +60,6 @@ func TestEncryptStoreRejectsOversizeInput(t *testing.T) {
 	require.EqualError(t, err, "file exceeds maximum size of 4 bytes")
 	require.Empty(t, inner.data)
 	require.Empty(t, inner.deletedKeys)
-}
-
-func TestEncryptStoreReplaceStreamsCiphertext(t *testing.T) {
-	svc := newEncryptionService(t)
-	inner := &replaceCaptureAttachmentStore{}
-
-	store, err := attachencrypt.Wrap(inner, svc)
-	require.NoError(t, err)
-	replacer, ok := store.(registryattach.AtomicAttachmentReplacer)
-	require.True(t, ok)
-
-	plaintext := bytes.Repeat([]byte("replace-me"), 256)
-	result, err := replacer.Replace(context.Background(), "stored", bytes.NewReader(plaintext), "text/plain")
-	require.NoError(t, err)
-
-	require.Equal(t, "stored", inner.replaceKey)
-	require.Equal(t, "text/plain", inner.contentType)
-	require.Equal(t, "stored", result.StorageKey)
-	require.Equal(t, int64(len(plaintext)), result.Size)
-	require.Equal(t, fmt.Sprintf("%x", sha256.Sum256(plaintext)), result.SHA256)
-
-	header, hasMagic, err := dataencryption.ReadHeader(bytes.NewReader(inner.data))
-	require.NoError(t, err)
-	require.True(t, hasMagic)
-	require.Equal(t, uint32(dataencryption.VersionAttachmentStreamAESGCM), header.Version)
-
-	reader, err := svc.DecryptStream(bytes.NewReader(inner.data))
-	require.NoError(t, err)
-	decrypted, err := io.ReadAll(reader)
-	require.NoError(t, err)
-	require.Equal(t, plaintext, decrypted)
 }
 
 func newEncryptionService(t *testing.T) *dataencryption.Service {
@@ -139,25 +106,4 @@ func (s *captureAttachmentStore) Delete(_ context.Context, storageKey string) er
 
 func (s *captureAttachmentStore) GetSignedURL(_ context.Context, _ string, _ time.Duration, _ *registryattach.SignedURLOptions) (*url.URL, error) {
 	return nil, fmt.Errorf("unsupported")
-}
-
-type replaceCaptureAttachmentStore struct {
-	captureAttachmentStore
-	replaceKey string
-}
-
-func (s *replaceCaptureAttachmentStore) Replace(_ context.Context, storageKey string, data io.Reader, contentType string) (*registryattach.FileStoreResult, error) {
-	s.replaceKey = storageKey
-	s.contentType = contentType
-
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, data); err != nil {
-		return nil, err
-	}
-	s.data = buf.Bytes()
-	return &registryattach.FileStoreResult{
-		StorageKey: storageKey,
-		Size:       int64(len(s.data)),
-		SHA256:     "inner",
-	}, nil
 }

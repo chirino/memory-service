@@ -6,6 +6,8 @@ status: proposed
 
 > **Status**: Proposed.
 
+> **Schema note**: The schema-numbering and migration-baseline portions of this proposal are superseded by [Enhancement 114](implemented/114-clean-break-schema-and-compatibility-reset.md). The conversation-ancestry design remains current.
+
 ## Summary
 
 Replace fork-parent columns on `conversations` with a materialized conversation ancestry closure. The closure records every ancestor visible from a descendant, its depth, and the exclusive entry boundary contributed by that ancestor. Entry-listing queries can then apply ancestry, channel, sequence, ordering, and pagination in the datastore without loading an entire conversation group.

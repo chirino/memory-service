@@ -3,7 +3,6 @@ package turntraces
 import (
 	"context"
 	"encoding/json"
-	"fmt"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -343,15 +342,4 @@ type dryRunSink struct{}
 func (dryRunSink) EmitTurnSpan(_ context.Context, span SpanData) error {
 	log.Info("turn span", "name", span.Name, "conversationID", span.ConversationID, "turnID", span.TurnID, "endReason", span.EndReason, "contextEntries", span.ContextCount)
 	return nil
-}
-
-type failingSink struct {
-	err error
-}
-
-func (s failingSink) EmitTurnSpan(context.Context, SpanData) error {
-	if s.err != nil {
-		return s.err
-	}
-	return fmt.Errorf("span export failed")
 }

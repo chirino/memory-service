@@ -107,7 +107,22 @@ func setupAttachmentsRouter(t *testing.T) *gin.Engine {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
 	auth := func(c *gin.Context) { c.Set("userID", "test-user"); c.Next() }
-	attachments.MountRoutes(router, store, newMemAttachmentStore(), &cfg, auth, signingKeys)
+	attachStore := newMemAttachmentStore()
+	router.POST("/v1/attachments", auth, func(c *gin.Context) {
+		attachments.HandleUpload(c, store, attachStore, &cfg)
+	})
+	router.GET("/v1/attachments/:id", auth, func(c *gin.Context) {
+		attachments.HandleGetAttachment(c, store, attachStore, &cfg)
+	})
+	router.DELETE("/v1/attachments/:id", auth, func(c *gin.Context) {
+		attachments.HandleDeleteAttachment(c, store, attachStore)
+	})
+	router.GET("/v1/attachments/:id/download-url", auth, func(c *gin.Context) {
+		attachments.HandleDownloadURL(c, store, attachStore, &cfg, signingKeys[0])
+	})
+	router.GET("/v1/attachments/download/:token/:filename", func(c *gin.Context) {
+		attachments.HandleDownloadByToken(c, store, attachStore, signingKeys)
+	})
 	return router
 }
 

@@ -47,18 +47,6 @@ export type SearchTypeUnavailableError = {
   details?: {
     [key: string]: unknown;
   };
-  /**
-   * Deprecated compatibility alias for error.
-   *
-   * @deprecated
-   */
-  message?: string;
-  /**
-   * Deprecated compatibility alias for details.availableTypes.
-   *
-   * @deprecated
-   */
-  availableTypes?: Array<string>;
 };
 
 export type CapabilitiesResponse = {
@@ -1359,12 +1347,6 @@ export type CreateOwnershipTransferErrors = {
     details?: {
       [key: string]: unknown;
     };
-    /**
-     * Deprecated compatibility alias for details.existingTransferId.
-     *
-     * @deprecated
-     */
-    existingTransferId?: string;
   };
   /**
    * Error response

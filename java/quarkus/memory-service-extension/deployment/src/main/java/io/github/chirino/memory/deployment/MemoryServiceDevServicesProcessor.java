@@ -1,5 +1,6 @@
 package io.github.chirino.memory.deployment;
 
+import io.quarkus.deployment.Feature;
 import io.quarkus.deployment.IsDevServicesSupportedByLaunchMode;
 import io.quarkus.deployment.IsDevelopment;
 import io.quarkus.deployment.annotations.BuildProducer;
@@ -10,12 +11,15 @@ import io.quarkus.deployment.builditem.LaunchModeBuildItem;
 import io.quarkus.deployment.builditem.Startable;
 import io.quarkus.deployment.dev.devservices.DevServicesConfig;
 import io.quarkus.devservices.common.StartableContainer;
+import io.quarkus.devservices.keycloak.KeycloakDevServicesConfigurator;
+import io.quarkus.devservices.keycloak.KeycloakDevServicesRequiredBuildItem;
 import io.quarkus.devui.spi.page.CardPageBuildItem;
 import io.quarkus.devui.spi.page.Page;
 import java.io.IOException;
 import java.io.InputStream;
 import java.security.SecureRandom;
 import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -23,12 +27,16 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.Properties;
+import java.util.Set;
 import java.util.function.Function;
 import java.util.function.Supplier;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.eclipse.microprofile.config.ConfigProvider;
 import org.jboss.logging.Logger;
+import org.keycloak.representations.idm.ClientRepresentation;
+import org.keycloak.representations.idm.ProtocolMapperRepresentation;
+import org.keycloak.representations.idm.RealmRepresentation;
 import org.testcontainers.containers.FixedHostPortGenericContainer;
 import org.testcontainers.containers.GenericContainer;
 import org.testcontainers.containers.wait.strategy.Wait;
@@ -53,7 +61,21 @@ public class MemoryServiceDevServicesProcessor {
     private static final String EXTENSION_VERSION = loadExtensionVersion();
     private static final int API_KEY_BYTES = 32;
     private static final String OIDC_AUTH_SERVER_URL_CONFIG_KEY = "quarkus.oidc.auth-server-url";
+    private static final String MEMORY_SERVICE_AUDIENCE = "memory-service";
     private static final SecureRandom SECURE_RANDOM = new SecureRandom();
+
+    @BuildStep(onlyIf = {IsDevServicesSupportedByLaunchMode.class, DevServicesConfig.Enabled.class})
+    void configureDefaultKeycloakRealm(
+            BuildProducer<KeycloakDevServicesRequiredBuildItem> requiredKeycloakDevService) {
+        KeycloakDevServicesRequiredBuildItem item =
+                KeycloakDevServicesRequiredBuildItem.of(
+                        Feature.OIDC,
+                        new MemoryServiceKeycloakDevServicesConfigurator(),
+                        OIDC_AUTH_SERVER_URL_CONFIG_KEY);
+        if (item != null) {
+            requiredKeycloakDevService.produce(item);
+        }
+    }
 
     @BuildStep(onlyIf = IsDevelopment.class)
     CardPageBuildItem devUiPages(
@@ -459,10 +481,66 @@ public class MemoryServiceDevServicesProcessor {
         container.withEnv("MEMORY_SERVICE_OIDC_ISSUER", authServerUrl);
         // Discovery URL = internal URL reachable from container
         container.withEnv("MEMORY_SERVICE_OIDC_DISCOVERY_URL", containerAuthServerUrl);
-        // Keep Dev Services zero-configuration even for realms without an audience mapper. An
-        // explicit devservices.env override can restore strict audience validation.
-        if (!container.getEnvMap().containsKey("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE")) {
-            container.withEnv("MEMORY_SERVICE_OIDC_ALLOW_MISSING_AUDIENCE", "true");
+        if (!container.getEnvMap().containsKey("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES")) {
+            container.withEnv("MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES", MEMORY_SERVICE_AUDIENCE);
+        }
+    }
+
+    static void addMemoryServiceAudienceToDefaultRealm(RealmRepresentation realm) {
+        if (realm == null || realm.getClients() == null) {
+            return;
+        }
+        for (ClientRepresentation client : realm.getClients()) {
+            List<ProtocolMapperRepresentation> existingMappers = client.getProtocolMappers();
+            boolean alreadyConfigured =
+                    existingMappers != null
+                            && existingMappers.stream()
+                                    .anyMatch(
+                                            mapper ->
+                                                    "oidc-audience-mapper"
+                                                                    .equals(
+                                                                            mapper
+                                                                                    .getProtocolMapper())
+                                                            && mapper.getConfig() != null
+                                                            && MEMORY_SERVICE_AUDIENCE.equals(
+                                                                    mapper.getConfig()
+                                                                            .get(
+                                                                                    "included.custom.audience")));
+            if (alreadyConfigured) {
+                continue;
+            }
+
+            List<ProtocolMapperRepresentation> mappers =
+                    existingMappers == null ? new ArrayList<>() : new ArrayList<>(existingMappers);
+            ProtocolMapperRepresentation mapper = new ProtocolMapperRepresentation();
+            mapper.setName("memory-service audience");
+            mapper.setProtocol("openid-connect");
+            mapper.setProtocolMapper("oidc-audience-mapper");
+            mapper.setConfig(
+                    Map.of(
+                            "included.custom.audience", MEMORY_SERVICE_AUDIENCE,
+                            "id.token.claim", "false",
+                            "access.token.claim", "true"));
+            mappers.add(mapper);
+            client.setProtocolMappers(mappers);
+        }
+    }
+
+    private static final class MemoryServiceKeycloakDevServicesConfigurator
+            implements KeycloakDevServicesConfigurator {
+        @Override
+        public Set<String> getLazyConfigKeys() {
+            return Set.of();
+        }
+
+        @Override
+        public String getLazyConfigValue(String configKey, ConfigPropertiesContext context) {
+            return "";
+        }
+
+        @Override
+        public void customizeDefaultRealm(RealmRepresentation realmRepresentation) {
+            addMemoryServiceAudienceToDefaultRealm(realmRepresentation);
         }
     }
 
