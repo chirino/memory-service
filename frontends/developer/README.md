@@ -40,12 +40,17 @@ npm install
 
 ### Configuration
 
-Edit `public/config.json` to match your environment:
+`public/config.json` is only used by the **Vite dev server** (`npm run dev`). When running via the
+memory-service binary (Docker Compose or production), config is served dynamically at
+`GET /developer/config.json` — `public/config.json` is ignored.
+
+Edit `public/config.json` for local Vite development:
 
 ```json
 {
   "apiUrl": "http://localhost:8082",
-  "oidc": {
+  "auth": {
+    "mode": "oidc",
     "authority": "http://localhost:8081/realms/memory-service",
     "clientId": "developer-frontend",
     "redirectUri": "http://localhost:3000/developer/"
@@ -53,23 +58,29 @@ Edit `public/config.json` to match your environment:
 }
 ```
 
-**Cognitive Memory Service Configuration:**
-
-The cognitive service URL is configured at runtime via `public/config.json`:
+For `api-key` mode (no OIDC):
 
 ```json
 {
   "apiUrl": "http://localhost:8082",
-  "cognitiveApiUrl": "",
-  "oidc": { ... }
+  "auth": {
+    "mode": "api-key",
+    "apiKey": "your-api-key",
+    "clientId": "developer-frontend"
+  }
 }
 ```
 
-- **Development**: Leave `cognitiveApiUrl` empty. Vite dev server proxies `/api/processes/*` to `http://localhost:8090` automatically.
-- **Production**: Set `cognitiveApiUrl` to your cognitive service URL (e.g., `"https://cognitive.example.com"`), or leave empty if behind the same reverse proxy.
+**Cognitive Memory Service URL:**
 
-**CORS Requirements (Production Only):**
-When `cognitiveApiUrl` points to a different origin, the cognitive-memory service must allow CORS:
+| Context | Value | How |
+|---|---|---|
+| `npm run dev` | `""` (empty) | Vite proxies `/api/processes/*` → `http://localhost:8090` automatically |
+| Binary / Docker Compose | `http://localhost:8090` | Default from `DefaultConfig()` — set once in `internal/config/config.go` |
+| Override | any URL | `MEMORY_SERVICE_COGNITIVE_API_URL` env var or `--cognitive-api-url` flag |
+
+**CORS Requirements:**
+When `cognitiveApiUrl` points to a different origin than the frontend, the cognitive-memory service must allow CORS:
 - `Access-Control-Allow-Origin: https://your-frontend-domain.com`
 - `Access-Control-Allow-Methods: GET, OPTIONS`
 - `Access-Control-Allow-Headers: Content-Type`

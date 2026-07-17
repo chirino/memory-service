@@ -205,7 +205,7 @@ func setSecurityHeaders(c *gin.Context, cfg *config.Config) {
 			connectSrc = fmt.Sprintf("%s %s", connectSrc, oidcOrigin)
 		}
 	}
-	
+
 	// Add cognitive API URL to connect-src if configured
 	if cfg != nil && cfg.CognitiveAPIURL != "" {
 		if cognitiveURL, err := url.Parse(cfg.CognitiveAPIURL); err == nil {

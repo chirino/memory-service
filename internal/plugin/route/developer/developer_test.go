@@ -142,6 +142,7 @@ func TestConfigReturnsAPIKeyAuthWithoutOIDCSettings(t *testing.T) {
 	require.Equal(t, http.StatusOK, rec.Code)
 	require.JSONEq(t, `{
 		"apiUrl": "http://memory.example",
+		"cognitiveApiUrl":"",
 		"auth": {
 			"mode": "api-key",
 			"apiKey": "local-developer-key",
@@ -207,6 +208,21 @@ func testConfig(t *testing.T) *config.Config {
 		BaseURL:                   "http://memory.example/",
 		OIDCIssuer:                "http://keycloak.example/realms/memory-service",
 	}
+}
+
+func TestConfigCognitiveApiUrlDefaultIsSet(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	defaults := config.DefaultConfig()
+	cfg := testConfig(t)
+	cfg.CognitiveAPIURL = defaults.CognitiveAPIURL
+
+	router := gin.New()
+	require.NoError(t, RegisterRoutes(router, cfg))
+
+	rec := performDeveloperRequest(router, "/developer/config.json")
+	require.Equal(t, http.StatusOK, rec.Code)
+	require.Contains(t, rec.Body.String(), `"cognitiveApiUrl":"http://localhost:8090"`)
 }
 
 func performDeveloperRequest(router http.Handler, target string) *httptest.ResponseRecorder {
