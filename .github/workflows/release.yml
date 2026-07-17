@@ -21,6 +21,9 @@ on:
 permissions:
   contents: read
 
+env:
+  MAVEN_ARGS: --no-transfer-progress
+
 concurrency:
   group: release-${{ inputs.version }}
   cancel-in-progress: false
