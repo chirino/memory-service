@@ -1,0 +1,220 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Embedded Java Process
+description: Package and manage a local Memory Service subprocess from Java.
+---
+
+import { Code } from "astro:components";
+import { PROJECT_VERSION } from "../../../config";
+
+Java applications can run Memory Service as an owned subprocess without requiring a separate
+installation. The process API extracts a packaged executable, starts a local SQLite service over a
+protected Unix domain socket, waits for readiness when it can discover the management endpoint,
+and stops the child when closed.
+
+This integration is subprocess-based, not JNI. It currently supports Linux AMD64, Linux ARM64, and
+macOS ARM64. Windows and Intel macOS are not packaged.
+
+## Choose a dependency
+
+For a platform-specific application or distribution, depend only on its native JAR. The native JAR
+also brings in the `memory-service-process` API:
+
+<Code
+  lang="xml"
+  code={`<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-binary-linux-amd64</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`}
+/>
+
+The other platform artifact IDs are `memory-service-binary-linux-arm64` and
+`memory-service-binary-macos-arm64`.
+
+Applications distributed to all supported platforms can use the small aggregate JAR. Its POM
+depends on all three native JARs:
+
+<Code
+  lang="xml"
+  code={`<dependency>
+  <groupId>io.github.chirino.memory-service</groupId>
+  <artifactId>memory-service-binaries</artifactId>
+  <version>${PROJECT_VERSION}</version>
+</dependency>`}
+/>
+
+Use `memory-service-process` alone when your application supplies the executable explicitly or
+finds it on `PATH`.
+
+## Start a local service
+
+```java
+import io.github.chirino.memoryservice.process.MemoryServiceProcess;
+import java.nio.file.Path;
+
+Path stateDirectory = Path.of(System.getProperty("user.home"), ".my-app", "memory");
+
+try (MemoryServiceProcess service = MemoryServiceProcess.builder(stateDirectory).start()) {
+    String target = service.target(); // unix:///.../memory.sock
+    // Configure your Memory Service client with target.
+}
+```
+
+The builder creates `memory.db` and `memory.sock` below the state directory. It configures SQLite,
+local Unix-socket authentication, no embedding provider, and plain local encryption. These defaults
+are intended for a single-user local process, not a remote production deployment.
+
+The child command is only `memory-service serve`. Server configuration is supplied through
+`MEMORY_SERVICE_*` environment variables, using the same configuration surface as container
+deployments:
+
+| Default environment variable                 | Value                           |
+| -------------------------------------------- | ------------------------------- |
+| `MEMORY_SERVICE_PLAIN_TEXT`                  | `true`                          |
+| `MEMORY_SERVICE_TLS`                         | `false`                         |
+| `MEMORY_SERVICE_DB_KIND`                     | `sqlite`                        |
+| `MEMORY_SERVICE_DB_URL`                      | `<state-directory>/memory.db`   |
+| `MEMORY_SERVICE_UNIX_SOCKET`                 | `<state-directory>/memory.sock` |
+| `MEMORY_SERVICE_UNIX_SOCKET_AUTH`            | `local`                         |
+| `MEMORY_SERVICE_EMBEDDING_KIND`              | `none`                          |
+| `MEMORY_SERVICE_ENCRYPTION_ALLOW_PLAIN`      | `true`                          |
+| `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER` | `true`                          |
+
+Startup normally returns only after `GET /ready` succeeds. A startup timeout or early child exit
+throws `MemoryServiceStartException` with recent child output. `close()` is idempotent and first
+requests a graceful stop, then forcibly terminates a child that exceeds the shutdown timeout.
+
+## Configure the server
+
+Builder environment entries override the local defaults, so any `serve` option with a
+`MEMORY_SERVICE_*` equivalent can be configured without changing the child command:
+
+```java
+import java.util.Map;
+
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .environment(Map.of(
+        "MEMORY_SERVICE_EMBEDDING_KIND", "local",
+        "MEMORY_SERVICE_VECTOR_KIND", "sqlite"))
+    .start();
+```
+
+`databasePath(Path)` and `socketPath(Path)` are typed conveniences that configure
+`MEMORY_SERVICE_DB_URL` and `MEMORY_SERVICE_UNIX_SOCKET`. The effective listener environment
+controls `target()` and readiness probing, so changing listeners through the typed methods or
+`environment(...)` remains consistent.
+
+### Use an HTTP listener
+
+Call `httpListener(...)` to disable the default Unix socket and select a plaintext HTTP listener.
+TCP access does not use local Unix-socket identity, so configure the server's normal API-key or OIDC
+authentication as well:
+
+```java
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .httpListener("127.0.0.1", 8082)
+    .environment("MEMORY_SERVICE_API_KEYS_MY_APP", apiKey)
+    .start();
+
+String target = process.target(); // http://127.0.0.1:8082
+```
+
+`httpListener(int)` uses `127.0.0.1`. `disableUnixSocket()` only removes the managed-process Unix
+socket settings and leaves the final HTTP host, port, plaintext, and TLS values to the server
+configuration. For a non-loopback plaintext host, explicitly set
+`MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT=true`.
+
+`unixSocketPath()` returns an `Optional<Path>` for code that supports either transport. The older
+`socketPath()` convenience throws `IllegalStateException` when HTTP is selected.
+
+### Configure readiness
+
+The process API chooses its readiness checker from the final child environment after defaults,
+inherited values, removals, and explicit overrides have all been applied:
+
+- With `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true`, it probes the selected main Unix-socket or
+  HTTP listener.
+- A configured `MEMORY_SERVICE_MANAGEMENT_UNIX_SOCKET` or explicit
+  `MEMORY_SERVICE_MANAGEMENT_PORT` selects that dedicated management listener.
+- `managementHttpListener(...)` configures a dedicated plaintext management HTTP listener and
+  disables management on the main listener.
+- If management is not on the main listener and neither a management Unix socket nor an explicit,
+  usable management port is configured, no readiness address is knowable. `start()` launches the
+  child and returns without waiting. The server can still exit later if its own configuration is
+  invalid.
+
+For example, the following probes readiness on port 9090 while clients connect on port 8082:
+
+```java
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .httpListener(8082)
+    .managementHttpListener(9090)
+    .environment("MEMORY_SERVICE_API_KEYS_MY_APP", apiKey)
+    .start();
+```
+
+The builder normally removes inherited `MEMORY_SERVICE_*` entries before applying its defaults,
+which prevents the parent shell from unexpectedly changing the managed child. Use
+`inheritMemoryServiceEnvironment(true)` to let inherited entries replace defaults. Explicit
+`environment(...)` entries always have the highest precedence. Unrelated inherited variables such
+as `PATH` and `HOME` are retained. `removeEnvironment(name)` removes either an inherited or default
+entry; a later `environment(name, value)` restores it.
+
+## Route process output
+
+By default, stdout and stderr are merged into one bridge and sent to Java util logging at `FINE`.
+Supply consumers to integrate with application logging:
+
+```java
+import java.util.function.Consumer;
+
+Consumer<String> output = line -> applicationLogger.info(line);
+
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .standardOutput(output)
+    .standardError(output)
+    .start();
+```
+
+When both methods receive the same non-null consumer instance, stderr is merged into stdout and one
+bridge thread is used. Passing `null` to either method redirects that stream to the operating
+system's null device; passing `null` to both creates no bridge threads.
+
+## Control binary resolution
+
+Packaged resolution is the default. You can replace it with an ordered resolver list:
+
+```java
+import io.github.chirino.memoryservice.process.MemoryServiceBinary;
+
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .binaryResolvers(
+        MemoryServiceBinary.file(Path.of("/opt/my-app/memory-service")),
+        MemoryServiceBinary.packaged(),
+        MemoryServiceBinary.onPath("memory-service"))
+    .start();
+```
+
+A resolver falls through only when its source is unavailable. If a candidate exists but is corrupt,
+cannot be extracted, or cannot be launched, startup fails instead of silently selecting a different
+binary.
+
+Packaged executables are checksum-verified and cached by platform and SHA-256. The default cache is
+`~/.cache/memory-service/binaries` on Linux and
+`~/Library/Caches/memory-service/binaries` on macOS. Use `cacheDirectory(Path)` to override it.
+
+The builder also provides typed configuration for startup and shutdown timeouts, the packaged
+binary cache, binary resolution, output consumers, and the JVM shutdown hook.
+
+## Executable JARs and shading
+
+Platform discovery uses Java `ServiceLoader`. If you build an uber-JAR with Maven Shade, merge
+service descriptors so the native provider registration is retained:
+
+```xml
+<transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
+```
+
+Other fat-JAR tools need their equivalent service-file merge behavior for
+`META-INF/services/io.github.chirino.memoryservice.process.MemoryServiceBinaryProvider`.

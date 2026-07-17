@@ -29,6 +29,7 @@
   <modules>
     <module>chat-frontend</module>
     <module>memory-service-contracts</module>
+    <module>memory-service-process</module>
     <module>quarkus</module>
     <module>spring</module>
   </modules>
@@ -216,6 +217,15 @@
   </build>
 
   <profiles>
+    <profile>
+      <id>binary-jars</id>
+      <modules>
+        <module>memory-service-binary-linux-amd64</module>
+        <module>memory-service-binary-linux-arm64</module>
+        <module>memory-service-binary-macos-arm64</module>
+        <module>memory-service-binaries</module>
+      </modules>
+    </profile>
     <profile>
       <id>native</id>
       <activation>

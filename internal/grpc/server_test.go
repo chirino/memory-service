@@ -1,11 +1,13 @@
 package grpc
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
 	"testing"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -38,6 +40,20 @@ func TestMapErrorHidesUntypedInternalErrors(t *testing.T) {
 
 	require.Equal(t, codes.Internal, status.Code(err))
 	require.Equal(t, "internal server error", status.Convert(err).Message())
+}
+
+func TestMapErrorLogsUntypedInternalErrors(t *testing.T) {
+	var output bytes.Buffer
+	logger := log.New(&output)
+	previous := log.Default()
+	log.SetDefault(logger)
+	t.Cleanup(func() { log.SetDefault(previous) })
+
+	err := mapError(errors.New("sqlite write failed"))
+
+	require.Equal(t, codes.Internal, status.Code(err))
+	require.Contains(t, output.String(), "gRPC request failed")
+	require.Contains(t, output.String(), "sqlite write failed")
 }
 
 func TestMapErrorPreservesTypedValidationMessage(t *testing.T) {

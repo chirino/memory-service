@@ -192,6 +192,7 @@ func mapError(err error) error {
 	case errors.As(err, &conflict):
 		return status.Error(codes.Aborted, err.Error())
 	default:
+		log.Error("gRPC request failed", "error", err, "stack", string(debug.Stack()))
 		return status.Error(codes.Internal, "internal server error")
 	}
 }
