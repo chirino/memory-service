@@ -6,6 +6,7 @@ import (
 	"context"
 	"crypto/tls"
 	"fmt"
+	"io"
 	"net"
 	"net/http"
 	"os"
@@ -17,6 +18,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	grpcserver "github.com/chirino/memory-service/internal/grpc"
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials/insecure"
@@ -172,15 +174,10 @@ func TestStartSinglePortHTTPAndGRPCOverUnixSocket(t *testing.T) {
 	root := shortSocketRoot(t)
 	socketPath := filepath.Join(root, "api", "memservice.sock")
 
-	httpHandler := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/ready" {
-			w.WriteHeader(http.StatusOK)
-			_, _ = w.Write([]byte("ok"))
-			return
-		}
-		http.NotFound(w, r)
+	httpHandler := newPathParameterTestRouter()
+	httpHandler.GET("/ready", func(c *gin.Context) {
+		c.String(http.StatusOK, "ok")
 	})
-
 	grpcServer := grpc.NewServer()
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: &config.Config{}})
 
@@ -199,6 +196,14 @@ func TestStartSinglePortHTTPAndGRPCOverUnixSocket(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 	require.Equal(t, http.StatusOK, resp.StatusCode)
+
+	encodedResp, err := unixHTTPClient(socketPath).Get("http://unix/resources/run%2Fbranch")
+	require.NoError(t, err)
+	defer encodedResp.Body.Close()
+	require.Equal(t, http.StatusOK, encodedResp.StatusCode)
+	encodedBody, err := io.ReadAll(encodedResp.Body)
+	require.NoError(t, err)
+	require.Equal(t, "run/branch", string(encodedBody))
 
 	conn, err := grpc.NewClient(
 		"passthrough:///unix",

@@ -166,7 +166,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// Set up gin
 	gin.SetMode(gin.ReleaseMode)
-	router := gin.New()
+	router := newGinRouter()
 	trustedProxies, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
 	if err != nil {
 		return nil, err
@@ -491,7 +491,7 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 		return nil, nil
 	}
 
-	mgmtRouter := gin.New()
+	mgmtRouter := newGinRouter()
 	if err := mgmtRouter.SetTrustedProxies(nil); err != nil {
 		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
 	}

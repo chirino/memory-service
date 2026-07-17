@@ -208,7 +208,7 @@ func TestAttachmentTokenDownloadAndDelete(t *testing.T) {
 	// Multipart upload.
 	form := &bytes.Buffer{}
 	writer := multipart.NewWriter(form)
-	part, err := writer.CreateFormFile("file", "hello.txt")
+	part, err := writer.CreateFormFile("file", "hello % café.txt")
 	require.NoError(t, err)
 	_, err = part.Write([]byte("hello-token-download"))
 	require.NoError(t, err)
@@ -238,6 +238,7 @@ func TestAttachmentTokenDownloadAndDelete(t *testing.T) {
 	downloadPath, _ := payload["url"].(string)
 	require.NotEmpty(t, downloadPath)
 	require.Contains(t, downloadPath, "/v1/attachments/download/")
+	require.Contains(t, downloadPath, "/hello%20%25%20caf%C3%A9.txt")
 
 	// Token download route.
 	downloadReq := httptest.NewRequest(http.MethodGet, downloadPath, nil)
