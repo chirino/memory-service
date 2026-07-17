@@ -1,5 +1,5 @@
 import { Link, useRouterState } from "@tanstack/react-router";
-import { Brain, MessageCircle, Search, LogOut, ChevronDown, Sprout } from "lucide-react";
+import { Brain, MessageCircle, Search, Filter, LogOut, ChevronDown, Sprout, Cpu } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/lib/auth";
 import {
@@ -14,7 +14,13 @@ import {
 const navItems = [
   { to: "/conversations", label: "Conversations", icon: MessageCircle },
   { to: "/memories", label: "Memories", icon: Brain },
-  { to: "/search", label: "Search", icon: Search },
+  { to: "/filter", label: "Filter", icon: Filter },
+  { to: "/search/conversations", label: "Search Conversations", icon: Search },
+  { to: "/search/memories", label: "Search Memories", icon: Search },
+];
+
+const cognitiveNavItems = [
+  { to: "/processes", label: "Processes", icon: Cpu },
 ];
 
 export function Sidebar() {
@@ -60,6 +66,29 @@ export function Sidebar() {
 
       <nav className="flex gap-1 px-3 pb-3 md:flex-1 md:flex-col md:gap-2 md:space-y-3 md:px-4 md:pb-0">
         {navItems.map((item) => {
+          const isActive = currentPath.startsWith(item.to);
+          const Icon = item.icon;
+
+          return (
+            <Link
+              key={item.to}
+              to={item.to}
+              className={cn(
+                "flex min-w-0 shrink items-center gap-1.5 rounded-lg px-2.5 py-3 text-xs font-medium transition-colors md:shrink-0 md:gap-4 md:px-4 md:py-4 md:text-sm",
+                isActive
+                  ? "bg-sage-soft/55 text-primary shadow-[0_1px_0_rgba(43,39,34,0.03)]"
+                  : "text-stone hover:bg-white/55 hover:text-foreground",
+              )}
+            >
+              <Icon className="h-5 w-5" strokeWidth={1.55} />
+              <span>{item.label}</span>
+            </Link>
+          );
+        })}
+        
+        <div className="hidden md:block border-t border-[rgba(43,39,34,0.12)] my-3" />
+        
+        {cognitiveNavItems.map((item) => {
           const isActive = currentPath.startsWith(item.to);
           const Icon = item.icon;
 

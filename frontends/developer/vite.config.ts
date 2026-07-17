@@ -31,6 +31,10 @@ export default defineConfig({
         target: 'http://localhost:8082',
         changeOrigin: true,
       },
+      '/api/processes': {
+        target: 'http://localhost:8090',
+        changeOrigin: true,
+      },
     },
   },
 })

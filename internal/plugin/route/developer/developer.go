@@ -77,8 +77,9 @@ func configHandler(cfg *config.Config) gin.HandlerFunc {
 		c.Header("X-Content-Type-Options", "nosniff")
 
 		c.JSON(http.StatusOK, gin.H{
-			"apiUrl": baseURL,
-			"auth":   auth,
+			"apiUrl":          baseURL,
+			"auth":            auth,
+			"cognitiveApiUrl": cfg.CognitiveAPIURL,
 		})
 	}
 }
@@ -201,7 +202,15 @@ func setSecurityHeaders(c *gin.Context, cfg *config.Config) {
 	if cfg != nil && cfg.OIDCIssuer != "" {
 		if issuerURL, err := url.Parse(cfg.OIDCIssuer); err == nil {
 			oidcOrigin := fmt.Sprintf("%s://%s", issuerURL.Scheme, issuerURL.Host)
-			connectSrc = fmt.Sprintf("'self' %s", oidcOrigin)
+			connectSrc = fmt.Sprintf("%s %s", connectSrc, oidcOrigin)
+		}
+	}
+
+	// Add cognitive API URL to connect-src if configured
+	if cfg != nil && cfg.CognitiveAPIURL != "" {
+		if cognitiveURL, err := url.Parse(cfg.CognitiveAPIURL); err == nil {
+			cognitiveOrigin := fmt.Sprintf("%s://%s", cognitiveURL.Scheme, cognitiveURL.Host)
+			connectSrc = fmt.Sprintf("%s %s", connectSrc, cognitiveOrigin)
 		}
 	}
 

@@ -14,6 +14,7 @@ export type AppAuthConfig =
 export interface AppConfig {
   apiUrl: string;
   auth: AppAuthConfig;
+  cognitiveApiUrl?: string;
 }
 
 let cachedConfig: AppConfig | null = null;

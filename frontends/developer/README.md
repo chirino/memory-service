@@ -9,6 +9,7 @@ This frontend provides admin and auditor users with tools to:
 - **Browse Conversations**: View all conversations across users with detailed entry inspection
 - **Explore Memories**: Navigate episodic memories by namespace hierarchy
 - **Search**: Find conversations and memories quickly with semantic and attribute-based search
+- **Monitor Processes**: View and inspect cognitive memory processing pipelines
 
 ## Technology Stack
 
@@ -27,6 +28,7 @@ This frontend provides admin and auditor users with tools to:
 
 - Node.js 18+ and npm
 - Memory Service running (default: `http://localhost:8082`)
+- Cognitive Memory Service running (default: `http://localhost:8090`) - optional, for process monitoring
 - Keycloak or compatible OIDC provider (default: `http://localhost:8080`)
 
 ### Installation
@@ -38,18 +40,50 @@ npm install
 
 ### Configuration
 
-Edit `public/config.json` to match your environment:
+`public/config.json` is only used by the **Vite dev server** (`npm run dev`). When running via the
+memory-service binary (Docker Compose or production), config is served dynamically at
+`GET /developer/config.json` — `public/config.json` is ignored.
+
+Edit `public/config.json` for local Vite development:
 
 ```json
 {
   "apiUrl": "http://localhost:8082",
-  "oidc": {
+  "auth": {
+    "mode": "oidc",
     "authority": "http://localhost:8081/realms/memory-service",
     "clientId": "developer-frontend",
     "redirectUri": "http://localhost:3000/developer/"
   }
 }
 ```
+
+For `api-key` mode (no OIDC):
+
+```json
+{
+  "apiUrl": "http://localhost:8082",
+  "auth": {
+    "mode": "api-key",
+    "apiKey": "your-api-key",
+    "clientId": "developer-frontend"
+  }
+}
+```
+
+**Cognitive Memory Service URL:**
+
+| Context | Value | How |
+|---|---|---|
+| `npm run dev` | `""` (empty) | Vite proxies `/api/processes/*` → `http://localhost:8090` automatically |
+| Binary / Docker Compose | `http://localhost:8090` | Default from `DefaultConfig()` — set once in `internal/config/config.go` |
+| Override | any URL | `MEMORY_SERVICE_COGNITIVE_API_URL` env var or `--cognitive-api-url` flag |
+
+**CORS Requirements:**
+When `cognitiveApiUrl` points to a different origin than the frontend, the cognitive-memory service must allow CORS:
+- `Access-Control-Allow-Origin: https://your-frontend-domain.com`
+- `Access-Control-Allow-Methods: GET, OPTIONS`
+- `Access-Control-Allow-Headers: Content-Type`
 
 ### Development
 
@@ -86,14 +120,18 @@ frontends/developer/
 │   │   ├── __root.tsx       # Root layout with sidebar
 │   │   ├── conversations/   # Conversation routes
 │   │   ├── memories/        # Memory routes
-│   │   └── search.tsx       # Search route
+│   │   ├── search/          # Search routes
+│   │   └── processes.tsx    # Cognitive processes route
 │   ├── components/
 │   │   ├── layout/          # Layout components (sidebar, etc.)
 │   │   ├── conversations/   # Conversation-specific components
 │   │   ├── memories/        # Memory-specific components
 │   │   ├── search/          # Search components
 │   │   └── ui/              # Reusable UI primitives
-│   ├── client/              # Generated API client
+│   ├── api/
+│   │   ├── client.ts        # Memory Service API client
+│   │   ├── cognitive-client.ts  # Cognitive Memory API client
+│   │   └── generated/       # Generated API types
 │   ├── hooks/               # Custom React hooks
 │   └── lib/
 │       ├── auth.tsx         # Authentication context
@@ -116,6 +154,7 @@ The frontend requires admin or auditor role. Users without these roles will see 
 | View entries | ✅ | ✅ |
 | View memories | ✅ | ✅ |
 | Search | ✅ | ✅ |
+| Monitor processes | ✅ | ✅ |
 | Archive conversations | ✅ | ❌ |
 | Delete memories | ✅ | ❌ |
 

@@ -4,14 +4,12 @@ import { useQuery } from "@tanstack/react-query";
 import { GitFork, Loader2, Network } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
-import { ForkPointBadge } from "@/components/ui/fork-point-badge";
-import { TimestampPopover } from "@/components/ui/timestamp-popover";
 import {
-  ContentRenderer,
   getLlmContextEntries,
   LlmContextRenderer,
   type ViewMode,
 } from "@/components/content-renderers";
+import { EntryCard as SharedEntryCard } from "@/components/conversations/EntryCard";
 import { cn } from "@/lib/utils";
 import { useScrollToEntry, useLineageEntries, type EntryWithForkPoint } from "@/hooks";
 import {
@@ -647,69 +645,20 @@ const EntryCard = React.forwardRef<
   }
 >(
   (
-    { entry, formatDate, isHighlighted, onClick, channelFilter, historyViewMode, entryIdLabel, entryIdTitle, children },
+    { entry, formatDate, isHighlighted, onClick, channelFilter, entryIdLabel, entryIdTitle },
     ref,
   ) => {
-    const viewMode = entry.channel === "history" ? historyViewMode : "rendered";
-
-    const getChannelColor = (channel: string) => {
-      switch (channel) {
-        case "history":
-          return "bg-sage-soft text-primary";
-        case "context":
-          return "bg-[#eadccd] text-[#98613d]";
-        default:
-          return "bg-secondary text-muted-foreground";
-      }
-    };
-
     return (
-      <div
+      <SharedEntryCard
         ref={ref}
+        entry={entry}
+        formatDate={formatDate}
+        isHighlighted={isHighlighted}
         onClick={onClick}
-        className={cn(
-          "console-panel cursor-pointer rounded-xl p-4 transition-all duration-300 hover:bg-sage-soft/20",
-          entry.isForkPoint ? "ring-1 ring-primary/20" : "",
-          isHighlighted && "border-primary ring-2 ring-primary ring-offset-2",
-        )}
-      >
-        {/* Header */}
-        <div className="mb-2 flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>{entry.channel}</Badge>
-            {entry.epoch !== undefined && (
-              <Badge className="bg-[#eadccd] text-xs font-medium text-[#98613d]">epoch: {entry.epoch}</Badge>
-            )}
-            <div className="flex min-w-0 flex-1 items-center gap-1">
-              <span className="truncate font-mono text-xs text-muted-foreground" title={entryIdTitle ?? entry.id}>
-                {entryIdLabel ?? entry.id}
-              </span>
-              {!entryIdLabel && <CopyButton value={entry.id || ""} iconSize={3} className="shrink-0" />}
-            </div>
-            {entry.isForkPoint && <ForkPointBadge forksAtPoint={entry.forksAtPoint} channelFilter={channelFilter} />}
-          </div>
-          <div onClick={(e) => e.stopPropagation()}>
-            <TimestampPopover timestamp={entry.createdAt || ""} displayText={formatDate(entry.createdAt || "")} />
-          </div>
-        </div>
-
-        {/* User and content type */}
-        <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-4">{entry.userId && <span>User: {entry.userId}</span>}</div>
-          <div className="flex items-center gap-3">
-            <span>Type: {entry.contentType}</span>
-          </div>
-        </div>
-
-        {/* Content */}
-        {children ?? (
-          <ContentRenderer
-            content={entry.content as unknown[]}
-            contentType={entry.contentType || ""}
-            viewMode={viewMode}
-          />
-        )}
-      </div>
+        channelFilter={channelFilter}
+        entryIdLabel={entryIdLabel}
+        entryIdTitle={entryIdTitle}
+      />
     );
   },
 );
