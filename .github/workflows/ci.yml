@@ -242,7 +242,7 @@ jobs:
             .github/cache/npm-test-java.key
 
       - name: Run Java Tests
-        run: ./java/mvnw -T 1C -f java/pom.xml clean install
+        run: ./java/mvnw -f java/pom.xml clean install
 
       - name: Add JUnit summary to job
         if: always()
