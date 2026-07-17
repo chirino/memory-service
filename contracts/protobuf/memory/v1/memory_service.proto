@@ -97,6 +97,10 @@ message ConversationSummary {
   string started_by_conversation_id = 8;
   bytes started_by_entry_id = 9;
   bool archived = 10;
+  optional string agent_id = 11;
+  google.protobuf.Struct metadata = 12;
+  bytes forked_at_entry_id = 13;
+  string forked_at_conversation_id = 14;
 }
 
 message ChildConversationSummary {
@@ -110,6 +114,7 @@ message ChildConversationSummary {
   AccessLevel access_level = 7;
   bytes started_by_entry_id = 8;
   bool archived = 9;
+  string started_by_conversation_id = 10;
 }
 
 message Conversation {
@@ -132,6 +137,8 @@ message Conversation {
   bytes started_by_entry_id = 12;
   string agent_id = 13;
   bool archived = 14;
+  google.protobuf.Struct metadata = 15;
+  bool has_response_in_progress = 16;
 }
 
 message ConversationMembership {
@@ -161,6 +168,11 @@ message CreateConversationRequest {
   string title = 1;
   google.protobuf.Struct metadata = 2;
   optional string agent_id = 3;
+  // Optional client-supplied conversation ID. When provided, the server
+  // creates the conversation with this ID instead of generating one.
+  optional string id = 4;
+  optional string forked_at_conversation_id = 5;
+  optional bytes forked_at_entry_id = 6; // UUID as 16-byte big-endian
 }
 
 message ListConversationsRequest {
@@ -189,6 +201,7 @@ message UpdateConversationRequest {
   string conversation_id = 1;
   optional string title = 2;
   optional bool archived = 3;
+  optional google.protobuf.Struct metadata = 4;
 }
 
 message ListForksRequest {
@@ -278,6 +291,18 @@ message AppendEntryRequest {
   // Conversation identifier
   string conversation_id = 1;
   CreateEntryRequest entry = 2;
+  optional int64 epoch = 3;
+}
+
+message AppendEntriesRequest {
+  // Conversation identifier
+  string conversation_id = 1;
+  repeated CreateEntryRequest entries = 2;
+  optional int64 epoch = 3;
+}
+
+message AppendEntriesResponse {
+  repeated Entry entries = 1;
 }
 
 message ListEntriesRequest {
@@ -301,6 +326,8 @@ message ListEntriesRequest {
   // When true, return the last page_size entries (newest page). Mutually exclusive with
   // page.page_token and before_page_token.
   optional bool tail = 9;
+  // Optional agent identity filter. Requires an authenticated client ID.
+  optional string agent_id = 10;
 }
 
 message ListEntriesResponse {
@@ -482,6 +509,10 @@ message Entry {
   string created_at = 8;
   // Optional client-assigned sequence number, unique within the conversation.
   optional uint32 seq = 9;
+  optional string agent_id = 10;
+  optional string indexed_content = 11;
+  optional google.protobuf.Timestamp indexed_at = 12;
+  optional string client_id = 13;
 }
 
 message ListMembershipsRequest {
@@ -566,12 +597,17 @@ message DeleteOwnershipTransferRequest {
 
 message SearchEntriesRequest {
   string query = 1;
-  // Cursor for pagination; returns items after this result
+  // Cursor for pagination; uses the same opaque token format as REST afterCursor.
   string after = 2;
   // Maximum number of results to return (default 20)
   int32 limit = 3;
   // Whether to include the full entry in results. Defaults to true.
   optional bool include_entry = 4;
+  // Optional search type list. Supported values: "auto", "semantic", "fulltext".
+  // Empty defaults to "auto".
+  repeated string search_type = 5;
+  // Whether to collapse results to one item per conversation. Defaults to true.
+  optional bool group_by_conversation = 6;
 }
 
 message SearchEntriesResponse {
@@ -948,6 +984,7 @@ service OwnershipTransfersService {
 service EntriesService {
   rpc ListEntries(ListEntriesRequest) returns (ListEntriesResponse);
   rpc AppendEntry(AppendEntryRequest) returns (Entry);
+  rpc AppendEntries(AppendEntriesRequest) returns (AppendEntriesResponse);
   rpc SyncEntries(SyncEntriesRequest) returns (SyncEntriesResponse);
 }
 
@@ -1000,6 +1037,32 @@ service MemoriesService {
   rpc UpdateMemory(UpdateMemoryRequest) returns (google.protobuf.Empty);
   rpc SearchMemories(SearchMemoriesRequest) returns (SearchMemoriesResponse);
   rpc ListMemoryNamespaces(ListMemoryNamespacesRequest) returns (ListMemoryNamespacesResponse);
+  rpc ListMemoryEvents(ListMemoryEventsRequest) returns (ListMemoryEventsResponse);
+}
+
+message ListMemoryEventsRequest {
+  repeated string namespace = 1;
+  repeated string kinds = 2;
+  optional google.protobuf.Timestamp after = 3;
+  optional google.protobuf.Timestamp before = 4;
+  optional string after_cursor = 5;
+  int32 limit = 6;
+}
+
+message MemoryEventItem {
+  bytes id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  string kind = 4;
+  google.protobuf.Timestamp occurred_at = 5;
+  google.protobuf.Struct value = 6;
+  google.protobuf.Struct attributes = 7;
+  optional google.protobuf.Timestamp expires_at = 8;
+}
+
+message ListMemoryEventsResponse {
+  repeated MemoryEventItem events = 1;
+  optional string after_cursor = 2;
 }
 
 service AdminMemoriesService {
@@ -1090,12 +1153,15 @@ service AttachmentsService {
   // Subsequent messages contain file data chunks.
   // Server responds once the upload is complete or an error occurs.
   rpc UploadAttachment(stream UploadAttachmentRequest) returns (UploadAttachmentResponse);
+  rpc CreateAttachmentFromUrl(CreateAttachmentFromUrlRequest) returns (UploadAttachmentResponse);
 
   // Retrieve attachment metadata (not the file content).
   rpc GetAttachment(GetAttachmentRequest) returns (AttachmentInfo);
 
   // Download a file as a stream of chunks.
   rpc DownloadAttachment(DownloadAttachmentRequest) returns (stream DownloadAttachmentResponse);
+  rpc DeleteAttachment(DeleteAttachmentRequest) returns (google.protobuf.Empty);
+  rpc GetAttachmentDownloadUrl(GetAttachmentDownloadUrlRequest) returns (AttachmentDownloadUrlResponse);
 }
 
 message UploadAttachmentRequest {
@@ -1114,6 +1180,12 @@ message UploadMetadata {
   string expires_in = 3;
 }
 
+message CreateAttachmentFromUrlRequest {
+  string source_url = 1;
+  string content_type = 2;
+  string filename = 3;
+}
+
 message UploadAttachmentResponse {
   string id = 1;
   string href = 2;
@@ -1122,6 +1194,8 @@ message UploadAttachmentResponse {
   int64 size = 5;
   string sha256 = 6;
   string expires_at = 7;
+  string status = 8;
+  string source_url = 9;
 }
 
 message GetAttachmentRequest {
@@ -1137,10 +1211,28 @@ message AttachmentInfo {
   string sha256 = 6;
   string expires_at = 7;
   string created_at = 8;
+  string status = 9;
+  string source_url = 10;
+  optional bytes entry_id = 11;
 }
 
 message DownloadAttachmentRequest {
   string id = 1;
+}
+
+message DeleteAttachmentRequest {
+  string id = 1;
+}
+
+message GetAttachmentDownloadUrlRequest {
+  string id = 1;
+  optional string disposition = 2;
+}
+
+message AttachmentDownloadUrlResponse {
+  string url = 1;
+  int32 expires_in = 2;
+  string status = 3;
 }
 
 message DownloadAttachmentResponse {

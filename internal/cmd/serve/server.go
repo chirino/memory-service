@@ -72,6 +72,16 @@ func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
 
 // BuildServer initializes all subsystems without binding any network listeners.
 func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
+	// Initialize Prometheus metrics before startup validation because validation
+	// can record unsafe-config acknowledgements. BDD starts scenario servers
+	// concurrently under the race detector, so all goroutines must pass through
+	// the metrics sync.Once before any validation path reads metric collectors.
+	metricsLabels, err := security.ParseMetricsLabels(cfg.MetricsLabels)
+	if err != nil {
+		return nil, fmt.Errorf("invalid --metrics-labels: %w", err)
+	}
+	security.InitMetrics(metricsLabels)
+
 	if err := validateStartupConfig(cfg); err != nil {
 		return nil, err
 	}
@@ -86,13 +96,6 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		"vector", cfg.VectorType,
 		"embedding", cfg.EmbedType,
 	)
-
-	// Initialize Prometheus metrics with configured constant labels.
-	metricsLabels, err := security.ParseMetricsLabels(cfg.MetricsLabels)
-	if err != nil {
-		return nil, fmt.Errorf("invalid --metrics-labels: %w", err)
-	}
-	security.InitMetrics(metricsLabels)
 
 	// Initialize embedder early so vector store migrations can use the detected dimension
 	var embedder registryembed.Embedder
@@ -365,13 +368,13 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
-	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
+	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store, EventBus: eventBus})
 	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store, EventBus: eventBus})
 	pb.RegisterAdminEntriesServiceServer(grpcServer, &grpcserver.AdminEntriesServer{Store: store})
 	pb.RegisterAdminConversationsServiceServer(grpcServer, &grpcserver.AdminConversationsServer{Store: store, Config: cfg})
-	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store})
+	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store, EventBus: eventBus})
 	pb.RegisterOwnershipTransfersServiceServer(grpcServer, &grpcserver.TransfersServer{Store: store})
-	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg})
+	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg, Embedder: embedder, VectorStore: vectorStore})
 	pb.RegisterMemoriesServiceServer(grpcServer, &grpcserver.MemoriesServer{
 		Store:    episodicStore,
 		Policy:   episodicPolicy,
@@ -389,6 +392,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		AttachStore: attachStore,
 		MaxBodySize: cfg.AttachmentMaxSize,
 		Config:      cfg,
+		SigningKeys: attachSigningKeys,
 	})
 	pb.RegisterResponseRecorderServiceServer(grpcServer, &grpcserver.ResponseRecorderServer{
 		Resumer:  resumer,

@@ -2,16 +2,19 @@ package grpc
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/url"
 	"os"
 	"runtime/debug"
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/charmbracelet/log"
@@ -19,11 +22,13 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/chirino/memory-service/internal/model"
+	routeattachments "github.com/chirino/memory-service/internal/plugin/route/attachments"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
 	servicecapabilities "github.com/chirino/memory-service/internal/service/capabilities"
@@ -64,6 +69,17 @@ func uuidFromBytesPtr(b []byte) *uuid.UUID {
 		return nil
 	}
 	return &id
+}
+
+func uuidFromBytes(b []byte) (*uuid.UUID, error) {
+	if len(b) == 0 {
+		return nil, nil
+	}
+	id, err := bytesToUUID(b)
+	if err != nil {
+		return nil, err
+	}
+	return &id, nil
 }
 
 func requiredConversationID(raw string) (string, error) {
@@ -194,6 +210,26 @@ func mapError(err error) error {
 	default:
 		log.Error("gRPC request failed", "error", err, "stack", string(debug.Stack()))
 		return status.Error(codes.Internal, "internal server error")
+	}
+}
+
+func appendOutboxOrUseEvents(ctx context.Context, store registrystore.MemoryStore, events []registryeventbus.Event) ([]registryeventbus.Event, error) {
+	appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
+	if err != nil {
+		return nil, err
+	}
+	if used {
+		return appended, nil
+	}
+	return events, nil
+}
+
+func publishGRPCEvents(ctx context.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus, events []registryeventbus.Event, label string) {
+	if eventBus == nil || len(events) == 0 {
+		return
+	}
+	if err := eventstream.PublishEvents(ctx, store, eventBus, events...); err != nil {
+		log.Warn("Failed to publish gRPC events", "label", label, "err", err)
 	}
 }
 
@@ -350,7 +386,8 @@ func mapCapabilitiesSummary(summary servicecapabilities.Summary) *pb.Capabilitie
 
 type ConversationsServer struct {
 	pb.UnimplementedConversationsServiceServer
-	Store registrystore.MemoryStore
+	Store    registrystore.MemoryStore
+	EventBus registryeventbus.EventBus
 }
 
 func protoArchiveFilterToEpisodic(filter pb.ArchiveFilter) registryepisodic.ArchiveFilter {
@@ -431,7 +468,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 		PageInfo: &pb.PageInfo{},
 	}
 	for _, cs := range summaries {
-		resp.Conversations = append(resp.Conversations, &pb.ConversationSummary{
+		item := &pb.ConversationSummary{
 			Id:          string(cs.ID),
 			Title:       cs.Title,
 			OwnerUserId: cs.OwnerUserID,
@@ -439,13 +476,28 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
 			AccessLevel: mapAccessLevel(cs.AccessLevel),
 			Archived:    cs.ArchivedAt != nil,
-		})
+		}
 		if cs.StartedByConversationID != nil {
-			resp.Conversations[len(resp.Conversations)-1].StartedByConversationId = string(*cs.StartedByConversationID)
+			item.StartedByConversationId = string(*cs.StartedByConversationID)
 		}
 		if cs.StartedByEntryID != nil {
-			resp.Conversations[len(resp.Conversations)-1].StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
+			item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
 		}
+		if cs.AgentID != nil {
+			item.AgentId = cs.AgentID
+		}
+		if cs.Metadata != nil {
+			if metadata, err := structpb.NewStruct(cs.Metadata); err == nil {
+				item.Metadata = metadata
+			}
+		}
+		if cs.ForkedAtEntryID != nil {
+			item.ForkedAtEntryId = uuidToBytes(*cs.ForkedAtEntryID)
+		}
+		if cs.ForkedAtConversationID != nil {
+			item.ForkedAtConversationId = string(*cs.ForkedAtConversationID)
+		}
+		resp.Conversations = append(resp.Conversations, item)
 	}
 	if cursor != nil {
 		resp.PageInfo.NextPageToken = *cursor
@@ -466,15 +518,72 @@ func (s *ConversationsServer) CreateConversation(ctx context.Context, req *pb.Cr
 	if req.GetMetadata() != nil {
 		meta = req.GetMetadata().AsMap()
 	}
+	if len(req.GetTitle()) > 500 {
+		return nil, status.Error(codes.InvalidArgument, "title exceeds maximum length")
+	}
 
+	var convID *string
+	if req.Id != nil {
+		id := strings.TrimSpace(req.GetId())
+		if id == "" {
+			return nil, status.Error(codes.InvalidArgument, "invalid id")
+		}
+		convID = &id
+	}
+
+	agentID := stringPtrIfNotEmpty(req.GetAgentId())
+	var forkConvID *string
+	if req.ForkedAtConversationId != nil {
+		id := strings.TrimSpace(req.GetForkedAtConversationId())
+		if id == "" {
+			return nil, status.Error(codes.InvalidArgument, "invalid forked_at_conversation_id")
+		}
+		forkConvID = &id
+	}
+	var forkEntryID *uuid.UUID
+	if len(req.GetForkedAtEntryId()) > 0 {
+		id, err := bytesToUUID(req.GetForkedAtEntryId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid forked_at_entry_id")
+		}
+		forkEntryID = &id
+	}
+
+	var eventsToPublish []registryeventbus.Event
 	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
 		clientID := getClientID(ctx)
-		return s.Store.CreateConversation(txCtx, userID, clientID, req.GetTitle(), meta, nil, nil, nil)
+		var conv *registrystore.ConversationDetail
+		var err error
+		if convID != nil {
+			conv, err = s.Store.CreateConversationWithID(txCtx, userID, clientID, *convID, req.GetTitle(), meta, agentID, forkConvID, forkEntryID)
+		} else {
+			conv, err = s.Store.CreateConversation(txCtx, userID, clientID, req.GetTitle(), meta, agentID, forkConvID, forkEntryID)
+		}
+		if err != nil {
+			return nil, err
+		}
+		if s.EventBus != nil && conv != nil {
+			events := []registryeventbus.Event{{
+				Event: "created",
+				Kind:  "conversation",
+				Data: map[string]any{
+					"conversation":       conv.ID,
+					"conversation_group": conv.ConversationGroupID,
+				},
+				ConversationGroupID: conv.ConversationGroupID,
+			}}
+			eventsToPublish, err = appendOutboxOrUseEvents(txCtx, s.Store, events)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return conv, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
 
+	publishGRPCEvents(ctx, s.Store, s.EventBus, eventsToPublish, "conversation")
 	return conversationToProto(conv), nil
 }
 
@@ -517,19 +626,32 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 
 	var title *string
 	if req.Title != nil {
+		if len(req.GetTitle()) > 500 {
+			return nil, status.Error(codes.InvalidArgument, "title exceeds maximum length")
+		}
 		title = req.Title
 	}
 	var archived *bool
 	if req.Archived != nil {
 		archived = req.Archived
 	}
+	var metadata map[string]any
+	if req.GetMetadata() != nil {
+		metadata = req.GetMetadata().AsMap()
+	}
 
+	var eventsToPublish []registryeventbus.Event
 	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
+		var conv *registrystore.ConversationDetail
+		var err error
+		eventData := map[string]any{}
+		var memberUserIDs []string
 		if archived != nil {
-			conv, err := s.Store.GetConversation(txCtx, userID, convID)
+			conv, err = s.Store.GetConversation(txCtx, userID, convID)
 			if err != nil {
 				return nil, err
 			}
+			memberUserIDs, _ = s.Store.GetGroupMemberUserIDs(txCtx, conv.ConversationGroupID)
 			if *archived {
 				if err := s.Store.ArchiveConversation(txCtx, userID, convID); err != nil {
 					return nil, err
@@ -542,13 +664,41 @@ func (s *ConversationsServer) UpdateConversation(ctx context.Context, req *pb.Up
 				}
 				conv.ArchivedAt = nil
 			}
-			return conv, nil
+			eventData = map[string]any{
+				"conversation":       conv.ID,
+				"conversation_group": conv.ConversationGroupID,
+				"members":            memberUserIDs,
+				"archived":           *archived,
+			}
+		} else {
+			conv, err = s.Store.UpdateConversation(txCtx, userID, convID, title, metadata)
+			if err != nil {
+				return nil, err
+			}
+			eventData = map[string]any{
+				"conversation":       conv.ID,
+				"conversation_group": conv.ConversationGroupID,
+			}
 		}
-		return s.Store.UpdateConversation(txCtx, userID, convID, title, nil)
+		if s.EventBus != nil && conv != nil {
+			events := []registryeventbus.Event{{
+				Event:               "updated",
+				Kind:                "conversation",
+				Data:                eventData,
+				ConversationGroupID: conv.ConversationGroupID,
+				UserIDs:             append([]string(nil), memberUserIDs...),
+			}}
+			eventsToPublish, err = appendOutboxOrUseEvents(txCtx, s.Store, events)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return conv, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
+	publishGRPCEvents(ctx, s.Store, s.EventBus, eventsToPublish, "conversation")
 	return conversationToProto(conv), nil
 }
 
@@ -640,6 +790,9 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 		if cs.StartedByEntryID != nil {
 			item.StartedByEntryId = uuidToBytes(*cs.StartedByEntryID)
 		}
+		if cs.StartedByConversationID != nil {
+			item.StartedByConversationId = string(*cs.StartedByConversationID)
+		}
 		resp.Conversations = append(resp.Conversations, item)
 	}
 	if cursor != nil {
@@ -650,13 +803,14 @@ func (s *ConversationsServer) ListChildConversations(ctx context.Context, req *p
 
 func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversation {
 	c := &pb.Conversation{
-		Id:          string(conv.ID),
-		Title:       conv.Title,
-		OwnerUserId: conv.OwnerUserID,
-		CreatedAt:   conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:   conv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-		AccessLevel: mapAccessLevel(conv.AccessLevel),
-		Archived:    conv.ArchivedAt != nil,
+		Id:                    string(conv.ID),
+		Title:                 conv.Title,
+		OwnerUserId:           conv.OwnerUserID,
+		CreatedAt:             conv.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:             conv.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel:           mapAccessLevel(conv.AccessLevel),
+		Archived:              conv.ArchivedAt != nil,
+		HasResponseInProgress: conv.HasResponseInProgress,
 	}
 	if conv.ForkedAtEntryID != nil {
 		c.ForkedAtEntryId = uuidToBytes(*conv.ForkedAtEntryID)
@@ -669,6 +823,14 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 	}
 	if conv.StartedByEntryID != nil {
 		c.StartedByEntryId = uuidToBytes(*conv.StartedByEntryID)
+	}
+	if conv.AgentID != nil {
+		c.AgentId = *conv.AgentID
+	}
+	if conv.Metadata != nil {
+		if metadata, err := structpb.NewStruct(conv.Metadata); err == nil {
+			c.Metadata = metadata
+		}
 	}
 	return c
 }
@@ -776,7 +938,7 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 20)
+	limit, err := grpcPageSize(ctx, req.GetPage().GetPageSize(), 50)
 	if err != nil {
 		return nil, err
 	}
@@ -824,14 +986,18 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		upToEntryID = &value
 	}
 
-	channel := model.ChannelHistory
+	var channelPtr *model.Channel
 	switch req.GetChannel() {
 	case pb.Channel_CONTEXT:
-		channel = model.ChannelContext
+		ch := model.ChannelContext
+		channelPtr = &ch
 	case pb.Channel_JOURNAL:
-		channel = model.ChannelJournal
-	case pb.Channel_HISTORY, pb.Channel_CHANNEL_UNSPECIFIED:
-		channel = model.ChannelHistory
+		ch := model.ChannelJournal
+		channelPtr = &ch
+	case pb.Channel_HISTORY:
+		ch := model.ChannelHistory
+		channelPtr = &ch
+	case pb.Channel_CHANNEL_UNSPECIFIED:
 	default:
 		return nil, status.Error(codes.InvalidArgument, "invalid channel")
 	}
@@ -842,13 +1008,26 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 		clientIDPtr = &clientID
 	}
 	var agentIDPtr *string
+	if req.AgentId != nil {
+		agentID := strings.TrimSpace(req.GetAgentId())
+		if agentID != "" {
+			if clientIDPtr == nil {
+				return nil, status.Error(codes.InvalidArgument, "agent_id requires an authenticated client")
+			}
+			agentIDPtr = &agentID
+		}
+	}
 
 	var epochFilter *registrystore.MemoryEpochFilter
+	if channelPtr == nil && clientIDPtr == nil {
+		ch := model.ChannelHistory
+		channelPtr = &ch
+	}
 	// Explicit context/journal channel requests without a client id are forbidden.
-	if (channel == model.ChannelContext || channel == model.ChannelJournal) && clientIDPtr == nil {
+	if channelPtr != nil && (*channelPtr == model.ChannelContext || *channelPtr == model.ChannelJournal) && clientIDPtr == nil {
 		return nil, status.Error(codes.PermissionDenied, "channel requires an authenticated client id")
 	}
-	if channel == model.ChannelContext {
+	if channelPtr != nil && *channelPtr == model.ChannelContext {
 		filter, err := registrystore.ParseMemoryEpochFilter(req.GetEpochFilter())
 		if err != nil {
 			return nil, status.Error(codes.InvalidArgument, err.Error())
@@ -866,7 +1045,7 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 			Tail:         tail,
 			UpToEntryID:  upToEntryID,
 			Limit:        limit,
-			Channel:      &channel,
+			Channel:      channelPtr,
 			EpochFilter:  epochFilter,
 			ClientID:     clientIDPtr,
 			AgentID:      agentIDPtr,
@@ -1341,108 +1520,184 @@ func (s *AdminConversationsServer) ListChildConversations(ctx context.Context, r
 }
 
 func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequest) (*pb.Entry, error) {
+	if req.GetEntry() == nil {
+		return nil, status.Error(codes.InvalidArgument, "entry is required")
+	}
+	entries, err := s.appendEntries(ctx, req.GetConversationId(), []*pb.CreateEntryRequest{req.GetEntry()}, req.Epoch)
+	if err != nil {
+		return nil, err
+	}
+	if len(entries) == 0 {
+		return nil, status.Error(codes.Internal, "internal server error")
+	}
+	return entryToProto(&entries[0]), nil
+}
+
+func (s *EntriesServer) AppendEntries(ctx context.Context, req *pb.AppendEntriesRequest) (*pb.AppendEntriesResponse, error) {
+	if len(req.GetEntries()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one entry is required")
+	}
+	entries, err := s.appendEntries(ctx, req.GetConversationId(), req.GetEntries(), req.Epoch)
+	if err != nil {
+		return nil, err
+	}
+	resp := &pb.AppendEntriesResponse{Entries: make([]*pb.Entry, 0, len(entries))}
+	for i := range entries {
+		resp.Entries = append(resp.Entries, entryToProto(&entries[i]))
+	}
+	return resp, nil
+}
+
+type grpcAppendEntry struct {
+	request *pb.CreateEntryRequest
+	store   registrystore.CreateEntryRequest
+}
+
+type grpcPendingAttachmentLink struct {
+	attachmentID uuid.UUID
+	entryIndex   int
+}
+
+func (s *EntriesServer) appendEntries(ctx context.Context, conversationID string, reqEntries []*pb.CreateEntryRequest, epoch *int64) ([]model.Entry, error) {
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
-
-	clientID := getClientID(ctx)
-	if clientID == "" {
-		return nil, status.Error(codes.PermissionDenied, "API key (X-Client-ID) required for append")
-	}
 	if err := requireGRPCOIDCScope(ctx, security.PermissionConversationsWrite); err != nil {
 		return nil, err
 	}
-
-	convID, err := requiredConversationID(req.GetConversationId())
+	convID, err := requiredConversationID(conversationID)
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
-	entry := req.GetEntry()
-	var agentIDPtr *string
-	if entry.GetAgentId() != "" {
-		value := entry.GetAgentId()
-		agentIDPtr = &value
-	}
-	ch := "history"
-	switch entry.GetChannel() {
-	case pb.Channel_CONTEXT:
-		ch = string(model.ChannelContext)
-	case pb.Channel_JOURNAL:
-		ch = string(model.ChannelJournal)
+	clientID := getClientID(ctx)
+	var clientIDPtr *string
+	if clientID != "" {
+		clientIDPtr = &clientID
 	}
 
-	// Validate history channel entries
-	if ch == "history" {
-		ct := entry.GetContentType()
-		if ct != "history" && !strings.HasPrefix(ct, "history/") {
-			return nil, status.Error(codes.InvalidArgument, "History channel entries must use 'history' or 'history/<subtype>' as the contentType")
+	appendEntries := make([]grpcAppendEntry, 0, len(reqEntries))
+	var agentIDPtr *string
+	for i, entry := range reqEntries {
+		if entry == nil {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("entries[%d] is required", i))
 		}
-		if len(entry.GetContent()) != 1 {
-			return nil, status.Error(codes.InvalidArgument, "History channel entries must contain exactly 1 content object")
+		ch := string(model.ChannelHistory)
+		explicitHistory := false
+		switch entry.GetChannel() {
+		case pb.Channel_CONTEXT:
+			ch = string(model.ChannelContext)
+		case pb.Channel_JOURNAL:
+			ch = string(model.ChannelJournal)
+		case pb.Channel_HISTORY:
+			explicitHistory = true
 		}
-		// Validate role field
-		c := entry.GetContent()[0]
-		if sv := c.GetStructValue(); sv != nil {
-			roleField := sv.GetFields()["role"]
-			if roleField == nil || (roleField.GetStringValue() != "USER" && roleField.GetStringValue() != "AI") {
-				return nil, status.Error(codes.InvalidArgument, "History channel content must have a 'role' field with value 'USER' or 'AI'")
+
+		if entry.GetUserId() != "" && entry.GetUserId() != userID {
+			return nil, status.Error(codes.InvalidArgument, "user_id does not match the authenticated user")
+		}
+		if (ch == string(model.ChannelContext) || ch == string(model.ChannelJournal)) && clientID == "" {
+			return nil, status.Error(codes.PermissionDenied, "client id is required for context/journal channel")
+		}
+		if entry.GetAgentId() != "" {
+			entryAgentID := entry.GetAgentId()
+			if agentIDPtr == nil {
+				agentIDPtr = &entryAgentID
+			} else if *agentIDPtr != entryAgentID {
+				return nil, status.Error(codes.InvalidArgument, "all entries in a batch must use the same agent_id")
 			}
 		}
-	}
-
-	var convExistedBefore bool
-	_, _ = withMemoryRead(ctx, s.Store, func(txCtx context.Context) (struct{}, error) {
-		existing, _ := s.Store.GetConversation(txCtx, userID, convID)
-		convExistedBefore = existing != nil
-		return struct{}{}, nil
-	})
-
-	// Handle fork metadata: if conversation doesn't exist and fork metadata is provided, create it
-	if len(entry.GetForkedAtConversationId()) > 0 {
-		forkedAtConvID, ferr := requiredConversationID(entry.GetForkedAtConversationId())
-		if ferr != nil {
+		if agentIDPtr != nil && clientID == "" {
+			return nil, status.Error(codes.InvalidArgument, "agent_id requires an authenticated client")
+		}
+		if strings.TrimSpace(entry.GetContentType()) == "" {
+			return nil, status.Error(codes.InvalidArgument, "content_type is required")
+		}
+		if ch != string(model.ChannelHistory) && entry.IndexedContent != nil {
+			return nil, status.Error(codes.InvalidArgument, "indexed_content is only allowed on history channel")
+		}
+		if len(entry.GetContent()) > 1000 {
+			return nil, status.Error(codes.InvalidArgument, fmt.Sprintf("content array exceeds maximum of 1000 elements (got %d)", len(entry.GetContent())))
+		}
+		if ch == string(model.ChannelHistory) && explicitHistory {
+			ct := entry.GetContentType()
+			if ct != "history" && !strings.HasPrefix(ct, "history/") {
+				return nil, status.Error(codes.InvalidArgument, "History channel entries must use 'history' or 'history/<subtype>' as the contentType")
+			}
+			if len(entry.GetContent()) != 1 {
+				return nil, status.Error(codes.InvalidArgument, "History channel entries must contain exactly 1 content object")
+			}
+			c := entry.GetContent()[0]
+			if sv := c.GetStructValue(); sv != nil {
+				roleField := sv.GetFields()["role"]
+				if roleField == nil || (roleField.GetStringValue() != "USER" && roleField.GetStringValue() != "AI") {
+					return nil, status.Error(codes.InvalidArgument, "History channel content must have a 'role' field with value 'USER' or 'AI'")
+				}
+			}
+		}
+		forkedAtConvID := optionalConversationID(entry.GetForkedAtConversationId())
+		if entry.GetForkedAtConversationId() != "" && forkedAtConvID == nil {
 			return nil, status.Error(codes.InvalidArgument, "invalid forked_at_conversation_id")
 		}
-		var forkedAtEntryID *uuid.UUID
-		if len(entry.GetForkedAtEntryId()) > 0 {
-			id, ferr := bytesToUUID(entry.GetForkedAtEntryId())
-			if ferr != nil {
-				return nil, status.Error(codes.InvalidArgument, "invalid forked_at_entry_id")
-			}
-			forkedAtEntryID = &id
+		forkedAtEntryID, err := uuidFromBytes(entry.GetForkedAtEntryId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid forked_at_entry_id")
 		}
-		if !convExistedBefore {
-			_, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
-				clientID := getClientID(ctx)
-				return s.Store.CreateConversationWithID(txCtx, userID, clientID, convID, "", nil, nil, &forkedAtConvID, forkedAtEntryID)
-			})
-			if err != nil {
-				return nil, mapError(err)
-			}
+		startedByEntryID, err := uuidFromBytes(entry.GetStartedByEntryId())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid started_by_entry_id")
 		}
-	}
-
-	var content json.RawMessage
-	if len(entry.GetContent()) > 0 {
-		list, _ := structpb.NewList(nil)
-		list.Values = append(list.Values, entry.GetContent()...)
-		content, _ = list.MarshalJSON()
+		content, err := protoValuesToRawJSON(entry.GetContent())
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "content must be valid JSON")
+		}
+		appendEntries = append(appendEntries, grpcAppendEntry{
+			request: entry,
+			store: registrystore.CreateEntryRequest{
+				Content:                 content,
+				ContentType:             entry.GetContentType(),
+				Channel:                 ch,
+				IndexedContent:          entry.IndexedContent,
+				UserID:                  stringPtrIfNotEmpty(entry.GetUserId()),
+				AgentID:                 stringPtrIfNotEmpty(entry.GetAgentId()),
+				ForkedAtConversationID:  forkedAtConvID,
+				ForkedAtEntryID:         forkedAtEntryID,
+				Seq:                     entry.Seq,
+				StartedByConversationID: optionalConversationID(entry.GetStartedByConversationId()),
+				StartedByEntryID:        startedByEntryID,
+			},
+		})
 	}
 
 	var eventsToPublish []registryeventbus.Event
 	entries, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) ([]model.Entry, error) {
-		entries, err := s.Store.AppendEntries(txCtx, userID, convID, []registrystore.CreateEntryRequest{{
-			Content:                 content,
-			ContentType:             entry.GetContentType(),
-			Channel:                 ch,
-			AgentID:                 agentIDPtr,
-			Seq:                     entry.Seq,
-			StartedByConversationID: optionalConversationID(entry.GetStartedByConversationId()),
-			StartedByEntryID:        uuidFromBytesPtr(entry.GetStartedByEntryId()),
-		}}, &clientID, agentIDPtr, nil)
+		existing, _ := s.Store.GetConversation(txCtx, userID, convID)
+		convExistedBefore := existing != nil
+
+		storeEntries := make([]registrystore.CreateEntryRequest, 0, len(appendEntries))
+		var pendingLinks []grpcPendingAttachmentLink
+		for i, appendEntry := range appendEntries {
+			if appendEntry.store.Channel == string(model.ChannelHistory) {
+				modified, links, err := resolveGRPCAttachmentRefs(txCtx, s.Store, userID, convID, appendEntry.store.Content)
+				if err != nil {
+					return nil, err
+				}
+				if modified != nil {
+					appendEntry.store.Content = modified
+				}
+				for _, id := range links {
+					pendingLinks = append(pendingLinks, grpcPendingAttachmentLink{attachmentID: id, entryIndex: i})
+				}
+			}
+			storeEntries = append(storeEntries, appendEntry.store)
+		}
+
+		entries, err := s.Store.AppendEntries(txCtx, userID, convID, storeEntries, clientIDPtr, agentIDPtr, epoch)
 		if err != nil {
+			return nil, err
+		}
+		if err := linkGRPCAttachmentLinks(txCtx, s.Store, userID, entries, pendingLinks); err != nil {
 			return nil, err
 		}
 		if s.EventBus != nil && len(entries) > 0 {
@@ -1456,11 +1711,8 @@ func (s *EntriesServer) AppendEntry(ctx context.Context, req *pb.AppendEntryRequ
 	if err != nil {
 		return nil, mapError(err)
 	}
-	if len(entries) == 0 {
-		return nil, status.Error(codes.Internal, "internal server error")
-	}
 	s.publishEntryEvents(ctx, eventsToPublish)
-	return entryToProto(&entries[0]), nil
+	return entries, nil
 }
 
 func (s *EntriesServer) SyncEntries(ctx context.Context, req *pb.SyncEntriesRequest) (*pb.SyncEntriesResponse, error) {
@@ -1577,6 +1829,126 @@ func (s *EntriesServer) publishEntryEvents(ctx context.Context, events []registr
 	}
 }
 
+func protoValuesToRawJSON(values []*structpb.Value) (json.RawMessage, error) {
+	if len(values) == 0 {
+		return nil, nil
+	}
+	list := &structpb.ListValue{Values: append([]*structpb.Value(nil), values...)}
+	return list.MarshalJSON()
+}
+
+func resolveGRPCAttachmentRefs(ctx context.Context, store registrystore.MemoryStore, userID string, convID string, content json.RawMessage) (json.RawMessage, []uuid.UUID, error) {
+	var contentArr []map[string]any
+	if err := json.Unmarshal(content, &contentArr); err != nil {
+		return nil, nil, nil
+	}
+
+	modified := false
+	var linkedIDs []uuid.UUID
+	for ci, contentObj := range contentArr {
+		attachmentsRaw, ok := contentObj["attachments"]
+		if !ok {
+			continue
+		}
+		attachmentsJSON, err := json.Marshal(attachmentsRaw)
+		if err != nil {
+			continue
+		}
+		var attachments []map[string]any
+		if err := json.Unmarshal(attachmentsJSON, &attachments); err != nil {
+			continue
+		}
+		for ai, att := range attachments {
+			attachmentIDStr, ok := att["attachmentId"].(string)
+			if !ok {
+				continue
+			}
+			attachmentID, err := uuid.Parse(attachmentIDStr)
+			if err != nil {
+				continue
+			}
+			attachment, err := store.GetAttachment(ctx, userID, "", attachmentID)
+			if err != nil {
+				return nil, nil, err
+			}
+			if attachment.EntryID != nil {
+				conv, err := store.GetConversation(ctx, userID, convID)
+				if err != nil {
+					return nil, nil, err
+				}
+				sourceGroupID, err := store.GetEntryGroupID(ctx, *attachment.EntryID)
+				if err != nil {
+					return nil, nil, err
+				}
+				if sourceGroupID != conv.ConversationGroupID {
+					return nil, nil, &registrystore.ForbiddenError{}
+				}
+				newAttachment, err := store.CreateAttachment(ctx, userID, "", model.Attachment{
+					StorageKey:  attachment.StorageKey,
+					Filename:    attachment.Filename,
+					ContentType: attachment.ContentType,
+					Size:        attachment.Size,
+					SHA256:      attachment.SHA256,
+					Status:      "ready",
+					ExpiresAt:   attachment.ExpiresAt,
+				})
+				if err != nil {
+					return nil, nil, err
+				}
+				linkedIDs = append(linkedIDs, newAttachment.ID)
+				att["attachmentId"] = newAttachment.ID.String()
+			} else {
+				linkedIDs = append(linkedIDs, attachmentID)
+			}
+			if _, hasCT := att["contentType"]; !hasCT {
+				att["contentType"] = attachment.ContentType
+			}
+			if _, hasName := att["name"]; !hasName && attachment.Filename != nil {
+				att["name"] = *attachment.Filename
+			}
+			attachments[ai] = att
+			modified = true
+		}
+		contentObj["attachments"] = attachments
+		contentArr[ci] = contentObj
+	}
+	if !modified {
+		return nil, linkedIDs, nil
+	}
+	modifiedJSON, err := json.Marshal(contentArr)
+	if err != nil {
+		return nil, nil, err
+	}
+	return modifiedJSON, linkedIDs, nil
+}
+
+func linkGRPCAttachmentRefs(ctx context.Context, store registrystore.MemoryStore, userID string, entries []model.Entry, attachmentIDs []uuid.UUID) error {
+	if len(entries) == 0 || len(attachmentIDs) == 0 {
+		return nil
+	}
+	links := make([]grpcPendingAttachmentLink, 0, len(attachmentIDs))
+	for _, attachmentID := range attachmentIDs {
+		links = append(links, grpcPendingAttachmentLink{attachmentID: attachmentID})
+	}
+	return linkGRPCAttachmentLinks(ctx, store, userID, entries, links)
+}
+
+func linkGRPCAttachmentLinks(ctx context.Context, store registrystore.MemoryStore, userID string, entries []model.Entry, links []grpcPendingAttachmentLink) error {
+	if len(entries) == 0 || len(links) == 0 {
+		return nil
+	}
+	for _, link := range links {
+		if link.entryIndex >= len(entries) {
+			continue
+		}
+		entryID := entries[link.entryIndex].ID
+		if _, err := store.UpdateAttachment(ctx, userID, link.attachmentID, registrystore.AttachmentUpdate{EntryID: &entryID}); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
 func entryToProto(e *model.Entry) *pb.Entry {
 	entry := &pb.Entry{
 		Id:             uuidToBytes(e.ID),
@@ -1588,12 +1960,24 @@ func entryToProto(e *model.Entry) *pb.Entry {
 	if e.UserID != nil {
 		entry.UserId = *e.UserID
 	}
+	if e.ClientID != nil {
+		entry.ClientId = e.ClientID
+	}
 	if e.Epoch != nil {
 		entry.Epoch = *e.Epoch
 	}
 	if e.Seq != nil {
 		v := *e.Seq
 		entry.Seq = &v
+	}
+	if e.AgentID != nil {
+		entry.AgentId = e.AgentID
+	}
+	if e.IndexedContent != nil {
+		entry.IndexedContent = e.IndexedContent
+	}
+	if e.IndexedAt != nil {
+		entry.IndexedAt = timestamppb.New(e.IndexedAt.UTC())
 	}
 	// Content is stored as encrypted bytes; try to parse as JSON values
 	if e.Content != nil {
@@ -1609,7 +1993,8 @@ func entryToProto(e *model.Entry) *pb.Entry {
 
 type MembershipsServer struct {
 	pb.UnimplementedConversationMembershipsServiceServer
-	Store registrystore.MemoryStore
+	Store    registrystore.MemoryStore
+	EventBus registryeventbus.EventBus
 }
 
 func (s *MembershipsServer) ListMemberships(ctx context.Context, req *pb.ListMembershipsRequest) (*pb.ListMembershipsResponse, error) {
@@ -1683,12 +2068,35 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 	}
 
 	level := protoToAccessLevel(req.GetAccessLevel())
+	var eventsToPublish []registryeventbus.Event
 	m, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.ConversationMembership, error) {
-		return s.Store.ShareConversation(txCtx, userID, convID, req.GetUserId(), level)
+		membership, err := s.Store.ShareConversation(txCtx, userID, convID, req.GetUserId(), level)
+		if err != nil {
+			return nil, err
+		}
+		if s.EventBus != nil && membership != nil {
+			events := []registryeventbus.Event{{
+				Event: "created",
+				Kind:  "membership",
+				Data: map[string]any{
+					"conversation_group": membership.ConversationGroupID,
+					"user":               membership.UserID,
+					"role":               membership.AccessLevel,
+				},
+				ConversationGroupID: membership.ConversationGroupID,
+				UserIDs:             []string{membership.UserID},
+			}}
+			eventsToPublish, err = appendOutboxOrUseEvents(txCtx, s.Store, events)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return membership, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
+	publishGRPCEvents(ctx, s.Store, s.EventBus, eventsToPublish, "membership")
 
 	return &pb.ConversationMembership{
 		ConversationId: string(convID),
@@ -1713,12 +2121,35 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 	}
 
 	level := protoToAccessLevel(req.GetAccessLevel())
+	var eventsToPublish []registryeventbus.Event
 	m, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.ConversationMembership, error) {
-		return s.Store.UpdateMembership(txCtx, userID, convID, req.GetMemberUserId(), level)
+		membership, err := s.Store.UpdateMembership(txCtx, userID, convID, req.GetMemberUserId(), level)
+		if err != nil {
+			return nil, err
+		}
+		if s.EventBus != nil && membership != nil {
+			events := []registryeventbus.Event{{
+				Event: "updated",
+				Kind:  "membership",
+				Data: map[string]any{
+					"conversation_group": membership.ConversationGroupID,
+					"user":               membership.UserID,
+					"role":               membership.AccessLevel,
+				},
+				ConversationGroupID: membership.ConversationGroupID,
+				UserIDs:             []string{membership.UserID},
+			}}
+			eventsToPublish, err = appendOutboxOrUseEvents(txCtx, s.Store, events)
+			if err != nil {
+				return nil, err
+			}
+		}
+		return membership, nil
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
+	publishGRPCEvents(ctx, s.Store, s.EventBus, eventsToPublish, "membership")
 
 	return &pb.ConversationMembership{
 		ConversationId: string(convID),
@@ -1742,11 +2173,36 @@ func (s *MembershipsServer) DeleteMembership(ctx context.Context, req *pb.Delete
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
 
+	var eventsToPublish []registryeventbus.Event
 	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.DeleteMembership(txCtx, userID, convID, req.GetMemberUserId())
+		conv, err := s.Store.GetConversation(txCtx, userID, convID)
+		if err != nil {
+			return err
+		}
+		if err := s.Store.DeleteMembership(txCtx, userID, convID, req.GetMemberUserId()); err != nil {
+			return err
+		}
+		if s.EventBus != nil {
+			events := []registryeventbus.Event{{
+				Event: "deleted",
+				Kind:  "membership",
+				Data: map[string]any{
+					"conversation_group": conv.ConversationGroupID,
+					"user":               req.GetMemberUserId(),
+				},
+				ConversationGroupID: conv.ConversationGroupID,
+				UserIDs:             []string{req.GetMemberUserId()},
+			}}
+			eventsToPublish, err = appendOutboxOrUseEvents(txCtx, s.Store, events)
+			if err != nil {
+				return err
+			}
+		}
+		return nil
 	}); err != nil {
 		return nil, mapError(err)
 	}
+	publishGRPCEvents(ctx, s.Store, s.EventBus, eventsToPublish, "membership")
 	return &emptypb.Empty{}, nil
 }
 
@@ -1940,12 +2396,19 @@ func (s *TransfersServer) DeleteOwnershipTransfer(ctx context.Context, req *pb.D
 
 type SearchServer struct {
 	pb.UnimplementedSearchServiceServer
-	Store  registrystore.MemoryStore
-	Config *config.Config
+	Store       registrystore.MemoryStore
+	Config      *config.Config
+	Embedder    registryembed.Embedder
+	VectorStore registryvector.VectorStore
 }
 
-// isIndexer checks if the user has the indexer or admin role based on config.
-func (s *SearchServer) isIndexer(userID string) bool {
+// isIndexer checks if the caller has the resolved indexer/admin role, matching
+// REST role middleware behavior, then falls back to configured user lists for
+// compatibility with existing raw-bearer fixture and local-user modes.
+func (s *SearchServer) isIndexer(ctx context.Context, userID string) bool {
+	if hasGRPCRole(ctx, security.RoleIndexer) || hasGRPCRole(ctx, security.RoleAdmin) {
+		return true
+	}
 	if s.Config == nil {
 		return false
 	}
@@ -1978,8 +2441,9 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchRead); err != nil {
 		return nil, err
 	}
-	if s.Config != nil && !s.Config.SearchFulltextEnabled {
-		return nil, status.Error(codes.Unavailable, "full-text search is disabled")
+	query := strings.TrimSpace(req.GetQuery())
+	if query == "" {
+		return nil, status.Error(codes.InvalidArgument, "query is required")
 	}
 
 	limit, err := grpcPageSize(ctx, req.GetLimit(), 20)
@@ -1990,13 +2454,23 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	if req.IncludeEntry != nil {
 		includeEntry = *req.IncludeEntry
 	}
-	var afterCursor *string
-	if v := strings.TrimSpace(req.GetAfter()); v != "" {
-		afterCursor = &v
+	groupByConversation := true
+	if req.GroupByConversation != nil {
+		groupByConversation = *req.GroupByConversation
 	}
+	searchTypes, err := grpcSearchTypes(req.GetSearchType())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	cursorMap, cursorTypes, err := decodeGRPCSearchCursor(req.GetAfter(), searchTypes)
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	semanticAvailable := s.Config != nil && s.Config.SearchSemanticEnabled && s.Embedder != nil && s.VectorStore != nil && s.VectorStore.IsEnabled()
+	fulltextAvailable := s.Config == nil || s.Config.SearchFulltextEnabled
 
 	results, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.SearchResults, error) {
-		return s.Store.SearchEntries(txCtx, userID, req.GetQuery(), afterCursor, limit, includeEntry, false)
+		return s.searchEntriesInTx(txCtx, userID, query, searchTypes, cursorMap, cursorTypes, limit, includeEntry, groupByConversation, semanticAvailable, fulltextAvailable)
 	})
 	if err != nil {
 		return nil, mapError(err)
@@ -2026,27 +2500,349 @@ func (s *SearchServer) SearchConversations(ctx context.Context, req *pb.SearchEn
 	return resp, nil
 }
 
+const (
+	grpcSearchTypeAuto     = "auto"
+	grpcSearchTypeSemantic = "semantic"
+	grpcSearchTypeFulltext = "fulltext"
+)
+
+type grpcSearchCursorToken struct {
+	Types   []string          `json:"types"`
+	Cursors map[string]string `json:"cursors"`
+}
+
+func decodeGRPCSearchCursor(raw string, requestedTypes []string) (map[string]string, []string, error) {
+	cursorMap := map[string]string{}
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return cursorMap, nil, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		// Compatibility with older gRPC clients that used a raw entry UUID cursor.
+		if _, uuidErr := uuid.Parse(raw); uuidErr == nil {
+			for _, searchType := range requestedTypes {
+				if searchType != grpcSearchTypeAuto {
+					cursorMap[searchType] = raw
+				}
+			}
+			if len(cursorMap) == 0 {
+				cursorMap[grpcSearchTypeSemantic] = raw
+				cursorMap[grpcSearchTypeFulltext] = raw
+			}
+			return cursorMap, requestedTypes, nil
+		}
+		return nil, nil, fmt.Errorf("invalid after cursor: malformed cursor")
+	}
+	var token grpcSearchCursorToken
+	if err := json.Unmarshal(decoded, &token); err != nil || len(token.Types) == 0 || len(token.Cursors) == 0 {
+		return nil, nil, fmt.Errorf("invalid after cursor: malformed cursor")
+	}
+	for k, v := range token.Cursors {
+		if strings.TrimSpace(v) == "" {
+			continue
+		}
+		if _, err := uuid.Parse(v); err != nil {
+			return nil, nil, fmt.Errorf("invalid after cursor: malformed cursor")
+		}
+		cursorMap[k] = v
+	}
+	if len(cursorMap) == 0 {
+		return nil, nil, fmt.Errorf("invalid after cursor: malformed cursor")
+	}
+	return cursorMap, token.Types, nil
+}
+
+func encodeGRPCSearchCursor(searchTypes []string, cursors map[string]string) *string {
+	if len(cursors) == 0 {
+		return nil
+	}
+	token := grpcSearchCursorToken{
+		Types:   searchTypes,
+		Cursors: cursors,
+	}
+	data, err := json.Marshal(token)
+	if err != nil {
+		return nil
+	}
+	encoded := base64.RawURLEncoding.EncodeToString(data)
+	return &encoded
+}
+
+func grpcCursorPtr(value string) *string {
+	if strings.TrimSpace(value) == "" {
+		return nil
+	}
+	return &value
+}
+
+func grpcSearchTypes(raw []string) ([]string, error) {
+	if len(raw) == 0 {
+		return []string{grpcSearchTypeAuto}, nil
+	}
+	valid := map[string]struct{}{
+		grpcSearchTypeAuto:     {},
+		grpcSearchTypeSemantic: {},
+		grpcSearchTypeFulltext: {},
+	}
+	out := make([]string, 0, len(raw))
+	for _, item := range raw {
+		value := strings.ToLower(strings.TrimSpace(item))
+		if value == "" {
+			return nil, fmt.Errorf("search_type cannot be empty")
+		}
+		if _, ok := valid[value]; !ok {
+			return nil, fmt.Errorf("invalid search_type %q", item)
+		}
+		for _, existing := range out {
+			if existing == value {
+				goto next
+			}
+		}
+		out = append(out, value)
+	next:
+	}
+	if len(out) == 0 {
+		return nil, fmt.Errorf("search_type cannot be empty")
+	}
+	if len(out) > 1 {
+		for _, value := range out {
+			if value == grpcSearchTypeAuto {
+				return nil, fmt.Errorf("search_type 'auto' cannot be combined with other search types")
+			}
+		}
+	}
+	return out, nil
+}
+
+func (s *SearchServer) searchEntriesInTx(ctx context.Context, userID string, query string, searchTypes []string, cursorMap map[string]string, cursorTypes []string, limit int, includeEntry bool, groupByConversation bool, semanticAvailable bool, fulltextAvailable bool) (*registrystore.SearchResults, error) {
+	if len(searchTypes) == 1 && searchTypes[0] == grpcSearchTypeAuto {
+		if len(cursorTypes) == 1 && cursorTypes[0] != grpcSearchTypeAuto {
+			t := cursorTypes[0]
+			var results *registrystore.SearchResults
+			var err error
+			switch t {
+			case grpcSearchTypeSemantic:
+				if !semanticAvailable {
+					return nil, status.Error(codes.Unimplemented, "semantic search unavailable")
+				}
+				results, err = s.semanticSearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[t]), limit, includeEntry, groupByConversation)
+			case grpcSearchTypeFulltext:
+				if !fulltextAvailable {
+					return nil, status.Error(codes.Unimplemented, "full-text search is disabled")
+				}
+				results, err = s.Store.SearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[t]), limit, includeEntry, groupByConversation)
+			default:
+				return nil, status.Error(codes.InvalidArgument, "invalid after cursor")
+			}
+			if err != nil {
+				return nil, err
+			}
+			nextCursors := map[string]string{}
+			if results.AfterCursor != nil {
+				nextCursors[t] = *results.AfterCursor
+			}
+			return &registrystore.SearchResults{Data: results.Data, AfterCursor: encodeGRPCSearchCursor([]string{t}, nextCursors)}, nil
+		}
+		if semanticAvailable {
+			results, err := s.semanticSearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[grpcSearchTypeSemantic]), limit, includeEntry, groupByConversation)
+			if err == nil && (len(results.Data) > 0 || cursorMap[grpcSearchTypeSemantic] != "") {
+				nextCursors := map[string]string{}
+				if results.AfterCursor != nil {
+					nextCursors[grpcSearchTypeSemantic] = *results.AfterCursor
+				}
+				return &registrystore.SearchResults{Data: results.Data, AfterCursor: encodeGRPCSearchCursor([]string{grpcSearchTypeSemantic}, nextCursors)}, nil
+			}
+			if err != nil {
+				log.Warn("gRPC semantic search failed, falling back to fulltext", "err", err)
+			}
+		}
+		if fulltextAvailable {
+			results, err := s.Store.SearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[grpcSearchTypeFulltext]), limit, includeEntry, groupByConversation)
+			if err != nil {
+				return nil, err
+			}
+			nextCursors := map[string]string{}
+			if results.AfterCursor != nil {
+				nextCursors[grpcSearchTypeFulltext] = *results.AfterCursor
+			}
+			return &registrystore.SearchResults{Data: results.Data, AfterCursor: encodeGRPCSearchCursor([]string{grpcSearchTypeFulltext}, nextCursors)}, nil
+		}
+		if semanticAvailable {
+			results, err := s.semanticSearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[grpcSearchTypeSemantic]), limit, includeEntry, groupByConversation)
+			if err != nil {
+				return nil, err
+			}
+			nextCursors := map[string]string{}
+			if results.AfterCursor != nil {
+				nextCursors[grpcSearchTypeSemantic] = *results.AfterCursor
+			}
+			return &registrystore.SearchResults{Data: results.Data, AfterCursor: encodeGRPCSearchCursor([]string{grpcSearchTypeSemantic}, nextCursors)}, nil
+		}
+		return nil, status.Error(codes.Unimplemented, "no search types are available")
+	}
+
+	combined := make([]registrystore.SearchResult, 0, len(searchTypes)*limit)
+	nextCursors := make(map[string]string, len(searchTypes))
+	for _, searchType := range searchTypes {
+		var results *registrystore.SearchResults
+		var err error
+		switch searchType {
+		case grpcSearchTypeSemantic:
+			if !semanticAvailable {
+				return nil, status.Error(codes.Unimplemented, "semantic search unavailable")
+			}
+			results, err = s.semanticSearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[searchType]), limit, includeEntry, groupByConversation)
+		case grpcSearchTypeFulltext:
+			if !fulltextAvailable {
+				return nil, status.Error(codes.Unimplemented, "full-text search is disabled")
+			}
+			results, err = s.Store.SearchEntries(ctx, userID, query, grpcCursorPtr(cursorMap[searchType]), limit, includeEntry, groupByConversation)
+		}
+		if err != nil {
+			return nil, err
+		}
+		combined = append(combined, results.Data...)
+		if results.AfterCursor != nil {
+			nextCursors[searchType] = *results.AfterCursor
+		}
+	}
+	return &registrystore.SearchResults{Data: combined, AfterCursor: encodeGRPCSearchCursor(searchTypes, nextCursors)}, nil
+}
+
+func (s *SearchServer) semanticSearchEntries(ctx context.Context, userID string, query string, afterCursor *string, limit int, includeEntry bool, groupByConversation bool) (*registrystore.SearchResults, error) {
+	groupIDs, err := s.Store.ListConversationGroupIDs(ctx, userID)
+	if err != nil {
+		return nil, fmt.Errorf("list group IDs: %w", err)
+	}
+	if len(groupIDs) == 0 {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
+	embeddings, err := s.Embedder.EmbedTexts(ctx, []string{query})
+	if err != nil {
+		return nil, fmt.Errorf("embed query: %w", err)
+	}
+	if len(embeddings) == 0 {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
+	searchLimit := limit + 1
+	if groupByConversation {
+		searchLimit = limit*3 + 1
+	}
+	if afterCursor != nil && searchLimit < 1000 {
+		searchLimit = 1000
+	}
+	if searchLimit > 5000 {
+		searchLimit = 5000
+	}
+	vectorResults, err := s.VectorStore.Search(ctx, embeddings[0], groupIDs, searchLimit)
+	if err != nil {
+		return nil, fmt.Errorf("vector search: %w", err)
+	}
+	if len(vectorResults) == 0 {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
+	scores := make(map[uuid.UUID]float64, len(vectorResults))
+	entryIDs := make([]uuid.UUID, 0, len(vectorResults))
+	for _, r := range vectorResults {
+		entryIDs = append(entryIDs, r.EntryID)
+		scores[r.EntryID] = r.Score
+	}
+	details, err := s.Store.FetchSearchResultDetails(ctx, userID, entryIDs, includeEntry)
+	if err != nil {
+		return nil, fmt.Errorf("fetch details: %w", err)
+	}
+	for i := range details {
+		details[i].Score = scores[details[i].EntryID]
+		details[i].Kind = s.VectorStore.Name()
+	}
+	sort.SliceStable(details, func(i, j int) bool {
+		if details[i].Score == details[j].Score {
+			return details[i].EntryID.String() < details[j].EntryID.String()
+		}
+		return details[i].Score > details[j].Score
+	})
+	if groupByConversation {
+		details = groupGRPCSearchResultsByConversation(details)
+	}
+	return paginateGRPCSearchResults(details, afterCursor, limit)
+}
+
+func groupGRPCSearchResultsByConversation(results []registrystore.SearchResult) []registrystore.SearchResult {
+	out := make([]registrystore.SearchResult, 0, len(results))
+	seen := make(map[string]struct{}, len(results))
+	for _, r := range results {
+		id := string(r.ConversationID)
+		if _, ok := seen[id]; ok {
+			continue
+		}
+		seen[id] = struct{}{}
+		out = append(out, r)
+	}
+	return out
+}
+
+func paginateGRPCSearchResults(results []registrystore.SearchResult, afterCursor *string, limit int) (*registrystore.SearchResults, error) {
+	start := 0
+	if afterCursor != nil {
+		cursorID, err := uuid.Parse(*afterCursor)
+		if err != nil {
+			return nil, status.Error(codes.InvalidArgument, "invalid after cursor")
+		}
+		start = len(results)
+		for i := range results {
+			if results[i].EntryID == cursorID {
+				start = i + 1
+				break
+			}
+		}
+	}
+	if start >= len(results) {
+		return &registrystore.SearchResults{Data: []registrystore.SearchResult{}}, nil
+	}
+	end := start + limit
+	if end > len(results) {
+		end = len(results)
+	}
+	page := results[start:end]
+	var nextCursor *string
+	if end < len(results) && len(page) > 0 {
+		v := page[len(page)-1].EntryID.String()
+		nextCursor = &v
+	}
+	return &registrystore.SearchResults{Data: page, AfterCursor: nextCursor}, nil
+}
+
 func (s *SearchServer) IndexConversations(ctx context.Context, req *pb.IndexConversationsRequest) (*pb.IndexConversationsResponse, error) {
 	userID := getUserID(ctx)
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
-	if !s.isIndexer(userID) {
+	if !s.isIndexer(ctx, userID) {
 		return nil, status.Error(codes.PermissionDenied, "indexer or admin role required")
 	}
 	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchWrite); err != nil {
 		return nil, err
 	}
 
+	if len(req.GetEntries()) == 0 {
+		return nil, status.Error(codes.InvalidArgument, "at least one entry required")
+	}
 	var entries []registrystore.IndexEntryRequest
-	for _, e := range req.GetEntries() {
+	for i, e := range req.GetEntries() {
+		if e == nil {
+			return nil, status.Errorf(codes.InvalidArgument, "entries[%d] is required", i)
+		}
 		convID, err := requiredConversationID(e.GetConversationId())
 		if err != nil {
-			continue
+			return nil, status.Errorf(codes.InvalidArgument, "entries[%d].conversation_id is required", i)
 		}
 		entryID, err := bytesToUUID(e.GetEntryId())
 		if err != nil {
-			continue
+			return nil, status.Errorf(codes.InvalidArgument, "entries[%d].entry_id is required", i)
+		}
+		if strings.TrimSpace(e.GetIndexedContent()) == "" {
+			return nil, status.Errorf(codes.InvalidArgument, "entries[%d].indexed_content is required", i)
 		}
 		entries = append(entries, registrystore.IndexEntryRequest{
 			ConversationID: convID,
@@ -2069,7 +2865,7 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 	if userID == "" {
 		return nil, status.Error(codes.Unauthenticated, "missing authorization")
 	}
-	if !s.isIndexer(userID) {
+	if !s.isIndexer(ctx, userID) {
 		return nil, status.Error(codes.PermissionDenied, "indexer or admin role required")
 	}
 	if err := requireGRPCOIDCScope(ctx, security.PermissionSearchRead); err != nil {
@@ -2521,6 +3317,77 @@ func (s *MemoriesServer) ListMemoryNamespaces(ctx context.Context, req *pb.ListM
 	resp := &pb.ListMemoryNamespacesResponse{}
 	for _, ns := range namespaces {
 		resp.Namespaces = append(resp.Namespaces, &pb.MemoryNamespace{Segments: ns})
+	}
+	return resp, nil
+}
+
+func (s *MemoriesServer) ListMemoryEvents(ctx context.Context, req *pb.ListMemoryEventsRequest) (*pb.ListMemoryEventsResponse, error) {
+	if s.Store == nil {
+		return nil, status.Error(codes.FailedPrecondition, "episodic store is not configured")
+	}
+	if _, err := requireGRPCUser(ctx); err != nil {
+		return nil, err
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionMemoriesRead); err != nil {
+		return nil, err
+	}
+
+	nsPrefix := append([]string(nil), req.GetNamespace()...)
+	if len(nsPrefix) > 0 {
+		if err := validateMemoryNamespace(nsPrefix, s.maxDepth()); err != nil {
+			return nil, status.Error(codes.InvalidArgument, err.Error())
+		}
+	}
+
+	pc, err := s.memoryPolicyContext(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if s.Policy != nil {
+		nsPrefix, _, err = s.Policy.InjectFilter(ctx, nsPrefix, nil, pc)
+		if err != nil {
+			return nil, episodicInternalError("filter injection error", err)
+		}
+	}
+
+	limit, err := grpcPageSize(ctx, req.GetLimit(), 50)
+	if err != nil {
+		return nil, err
+	}
+	listReq := registryepisodic.ListEventsRequest{
+		NamespacePrefix: nsPrefix,
+		Kinds:           append([]string(nil), req.GetKinds()...),
+		Limit:           limit,
+	}
+	if req.AfterCursor != nil {
+		listReq.AfterCursor = req.GetAfterCursor()
+	}
+	if req.GetAfter() != nil {
+		after := req.GetAfter().AsTime().UTC()
+		listReq.After = &after
+	}
+	if req.GetBefore() != nil {
+		before := req.GetBefore().AsTime().UTC()
+		listReq.Before = &before
+	}
+
+	page, err := withEpisodicRead(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryEventPage, error) {
+		return s.Store.ListMemoryEvents(txCtx, listReq)
+	})
+	if err != nil {
+		return nil, episodicInternalError("failed to list memory events", err)
+	}
+
+	resp := &pb.ListMemoryEventsResponse{Events: make([]*pb.MemoryEventItem, 0, len(page.Events))}
+	for _, event := range page.Events {
+		item, err := memoryEventToProto(event)
+		if err != nil {
+			return nil, episodicInternalError("failed to encode memory event", err)
+		}
+		resp.Events = append(resp.Events, item)
+	}
+	if page.AfterCursor != "" {
+		resp.AfterCursor = &page.AfterCursor
 	}
 	return resp, nil
 }
@@ -3235,6 +4102,34 @@ func memoryItemsToSearchResponse(items []registryepisodic.MemoryItem) (*pb.Searc
 	return resp, nil
 }
 
+func memoryEventToProto(event registryepisodic.MemoryEvent) (*pb.MemoryEventItem, error) {
+	item := &pb.MemoryEventItem{
+		Id:         uuidToBytes(event.ID),
+		Namespace:  append([]string(nil), event.Namespace...),
+		Key:        event.Key,
+		Kind:       event.Kind,
+		OccurredAt: timestamppb.New(event.OccurredAt.UTC()),
+	}
+	if event.Value != nil {
+		value, err := structpb.NewStruct(event.Value)
+		if err != nil {
+			return nil, err
+		}
+		item.Value = value
+	}
+	if event.Attributes != nil {
+		attrs, err := structpb.NewStruct(event.Attributes)
+		if err != nil {
+			return nil, err
+		}
+		item.Attributes = attrs
+	}
+	if event.ExpiresAt != nil {
+		item.ExpiresAt = timestamppb.New(event.ExpiresAt.UTC())
+	}
+	return item, nil
+}
+
 func enrichMemoryItemsWithUsage(ctx context.Context, store registryepisodic.EpisodicStore, items []registryepisodic.MemoryItem) {
 	for i := range items {
 		usage, err := store.GetMemoryUsage(ctx, items[i].Namespace, items[i].Key)
@@ -3489,6 +4384,7 @@ type AttachmentsServer struct {
 	AttachStore registryattach.AttachmentStore
 	MaxBodySize int64
 	Config      *config.Config
+	SigningKeys [][]byte
 }
 
 func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_UploadAttachmentServer) error {
@@ -3559,20 +4455,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 				return mapError(err)
 			}
 
-			resp := &pb.UploadAttachmentResponse{
-				Id:          attachment.ID.String(),
-				Href:        "/v1/attachments/" + attachment.ID.String(),
-				ContentType: attachment.ContentType,
-				Size:        out.res.Size,
-				Sha256:      out.res.SHA256,
-			}
-			if attachment.Filename != nil {
-				resp.Filename = *attachment.Filename
-			}
-			if attachment.ExpiresAt != nil {
-				resp.ExpiresAt = attachment.ExpiresAt.UTC().Format(time.RFC3339)
-			}
-			return stream.SendAndClose(resp)
+			return stream.SendAndClose(uploadAttachmentResponseToProto(attachment))
 		}
 		if err != nil {
 			return err
@@ -3619,6 +4502,54 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 	}
 }
 
+func (s *AttachmentsServer) CreateAttachmentFromUrl(ctx context.Context, req *pb.CreateAttachmentFromUrlRequest) (*pb.UploadAttachmentResponse, error) {
+	if s.AttachStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "attachment store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAttachmentsWrite); err != nil {
+		return nil, err
+	}
+	sourceURL := strings.TrimSpace(req.GetSourceUrl())
+	if sourceURL == "" {
+		return nil, status.Error(codes.InvalidArgument, "source_url is required")
+	}
+	if _, err := url.ParseRequestURI(sourceURL); err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid source_url")
+	}
+	contentType := strings.TrimSpace(req.GetContentType())
+	if contentType == "" {
+		contentType = "application/octet-stream"
+	}
+	var filename *string
+	if name := strings.TrimSpace(req.GetFilename()); name != "" {
+		filename = &name
+	}
+	defaultExpires := time.Hour
+	if s.Config != nil && s.Config.AttachmentDefaultExpiresIn > 0 {
+		defaultExpires = s.Config.AttachmentDefaultExpiresIn
+	}
+	expiresAt := time.Now().Add(defaultExpires)
+
+	attachment, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+		return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
+			Filename:    filename,
+			ContentType: contentType,
+			SourceURL:   &sourceURL,
+			ExpiresAt:   &expiresAt,
+			Status:      "downloading",
+		})
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	routeattachments.StartSourceURLAttachmentDownload(s.Store, s.AttachStore, s.Config, attachment.ID, userID, sourceURL, contentType)
+	return uploadAttachmentResponseToProto(attachment), nil
+}
+
 func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttachmentRequest) (*pb.AttachmentInfo, error) {
 	userID := getUserID(ctx)
 	if userID == "" {
@@ -3663,6 +4594,15 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 	if err != nil {
 		return mapError(err)
 	}
+	if strings.EqualFold(attachment.Status, "downloading") {
+		return status.Error(codes.FailedPrecondition, "attachment download in progress")
+	}
+	if strings.EqualFold(attachment.Status, "failed") {
+		return status.Error(codes.FailedPrecondition, "attachment download failed")
+	}
+	if strings.EqualFold(attachment.Status, "uploading") {
+		return status.Error(codes.FailedPrecondition, "attachment upload in progress")
+	}
 	if attachment.StorageKey == nil {
 		return status.Error(codes.NotFound, "attachment content not available")
 	}
@@ -3701,12 +4641,129 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 	return nil
 }
 
+func (s *AttachmentsServer) DeleteAttachment(ctx context.Context, req *pb.DeleteAttachmentRequest) (*emptypb.Empty, error) {
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAttachmentsWrite); err != nil {
+		return nil, err
+	}
+	attachmentID, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
+	}
+	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
+		attachment, err := s.Store.GetAttachment(txCtx, userID, "", attachmentID)
+		if err != nil {
+			return err
+		}
+		if attachment.StorageKey != nil && s.AttachStore != nil {
+			if err := s.AttachStore.Delete(txCtx, *attachment.StorageKey); err != nil {
+				return err
+			}
+		}
+		return s.Store.DeleteAttachment(txCtx, userID, "", attachmentID)
+	}); err != nil {
+		return nil, mapError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *AttachmentsServer) GetAttachmentDownloadUrl(ctx context.Context, req *pb.GetAttachmentDownloadUrlRequest) (*pb.AttachmentDownloadUrlResponse, error) {
+	if s.AttachStore == nil {
+		return nil, status.Error(codes.FailedPrecondition, "attachment store is not configured")
+	}
+	userID := getUserID(ctx)
+	if userID == "" {
+		return nil, status.Error(codes.Unauthenticated, "missing authorization")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAttachmentsRead); err != nil {
+		return nil, err
+	}
+	attachmentID, err := uuid.Parse(req.GetId())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
+	}
+	disposition, err := parseGRPCDisposition(req.GetDisposition())
+	if err != nil {
+		return nil, status.Error(codes.InvalidArgument, err.Error())
+	}
+	attachment, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+		return s.Store.GetAttachment(txCtx, userID, "", attachmentID)
+	})
+	if err != nil {
+		return nil, mapError(err)
+	}
+	if strings.EqualFold(attachment.Status, "downloading") && attachment.SourceURL != nil && strings.TrimSpace(*attachment.SourceURL) != "" {
+		return &pb.AttachmentDownloadUrlResponse{Url: *attachment.SourceURL, Status: "downloading"}, nil
+	}
+	if strings.EqualFold(attachment.Status, "failed") {
+		return nil, status.Error(codes.FailedPrecondition, "attachment download failed")
+	}
+	if strings.EqualFold(attachment.Status, "uploading") {
+		return nil, status.Error(codes.FailedPrecondition, "attachment upload in progress")
+	}
+	if attachment.StorageKey == nil {
+		return nil, status.Error(codes.NotFound, "attachment content not available")
+	}
+	expires := 5 * time.Minute
+	if s.Config != nil && s.Config.AttachmentDownloadURLExpiresIn > 0 {
+		expires = s.Config.AttachmentDownloadURLExpiresIn
+	}
+	policy := routeattachments.AttachmentResponsePolicy(attachment.ContentType, disposition)
+	if s.Config != nil && s.Config.S3DirectDownload && policy.AllowDirect {
+		if signedURL, err := s.AttachStore.GetSignedURL(ctx, *attachment.StorageKey, expires, routeattachments.SignedURLOptions(policy.Disposition, attachment.Filename)); err == nil {
+			return &pb.AttachmentDownloadUrlResponse{Url: signedURL.String(), ExpiresIn: int32(expires.Seconds())}, nil
+		}
+	}
+	if len(s.SigningKeys) == 0 || len(s.SigningKeys[0]) == 0 {
+		return nil, status.Error(codes.Unavailable, "download URLs are not available: encryption key is not configured")
+	}
+	filename := "download"
+	if attachment.Filename != nil && strings.TrimSpace(*attachment.Filename) != "" {
+		filename = *attachment.Filename
+	}
+	token := routeattachments.SignDownloadToken(*attachment.StorageKey, s.SigningKeys[0], time.Now().Add(expires))
+	downloadURL := fmt.Sprintf("/v1/attachments/download/%s/%s", url.PathEscape(token), url.PathEscape(filename))
+	if policy.Disposition != "" {
+		downloadURL += "?disposition=" + url.QueryEscape(policy.Disposition)
+	}
+	return &pb.AttachmentDownloadUrlResponse{Url: downloadURL, ExpiresIn: int32(expires.Seconds())}, nil
+}
+
+func uploadAttachmentResponseToProto(attachment *model.Attachment) *pb.UploadAttachmentResponse {
+	resp := &pb.UploadAttachmentResponse{
+		Id:          attachment.ID.String(),
+		Href:        "/v1/attachments/" + attachment.ID.String(),
+		ContentType: attachment.ContentType,
+		Status:      attachment.Status,
+	}
+	if attachment.Filename != nil {
+		resp.Filename = *attachment.Filename
+	}
+	if attachment.Size != nil {
+		resp.Size = *attachment.Size
+	}
+	if attachment.SHA256 != nil {
+		resp.Sha256 = *attachment.SHA256
+	}
+	if attachment.ExpiresAt != nil {
+		resp.ExpiresAt = attachment.ExpiresAt.UTC().Format(time.RFC3339)
+	}
+	if attachment.SourceURL != nil {
+		resp.SourceUrl = *attachment.SourceURL
+	}
+	return resp
+}
+
 func attachmentToProto(attachment *model.Attachment) *pb.AttachmentInfo {
 	info := &pb.AttachmentInfo{
 		Id:          attachment.ID.String(),
 		Href:        "/v1/attachments/" + attachment.ID.String(),
 		ContentType: attachment.ContentType,
 		CreatedAt:   attachment.CreatedAt.UTC().Format(time.RFC3339),
+		Status:      attachment.Status,
 	}
 	if attachment.Filename != nil {
 		info.Filename = *attachment.Filename
@@ -3720,7 +4777,24 @@ func attachmentToProto(attachment *model.Attachment) *pb.AttachmentInfo {
 	if attachment.ExpiresAt != nil {
 		info.ExpiresAt = attachment.ExpiresAt.UTC().Format(time.RFC3339)
 	}
+	if attachment.SourceURL != nil {
+		info.SourceUrl = *attachment.SourceURL
+	}
+	if attachment.EntryID != nil {
+		info.EntryId = uuidToBytes(*attachment.EntryID)
+	}
 	return info
+}
+
+func parseGRPCDisposition(raw string) (string, error) {
+	disposition := strings.ToLower(strings.TrimSpace(raw))
+	if disposition == "" {
+		return "", nil
+	}
+	if disposition != "inline" && disposition != "attachment" {
+		return "", fmt.Errorf("disposition must be 'inline' or 'attachment'")
+	}
+	return disposition, nil
 }
 
 func parseGRPCExpiresIn(raw string, cfg *config.Config) (time.Duration, error) {
@@ -3981,13 +5055,8 @@ func (s *ResponseRecorderServer) Cancel(ctx context.Context, req *pb.CancelRecor
 		return nil, err
 	}
 
-	advertised := s.resolveAdvertisedAddress(ctx)
-	redirectAddress, err := s.Resumer.RequestCancelWithAddress(ctx, string(convID), advertised)
-	if err != nil {
+	if _, err := s.Resumer.RequestCancelWithAddress(ctx, string(convID), ""); err != nil {
 		return nil, status.Error(codes.Internal, "internal server error")
-	}
-	if redirectAddress != "" {
-		return &pb.CancelRecordResponse{Accepted: false, RedirectAddress: redirectAddress}, nil
 	}
 	return &pb.CancelRecordResponse{Accepted: true}, nil
 }
@@ -4086,6 +5155,76 @@ type EventStreamServer struct {
 	Config         *config.Config
 	UserIDAsserter *security.UserIDAsserter
 	RateLimiter    *security.RateLimiter
+}
+
+var grpcEventStreamNodeID = uuid.New().String()
+
+type grpcEventStreamSession struct {
+	ConnectionID string
+	UserID       string
+	NodeID       string
+	CreatedAt    time.Time
+	cancel       context.CancelFunc
+	evicted      chan struct{}
+}
+
+type grpcEventStreamSessionTracker struct {
+	mu       sync.Mutex
+	sessions map[string]*grpcEventStreamSession
+}
+
+var grpcEventStreamSessions = &grpcEventStreamSessionTracker{
+	sessions: make(map[string]*grpcEventStreamSession),
+}
+
+func eventSessionEvicted(session *grpcEventStreamSession) <-chan struct{} {
+	if session == nil {
+		return nil
+	}
+	return session.evicted
+}
+
+func (t *grpcEventStreamSessionTracker) trackSession(s *grpcEventStreamSession) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.sessions[s.ConnectionID] = s
+}
+
+func (t *grpcEventStreamSessionTracker) removeSession(connectionID string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	delete(t.sessions, connectionID)
+}
+
+func (t *grpcEventStreamSessionTracker) countForUser(userID string) int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	count := 0
+	for _, s := range t.sessions {
+		if s.UserID == userID {
+			count++
+		}
+	}
+	return count
+}
+
+func (t *grpcEventStreamSessionTracker) evictOldestLocal(userID string) bool {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	var oldest *grpcEventStreamSession
+	for _, s := range t.sessions {
+		if s.UserID == userID && s.NodeID == grpcEventStreamNodeID && s.evicted != nil {
+			if oldest == nil || s.CreatedAt.Before(oldest.CreatedAt) {
+				oldest = s
+			}
+		}
+	}
+	if oldest == nil {
+		return false
+	}
+	delete(t.sessions, oldest.ConnectionID)
+	close(oldest.evicted)
+	return true
 }
 
 type assertedEventStreamServer struct {
@@ -4277,6 +5416,32 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			return err
 		}
 	}
+	var eventSession *grpcEventStreamSession
+	if !adminScope && s.Config != nil && s.Config.SSEMaxConnectionsPerUser > 0 {
+		streamCtx, cancel := context.WithCancel(stream.Context())
+		stream = &assertedEventStreamServer{EventStreamService_SubscribeEventsServer: stream, ctx: streamCtx}
+		session := &grpcEventStreamSession{
+			ConnectionID: uuid.New().String(),
+			UserID:       userID,
+			NodeID:       grpcEventStreamNodeID,
+			CreatedAt:    time.Now(),
+			cancel:       cancel,
+			evicted:      make(chan struct{}),
+		}
+		grpcEventStreamSessions.trackSession(session)
+		log.Info("gRPC event stream opened", "connID", session.ConnectionID, "userID", userID, "sessions", grpcEventStreamSessions.countForUser(userID))
+		defer func() {
+			cancel()
+			grpcEventStreamSessions.removeSession(session.ConnectionID)
+			log.Info("gRPC event stream closed", "connID", session.ConnectionID, "userID", userID, "sessions", grpcEventStreamSessions.countForUser(userID))
+		}()
+		for grpcEventStreamSessions.countForUser(userID) > s.Config.SSEMaxConnectionsPerUser {
+			if !grpcEventStreamSessions.evictOldestLocal(userID) {
+				break
+			}
+		}
+		eventSession = session
+	}
 
 	grpcClientID := getClientID(stream.Context())
 	var grpcClientIDPtr *string
@@ -4431,6 +5596,16 @@ streamLoop:
 		for {
 			select {
 			case <-stream.Context().Done():
+				return nil
+			case <-eventSessionEvicted(eventSession):
+				log.Info("gRPC event stream evicted", "connID", eventSession.ConnectionID, "userID", userID, "reason", "too many connections")
+				evictData, _ := json.Marshal(map[string]string{"reason": "too many connections"})
+				_ = stream.Send(&pb.EventNotification{
+					Event:  "evicted",
+					Kind:   "stream",
+					Data:   evictData,
+					Cursor: eventCursorPtr(lastCursor),
+				})
 				return nil
 			case event, ok := <-sub:
 				if !ok {

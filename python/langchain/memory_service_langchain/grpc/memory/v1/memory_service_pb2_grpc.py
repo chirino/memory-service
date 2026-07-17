@@ -900,6 +900,11 @@ class EntriesServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.AppendEntryRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.Entry.FromString,
                 _registered_method=True)
+        self.AppendEntries = channel.unary_unary(
+                '/memory.v1.EntriesService/AppendEntries',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AppendEntriesRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AppendEntriesResponse.FromString,
+                _registered_method=True)
         self.SyncEntries = channel.unary_unary(
                 '/memory.v1.EntriesService/SyncEntries',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.SyncEntriesRequest.SerializeToString,
@@ -917,6 +922,12 @@ class EntriesServiceServicer(object):
         raise NotImplementedError('Method not implemented!')
 
     def AppendEntry(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def AppendEntries(self, request, context):
         """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
@@ -940,6 +951,11 @@ def add_EntriesServiceServicer_to_server(servicer, server):
                     servicer.AppendEntry,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.AppendEntryRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.Entry.SerializeToString,
+            ),
+            'AppendEntries': grpc.unary_unary_rpc_method_handler(
+                    servicer.AppendEntries,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AppendEntriesRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AppendEntriesResponse.SerializeToString,
             ),
             'SyncEntries': grpc.unary_unary_rpc_method_handler(
                     servicer.SyncEntries,
@@ -1001,6 +1017,33 @@ class EntriesService(object):
             '/memory.v1.EntriesService/AppendEntry',
             memory_dot_v1_dot_memory__service__pb2.AppendEntryRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.Entry.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AppendEntries(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.EntriesService/AppendEntries',
+            memory_dot_v1_dot_memory__service__pb2.AppendEntriesRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AppendEntriesResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -1650,6 +1693,11 @@ class MemoriesServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.FromString,
                 _registered_method=True)
+        self.ListMemoryEvents = channel.unary_unary(
+                '/memory.v1.MemoriesService/ListMemoryEvents',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsResponse.FromString,
+                _registered_method=True)
 
 
 class MemoriesServiceServicer(object):
@@ -1685,6 +1733,12 @@ class MemoriesServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def ListMemoryEvents(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_MemoriesServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -1712,6 +1766,11 @@ def add_MemoriesServiceServicer_to_server(servicer, server):
                     servicer.ListMemoryNamespaces,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.SerializeToString,
+            ),
+            'ListMemoryEvents': grpc.unary_unary_rpc_method_handler(
+                    servicer.ListMemoryEvents,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -1849,6 +1908,33 @@ class MemoriesService(object):
             '/memory.v1.MemoriesService/ListMemoryNamespaces',
             memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.ListMemoryNamespacesResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ListMemoryEvents(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.MemoriesService/ListMemoryEvents',
+            memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.ListMemoryEventsResponse.FromString,
             options,
             channel_credentials,
             insecure,
@@ -2582,6 +2668,11 @@ class AttachmentsServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.FromString,
                 _registered_method=True)
+        self.CreateAttachmentFromUrl = channel.unary_unary(
+                '/memory.v1.AttachmentsService/CreateAttachmentFromUrl',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.CreateAttachmentFromUrlRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.FromString,
+                _registered_method=True)
         self.GetAttachment = channel.unary_unary(
                 '/memory.v1.AttachmentsService/GetAttachment',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.GetAttachmentRequest.SerializeToString,
@@ -2591,6 +2682,16 @@ class AttachmentsServiceStub(object):
                 '/memory.v1.AttachmentsService/DownloadAttachment',
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentResponse.FromString,
+                _registered_method=True)
+        self.DeleteAttachment = channel.unary_unary(
+                '/memory.v1.AttachmentsService/DeleteAttachment',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.DeleteAttachmentRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
+        self.GetAttachmentDownloadUrl = channel.unary_unary(
+                '/memory.v1.AttachmentsService/GetAttachmentDownloadUrl',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.GetAttachmentDownloadUrlRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AttachmentDownloadUrlResponse.FromString,
                 _registered_method=True)
 
 
@@ -2602,6 +2703,12 @@ class AttachmentsServiceServicer(object):
         Subsequent messages contain file data chunks.
         Server responds once the upload is complete or an error occurs.
         """
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def CreateAttachmentFromUrl(self, request, context):
+        """Missing associated documentation comment in .proto file."""
         context.set_code(grpc.StatusCode.UNIMPLEMENTED)
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
@@ -2620,12 +2727,29 @@ class AttachmentsServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def DeleteAttachment(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def GetAttachmentDownloadUrl(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AttachmentsServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
             'UploadAttachment': grpc.stream_unary_rpc_method_handler(
                     servicer.UploadAttachment,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.SerializeToString,
+            ),
+            'CreateAttachmentFromUrl': grpc.unary_unary_rpc_method_handler(
+                    servicer.CreateAttachmentFromUrl,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.CreateAttachmentFromUrlRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.SerializeToString,
             ),
             'GetAttachment': grpc.unary_unary_rpc_method_handler(
@@ -2637,6 +2761,16 @@ def add_AttachmentsServiceServicer_to_server(servicer, server):
                     servicer.DownloadAttachment,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentResponse.SerializeToString,
+            ),
+            'DeleteAttachment': grpc.unary_unary_rpc_method_handler(
+                    servicer.DeleteAttachment,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.DeleteAttachmentRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
+            ),
+            'GetAttachmentDownloadUrl': grpc.unary_unary_rpc_method_handler(
+                    servicer.GetAttachmentDownloadUrl,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.GetAttachmentDownloadUrlRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AttachmentDownloadUrlResponse.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -2665,6 +2799,33 @@ class AttachmentsService(object):
             target,
             '/memory.v1.AttachmentsService/UploadAttachment',
             memory_dot_v1_dot_memory__service__pb2.UploadAttachmentRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def CreateAttachmentFromUrl(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AttachmentsService/CreateAttachmentFromUrl',
+            memory_dot_v1_dot_memory__service__pb2.CreateAttachmentFromUrlRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.UploadAttachmentResponse.FromString,
             options,
             channel_credentials,
@@ -2720,6 +2881,60 @@ class AttachmentsService(object):
             '/memory.v1.AttachmentsService/DownloadAttachment',
             memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.DownloadAttachmentResponse.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def DeleteAttachment(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AttachmentsService/DeleteAttachment',
+            memory_dot_v1_dot_memory__service__pb2.DeleteAttachmentRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def GetAttachmentDownloadUrl(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AttachmentsService/GetAttachmentDownloadUrl',
+            memory_dot_v1_dot_memory__service__pb2.GetAttachmentDownloadUrlRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AttachmentDownloadUrlResponse.FromString,
             options,
             channel_credentials,
             insecure,

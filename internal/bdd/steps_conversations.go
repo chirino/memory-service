@@ -39,6 +39,7 @@ func init() {
 		ctx.Step(`^I list forks for the conversation$`, c.iListForksForTheConversation)
 		ctx.Step(`^I list forks for conversation "([^"]*)"$`, c.iListForksForConversation)
 		ctx.Step(`^I list forks for that conversation$`, c.iListForksForTheConversation)
+		ctx.Step(`^the conversation has (\d+) child conversations$`, c.theConversationHasChildConversations)
 		ctx.Step(`^I resolve the conversation group ID for conversation "([^"]*)" into "([^"]*)"$`, c.iResolveConversationGroupID)
 	})
 }
@@ -83,6 +84,34 @@ func (c *conversationSteps) resolveGroupID(convID string) {
 func (c *conversationSteps) theConversationExists() error {
 	if _, ok := c.s.Variables["conversationId"]; !ok {
 		return c.iHaveAConversationWithTitle("Test Conversation")
+	}
+	return nil
+}
+
+func (c *conversationSteps) theConversationHasChildConversations(count int) error {
+	parentID, err := c.s.ResolveString("conversationId")
+	if err != nil {
+		return err
+	}
+	for i := 1; i <= count; i++ {
+		childID := fmt.Sprintf("%s-child-%02d", parentID, i)
+		body := fmt.Sprintf(`{
+			"contentType": "history",
+			"channel": "HISTORY",
+			"content": [{"role": "USER", "text": "child conversation %02d"}],
+			"startedByConversationId": %q
+		}`, i, parentID)
+		path := fmt.Sprintf("/v1/conversations/%s/entries", childID)
+		if err := c.s.SendHTTPRequestWithJSONBodyAndStyle("POST", path, &godog.DocString{Content: body}, false, false); err != nil {
+			return err
+		}
+		status := 0
+		if c.s.Session().Resp != nil {
+			status = c.s.Session().Resp.StatusCode
+		}
+		if status != 201 {
+			return fmt.Errorf("failed to create child conversation %s: status %d", childID, status)
+		}
 	}
 	return nil
 }

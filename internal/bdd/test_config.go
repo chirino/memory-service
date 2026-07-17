@@ -10,5 +10,6 @@ func defaultBDDConfig() config.Config {
 	cfg.EncryptionProviders = "dek"
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.ManagementOnMainListener = true
+	cfg.RateLimitMode = "off"
 	return cfg
 }
