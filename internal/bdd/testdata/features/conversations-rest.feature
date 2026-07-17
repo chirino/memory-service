@@ -101,6 +101,47 @@ Feature: Conversations REST API
     """
     And the response body should not contain "clientId"
 
+  Scenario Outline: Encoded conversation IDs are decoded once before persistence
+    Given I have a conversation with title "Encoded path seed"
+    And set "pathPrefix" to "${conversationId}"
+    When I call POST "/v1/conversations/${pathPrefix}-<encoded>/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "content": [
+        {
+          "role": "USER",
+          "text": "Encoded path parameter"
+        }
+      ]
+    }
+    """
+    Then the response status should be 201
+    And the response body field "conversationId" should be "${pathPrefix}-<logical>"
+    When I call GET "/v1/conversations/${pathPrefix}-<encoded>"
+    Then the response status should be 200
+    And the response body field "id" should be "${pathPrefix}-<logical>"
+    When I call GET "/v1/admin/conversations/${pathPrefix}-<encoded>"
+    Then the response status should be 200
+    And the response body field "id" should be "${pathPrefix}-<logical>"
+
+    Examples:
+      | encoded                 | logical       |
+      | run%2Fbranch            | run/branch    |
+      | run%25branch            | run%branch    |
+      | run%20branch            | run branch    |
+      | caf%C3%A9%E2%98%95      | café☕        |
+      | run%252Fbranch          | run%2Fbranch  |
+
+  Scenario: Unencoded slashes and traversal remain route separators
+    Given I have a conversation with title "Route separator seed"
+    And set "pathPrefix" to "${conversationId}"
+    When I call GET "/v1/conversations/${pathPrefix}-run/branch"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${pathPrefix}-run/../branch"
+    Then the response status should be 404
+
   Scenario: Get non-existent conversation
     When I get conversation "00000000-0000-0000-0000-000000000000"
     Then the response status should be 404

@@ -286,7 +286,11 @@ func downloadURL(c *gin.Context, store registrystore.MemoryStore, attachStore re
 			filename = *attachment.Filename
 		}
 		token := signDownloadToken(*attachment.StorageKey, signingKey, time.Now().Add(cfg.AttachmentDownloadURLExpiresIn))
-		downloadURL := fmt.Sprintf("/v1/attachments/download/%s/%s", token, filename)
+		downloadURL := fmt.Sprintf(
+			"/v1/attachments/download/%s/%s",
+			url.PathEscape(token),
+			url.PathEscape(filename),
+		)
 		if policy.Disposition != "" {
 			downloadURL += "?disposition=" + url.QueryEscape(policy.Disposition)
 		}

@@ -265,7 +265,9 @@ type proxyAPIServer struct {
 func (p *proxyAPIServer) UploadAttachment(c *gin.Context, _ generatedapi.UploadAttachmentParams) {
 	routeattachments.HandleUpload(c, p.store, p.attachStore, p.cfg)
 }
-func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, _ string, _ string, _ generatedapi.DownloadAttachmentByTokenParams) {
+func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, token string, filename string, _ generatedapi.DownloadAttachmentByTokenParams) {
+	setDecodedPathParam(c, "token", token)
+	setDecodedPathParam(c, "filename", filename)
 	// Wrapper binding already validated token/filename as strings. Keep this guard for misconfigured routing.
 	if c.Param("token") == "" || c.Param("filename") == "" {
 		c.JSON(http.StatusBadRequest, gin.H{"error": "Invalid format for parameter token or filename"})
@@ -273,13 +275,16 @@ func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, _ string, _ s
 	}
 	routeattachments.HandleDownloadByToken(c, p.store, p.attachStore, p.signingKeys)
 }
-func (p *proxyAPIServer) DeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) DeleteAttachment(c *gin.Context, id openapi_types.UUID) {
+	setDecodedPathParam(c, "id", id.String())
 	routeattachments.HandleDeleteAttachment(c, p.store, p.attachStore)
 }
-func (p *proxyAPIServer) GetAttachment(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentParams) {
+func (p *proxyAPIServer) GetAttachment(c *gin.Context, id openapi_types.UUID, _ generatedapi.GetAttachmentParams) {
+	setDecodedPathParam(c, "id", id.String())
 	routeattachments.HandleGetAttachment(c, p.store, p.attachStore, p.cfg)
 }
-func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
+func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, id openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
+	setDecodedPathParam(c, "id", id.String())
 	var primary []byte
 	if len(p.signingKeys) > 0 {
 		primary = p.signingKeys[0]
@@ -304,40 +309,54 @@ func (p *proxyAPIServer) SearchConversations(c *gin.Context) {
 func (p *proxyAPIServer) ListUnindexedEntries(c *gin.Context, _ generatedapi.ListUnindexedEntriesParams) {
 	routesearch.HandleListUnindexed(c, p.store)
 }
-func (p *proxyAPIServer) GetConversation(c *gin.Context, _ string) {
+func (p *proxyAPIServer) GetConversation(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeconversations.HandleGetConversation(c, p.store)
 }
-func (p *proxyAPIServer) UpdateConversation(c *gin.Context, _ string) {
+func (p *proxyAPIServer) UpdateConversation(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeconversations.HandleUpdateConversation(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, _ string, _ generatedapi.ListConversationEntriesParams) {
+func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, conversationID string, _ generatedapi.ListConversationEntriesParams) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeentries.HandleListEntries(c, p.store)
 }
-func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, _ string) {
+func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeentries.HandleAppendEntry(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, _ string) {
+func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeentries.HandleSyncMemory(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) ListConversationForks(c *gin.Context, _ string) {
+func (p *proxyAPIServer) ListConversationForks(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeconversations.HandleListForks(c, p.store)
 }
-func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, _ string, _ generatedapi.ListConversationChildrenParams) {
+func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, conversationID string, _ generatedapi.ListConversationChildrenParams) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeconversations.HandleListChildConversations(c, p.store)
 }
-func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, _ string, _ generatedapi.ListConversationMembershipsParams) {
+func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, conversationID string, _ generatedapi.ListConversationMembershipsParams) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routememberships.HandleListMemberships(c, p.store)
 }
-func (p *proxyAPIServer) ShareConversation(c *gin.Context, _ string) {
+func (p *proxyAPIServer) ShareConversation(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routememberships.HandleShareConversation(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, _ string, _ string) {
+func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, conversationID string, userID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
+	setDecodedPathParam(c, "userId", userID)
 	routememberships.HandleDeleteMembership(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, _ string, _ string) {
+func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, conversationID string, userID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
+	setDecodedPathParam(c, "userId", userID)
 	routememberships.HandleUpdateMembership(c, p.store, p.eventBus)
 }
-func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, _ string) {
+func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, conversationID string) {
+	setDecodedPathParam(c, "conversationId", conversationID)
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
 func (p *proxyAPIServer) UpdateMemory(c *gin.Context, params generatedapi.UpdateMemoryParams) {
@@ -364,13 +383,16 @@ func (p *proxyAPIServer) ListPendingTransfers(c *gin.Context, _ generatedapi.Lis
 func (p *proxyAPIServer) CreateOwnershipTransfer(c *gin.Context) {
 	routetransfers.HandleCreateTransfer(c, p.store)
 }
-func (p *proxyAPIServer) DeleteTransfer(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) DeleteTransfer(c *gin.Context, transferID openapi_types.UUID) {
+	setDecodedPathParam(c, "transferId", transferID.String())
 	routetransfers.HandleDeleteTransfer(c, p.store)
 }
-func (p *proxyAPIServer) GetTransfer(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) GetTransfer(c *gin.Context, transferID openapi_types.UUID) {
+	setDecodedPathParam(c, "transferId", transferID.String())
 	routetransfers.HandleGetTransfer(c, p.store)
 }
-func (p *proxyAPIServer) AcceptTransfer(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAPIServer) AcceptTransfer(c *gin.Context, transferID openapi_types.UUID) {
+	setDecodedPathParam(c, "transferId", transferID.String())
 	routetransfers.HandleAcceptTransfer(c, p.store)
 }
 func (p *proxyAPIServer) SubscribeEvents(c *gin.Context, _ generatedapi.SubscribeEventsParams) {
@@ -427,7 +449,8 @@ func (p *proxyAdminServer) AdminListMemories(c *gin.Context, _ generatedadmin.Ad
 	}
 	routememories.HandleAdminListMemories(c, p.episodicStore, p.cfg)
 }
-func (p *proxyAdminServer) AdminGetMemory(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetMemoryParams) {
+func (p *proxyAdminServer) AdminGetMemory(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetMemoryParams) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
@@ -451,13 +474,15 @@ func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin
 	}
 	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
 }
-func (p *proxyAdminServer) AdminGetCheckpoint(c *gin.Context, _ string) {
+func (p *proxyAdminServer) AdminGetCheckpoint(c *gin.Context, clientID string) {
+	setDecodedPathParam(c, "clientId", clientID)
 	if !p.authorize(c, security.PermissionAdminCheckpointsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetCheckpoint(c, p.store)
 }
-func (p *proxyAdminServer) AdminPutCheckpoint(c *gin.Context, _ string) {
+func (p *proxyAdminServer) AdminPutCheckpoint(c *gin.Context, clientID string) {
+	setDecodedPathParam(c, "clientId", clientID)
 	if !p.authorize(c, security.PermissionAdminCheckpointsWrite) {
 		return
 	}
@@ -505,13 +530,15 @@ func (p *proxyAdminServer) AdminUpdateMemory(c *gin.Context, _ generatedadmin.Ad
 	}
 	routememories.HandleAdminUpdateMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
 }
-func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, id openapi_types.UUID) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
 	routememories.HandleAdminDeleteMemory(c, p.episodicStore)
 }
-func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
+func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
@@ -523,25 +550,29 @@ func (p *proxyAdminServer) AdminListAttachments(c *gin.Context, _ generatedadmin
 	}
 	routeadmin.HandleAdminListAttachments(c, p.store)
 }
-func (p *proxyAdminServer) AdminDeleteAttachment(c *gin.Context, _ openapi_types.UUID) {
+func (p *proxyAdminServer) AdminDeleteAttachment(c *gin.Context, id openapi_types.UUID) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminAttachmentsWrite) {
 		return
 	}
 	routeadmin.HandleAdminDeleteAttachment(c, p.store, p.attachStore)
 }
-func (p *proxyAdminServer) AdminGetAttachment(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentParams) {
+func (p *proxyAdminServer) AdminGetAttachment(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentParams) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetAttachment(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetAttachmentContent(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentContentParams) {
+func (p *proxyAdminServer) AdminGetAttachmentContent(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentContentParams) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetAttachmentContent(c, p.store, p.attachStore, p.cfg)
 }
-func (p *proxyAdminServer) AdminGetAttachmentDownloadUrl(c *gin.Context, _ openapi_types.UUID, _ generatedadmin.AdminGetAttachmentDownloadUrlParams) {
+func (p *proxyAdminServer) AdminGetAttachmentDownloadUrl(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentDownloadUrlParams) {
+	setDecodedPathParam(c, "id", id.String())
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
@@ -559,37 +590,43 @@ func (p *proxyAdminServer) AdminSearchConversations(c *gin.Context, _ generateda
 	}
 	routeadmin.HandleAdminSearchConversations(c, p.store)
 }
-func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, _ string) {
+func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, id string) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsWrite) {
 		return
 	}
 	routeadmin.HandleAdminUpdateConversation(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, _ string, _ generatedadmin.AdminGetConversationParams) {
+func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, id string, _ generatedadmin.AdminGetConversationParams) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetConversation(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, _ string, _ generatedadmin.AdminGetEntriesParams) {
+func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, id string, _ generatedadmin.AdminGetEntriesParams) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminGetEntries(c, p.store)
 }
-func (p *proxyAdminServer) AdminListForks(c *gin.Context, _ string, _ generatedadmin.AdminListForksParams) {
+func (p *proxyAdminServer) AdminListForks(c *gin.Context, id string, _ generatedadmin.AdminListForksParams) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListForks(c, p.store)
 }
-func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, _ string, _ generatedadmin.AdminListChildConversationsParams) {
+func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, id string, _ generatedadmin.AdminListChildConversationsParams) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
 	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
-func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, _ string, _ generatedadmin.AdminGetMembershipsParams) {
+func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, id string, _ generatedadmin.AdminGetMembershipsParams) {
+	setDecodedPathParam(c, "id", id)
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
