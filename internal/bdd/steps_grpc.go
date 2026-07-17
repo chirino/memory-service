@@ -395,6 +395,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.ListForks(ctx, req.(*pb.ListForksRequest))
 				})
+		case "ListChildConversations":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListChildConversationsRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListChildConversations(ctx, req.(*pb.ListChildConversationsRequest))
+				})
 		}
 
 	case "EntriesService":
@@ -409,6 +414,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AppendEntryRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.AppendEntry(ctx, req.(*pb.AppendEntryRequest))
+				})
+		case "AppendEntries":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AppendEntriesRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.AppendEntries(ctx, req.(*pb.AppendEntriesRequest))
 				})
 		case "SyncEntries":
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.SyncEntriesRequest{} },
@@ -565,6 +575,11 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.ListMemoryNamespaces(ctx, req.(*pb.ListMemoryNamespacesRequest))
 				})
+		case "ListMemoryEvents":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.ListMemoryEventsRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.ListMemoryEvents(ctx, req.(*pb.ListMemoryEventsRequest))
+				})
 		}
 
 	case "AdminMemoriesService":
@@ -619,6 +634,31 @@ func (g *grpcSteps) iSendGRPCRequestWithBody(endpoint string, body *godog.DocStr
 			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.AdminUpdateMemoryRequest{} },
 				func(ctx context.Context, req proto.Message) (proto.Message, error) {
 					return client.UpdateMemory(ctx, req.(*pb.AdminUpdateMemoryRequest))
+				})
+		}
+
+	case "AttachmentsService":
+		client := pb.NewAttachmentsServiceClient(conn)
+		switch method {
+		case "CreateAttachmentFromUrl":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.CreateAttachmentFromUrlRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.CreateAttachmentFromUrl(ctx, req.(*pb.CreateAttachmentFromUrlRequest))
+				})
+		case "GetAttachment":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.GetAttachmentRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetAttachment(ctx, req.(*pb.GetAttachmentRequest))
+				})
+		case "DeleteAttachment":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.DeleteAttachmentRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.DeleteAttachment(ctx, req.(*pb.DeleteAttachmentRequest))
+				})
+		case "GetAttachmentDownloadUrl":
+			return g.invokeUnary(conn, ctx, content, func() proto.Message { return &pb.GetAttachmentDownloadUrlRequest{} },
+				func(ctx context.Context, req proto.Message) (proto.Message, error) {
+					return client.GetAttachmentDownloadUrl(ctx, req.(*pb.GetAttachmentDownloadUrlRequest))
 				})
 		}
 

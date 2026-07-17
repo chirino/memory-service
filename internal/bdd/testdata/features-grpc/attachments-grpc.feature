@@ -17,6 +17,7 @@ Feature: Attachments gRPC API
     And the gRPC response field "size" should be "16"
     And the gRPC response field "sha256" should not be null
     And the gRPC response field "expiresAt" should not be null
+    And the gRPC response field "status" should be "ready"
 
   Scenario: Download an uploaded attachment via gRPC
     When I upload a file via gRPC with filename "download-test.txt" content type "text/plain" and content "Download me via gRPC"
@@ -38,6 +39,40 @@ Feature: Attachments gRPC API
     And the gRPC response field "contentType" should be "text/plain"
     And the gRPC response field "filename" should be "metadata-test.txt"
     And the gRPC response field "size" should be "14"
+    And the gRPC response field "status" should be "ready"
+
+  Scenario: Get attachment download URL via gRPC
+    When I upload a file via gRPC with filename "download-url.txt" content type "text/plain" and content "URL Data"
+    Then the gRPC response should not have an error
+    And set "attachmentId" to the gRPC response field "id"
+    When I send gRPC request "AttachmentsService/GetAttachmentDownloadUrl" with body:
+    """
+    id: "${attachmentId}"
+    disposition: "attachment"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "url" should not be null
+
+  Scenario: Delete unlinked attachment via gRPC
+    When I upload a file via gRPC with filename "delete-me.txt" content type "text/plain" and content "delete me"
+    Then the gRPC response should not have an error
+    And set "attachmentId" to the gRPC response field "id"
+    When I send gRPC request "AttachmentsService/DeleteAttachment" with body:
+    """
+    id: "${attachmentId}"
+    """
+    Then the gRPC response should not have an error
+    When I get attachment "${attachmentId}" metadata via gRPC
+    Then the gRPC response should have status "NOT_FOUND"
+
+  Scenario: Reject invalid source URL attachment via gRPC
+    When I send gRPC request "AttachmentsService/CreateAttachmentFromUrl" with body:
+    """
+    source_url: "not a url"
+    content_type: "text/plain"
+    filename: "remote.txt"
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
 
   Scenario: Cannot download unlinked attachment as different user
     When I upload a file via gRPC with filename "secret.txt" content type "text/plain" and content "Secret Data"

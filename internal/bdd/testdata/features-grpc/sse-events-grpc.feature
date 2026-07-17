@@ -19,6 +19,51 @@ Feature: Event Stream gRPC API
     And the gRPC event data should contain "conversation"
     And the gRPC event data should contain "conversation_group"
 
+  Scenario: gRPC event stream reports eviction when connection cap is exceeded
+    Given the current client is connected to the gRPC event stream as "alice-stream-1"
+    And the current client is connected to the gRPC event stream as "alice-stream-2"
+    And the current client is connected to the gRPC event stream as "alice-stream-3"
+    And the current client is connected to the gRPC event stream as "alice-stream-4"
+    And the current client is connected to the gRPC event stream as "alice-stream-5"
+    And the current client is connected to the gRPC event stream as "alice-stream-6"
+    Then "alice-stream-1" should receive a gRPC event with kind "stream" and event "evicted"
+    And the gRPC event data "reason" should be "too many connections"
+
+  Scenario: gRPC conversation create publishes an event
+    Given "alice" is connected to the gRPC event stream
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Created by gRPC mutation"
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "conversation" and event "created"
+    And the gRPC event data should contain "conversation"
+
+  Scenario: gRPC conversation update publishes an event
+    Given I have a conversation with title "gRPC Event Update Before"
+    And "alice" is connected to the gRPC event stream
+    When I send gRPC request "ConversationsService/UpdateConversation" with body:
+    """
+    conversation_id: "${conversationId}"
+    title: "gRPC Event Update After"
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "conversation" and event "updated"
+    And the gRPC event data should contain "conversation"
+
+  Scenario: gRPC membership share publishes an event to target user
+    Given I have a conversation with title "gRPC Membership Event"
+    And "bob" is connected to the gRPC event stream
+    When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
+    """
+    conversation_id: "${conversationId}"
+    user_id: "bob"
+    access_level: READER
+    """
+    Then the gRPC response should not have an error
+    And "bob" should receive a gRPC event with kind "membership" and event "created"
+    And the gRPC event data should contain "user"
+
   Scenario: Live gRPC tail uses Postgres numeric outbox cursor format
     Given "alice" is connected to the gRPC event stream
     And I am authenticated as agent with API key "test-agent-key"

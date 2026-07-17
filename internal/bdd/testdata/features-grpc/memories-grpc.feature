@@ -36,6 +36,34 @@ Feature: Episodic Memory gRPC API
     And the gRPC response field "id" should be "${memoryId}"
     And the gRPC response field "value.color" should be "dark"
 
+  Scenario: List memory lifecycle events via gRPC
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "events"
+    key: "seen"
+    value {
+      fields {
+        key: "enabled"
+        value { bool_value: true }
+      }
+    }
+    """
+    When I send gRPC request "MemoriesService/ListMemoryEvents" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "events"
+    kinds: "add"
+    limit: 10
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "events" should have size 1
+    And the gRPC response field "events[0].kind" should be "add"
+    And the gRPC response field "events[0].key" should be "seen"
+    And the gRPC response field "events[0].value.enabled" should be true
+
   Scenario: Put replaces an existing value
     Given I send gRPC request "MemoriesService/PutMemory" with body:
     """

@@ -940,9 +940,10 @@ var OwnershipTransfersService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	EntriesService_ListEntries_FullMethodName = "/memory.v1.EntriesService/ListEntries"
-	EntriesService_AppendEntry_FullMethodName = "/memory.v1.EntriesService/AppendEntry"
-	EntriesService_SyncEntries_FullMethodName = "/memory.v1.EntriesService/SyncEntries"
+	EntriesService_ListEntries_FullMethodName   = "/memory.v1.EntriesService/ListEntries"
+	EntriesService_AppendEntry_FullMethodName   = "/memory.v1.EntriesService/AppendEntry"
+	EntriesService_AppendEntries_FullMethodName = "/memory.v1.EntriesService/AppendEntries"
+	EntriesService_SyncEntries_FullMethodName   = "/memory.v1.EntriesService/SyncEntries"
 )
 
 // EntriesServiceClient is the client API for EntriesService service.
@@ -951,6 +952,7 @@ const (
 type EntriesServiceClient interface {
 	ListEntries(ctx context.Context, in *ListEntriesRequest, opts ...grpc.CallOption) (*ListEntriesResponse, error)
 	AppendEntry(ctx context.Context, in *AppendEntryRequest, opts ...grpc.CallOption) (*Entry, error)
+	AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error)
 	SyncEntries(ctx context.Context, in *SyncEntriesRequest, opts ...grpc.CallOption) (*SyncEntriesResponse, error)
 }
 
@@ -982,6 +984,16 @@ func (c *entriesServiceClient) AppendEntry(ctx context.Context, in *AppendEntryR
 	return out, nil
 }
 
+func (c *entriesServiceClient) AppendEntries(ctx context.Context, in *AppendEntriesRequest, opts ...grpc.CallOption) (*AppendEntriesResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AppendEntriesResponse)
+	err := c.cc.Invoke(ctx, EntriesService_AppendEntries_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 func (c *entriesServiceClient) SyncEntries(ctx context.Context, in *SyncEntriesRequest, opts ...grpc.CallOption) (*SyncEntriesResponse, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
 	out := new(SyncEntriesResponse)
@@ -998,6 +1010,7 @@ func (c *entriesServiceClient) SyncEntries(ctx context.Context, in *SyncEntriesR
 type EntriesServiceServer interface {
 	ListEntries(context.Context, *ListEntriesRequest) (*ListEntriesResponse, error)
 	AppendEntry(context.Context, *AppendEntryRequest) (*Entry, error)
+	AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error)
 	SyncEntries(context.Context, *SyncEntriesRequest) (*SyncEntriesResponse, error)
 	mustEmbedUnimplementedEntriesServiceServer()
 }
@@ -1014,6 +1027,9 @@ func (UnimplementedEntriesServiceServer) ListEntries(context.Context, *ListEntri
 }
 func (UnimplementedEntriesServiceServer) AppendEntry(context.Context, *AppendEntryRequest) (*Entry, error) {
 	return nil, status.Error(codes.Unimplemented, "method AppendEntry not implemented")
+}
+func (UnimplementedEntriesServiceServer) AppendEntries(context.Context, *AppendEntriesRequest) (*AppendEntriesResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method AppendEntries not implemented")
 }
 func (UnimplementedEntriesServiceServer) SyncEntries(context.Context, *SyncEntriesRequest) (*SyncEntriesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method SyncEntries not implemented")
@@ -1075,6 +1091,24 @@ func _EntriesService_AppendEntry_Handler(srv interface{}, ctx context.Context, d
 	return interceptor(ctx, in, info, handler)
 }
 
+func _EntriesService_AppendEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AppendEntriesRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(EntriesServiceServer).AppendEntries(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: EntriesService_AppendEntries_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(EntriesServiceServer).AppendEntries(ctx, req.(*AppendEntriesRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 func _EntriesService_SyncEntries_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(SyncEntriesRequest)
 	if err := dec(in); err != nil {
@@ -1107,6 +1141,10 @@ var EntriesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "AppendEntry",
 			Handler:    _EntriesService_AppendEntry_Handler,
+		},
+		{
+			MethodName: "AppendEntries",
+			Handler:    _EntriesService_AppendEntries_Handler,
 		},
 		{
 			MethodName: "SyncEntries",
@@ -1768,6 +1806,7 @@ const (
 	MemoriesService_UpdateMemory_FullMethodName         = "/memory.v1.MemoriesService/UpdateMemory"
 	MemoriesService_SearchMemories_FullMethodName       = "/memory.v1.MemoriesService/SearchMemories"
 	MemoriesService_ListMemoryNamespaces_FullMethodName = "/memory.v1.MemoriesService/ListMemoryNamespaces"
+	MemoriesService_ListMemoryEvents_FullMethodName     = "/memory.v1.MemoriesService/ListMemoryEvents"
 )
 
 // MemoriesServiceClient is the client API for MemoriesService service.
@@ -1779,6 +1818,7 @@ type MemoriesServiceClient interface {
 	UpdateMemory(ctx context.Context, in *UpdateMemoryRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 	SearchMemories(ctx context.Context, in *SearchMemoriesRequest, opts ...grpc.CallOption) (*SearchMemoriesResponse, error)
 	ListMemoryNamespaces(ctx context.Context, in *ListMemoryNamespacesRequest, opts ...grpc.CallOption) (*ListMemoryNamespacesResponse, error)
+	ListMemoryEvents(ctx context.Context, in *ListMemoryEventsRequest, opts ...grpc.CallOption) (*ListMemoryEventsResponse, error)
 }
 
 type memoriesServiceClient struct {
@@ -1839,6 +1879,16 @@ func (c *memoriesServiceClient) ListMemoryNamespaces(ctx context.Context, in *Li
 	return out, nil
 }
 
+func (c *memoriesServiceClient) ListMemoryEvents(ctx context.Context, in *ListMemoryEventsRequest, opts ...grpc.CallOption) (*ListMemoryEventsResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(ListMemoryEventsResponse)
+	err := c.cc.Invoke(ctx, MemoriesService_ListMemoryEvents_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // MemoriesServiceServer is the server API for MemoriesService service.
 // All implementations must embed UnimplementedMemoriesServiceServer
 // for forward compatibility.
@@ -1848,6 +1898,7 @@ type MemoriesServiceServer interface {
 	UpdateMemory(context.Context, *UpdateMemoryRequest) (*emptypb.Empty, error)
 	SearchMemories(context.Context, *SearchMemoriesRequest) (*SearchMemoriesResponse, error)
 	ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error)
+	ListMemoryEvents(context.Context, *ListMemoryEventsRequest) (*ListMemoryEventsResponse, error)
 	mustEmbedUnimplementedMemoriesServiceServer()
 }
 
@@ -1872,6 +1923,9 @@ func (UnimplementedMemoriesServiceServer) SearchMemories(context.Context, *Searc
 }
 func (UnimplementedMemoriesServiceServer) ListMemoryNamespaces(context.Context, *ListMemoryNamespacesRequest) (*ListMemoryNamespacesResponse, error) {
 	return nil, status.Error(codes.Unimplemented, "method ListMemoryNamespaces not implemented")
+}
+func (UnimplementedMemoriesServiceServer) ListMemoryEvents(context.Context, *ListMemoryEventsRequest) (*ListMemoryEventsResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method ListMemoryEvents not implemented")
 }
 func (UnimplementedMemoriesServiceServer) mustEmbedUnimplementedMemoriesServiceServer() {}
 func (UnimplementedMemoriesServiceServer) testEmbeddedByValue()                         {}
@@ -1984,6 +2038,24 @@ func _MemoriesService_ListMemoryNamespaces_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _MemoriesService_ListMemoryEvents_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ListMemoryEventsRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(MemoriesServiceServer).ListMemoryEvents(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: MemoriesService_ListMemoryEvents_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(MemoriesServiceServer).ListMemoryEvents(ctx, req.(*ListMemoryEventsRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // MemoriesService_ServiceDesc is the grpc.ServiceDesc for MemoriesService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2010,6 +2082,10 @@ var MemoriesService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "ListMemoryNamespaces",
 			Handler:    _MemoriesService_ListMemoryNamespaces_Handler,
+		},
+		{
+			MethodName: "ListMemoryEvents",
+			Handler:    _MemoriesService_ListMemoryEvents_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},
@@ -2723,9 +2799,12 @@ var ResponseRecorderService_ServiceDesc = grpc.ServiceDesc{
 }
 
 const (
-	AttachmentsService_UploadAttachment_FullMethodName   = "/memory.v1.AttachmentsService/UploadAttachment"
-	AttachmentsService_GetAttachment_FullMethodName      = "/memory.v1.AttachmentsService/GetAttachment"
-	AttachmentsService_DownloadAttachment_FullMethodName = "/memory.v1.AttachmentsService/DownloadAttachment"
+	AttachmentsService_UploadAttachment_FullMethodName         = "/memory.v1.AttachmentsService/UploadAttachment"
+	AttachmentsService_CreateAttachmentFromUrl_FullMethodName  = "/memory.v1.AttachmentsService/CreateAttachmentFromUrl"
+	AttachmentsService_GetAttachment_FullMethodName            = "/memory.v1.AttachmentsService/GetAttachment"
+	AttachmentsService_DownloadAttachment_FullMethodName       = "/memory.v1.AttachmentsService/DownloadAttachment"
+	AttachmentsService_DeleteAttachment_FullMethodName         = "/memory.v1.AttachmentsService/DeleteAttachment"
+	AttachmentsService_GetAttachmentDownloadUrl_FullMethodName = "/memory.v1.AttachmentsService/GetAttachmentDownloadUrl"
 )
 
 // AttachmentsServiceClient is the client API for AttachmentsService service.
@@ -2736,10 +2815,13 @@ type AttachmentsServiceClient interface {
 	// Subsequent messages contain file data chunks.
 	// Server responds once the upload is complete or an error occurs.
 	UploadAttachment(ctx context.Context, opts ...grpc.CallOption) (grpc.ClientStreamingClient[UploadAttachmentRequest, UploadAttachmentResponse], error)
+	CreateAttachmentFromUrl(ctx context.Context, in *CreateAttachmentFromUrlRequest, opts ...grpc.CallOption) (*UploadAttachmentResponse, error)
 	// Retrieve attachment metadata (not the file content).
 	GetAttachment(ctx context.Context, in *GetAttachmentRequest, opts ...grpc.CallOption) (*AttachmentInfo, error)
 	// Download a file as a stream of chunks.
 	DownloadAttachment(ctx context.Context, in *DownloadAttachmentRequest, opts ...grpc.CallOption) (grpc.ServerStreamingClient[DownloadAttachmentResponse], error)
+	DeleteAttachment(ctx context.Context, in *DeleteAttachmentRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
+	GetAttachmentDownloadUrl(ctx context.Context, in *GetAttachmentDownloadUrlRequest, opts ...grpc.CallOption) (*AttachmentDownloadUrlResponse, error)
 }
 
 type attachmentsServiceClient struct {
@@ -2762,6 +2844,16 @@ func (c *attachmentsServiceClient) UploadAttachment(ctx context.Context, opts ..
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AttachmentsService_UploadAttachmentClient = grpc.ClientStreamingClient[UploadAttachmentRequest, UploadAttachmentResponse]
+
+func (c *attachmentsServiceClient) CreateAttachmentFromUrl(ctx context.Context, in *CreateAttachmentFromUrlRequest, opts ...grpc.CallOption) (*UploadAttachmentResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(UploadAttachmentResponse)
+	err := c.cc.Invoke(ctx, AttachmentsService_CreateAttachmentFromUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
 
 func (c *attachmentsServiceClient) GetAttachment(ctx context.Context, in *GetAttachmentRequest, opts ...grpc.CallOption) (*AttachmentInfo, error) {
 	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
@@ -2792,6 +2884,26 @@ func (c *attachmentsServiceClient) DownloadAttachment(ctx context.Context, in *D
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AttachmentsService_DownloadAttachmentClient = grpc.ServerStreamingClient[DownloadAttachmentResponse]
 
+func (c *attachmentsServiceClient) DeleteAttachment(ctx context.Context, in *DeleteAttachmentRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, AttachmentsService_DeleteAttachment_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *attachmentsServiceClient) GetAttachmentDownloadUrl(ctx context.Context, in *GetAttachmentDownloadUrlRequest, opts ...grpc.CallOption) (*AttachmentDownloadUrlResponse, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AttachmentDownloadUrlResponse)
+	err := c.cc.Invoke(ctx, AttachmentsService_GetAttachmentDownloadUrl_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AttachmentsServiceServer is the server API for AttachmentsService service.
 // All implementations must embed UnimplementedAttachmentsServiceServer
 // for forward compatibility.
@@ -2800,10 +2912,13 @@ type AttachmentsServiceServer interface {
 	// Subsequent messages contain file data chunks.
 	// Server responds once the upload is complete or an error occurs.
 	UploadAttachment(grpc.ClientStreamingServer[UploadAttachmentRequest, UploadAttachmentResponse]) error
+	CreateAttachmentFromUrl(context.Context, *CreateAttachmentFromUrlRequest) (*UploadAttachmentResponse, error)
 	// Retrieve attachment metadata (not the file content).
 	GetAttachment(context.Context, *GetAttachmentRequest) (*AttachmentInfo, error)
 	// Download a file as a stream of chunks.
 	DownloadAttachment(*DownloadAttachmentRequest, grpc.ServerStreamingServer[DownloadAttachmentResponse]) error
+	DeleteAttachment(context.Context, *DeleteAttachmentRequest) (*emptypb.Empty, error)
+	GetAttachmentDownloadUrl(context.Context, *GetAttachmentDownloadUrlRequest) (*AttachmentDownloadUrlResponse, error)
 	mustEmbedUnimplementedAttachmentsServiceServer()
 }
 
@@ -2817,11 +2932,20 @@ type UnimplementedAttachmentsServiceServer struct{}
 func (UnimplementedAttachmentsServiceServer) UploadAttachment(grpc.ClientStreamingServer[UploadAttachmentRequest, UploadAttachmentResponse]) error {
 	return status.Error(codes.Unimplemented, "method UploadAttachment not implemented")
 }
+func (UnimplementedAttachmentsServiceServer) CreateAttachmentFromUrl(context.Context, *CreateAttachmentFromUrlRequest) (*UploadAttachmentResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method CreateAttachmentFromUrl not implemented")
+}
 func (UnimplementedAttachmentsServiceServer) GetAttachment(context.Context, *GetAttachmentRequest) (*AttachmentInfo, error) {
 	return nil, status.Error(codes.Unimplemented, "method GetAttachment not implemented")
 }
 func (UnimplementedAttachmentsServiceServer) DownloadAttachment(*DownloadAttachmentRequest, grpc.ServerStreamingServer[DownloadAttachmentResponse]) error {
 	return status.Error(codes.Unimplemented, "method DownloadAttachment not implemented")
+}
+func (UnimplementedAttachmentsServiceServer) DeleteAttachment(context.Context, *DeleteAttachmentRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method DeleteAttachment not implemented")
+}
+func (UnimplementedAttachmentsServiceServer) GetAttachmentDownloadUrl(context.Context, *GetAttachmentDownloadUrlRequest) (*AttachmentDownloadUrlResponse, error) {
+	return nil, status.Error(codes.Unimplemented, "method GetAttachmentDownloadUrl not implemented")
 }
 func (UnimplementedAttachmentsServiceServer) mustEmbedUnimplementedAttachmentsServiceServer() {}
 func (UnimplementedAttachmentsServiceServer) testEmbeddedByValue()                            {}
@@ -2850,6 +2974,24 @@ func _AttachmentsService_UploadAttachment_Handler(srv interface{}, stream grpc.S
 
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AttachmentsService_UploadAttachmentServer = grpc.ClientStreamingServer[UploadAttachmentRequest, UploadAttachmentResponse]
+
+func _AttachmentsService_CreateAttachmentFromUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(CreateAttachmentFromUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AttachmentsServiceServer).CreateAttachmentFromUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AttachmentsService_CreateAttachmentFromUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AttachmentsServiceServer).CreateAttachmentFromUrl(ctx, req.(*CreateAttachmentFromUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
 
 func _AttachmentsService_GetAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
 	in := new(GetAttachmentRequest)
@@ -2880,6 +3022,42 @@ func _AttachmentsService_DownloadAttachment_Handler(srv interface{}, stream grpc
 // This type alias is provided for backwards compatibility with existing code that references the prior non-generic stream type by name.
 type AttachmentsService_DownloadAttachmentServer = grpc.ServerStreamingServer[DownloadAttachmentResponse]
 
+func _AttachmentsService_DeleteAttachment_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(DeleteAttachmentRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AttachmentsServiceServer).DeleteAttachment(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AttachmentsService_DeleteAttachment_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AttachmentsServiceServer).DeleteAttachment(ctx, req.(*DeleteAttachmentRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AttachmentsService_GetAttachmentDownloadUrl_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(GetAttachmentDownloadUrlRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AttachmentsServiceServer).GetAttachmentDownloadUrl(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AttachmentsService_GetAttachmentDownloadUrl_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AttachmentsServiceServer).GetAttachmentDownloadUrl(ctx, req.(*GetAttachmentDownloadUrlRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AttachmentsService_ServiceDesc is the grpc.ServiceDesc for AttachmentsService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -2888,8 +3066,20 @@ var AttachmentsService_ServiceDesc = grpc.ServiceDesc{
 	HandlerType: (*AttachmentsServiceServer)(nil),
 	Methods: []grpc.MethodDesc{
 		{
+			MethodName: "CreateAttachmentFromUrl",
+			Handler:    _AttachmentsService_CreateAttachmentFromUrl_Handler,
+		},
+		{
 			MethodName: "GetAttachment",
 			Handler:    _AttachmentsService_GetAttachment_Handler,
+		},
+		{
+			MethodName: "DeleteAttachment",
+			Handler:    _AttachmentsService_DeleteAttachment_Handler,
+		},
+		{
+			MethodName: "GetAttachmentDownloadUrl",
+			Handler:    _AttachmentsService_GetAttachmentDownloadUrl_Handler,
 		},
 	},
 	Streams: []grpc.StreamDesc{

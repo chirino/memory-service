@@ -365,13 +365,13 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		),
 	)
 	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
-	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store})
+	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store, EventBus: eventBus})
 	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store, EventBus: eventBus})
 	pb.RegisterAdminEntriesServiceServer(grpcServer, &grpcserver.AdminEntriesServer{Store: store})
 	pb.RegisterAdminConversationsServiceServer(grpcServer, &grpcserver.AdminConversationsServer{Store: store, Config: cfg})
-	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store})
+	pb.RegisterConversationMembershipsServiceServer(grpcServer, &grpcserver.MembershipsServer{Store: store, EventBus: eventBus})
 	pb.RegisterOwnershipTransfersServiceServer(grpcServer, &grpcserver.TransfersServer{Store: store})
-	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg})
+	pb.RegisterSearchServiceServer(grpcServer, &grpcserver.SearchServer{Store: store, Config: cfg, Embedder: embedder, VectorStore: vectorStore})
 	pb.RegisterMemoriesServiceServer(grpcServer, &grpcserver.MemoriesServer{
 		Store:    episodicStore,
 		Policy:   episodicPolicy,
@@ -389,6 +389,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		AttachStore: attachStore,
 		MaxBodySize: cfg.AttachmentMaxSize,
 		Config:      cfg,
+		SigningKeys: attachSigningKeys,
 	})
 	pb.RegisterResponseRecorderServiceServer(grpcServer, &grpcserver.ResponseRecorderServer{
 		Resumer:  resumer,

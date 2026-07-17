@@ -404,6 +404,10 @@ type responsePolicy struct {
 	AllowDirect bool
 }
 
+// ResponsePolicy is the attachment response policy shared by REST and gRPC
+// attachment download URL handlers.
+type ResponsePolicy = responsePolicy
+
 func attachmentResponsePolicy(contentType, requestedDisposition string) responsePolicy {
 	mediaType := normalizedContentType(contentType)
 	disposition := strings.ToLower(strings.TrimSpace(requestedDisposition))
@@ -419,6 +423,17 @@ func attachmentResponsePolicy(contentType, requestedDisposition string) response
 		Disposition: disposition,
 		AllowDirect: disposition != "inline",
 	}
+}
+
+// AttachmentResponsePolicy returns the content/disposition/direct-download
+// policy for an attachment response.
+func AttachmentResponsePolicy(contentType, requestedDisposition string) ResponsePolicy {
+	return attachmentResponsePolicy(contentType, requestedDisposition)
+}
+
+// SignedURLOptions returns the S3 signing options for a disposition/filename pair.
+func SignedURLOptions(disposition string, filename *string) *registryattach.SignedURLOptions {
+	return signedURLOptions(disposition, filename)
 }
 
 func normalizedContentType(contentType string) string {
@@ -517,6 +532,11 @@ func signDownloadToken(storageKey string, secret []byte, expiresAt time.Time) st
 	sig := base64.RawURLEncoding.EncodeToString(mac.Sum(nil))
 	encodedPayload := base64.RawURLEncoding.EncodeToString([]byte(payload))
 	return encodedPayload + "." + sig
+}
+
+// SignDownloadToken returns the HMAC token used by public attachment download URLs.
+func SignDownloadToken(storageKey string, secret []byte, expiresAt time.Time) string {
+	return signDownloadToken(storageKey, secret, expiresAt)
 }
 
 func verifyDownloadToken(token string, secrets [][]byte, now time.Time) (string, bool) {
@@ -655,6 +675,12 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 	}); err != nil {
 		log.Error("Failed to update downloaded attachment", "attachmentId", attachmentID.String(), "err", err)
 	}
+}
+
+// StartSourceURLAttachmentDownload starts the same asynchronous source URL
+// download workflow used by the REST attachment API.
+func StartSourceURLAttachmentDownload(store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) {
+	go completeSourceURLAttachment(store, attachStore, cfg, attachmentID, userID, sourceURL, contentType)
 }
 
 func markSourceURLAttachmentFailed(ctx context.Context, store registrystore.MemoryStore, attachmentID uuid.UUID, userID string, cause error) {

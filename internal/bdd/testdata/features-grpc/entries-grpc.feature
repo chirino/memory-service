@@ -20,6 +20,7 @@ Feature: Entries gRPC API
     """
     Then the gRPC response should not have an error
     And set "entryId" to the gRPC response field "entries[0].id"
+    And the gRPC response field "entries[0].clientId" should not be null
     And the gRPC response text should match text proto:
     """
     entries {
@@ -29,6 +30,16 @@ Feature: Entries gRPC API
       content_type: "history"
     }
     """
+
+  Scenario: List entries defaults to the REST page size via gRPC
+    Given the conversation has 30 entries
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: HISTORY
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 31 entries
 
   Scenario: List entries with pagination via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
@@ -162,6 +173,138 @@ Feature: Entries gRPC API
       content_type: "test.v1"
     }
     """
+
+  Scenario: Agent listing without channel includes context and history via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    And the conversation has an entry "Default visible context" in channel "CONTEXT" with contentType "test.v1"
+    And the conversation has an entry "Default visible history" in channel "HISTORY"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    page {
+      page_size: 20
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "entries" should not be null
+    And the gRPC response text should match text proto:
+    """
+    entries {
+      channel: HISTORY
+    }
+    entries {
+      channel: CONTEXT
+      content_type: "test.v1"
+    }
+    """
+
+  Scenario: Agent can filter entries by agent id via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: CONTEXT
+      content_type: "agent/state"
+      agent_id: "agent-a"
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "state from agent a" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    agent_id: "agent-a"
+    page {
+      page_size: 20
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0].text" should be "state from agent a"
+
+  Scenario: User can append default history entry without client id via gRPC
+    Given I am authenticated as user "alice"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      content_type: "custom/message"
+      content {
+        struct_value {
+          fields {
+            key: "text"
+            value { string_value: "history without client id" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "contentType" should be "custom/message"
+
+  Scenario: Agent can append a batch of entries via gRPC
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I send gRPC request "EntriesService/AppendEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entries {
+      channel: CONTEXT
+      content_type: "test.v1"
+      agent_id: "agent-batch"
+      content {
+        string_value: "batch entry one"
+      }
+    }
+    entries {
+      channel: CONTEXT
+      content_type: "test.v1"
+      agent_id: "agent-batch"
+      content {
+        string_value: "batch entry two"
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "entries" should have size 2
+    And the gRPC response field "entries[0].content[0]" should be "batch entry one"
+    And the gRPC response field "entries[0].agentId" should be "agent-batch"
+    And the gRPC response field "entries[1].content[0]" should be "batch entry two"
+    And the gRPC response field "entries[1].agentId" should be "agent-batch"
+
+  Scenario: User can append history entry with indexed content via gRPC
+    Given I am authenticated as user "alice"
+    When I send gRPC request "EntriesService/AppendEntry" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: HISTORY
+      content_type: "history"
+      indexed_content: "indexed hello"
+      content {
+        struct_value {
+          fields {
+            key: "role"
+            value { string_value: "USER" }
+          }
+          fields {
+            key: "text"
+            value { string_value: "hello indexed" }
+          }
+        }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "indexedContent" should be "indexed hello"
 
   Scenario: Agent can filter context entries by epoch via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
@@ -327,15 +470,16 @@ Feature: Entries gRPC API
     And the gRPC response field "epochIncremented" should be false
     And the gRPC response should not have entry
 
-  Scenario: Append entry requires API key via gRPC
+  Scenario: Append context entry requires API key via gRPC
     Given I am authenticated as user "alice"
     And the conversation exists
     When I send gRPC request "EntriesService/AppendEntry" with body:
     """
     conversation_id: "${conversationId}"
     entry {
+      channel: CONTEXT
       user_id: "alice"
-      content_type: "message"
+      content_type: "test.v1"
       content {
         string_value: "hi"
       }
