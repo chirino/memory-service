@@ -8,11 +8,11 @@ import io.github.chirino.memory.history.runtime.AttachmentDescriptor;
 import io.github.chirino.memory.history.runtime.ConversationStore;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
-import java.util.ArrayList;
-import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
@@ -492,9 +492,9 @@ class SubAgentTaskManagerTest {
     }
 
     private static final class TestConversationStore extends ConversationStore {
-        private final List<UserMessage> userMessages = new ArrayList<>();
-        private final List<String> agentMessages = new ArrayList<>();
-        private final Map<String, Conversation> conversations = new HashMap<>();
+        private final List<UserMessage> userMessages = new CopyOnWriteArrayList<>();
+        private final List<String> agentMessages = new CopyOnWriteArrayList<>();
+        private final Map<String, Conversation> conversations = new ConcurrentHashMap<>();
 
         @Override
         public void appendUserMessage(
@@ -551,9 +551,9 @@ class SubAgentTaskManagerTest {
 
         @Override
         public SubAgentTaskExecution handle(SubAgentTaskRequest request) {
+            CompletableFuture<String> result = currentResult;
             lastStartedAtNanos = System.nanoTime();
             started.countDown();
-            CompletableFuture<String> result = currentResult;
             return SubAgentTaskExecution.streaming(
                     Multi.createFrom()
                             .emitter(
