@@ -12,6 +12,11 @@ on:
         required: true
         default: true
         type: boolean
+      update_minor:
+        description: Also update the X.Y Docker tag
+        required: true
+        default: true
+        type: boolean
       create_github_release:
         description: Create a GitHub Release after publishing artifacts
         required: true
@@ -81,11 +86,13 @@ jobs:
         shell: bash
         env:
           RELEASE_BRANCH: ${{ steps.release.outputs.branch }}
+          RELEASE_SOURCE_SHA: ${{ github.sha }}
           RELEASE_TAG: ${{ steps.release.outputs.tag }}
         run: |
           set -euo pipefail
 
           BRANCH="$RELEASE_BRANCH"
+          SOURCE_SHA="$RELEASE_SOURCE_SHA"
           TAG="$RELEASE_TAG"
 
           if git ls-remote --exit-code --tags origin "refs/tags/$TAG" >/dev/null 2>&1; then
@@ -105,6 +112,8 @@ jobs:
           if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
             git fetch origin "$BRANCH"
             git switch -C "$BRANCH" "origin/$BRANCH"
+            git merge --no-edit "$SOURCE_SHA"
+            git push origin "$BRANCH"
           else
             git switch -c "$BRANCH"
             git push --set-upstream origin "$BRANCH"
@@ -493,6 +502,7 @@ jobs:
           REPOSITORY_OWNER: ${{ github.repository_owner }}
           RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
           UPDATE_LATEST: ${{ inputs.update_latest }}
+          UPDATE_MINOR: ${{ inputs.update_minor }}
         run: |
           set -euo pipefail
 
@@ -503,9 +513,9 @@ jobs:
             local tag_args=("-t" "$image_ref:$version")
             local digest_refs=()
 
-            # Stable patch releases advance their verified compatibility line.
-            # Prereleases still receive their immutable version tag only.
-            if [[ "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
+            # Stable patch releases can advance their verified compatibility line.
+            # Prereleases never update the X.Y tag.
+            if [[ "$UPDATE_MINOR" == "true" && "$version" =~ ^([0-9]+)\.([0-9]+)\.([0-9]+)$ ]]; then
               tag_args+=("-t" "$image_ref:${BASH_REMATCH[1]}.${BASH_REMATCH[2]}")
             fi
 
