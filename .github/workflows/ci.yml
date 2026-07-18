@@ -563,32 +563,45 @@ jobs:
       - name: Build and test native binary JARs
         run: |
           ./java/mvnw -B -f java/pom.xml \
-            -Pbinary-jars \
+            -Pcentral-release,binary-jars \
             -Dmemory-service.binaries.dir=/tmp/memory-service-binaries \
             -Dmemory-service.packaged.test=true \
+            -Dgpg.skip=true \
+            -Dcentral.skipPublishing=true \
             -pl :memory-service-binaries -am clean verify
 
-      - name: Inspect packaged resources
+      - name: Inspect packaged JARs
         shell: bash
         run: |
           set -euo pipefail
-          jar tf java/memory-service-binary-linux-amd64/target/memory-service-binary-linux-amd64-*.jar \
+          primary_jar() {
+            local binary_module="$1"
+            local primary_path
+            primary_path="$(find "java/$binary_module/target" -maxdepth 1 -type f \
+              -name "$binary_module-*.jar" \
+              ! -name '*-sources.jar' \
+              ! -name '*-javadoc.jar' \
+              -print -quit)"
+            if [ -z "$primary_path" ]; then
+              echo "Missing primary JAR for $binary_module" >&2
+              return 1
+            fi
+            printf '%s\n' "$primary_path"
+          }
+
+          jar tf "$(primary_jar memory-service-binary-linux-amd64)" \
             | grep -Fx 'META-INF/memory-service/linux-amd64/memory-service'
-          jar tf java/memory-service-binary-linux-arm64/target/memory-service-binary-linux-arm64-*.jar \
+          jar tf "$(primary_jar memory-service-binary-linux-arm64)" \
             | grep -Fx 'META-INF/memory-service/linux-arm64/memory-service'
-          jar tf java/memory-service-binary-macos-arm64/target/memory-service-binary-macos-arm64-*.jar \
+          jar tf "$(primary_jar memory-service-binary-macos-arm64)" \
             | grep -Fx 'META-INF/memory-service/macos-arm64/memory-service'
 
-      - name: Validate aggregate Java module path
-        shell: bash
-        run: |
-          set -euo pipefail
           jars=(
-            java/memory-service-process/target/memory-service-process-*.jar
-            java/memory-service-binary-linux-amd64/target/memory-service-binary-linux-amd64-*.jar
-            java/memory-service-binary-linux-arm64/target/memory-service-binary-linux-arm64-*.jar
-            java/memory-service-binary-macos-arm64/target/memory-service-binary-macos-arm64-*.jar
-            java/memory-service-binaries/target/memory-service-binaries-*.jar
+            "$(primary_jar memory-service-process)"
+            "$(primary_jar memory-service-binary-linux-amd64)"
+            "$(primary_jar memory-service-binary-linux-arm64)"
+            "$(primary_jar memory-service-binary-macos-arm64)"
+            "$(primary_jar memory-service-binaries)"
           )
           module_path="$(IFS=:; echo "${jars[*]}")"
           java --validate-modules --module-path "$module_path"
