@@ -563,9 +563,11 @@ jobs:
       - name: Build and test native binary JARs
         run: |
           ./java/mvnw -B -f java/pom.xml \
-            -Pbinary-jars \
+            -Pcentral-release,binary-jars \
             -Dmemory-service.binaries.dir=/tmp/memory-service-binaries \
             -Dmemory-service.packaged.test=true \
+            -Dgpg.skip=true \
+            -Dcentral.skipPublishing=true \
             -pl :memory-service-binaries -am clean verify
 
       - name: Inspect packaged resources
