@@ -654,6 +654,7 @@ func (e *attachmentRefError) Error() string { return e.message }
 func handleAttachmentError(c *gin.Context, err error) {
 	var refErr *attachmentRefError
 	if errors.As(err, &refErr) {
+		_ = c.Error(err)
 		c.JSON(refErr.code, gin.H{"error": refErr.message})
 		return
 	}
@@ -743,6 +744,7 @@ func syncMemory(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 }
 
 func handleError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	var notFound *registrystore.NotFoundError
 	var validation *registrystore.ValidationError
 	var conflict *registrystore.ConflictError

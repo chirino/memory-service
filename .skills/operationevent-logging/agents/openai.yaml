@@ -1,0 +1,4 @@
+interface:
+  display_name: "Operation Event Logging"
+  short_description: "Implement privacy-safe canonical operation events"
+  default_prompt: "Use $operationevent-logging to implement or review backend operational logging safely."

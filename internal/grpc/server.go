@@ -22,6 +22,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/operationevent"
 	routeattachments "github.com/chirino/memory-service/internal/plugin/route/attachments"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
@@ -196,21 +197,34 @@ func mapError(err error) error {
 
 	switch {
 	case errors.Is(err, registryepisodic.ErrMemoryRevisionConflict):
-		return status.Error(codes.Aborted, err.Error())
+		return grpcStatusWithCause(codes.Aborted, err.Error(), err)
 	case errors.As(err, &notFound):
-		return status.Error(codes.NotFound, err.Error())
+		return grpcStatusWithCause(codes.NotFound, err.Error(), err)
 	case errors.As(err, &forbidden):
-		return status.Error(codes.PermissionDenied, err.Error())
+		return grpcStatusWithCause(codes.PermissionDenied, err.Error(), err)
 	case errors.As(err, &validation):
-		return status.Error(codes.InvalidArgument, err.Error())
+		return grpcStatusWithCause(codes.InvalidArgument, err.Error(), err)
 	case errors.As(err, &badRequest):
-		return status.Error(codes.InvalidArgument, err.Error())
+		return grpcStatusWithCause(codes.InvalidArgument, err.Error(), err)
 	case errors.As(err, &conflict):
-		return status.Error(codes.Aborted, err.Error())
+		return grpcStatusWithCause(codes.Aborted, err.Error(), err)
 	default:
 		log.Error("gRPC request failed", "error", err, "stack", string(debug.Stack()))
-		return status.Error(codes.Internal, "internal server error")
+		return grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
+}
+
+type statusCauseError struct {
+	status *status.Status
+	cause  error
+}
+
+func (e *statusCauseError) Error() string              { return e.status.Err().Error() }
+func (e *statusCauseError) GRPCStatus() *status.Status { return e.status }
+func (e *statusCauseError) Unwrap() error              { return e.cause }
+
+func grpcStatusWithCause(code codes.Code, message string, cause error) error {
+	return &statusCauseError{status: status.New(code, message), cause: cause}
 }
 
 func appendOutboxOrUseEvents(ctx context.Context, store registrystore.MemoryStore, events []registryeventbus.Event) ([]registryeventbus.Event, error) {
@@ -244,6 +258,7 @@ func grpcPageSize(ctx context.Context, requested int32, defaultSize int) (int, e
 }
 
 func withMemoryRead[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	var out T
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -258,6 +273,7 @@ func withMemoryRead[T any](ctx context.Context, store registrystore.MemoryStore,
 }
 
 func withMemoryWrite[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	var out T
 	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -272,10 +288,12 @@ func withMemoryWrite[T any](ctx context.Context, store registrystore.MemoryStore
 }
 
 func inMemoryWrite(ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) error) error {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	return store.InWriteTx(ctx, fn)
 }
 
 func withEpisodicRead[T any](ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) (T, error)) (T, error) {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	var out T
 	err := store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -290,6 +308,7 @@ func withEpisodicRead[T any](ctx context.Context, store registryepisodic.Episodi
 }
 
 func withEpisodicWrite[T any](ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) (T, error)) (T, error) {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	var out T
 	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -304,10 +323,12 @@ func withEpisodicWrite[T any](ctx context.Context, store registryepisodic.Episod
 }
 
 func inEpisodicRead(ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) error) error {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	return store.InReadTx(ctx, fn)
 }
 
 func inEpisodicWrite(ctx context.Context, store registryepisodic.EpisodicStore, fn func(context.Context) error) error {
+	security.MarkGRPCOperationResourcesValidated(ctx)
 	return store.InWriteTx(ctx, fn)
 }
 
@@ -2995,7 +3016,7 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	})
 	if err != nil {
 		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, status.Error(codes.Aborted, "memory revision conflict")
+			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
 		}
 		return nil, episodicInternalError("failed to store memory", err)
 	}
@@ -3129,7 +3150,7 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
 	}); err != nil {
 		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, status.Error(codes.Aborted, "memory revision conflict")
+			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
 		}
 		return nil, episodicInternalError("failed to archive memory", err)
 	}
@@ -3204,7 +3225,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 		})
 		if err != nil {
 			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-				return nil, status.Error(codes.Unavailable, "semantic search unavailable")
+				return nil, grpcStatusWithCause(codes.Unavailable, "semantic search unavailable", err)
 			}
 			return nil, episodicInternalError("semantic search error", err)
 		}
@@ -3227,7 +3248,7 @@ func (s *MemoriesServer) SearchMemories(ctx context.Context, req *pb.SearchMemor
 		})
 		if err != nil {
 			if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-				return nil, status.Error(codes.Unavailable, "semantic search unavailable")
+				return nil, grpcStatusWithCause(codes.Unavailable, "semantic search unavailable", err)
 			}
 			return nil, episodicInternalError("semantic search error", err)
 		}
@@ -3586,7 +3607,7 @@ func (s *AdminMemoriesServer) SearchMemories(ctx context.Context, req *pb.AdminS
 	}
 	if err != nil {
 		if errors.Is(err, registryepisodic.ErrSemanticSearchUnavailable) {
-			return nil, status.Error(codes.Unavailable, "semantic search unavailable")
+			return nil, grpcStatusWithCause(codes.Unavailable, "semantic search unavailable", err)
 		}
 		return nil, episodicInternalError("failed to search admin memories", err)
 	}
@@ -3833,7 +3854,7 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 	})
 	if err != nil {
 		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, status.Error(codes.Aborted, "memory revision conflict")
+			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
 		}
 		return nil, episodicInternalError("failed to store memory", err)
 	}
@@ -3875,7 +3896,7 @@ func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.AdminUpd
 		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
 	}); err != nil {
 		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, status.Error(codes.Aborted, "memory revision conflict")
+			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
 		}
 		return nil, episodicInternalError("failed to archive memory", err)
 	}
@@ -3980,7 +4001,7 @@ func (s *MemoriesServer) memoryPolicyContext(ctx context.Context) (episodic.Poli
 
 func episodicInternalError(message string, err error) error {
 	log.Error("episodic gRPC error", "message", message, "error", err, "stack", string(debug.Stack()))
-	return status.Error(codes.Internal, "internal server error")
+	return grpcStatusWithCause(codes.Internal, "internal server error", err)
 }
 
 func memoryWriteResultToProto(item *registryepisodic.MemoryWriteResult) (*pb.MemoryWriteResult, error) {
@@ -4421,7 +4442,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 			_ = writer.Close()
 			out := <-resultCh
 			if out.err != nil {
-				return status.Error(codes.InvalidArgument, out.err.Error())
+				return grpcStatusWithCause(codes.InvalidArgument, out.err.Error(), out.err)
 			}
 
 			contentType := metadata.GetContentType()
@@ -4436,7 +4457,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 
 			expiresIn, err := parseGRPCExpiresIn(metadata.GetExpiresIn(), s.Config)
 			if err != nil {
-				return status.Error(codes.InvalidArgument, err.Error())
+				return grpcStatusWithCause(codes.InvalidArgument, err.Error(), err)
 			}
 			expiresAt := time.Now().Add(expiresIn)
 
@@ -4494,7 +4515,7 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 				continue
 			}
 			if _, err := writer.Write(payload.Chunk); err != nil {
-				return status.Error(codes.Internal, "internal server error")
+				return grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 		default:
 			return status.Error(codes.InvalidArgument, "invalid upload payload")
@@ -4518,7 +4539,7 @@ func (s *AttachmentsServer) CreateAttachmentFromUrl(ctx context.Context, req *pb
 		return nil, status.Error(codes.InvalidArgument, "source_url is required")
 	}
 	if _, err := url.ParseRequestURI(sourceURL); err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid source_url")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "invalid source_url", err)
 	}
 	contentType := strings.TrimSpace(req.GetContentType())
 	if contentType == "" {
@@ -4560,7 +4581,7 @@ func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttach
 	}
 	attachmentID, err := uuid.Parse(req.GetId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "invalid attachment id", err)
 	}
 
 	attachment, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
@@ -4586,7 +4607,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 
 	attachmentID, err := uuid.Parse(req.GetId())
 	if err != nil {
-		return status.Error(codes.InvalidArgument, "invalid attachment id")
+		return grpcStatusWithCause(codes.InvalidArgument, "invalid attachment id", err)
 	}
 	attachment, err := withMemoryRead(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
 		return s.Store.GetAttachment(txCtx, userID, "", attachmentID)
@@ -4615,7 +4636,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 
 	reader, err := s.AttachStore.Retrieve(stream.Context(), *attachment.StorageKey)
 	if err != nil {
-		return status.Error(codes.Internal, "internal server error")
+		return grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 	defer reader.Close()
 
@@ -4635,7 +4656,7 @@ func (s *AttachmentsServer) DownloadAttachment(req *pb.DownloadAttachmentRequest
 			break
 		}
 		if readErr != nil {
-			return status.Error(codes.Internal, "internal server error")
+			return grpcStatusWithCause(codes.Internal, "internal server error", readErr)
 		}
 	}
 	return nil
@@ -4651,7 +4672,7 @@ func (s *AttachmentsServer) DeleteAttachment(ctx context.Context, req *pb.Delete
 	}
 	attachmentID, err := uuid.Parse(req.GetId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "invalid attachment id", err)
 	}
 	if err := inMemoryWrite(ctx, s.Store, func(txCtx context.Context) error {
 		attachment, err := s.Store.GetAttachment(txCtx, userID, "", attachmentID)
@@ -4683,11 +4704,11 @@ func (s *AttachmentsServer) GetAttachmentDownloadUrl(ctx context.Context, req *p
 	}
 	attachmentID, err := uuid.Parse(req.GetId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid attachment id")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "invalid attachment id", err)
 	}
 	disposition, err := parseGRPCDisposition(req.GetDisposition())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, err.Error())
+		return nil, grpcStatusWithCause(codes.InvalidArgument, err.Error(), err)
 	}
 	attachment, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
 		return s.Store.GetAttachment(txCtx, userID, "", attachmentID)
@@ -4939,7 +4960,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if recorder != nil {
 				if err := recorder.Complete(); err != nil {
 					log.Warn("record stream: complete failed after cancel", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 			}
 			s.publishResponseEvent(stream.Context(), "deleted", "failed", convUUID, convID)
@@ -4952,7 +4973,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				if recorder != nil {
 					if err := recorder.Complete(); err != nil {
 						log.Warn("record stream: complete failed on EOF", "conversation_id", convID, "error", err)
-						return status.Error(codes.Internal, "internal server error")
+						return grpcStatusWithCause(codes.Internal, "internal server error", err)
 					}
 				}
 				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
@@ -4967,7 +4988,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if convID == "" && len(req.GetConversationId()) > 0 {
 				id, err := requiredConversationID(req.GetConversationId())
 				if err != nil {
-					return status.Error(codes.InvalidArgument, "invalid conversation_id")
+					return grpcStatusWithCause(codes.InvalidArgument, "invalid conversation_id", err)
 				}
 				if err := s.requireConversationAccess(stream.Context(), id, model.AccessLevelWriter); err != nil {
 					return err
@@ -4978,12 +4999,12 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				recorder, err = s.Resumer.RecorderWithAddress(stream.Context(), convID, advertised)
 				if err != nil {
 					log.Warn("record stream: failed to create recorder", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 				cancelStream, err = s.Resumer.CancelStream(stream.Context(), convID)
 				if err != nil {
 					log.Warn("record stream: failed to subscribe to cancel channel", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 				s.publishResponseEvent(stream.Context(), "created", "started", convUUID, convID)
 			}
@@ -4994,7 +5015,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 			if recorder != nil && req.GetContent() != "" {
 				if err := recorder.Record(req.GetContent()); err != nil {
 					log.Warn("record stream: failed to write chunk", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 			}
 
@@ -5004,7 +5025,7 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				}
 				if err := recorder.Complete(); err != nil {
 					log.Warn("record stream: complete failed", "conversation_id", convID, "error", err)
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 				s.publishResponseEvent(stream.Context(), "deleted", "completed", convUUID, convID)
 				return stream.SendAndClose(&pb.RecordResponse{
@@ -5021,7 +5042,7 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	}
 	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
-		return status.Error(codes.InvalidArgument, "invalid conversation_id")
+		return grpcStatusWithCause(codes.InvalidArgument, "invalid conversation_id", err)
 	}
 	if err := s.requireConversationAccess(stream.Context(), convID, model.AccessLevelReader); err != nil {
 		return err
@@ -5030,7 +5051,7 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	advertised := s.resolveAdvertisedAddress(stream.Context())
 	ch, redirectAddress, err := s.Resumer.ReplayWithAddress(stream.Context(), string(convID), advertised)
 	if err != nil {
-		return status.Error(codes.Internal, "internal server error")
+		return grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 	if redirectAddress != "" {
 		return stream.Send(&pb.ReplayResponse{RedirectAddress: redirectAddress})
@@ -5049,14 +5070,14 @@ func (s *ResponseRecorderServer) Cancel(ctx context.Context, req *pb.CancelRecor
 	}
 	convID, err := requiredConversationID(req.GetConversationId())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "invalid conversation_id", err)
 	}
 	if err := s.requireConversationAccess(ctx, convID, model.AccessLevelWriter); err != nil {
 		return nil, err
 	}
 
 	if _, err := s.Resumer.RequestCancelWithAddress(ctx, string(convID), ""); err != nil {
-		return nil, status.Error(codes.Internal, "internal server error")
+		return nil, grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 	return &pb.CancelRecordResponse{Accepted: true}, nil
 }
@@ -5083,7 +5104,7 @@ func (s *ResponseRecorderServer) CheckRecordings(ctx context.Context, req *pb.Ch
 
 	active, err := s.Resumer.Check(ctx, ids)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "internal server error")
+		return nil, grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 
 	resp := &pb.CheckRecordingsResponse{}
@@ -5298,7 +5319,7 @@ func (s *AdminCheckpointServer) PutCheckpoint(ctx context.Context, req *pb.PutCh
 	}
 	raw, err := json.Marshal(req.GetValue().AsInterface())
 	if err != nil {
-		return nil, status.Error(codes.InvalidArgument, "value must be valid JSON")
+		return nil, grpcStatusWithCause(codes.InvalidArgument, "value must be valid JSON", err)
 	}
 	var checkpoint *registrystore.ClientCheckpoint
 	err = s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
@@ -5326,11 +5347,11 @@ func mapCheckpointError(err error) error {
 	var validation *registrystore.ValidationError
 	switch {
 	case errors.As(err, &notFound):
-		return status.Error(codes.NotFound, "checkpoint not found")
+		return grpcStatusWithCause(codes.NotFound, "checkpoint not found", err)
 	case errors.As(err, &validation):
-		return status.Error(codes.InvalidArgument, validation.Error())
+		return grpcStatusWithCause(codes.InvalidArgument, validation.Error(), err)
 	default:
-		return status.Error(codes.Internal, "internal server error")
+		return grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 }
 
@@ -5341,12 +5362,12 @@ func checkpointToProto(checkpoint *registrystore.ClientCheckpoint) (*pb.AdminChe
 	var value any
 	if len(checkpoint.Value) > 0 {
 		if err := json.Unmarshal(checkpoint.Value, &value); err != nil {
-			return nil, status.Error(codes.Internal, "internal server error")
+			return nil, grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 	}
 	pValue, err := structpb.NewValue(value)
 	if err != nil {
-		return nil, status.Error(codes.Internal, "internal server error")
+		return nil, grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 	return &pb.AdminCheckpoint{
 		ClientId:    checkpoint.ClientID,
@@ -5403,7 +5424,13 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			return status.Error(codes.InvalidArgument, "admin justification required")
 		}
 		if justification != "" {
-			log.Info("Admin gRPC event stream opened", "adminID", getUserID(stream.Context()), "clientID", getClientID(stream.Context()), "justification", justification)
+			log.Info("Admin audit",
+				"caller", getUserID(stream.Context()),
+				"clientID", getClientID(stream.Context()),
+				"operation", "grpc /memory.v1.EventStreamService/SubscribeEvents",
+				"requestID", security.RequestIDFromContext(stream.Context()),
+				"justification", justification,
+			)
 		}
 	}
 
@@ -5421,7 +5448,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		streamCtx, cancel := context.WithCancel(stream.Context())
 		stream = &assertedEventStreamServer{EventStreamService_SubscribeEventsServer: stream, ctx: streamCtx}
 		session := &grpcEventStreamSession{
-			ConnectionID: uuid.New().String(),
+			ConnectionID: grpcOperationConnectionID(stream.Context()),
 			UserID:       userID,
 			NodeID:       grpcEventStreamNodeID,
 			CreatedAt:    time.Now(),
@@ -5429,11 +5456,9 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			evicted:      make(chan struct{}),
 		}
 		grpcEventStreamSessions.trackSession(session)
-		log.Info("gRPC event stream opened", "connID", session.ConnectionID, "userID", userID, "sessions", grpcEventStreamSessions.countForUser(userID))
 		defer func() {
 			cancel()
 			grpcEventStreamSessions.removeSession(session.ConnectionID)
-			log.Info("gRPC event stream closed", "connID", session.ConnectionID, "userID", userID, "sessions", grpcEventStreamSessions.countForUser(userID))
 		}()
 		for grpcEventStreamSessions.countForUser(userID) > s.Config.SSEMaxConnectionsPerUser {
 			if !grpcEventStreamSessions.evictOldestLocal(userID) {
@@ -5465,6 +5490,7 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		conversationFilter[id] = true
 	}
 	entryFilter := eventstream.NewEntryEventFilter(req.GetEntryChannels(), req.GetEntryContentTypes(), req.GetEntryRoles())
+	security.MarkGRPCOperationResourcesValidated(stream.Context())
 	userEntryLoader := func(ctx context.Context, conversationID string, entryID uuid.UUID, channel *model.Channel) (*model.Entry, error) {
 		var found *model.Entry
 		err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
@@ -5509,6 +5535,11 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	}
 
 	lastCursor := ""
+	defer func() {
+		if operation := operationevent.FromContext(stream.Context()); operation != nil {
+			operation.SetCursor(lastCursor)
+		}
+	}()
 	outbox, _ := s.Store.(registrystore.EventOutboxStore)
 	resumeCursor := req.GetAfterCursor()
 	replayChecked := resumeCursor != ""
@@ -5520,9 +5551,9 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		}
 		if err := eventstream.ReplaySupported(stream.Context(), s.Store, outbox); err != nil {
 			if errors.Is(err, registrystore.ErrOutboxReplayUnsupported) {
-				return status.Error(codes.Unimplemented, "durable event replay is not supported by the configured datastore")
+				return grpcStatusWithCause(codes.Unimplemented, "durable event replay is not supported by the configured datastore", err)
 			}
-			return status.Error(codes.Internal, "internal server error")
+			return grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 	}
 
@@ -5551,7 +5582,7 @@ streamLoop:
 		}
 		sub, err := s.EventBus.Subscribe(stream.Context(), subscribeUserID)
 		if err != nil {
-			return status.Error(codes.Internal, "internal server error")
+			return grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 
 		if resumeCursor != "" {
@@ -5638,7 +5669,7 @@ streamLoop:
 				}
 				matches, filterErr := entryFilter.Matches(stream.Context(), event, loader)
 				if filterErr != nil {
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", filterErr)
 				}
 				if !matches {
 					continue
@@ -5664,7 +5695,7 @@ streamLoop:
 					enriched, enrichedOK, err = s.enrichGRPCEvent(stream.Context(), userID, grpcClientIDPtr, detail, event)
 				}
 				if err != nil {
-					return status.Error(codes.Internal, "internal server error")
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
 				}
 				if !enrichedOK {
 					continue
@@ -5675,6 +5706,15 @@ streamLoop:
 			}
 		}
 	}
+}
+
+func grpcOperationConnectionID(ctx context.Context) string {
+	if operation := operationevent.FromContext(ctx); operation != nil {
+		if connectionID := operation.Snapshot().ConnectionID; connectionID != "" {
+			return connectionID
+		}
+	}
+	return uuid.NewString()
 }
 
 func eventCursorPtr(cursor string) *string {
@@ -5719,7 +5759,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 	}
 	visibleGroups, err := s.loadReplayGroups(stream.Context(), userID)
 	if err != nil {
-		return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+		return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
 	query := registrystore.OutboxQuery{
 		AfterCursor: afterCursor,
@@ -5738,7 +5778,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			return err
 		})
 		if err != nil {
-			if err == registrystore.ErrStaleOutboxCursor {
+			if errors.Is(err, registrystore.ErrStaleOutboxCursor) {
 				invalidateData, _ := json.Marshal(map[string]string{"reason": "cursor beyond retention window"})
 				_ = stream.Send(&pb.EventNotification{
 					Event: "invalidate",
@@ -5747,7 +5787,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 				})
 				return replayGRPCClosed, nil
 			}
-			return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+			return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 		if page == nil {
 			break
@@ -5772,14 +5812,14 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !ok {
 				continue
@@ -5816,14 +5856,14 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCEvent(stream.Context(), userID, clientID, detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !ok {
 				continue
@@ -5858,7 +5898,7 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			return err
 		})
 		if err != nil {
-			if err == registrystore.ErrStaleOutboxCursor {
+			if errors.Is(err, registrystore.ErrStaleOutboxCursor) {
 				invalidateData, _ := json.Marshal(map[string]string{"reason": "cursor beyond retention window"})
 				_ = stream.Send(&pb.EventNotification{
 					Event: "invalidate",
@@ -5867,7 +5907,7 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 				})
 				return replayGRPCClosed, nil
 			}
-			return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+			return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 		if page == nil {
 			break
@@ -5889,14 +5929,14 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !ok {
 				continue
@@ -5933,14 +5973,14 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 			}
 			matches, err := entryFilter.Matches(stream.Context(), event, entryLoader)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !matches {
 				continue
 			}
 			enriched, ok, err := s.enrichGRPCAdminEvent(stream.Context(), detail, event)
 			if err != nil {
-				return replayGRPCClosed, status.Error(codes.Internal, "internal server error")
+				return replayGRPCClosed, grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 			if !ok {
 				continue

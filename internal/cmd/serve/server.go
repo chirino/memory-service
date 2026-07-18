@@ -182,15 +182,15 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		return nil, fmt.Errorf("rate limit configuration error: %w", err)
 	}
 	router.Use(security.RequestIDMiddleware())
+	if cfg.ManagementAccessLog {
+		router.Use(security.OperationEventMiddleware())
+	} else {
+		router.Use(security.OperationEventMiddleware("/health", "/ready", "/metrics"))
+	}
 	router.Use(security.ErrorEnvelopeMiddleware())
 	router.Use(security.SourceRateLimitMiddleware(rateLimiter))
-	router.Use(gin.Recovery())
+	router.Use(security.OperationRecoveryMiddleware())
 	router.Use(securityHeadersMiddleware())
-	if cfg.ManagementAccessLog {
-		router.Use(security.AccessLogMiddleware())
-	} else {
-		router.Use(security.AccessLogMiddleware("/health", "/ready", "/metrics"))
-	}
 	router.Use(security.MetricsMiddleware())
 	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
 	router.Use(bodyReadTimeoutMiddleware(cfg.BodyReadTimeout, cfg.AttachmentBodyReadTimeout))
@@ -353,6 +353,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
 			security.GRPCRequestIDUnaryInterceptor(),
+			security.GRPCOperationUnaryInterceptor(),
 			security.GRPCSourceRateLimitUnaryInterceptor(rateLimiter),
 			security.GRPCUnaryInterceptorWithRateLimiter(resolver, rateLimiter),
 			userIDAsserter.GRPCUnaryInterceptor(),
@@ -361,6 +362,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		),
 		grpc.ChainStreamInterceptor(
 			security.GRPCRequestIDStreamInterceptor(),
+			security.GRPCOperationStreamInterceptor(),
 			security.GRPCSourceRateLimitStreamInterceptor(rateLimiter),
 			security.GRPCStreamInterceptorWithRateLimiter(resolver, rateLimiter),
 			userIDAsserter.GRPCStreamInterceptor(),
@@ -500,12 +502,12 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
 	}
 	mgmtRouter.Use(security.RequestIDMiddleware())
-	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
-	mgmtRouter.Use(gin.Recovery())
-	mgmtRouter.Use(securityHeadersMiddleware())
 	if cfg.ManagementAccessLog {
-		mgmtRouter.Use(security.AccessLogMiddleware())
+		mgmtRouter.Use(security.OperationEventMiddleware())
 	}
+	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
+	mgmtRouter.Use(security.OperationRecoveryMiddleware())
+	mgmtRouter.Use(securityHeadersMiddleware())
 	if err := loadManagementRoutes(mgmtRouter); err != nil {
 		return nil, err
 	}

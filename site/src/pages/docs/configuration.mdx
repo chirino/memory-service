@@ -27,8 +27,18 @@ Memory Service is configured through CLI flags or environment variables. Use the
 | <Cfg p="--attachment-body-read-timeout" e="MEMORY_SERVICE_ATTACHMENT_BODY_READ_TIMEOUT" /> | duration                                  | `5m`            | Maximum time allowed to read multipart attachment upload bodies (`0` disables) |
 | <Cfg p="--max-page-size" e="MEMORY_SERVICE_MAX_PAGE_SIZE" />                               | positive integer                          | `1000`          | Maximum items accepted by listing endpoints                                    |
 | <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                         | path                                      | system temp dir | Directory for temporary files                                                  |
-| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />               | `true`, `false`                           | `false`         | Enable HTTP access logging for `/health`, `/ready`, `/metrics`                 |
+| <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />               | `true`, `false`                           | `false`         | Enable operational logging for `/health`, `/ready`, `/metrics`                 |
 | `MEMORY_SERVICE_LOG_LEVEL`                                                                 | `debug`, `info`, `warn`, `error`, `fatal` | `info`          | Server log level                                                               |
+
+### Operational event logging
+
+Memory Service emits one canonical completion event for every REST and gRPC operation and every claimed background task attempt. Long-running streams and substantial background runs also emit a `phase=start` event. REST operation names use route templates, such as `http GET /v1/conversations/{conversationId}`, and never use the concrete request URL. gRPC operation names use the full service method, and background operation names use stable `job.*` identifiers.
+
+Completion events include `phase`, `status`, `duration`, and one semantic `result`: `success`, `invalid`, `unauthenticated`, `forbidden`, `not_found`, `conflict`, `rate_limited`, `timed_out`, `canceled`, `rejected`, `failed`, or `retrying`. Depending on the operation they may also include `requestID`, authenticated identity IDs, resource IDs, `connectionID`, `cursor`, retry attempt, work/failure counts, and bounded provider diagnostics.
+
+Canonical events never include concrete unmatched paths, query values, headers, cookies, request or response bodies, credentials, message or memory content, raw provider responses, raw errors, or stack traces. Internal failure point logs retain stack traces where required. Provider diagnostics are allowlisted, bounded metadata under `errorDetails`.
+
+Admin audit records remain separate from operational events. They can contain the configured justification and share the same `requestID`; the canonical operational event never contains the justification. By default, management probes are omitted. Set <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" /> to include `/health`, `/ready`, and `/metrics` operations.
 
 ### Network Listener
 

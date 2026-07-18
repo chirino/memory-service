@@ -262,6 +262,30 @@ type proxyAPIServer struct {
 	eventBus       registryeventbus.EventBus
 }
 
+func setOperationConversationID(c *gin.Context, id string) {
+	if event := security.OperationEventFromGin(c); event != nil {
+		event.SetConversationID(id)
+	}
+}
+
+func setOperationEntryID(c *gin.Context, id string) {
+	if event := security.OperationEventFromGin(c); event != nil {
+		event.SetEntryID(id)
+	}
+}
+
+func setOperationAttachmentID(c *gin.Context, id string) {
+	if event := security.OperationEventFromGin(c); event != nil {
+		event.SetAttachmentID(id)
+	}
+}
+
+func setOperationMemoryID(c *gin.Context, id string) {
+	if event := security.OperationEventFromGin(c); event != nil {
+		event.SetMemoryID(id)
+	}
+}
+
 func (p *proxyAPIServer) UploadAttachment(c *gin.Context, _ generatedapi.UploadAttachmentParams) {
 	routeattachments.HandleUpload(c, p.store, p.attachStore, p.cfg)
 }
@@ -277,14 +301,17 @@ func (p *proxyAPIServer) DownloadAttachmentByToken(c *gin.Context, token string,
 }
 func (p *proxyAPIServer) DeleteAttachment(c *gin.Context, id openapi_types.UUID) {
 	setDecodedPathParam(c, "id", id.String())
+	setOperationAttachmentID(c, id.String())
 	routeattachments.HandleDeleteAttachment(c, p.store, p.attachStore)
 }
 func (p *proxyAPIServer) GetAttachment(c *gin.Context, id openapi_types.UUID, _ generatedapi.GetAttachmentParams) {
 	setDecodedPathParam(c, "id", id.String())
+	setOperationAttachmentID(c, id.String())
 	routeattachments.HandleGetAttachment(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, id openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
 	setDecodedPathParam(c, "id", id.String())
+	setOperationAttachmentID(c, id.String())
 	var primary []byte
 	if len(p.signingKeys) > 0 {
 		primary = p.signingKeys[0]
@@ -311,52 +338,64 @@ func (p *proxyAPIServer) ListUnindexedEntries(c *gin.Context, _ generatedapi.Lis
 }
 func (p *proxyAPIServer) GetConversation(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeconversations.HandleGetConversation(c, p.store)
 }
 func (p *proxyAPIServer) UpdateConversation(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeconversations.HandleUpdateConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) ListConversationEntries(c *gin.Context, conversationID string, _ generatedapi.ListConversationEntriesParams) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeentries.HandleListEntries(c, p.store)
 }
 func (p *proxyAPIServer) AppendConversationEntry(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeentries.HandleAppendEntry(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) SyncConversationContext(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeentries.HandleSyncMemory(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) ListConversationForks(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeconversations.HandleListForks(c, p.store)
 }
 func (p *proxyAPIServer) ListConversationChildren(c *gin.Context, conversationID string, _ generatedapi.ListConversationChildrenParams) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeconversations.HandleListChildConversations(c, p.store)
 }
 func (p *proxyAPIServer) ListConversationMemberships(c *gin.Context, conversationID string, _ generatedapi.ListConversationMembershipsParams) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routememberships.HandleListMemberships(c, p.store)
 }
 func (p *proxyAPIServer) ShareConversation(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routememberships.HandleShareConversation(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) DeleteConversationMembership(c *gin.Context, conversationID string, userID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	setDecodedPathParam(c, "userId", userID)
 	routememberships.HandleDeleteMembership(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) UpdateConversationMembership(c *gin.Context, conversationID string, userID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	setDecodedPathParam(c, "userId", userID)
 	routememberships.HandleUpdateMembership(c, p.store, p.eventBus)
 }
 func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, conversationID string) {
 	setDecodedPathParam(c, "conversationId", conversationID)
+	setOperationConversationID(c, conversationID)
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
 func (p *proxyAPIServer) UpdateMemory(c *gin.Context, params generatedapi.UpdateMemoryParams) {
@@ -454,6 +493,7 @@ func (p *proxyAdminServer) AdminGetMemory(c *gin.Context, id openapi_types.UUID,
 	if !p.authorize(c, security.PermissionAdminMemoriesRead) {
 		return
 	}
+	setOperationMemoryID(c, id.String())
 	routememories.HandleAdminGetMemory(c, p.episodicStore)
 }
 func (p *proxyAdminServer) AdminSearchMemories(c *gin.Context) {
@@ -535,6 +575,7 @@ func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, id openapi_types.UU
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
+	setOperationMemoryID(c, id.String())
 	routememories.HandleAdminDeleteMemory(c, p.episodicStore)
 }
 func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
@@ -542,6 +583,7 @@ func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, id openapi_types.UUID, 
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationEntryID(c, id.String())
 	routeadmin.HandleAdminGetEntry(c, p.store)
 }
 func (p *proxyAdminServer) AdminListAttachments(c *gin.Context, _ generatedadmin.AdminListAttachmentsParams) {
@@ -555,6 +597,7 @@ func (p *proxyAdminServer) AdminDeleteAttachment(c *gin.Context, id openapi_type
 	if !p.authorize(c, security.PermissionAdminAttachmentsWrite) {
 		return
 	}
+	setOperationAttachmentID(c, id.String())
 	routeadmin.HandleAdminDeleteAttachment(c, p.store, p.attachStore)
 }
 func (p *proxyAdminServer) AdminGetAttachment(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentParams) {
@@ -562,6 +605,7 @@ func (p *proxyAdminServer) AdminGetAttachment(c *gin.Context, id openapi_types.U
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
+	setOperationAttachmentID(c, id.String())
 	routeadmin.HandleAdminGetAttachment(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetAttachmentContent(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentContentParams) {
@@ -569,6 +613,7 @@ func (p *proxyAdminServer) AdminGetAttachmentContent(c *gin.Context, id openapi_
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
+	setOperationAttachmentID(c, id.String())
 	routeadmin.HandleAdminGetAttachmentContent(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetAttachmentDownloadUrl(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetAttachmentDownloadUrlParams) {
@@ -576,6 +621,7 @@ func (p *proxyAdminServer) AdminGetAttachmentDownloadUrl(c *gin.Context, id open
 	if !p.authorize(c, security.PermissionAdminAttachmentsRead) {
 		return
 	}
+	setOperationAttachmentID(c, id.String())
 	routeadmin.HandleAdminGetAttachmentDownloadURL(c, p.store, p.attachStore, p.cfg)
 }
 func (p *proxyAdminServer) AdminListConversations(c *gin.Context, _ generatedadmin.AdminListConversationsParams) {
@@ -595,6 +641,7 @@ func (p *proxyAdminServer) AdminUpdateConversation(c *gin.Context, id string) {
 	if !p.authorize(c, security.PermissionAdminConversationsWrite) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminUpdateConversation(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, id string, _ generatedadmin.AdminGetConversationParams) {
@@ -602,6 +649,7 @@ func (p *proxyAdminServer) AdminGetConversation(c *gin.Context, id string, _ gen
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminGetConversation(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, id string, _ generatedadmin.AdminGetEntriesParams) {
@@ -609,6 +657,7 @@ func (p *proxyAdminServer) AdminGetEntries(c *gin.Context, id string, _ generate
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminGetEntries(c, p.store)
 }
 func (p *proxyAdminServer) AdminListForks(c *gin.Context, id string, _ generatedadmin.AdminListForksParams) {
@@ -616,6 +665,7 @@ func (p *proxyAdminServer) AdminListForks(c *gin.Context, id string, _ generated
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminListForks(c, p.store)
 }
 func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, id string, _ generatedadmin.AdminListChildConversationsParams) {
@@ -623,6 +673,7 @@ func (p *proxyAdminServer) AdminListChildConversations(c *gin.Context, id string
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminListChildConversations(c, p.store)
 }
 func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, id string, _ generatedadmin.AdminGetMembershipsParams) {
@@ -630,6 +681,7 @@ func (p *proxyAdminServer) AdminGetMemberships(c *gin.Context, id string, _ gene
 	if !p.authorize(c, security.PermissionAdminConversationsRead) {
 		return
 	}
+	setOperationConversationID(c, id)
 	routeadmin.HandleAdminGetMemberships(c, p.store)
 }
 func (p *proxyAdminServer) AdminEvict(c *gin.Context, _ generatedadmin.AdminEvictParams) {

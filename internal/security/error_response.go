@@ -10,6 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const contextKeyRESTErrorCode = "operationEventRESTErrorCode"
+
+// RESTErrorCodeFromGin returns the stable code selected by error normalization.
+func RESTErrorCodeFromGin(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	return c.GetString(contextKeyRESTErrorCode)
+}
+
 // ErrorEnvelopeMiddleware normalizes non-streaming REST error responses that reach
 // application middleware. Transport-level errors that happen before gin are outside this path.
 func ErrorEnvelopeMiddleware() gin.HandlerFunc {
@@ -118,6 +128,11 @@ func (w *errorEnvelopeWriter) finish(c *gin.Context) {
 		requestID = RequestIDFromGin(c)
 	}
 	body := normalizeErrorBody(w.status, requestID, w.body.Bytes())
+	if c != nil {
+		if code, ok := body["code"].(string); ok {
+			c.Set(contextKeyRESTErrorCode, code)
+		}
+	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		encoded = []byte(`{"code":"internal_error","error":"internal server error"}`)

@@ -120,6 +120,7 @@ func (a *UserIDAsserter) ApplyGRPCContext(ctx context.Context) (context.Context,
 	if after == nil || after == before {
 		return ctx, nil
 	}
+	enrichOperationIdentity(ctx, after)
 	return context.WithValue(ctx, grpcIdentityKey{}, after), nil
 }
 

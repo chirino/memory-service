@@ -5,10 +5,10 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strings"
 
+	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/icholy/digest"
 )
 
@@ -34,7 +34,7 @@ func (c *InfinispanClient) CacheExists(ctx context.Context, cacheName string) (b
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return false, err
+		return false, infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
@@ -44,7 +44,7 @@ func (c *InfinispanClient) CacheExists(ctx context.Context, cacheName string) (b
 	if resp.StatusCode == http.StatusNotFound {
 		return false, nil
 	}
-	return false, fmt.Errorf("unexpected status checking cache: %d", resp.StatusCode)
+	return false, infinispanProviderError(fmt.Errorf("unexpected cache check status: %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 }
 
 // RegisterSchema registers a Protobuf schema with Infinispan.
@@ -61,13 +61,12 @@ func (c *InfinispanClient) RegisterSchema(ctx context.Context, dimension int) er
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to register schema: %d - %s", resp.StatusCode, string(body))
+		return infinispanProviderError(fmt.Errorf("failed to register schema: status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	return nil
@@ -88,13 +87,12 @@ func (c *InfinispanClient) CreateCache(ctx context.Context, cacheName string, di
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to create cache: %d - %s", resp.StatusCode, string(body))
+		return infinispanProviderError(fmt.Errorf("failed to create cache: status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	return nil
@@ -117,13 +115,12 @@ func (c *InfinispanClient) PutEntry(ctx context.Context, cacheName, key string, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("failed to put entry: %d - %s", resp.StatusCode, string(body))
+		return infinispanProviderError(fmt.Errorf("failed to put entry: status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	return nil
@@ -171,18 +168,17 @@ func (c *InfinispanClient) Search(ctx context.Context, cacheName, query string, 
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return nil, err
+		return nil, infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK {
-		body, _ := io.ReadAll(resp.Body)
-		return nil, fmt.Errorf("search failed: %d - %s", resp.StatusCode, string(body))
+		return nil, infinispanProviderError(fmt.Errorf("search failed: status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	var searchResp SearchResponse
 	if err := json.NewDecoder(resp.Body).Decode(&searchResp); err != nil {
-		return nil, err
+		return nil, infinispanProviderError(err, resp.StatusCode, "invalid_response", resp.Header.Get("X-Request-ID"))
 	}
 
 	return &searchResp, nil
@@ -210,16 +206,28 @@ func (c *InfinispanClient) DeleteByQuery(ctx context.Context, cacheName, query s
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return infinispanProviderError(err, 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusNoContent {
-		body, _ := io.ReadAll(resp.Body)
-		return fmt.Errorf("delete by query failed: %d - %s", resp.StatusCode, string(body))
+		return infinispanProviderError(fmt.Errorf("delete by query failed: status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	return nil
+}
+
+func infinispanProviderError(err error, statusCode int, reason, transactionID string) error {
+	return operationevent.WithErrorDetails(err, operationevent.ErrorDetails{
+		ErrorType: "provider",
+		ErrorCode: "vector_provider_error",
+		Reason:    reason,
+		Provider: &operationevent.ErrorDetailsProvider{
+			Name:          "infinispan",
+			StatusCode:    statusCode,
+			TransactionID: transactionID,
+		},
+	})
 }
 
 // authTransport implements HTTP authentication (Basic or Digest).

@@ -7,6 +7,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/knowledge"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
@@ -62,6 +63,7 @@ func (b *BackgroundIndexer) Start(ctx context.Context) {
 }
 
 func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
+	event := operationevent.New("job.entry_index")
 	var entries []model.Entry
 	err := b.store.InReadTx(ctx, func(readCtx context.Context) error {
 		var err error
@@ -69,7 +71,7 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		return err
 	})
 	if err != nil {
-		log.Error("Indexer: list unindexed entries failed", "err", err)
+		emitJobError(event, ctx, err, "list_failed")
 		return
 	}
 
@@ -85,8 +87,11 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		}
 	}
 	if len(candidates) == 0 {
+		emitJobTerminal(event, ctx, 0)
 		return
 	}
+	event.SetWorkCount(int64(len(candidates)))
+	event.EmitStart()
 
 	// Batch embed all texts in one request.
 	texts := make([]string, len(candidates))
@@ -95,7 +100,7 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 	}
 	embeddings, err := b.embedder.EmbedTexts(ctx, texts)
 	if err != nil {
-		log.Error("Indexer: batch embed failed", "err", err)
+		emitJobError(event, ctx, err, "embed_failed")
 		return
 	}
 
@@ -111,28 +116,34 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		}
 	}
 	if err := b.vector.Upsert(ctx, upserts); err != nil {
-		log.Error("Indexer: batch vector upsert failed", "err", err)
+		emitJobError(event, ctx, err, "vector_upsert_failed")
 		return
 	}
 
 	// Mark each entry as indexed and collect affected conversation group IDs.
 	now := time.Now()
 	count := 0
+	failures := 0
 	affectedGroups := map[uuid.UUID]bool{}
 	for _, c := range candidates {
 		if err := b.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			return b.store.SetIndexedAt(writeCtx, c.entry.ID, c.entry.ConversationGroupID, now)
 		}); err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				emitJobTerminal(event, ctx, int64(failures))
+				return
+			}
 			log.Error("Indexer: set indexed_at failed", "entryId", c.entry.ID, "err", err)
+			event.EnrichError(err)
+			failures++
 			continue
 		}
 		count++
 		affectedGroups[c.entry.ConversationGroupID] = true
 	}
 
-	if count > 0 {
-		log.Info("Indexer: indexed entries", "count", count)
-	}
+	event.SetWorkCount(int64(count))
+	event.SetFailureCount(int64(failures))
 
 	// Trigger clustering for owners of affected conversations.
 	if b.clusterer != nil && len(affectedGroups) > 0 {
@@ -142,4 +153,8 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 		}
 		b.clusterer.ClusterByConversationGroups(ctx, groupIDs)
 	}
+	if failures > 0 {
+		event.SetReason("index_update_failed")
+	}
+	emitJobTerminal(event, ctx, int64(failures))
 }

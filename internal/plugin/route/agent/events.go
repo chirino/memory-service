@@ -222,11 +222,15 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 		CreatedAt:    time.Now(),
 		evicted:      make(chan struct{}),
 	}
+	operation := security.OperationEventFromGin(c)
+	if operation != nil {
+		operation.SetConnectionID(session.ConnectionID)
+		operation.SetCursor(after)
+		operation.EmitStart()
+	}
 	sessionTracker.trackSession(session)
-	log.Info("SSE connection opened", "connID", session.ConnectionID, "userID", userID, "sessions", sessionTracker.countForUser(userID))
 	defer func() {
 		sessionTracker.removeSession(session.ConnectionID)
-		log.Info("SSE connection closed", "connID", session.ConnectionID, "userID", userID, "sessions", sessionTracker.countForUser(userID))
 	}()
 
 	// Publish session created event (internal — not forwarded to clients).
@@ -300,6 +304,11 @@ func HandleSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus regist
 	keepalive := time.NewTicker(cfg.SSEKeepaliveInterval)
 	defer keepalive.Stop()
 	lastCursor := ""
+	defer func() {
+		if operation != nil {
+			operation.SetCursor(lastCursor)
+		}
+	}()
 	resumeCursor := after
 	replayChecked := after != ""
 	replayAvailable := after != ""
@@ -329,12 +338,13 @@ connectionLoop:
 		sub, err := bus.Subscribe(c.Request.Context(), userID)
 		if err != nil {
 			log.Error("SSE subscribe failed", "err", err, "userID", userID)
+			security.SetOperationTerminalError(c, "subscribe_failed", err)
 			return
 		}
 
 		if resumeCursor != "" {
 			writeSSEPhaseEvent(c, "replay")
-			outcome := replaySSEEvents(c, store, userID, clientIDPtr, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, entryFilter, entryLoader, &lastCursor, func(event registryeventbus.Event) bool {
+			outcome, replayErr := replaySSEEvents(c, store, userID, clientIDPtr, detail, outbox, sub, resumeCursor, cfg.OutboxReplayBatchSize, kindsFilter, entryFilter, entryLoader, &lastCursor, func(event registryeventbus.Event) bool {
 				if event.Internal && event.Kind == "session" {
 					sessionTracker.handleSessionEvent(event)
 					return true
@@ -343,6 +353,9 @@ connectionLoop:
 			})
 			switch outcome {
 			case replayOutcomeClosed:
+				if replayErr != nil {
+					security.SetOperationTerminalError(c, "replay_failed", replayErr)
+				}
 				return
 			case replayOutcomeRecover:
 				if canRecoverSlowConsumer() {
@@ -440,14 +453,14 @@ connectionLoop:
 	}
 }
 
-func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID string, clientID *string, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) replayOutcome {
+func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID string, clientID *string, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string, skipBusEvent func(registryeventbus.Event) bool) (replayOutcome, error) {
 	if batchSize <= 0 {
 		batchSize = 1000
 	}
 	visibleGroups, err := loadUserReplayGroups(c.Request.Context(), store, userID)
 	if err != nil {
 		log.Error("SSE replay membership preload failed", "err", err, "userID", userID)
-		return replayOutcomeClosed
+		return replayOutcomeClosed, err
 	}
 	query := registrystore.OutboxQuery{
 		AfterCursor: after,
@@ -466,16 +479,16 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID str
 			return err
 		})
 		if err != nil {
-			if err == registrystore.ErrStaleOutboxCursor {
+			if errors.Is(err, registrystore.ErrStaleOutboxCursor) {
 				writeSSEEvent(c, registryeventbus.Event{
 					Event: "invalidate",
 					Kind:  "stream",
 					Data:  map[string]string{"reason": "cursor beyond retention window"},
 				})
-				return replayOutcomeClosed
+				return replayOutcomeClosed, nil
 			}
 			log.Error("SSE replay failed", "err", err, "after", after)
-			return replayOutcomeClosed
+			return replayOutcomeClosed, err
 		}
 		if page == nil {
 			break
@@ -518,7 +531,7 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID str
 		select {
 		case event, ok := <-sub:
 			if !ok {
-				return replayOutcomeRecover
+				return replayOutcomeRecover, nil
 			}
 			if skipBusEvent(event) {
 				continue
@@ -544,7 +557,7 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID str
 				writeSSEEvent(c, enriched)
 			}
 		default:
-			return replayOutcomeContinue
+			return replayOutcomeContinue, nil
 		}
 	}
 }

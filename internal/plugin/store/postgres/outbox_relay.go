@@ -355,7 +355,7 @@ func currentSlotLSN(ctx context.Context, db sqlDBProvider, slotName string) (pgl
 		WHERE slot_name = $1
 	`, slotName).Scan(&confirmed, &restart)
 	if err != nil {
-		if err == sql.ErrNoRows {
+		if errors.Is(err, sql.ErrNoRows) {
 			return 0, false, nil
 		}
 		return 0, false, fmt.Errorf("postgres outbox relay query slot: %w", err)

@@ -994,6 +994,7 @@ func resolveGRPCIdentity(ctx context.Context, resolver *TokenResolver) context.C
 func resolveGRPCIdentityWithRateLimiter(ctx context.Context, resolver *TokenResolver, limiter *RateLimiter) context.Context {
 	if resolver.localUserID != "" {
 		id, _ := resolver.Resolve(ctx, RequestCredentials{})
+		enrichOperationIdentity(ctx, id)
 		return context.WithValue(ctx, grpcIdentityKey{}, id)
 	}
 	auth := grpcMetadataValue(ctx, "authorization")
@@ -1028,6 +1029,7 @@ func resolveGRPCIdentityWithRateLimiter(ctx context.Context, resolver *TokenReso
 		consumeGRPCAuthFailure(ctx, limiter)
 		return ctx
 	}
+	enrichOperationIdentity(ctx, id)
 	return context.WithValue(ctx, grpcIdentityKey{}, id)
 }
 

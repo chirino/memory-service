@@ -85,7 +85,18 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 	}
 
 	adminID := security.GetUserID(c)
-	log.Info("Admin SSE stream opened", "adminID", adminID, "justification", justification)
+	log.Info("Admin audit",
+		"caller", adminID,
+		"action", "event_stream_open",
+		"requestId", security.RequestIDFromGin(c),
+		"justification", justification,
+	)
+	operation := security.OperationEventFromGin(c)
+	if operation != nil {
+		operation.SetConnectionID(uuid.NewString())
+		operation.SetCursor(after)
+		operation.EmitStart()
+	}
 
 	// Parse optional kinds filter.
 	kindsFilter := make(map[string]bool)
@@ -110,10 +121,15 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 
 	keepalive := time.NewTicker(cfg.SSEKeepaliveInterval)
 	defer keepalive.Stop()
-
 	auditRelog := time.NewTicker(5 * time.Minute)
 	defer auditRelog.Stop()
+
 	lastCursor := ""
+	defer func() {
+		if operation != nil {
+			operation.SetCursor(lastCursor)
+		}
+	}()
 	resumeCursor := after
 	replayChecked := after != ""
 	replayAvailable := after != ""
@@ -143,18 +159,22 @@ streamLoop:
 		sub, err := bus.Subscribe(c.Request.Context(), "")
 		if err != nil {
 			log.Error("Admin SSE subscribe failed", "err", err, "adminID", adminID)
+			security.SetOperationTerminalError(c, "subscribe_failed", err)
 			return
 		}
 
 		if resumeCursor != "" {
 			writeAdminSSEPhaseEvent(c, "replay")
-			outcome := replayAdminSSEEvents(c, store, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, entryFilter, entryLoader, &lastCursor)
+			outcome, replayErr := replayAdminSSEEvents(c, store, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, entryFilter, entryLoader, &lastCursor)
 			switch outcome {
 			case replayOutcomeClosed:
+				if replayErr != nil {
+					security.SetOperationTerminalError(c, "replay_failed", replayErr)
+				}
 				return
 			case replayOutcomeRecover:
 				if canRecoverSlowConsumer() {
-					log.Info("Admin SSE replay recovering from slow consumer", "adminID", adminID, "cursor", lastCursor, "justification", justification)
+					log.Info("Admin SSE replay recovering from slow consumer", "adminID", adminID, "cursor", lastCursor)
 					resumeCursor = lastCursor
 					continue streamLoop
 				}
@@ -164,7 +184,7 @@ streamLoop:
 					Data:         map[string]string{"reason": "slow consumer"},
 					OutboxCursor: lastCursor,
 				})
-				log.Info("Admin SSE stream evicted", "adminID", adminID, "justification", justification)
+				log.Info("Admin SSE stream evicted", "adminID", adminID)
 				return
 			case replayOutcomeContinue:
 				resumeCursor = ""
@@ -175,7 +195,6 @@ streamLoop:
 		for {
 			select {
 			case <-c.Request.Context().Done():
-				log.Info("Admin SSE stream closed", "adminID", adminID, "justification", justification)
 				return
 
 			case <-keepalive.C:
@@ -183,12 +202,17 @@ streamLoop:
 				c.Writer.Flush()
 
 			case <-auditRelog.C:
-				log.Info("Admin SSE stream active", "adminID", adminID, "justification", justification)
+				log.Info("Admin audit",
+					"caller", adminID,
+					"action", "event_stream_active",
+					"requestId", security.RequestIDFromGin(c),
+					"justification", justification,
+				)
 
 			case event, ok := <-sub:
 				if !ok {
 					if canRecoverSlowConsumer() {
-						log.Info("Admin SSE stream recovering from slow consumer", "adminID", adminID, "cursor", lastCursor, "justification", justification)
+						log.Info("Admin SSE stream recovering from slow consumer", "adminID", adminID, "cursor", lastCursor)
 						resumeCursor = lastCursor
 						continue streamLoop
 					}
@@ -198,7 +222,7 @@ streamLoop:
 						Data:         map[string]string{"reason": "slow consumer"},
 						OutboxCursor: lastCursor,
 					})
-					log.Info("Admin SSE stream evicted", "adminID", adminID, "justification", justification)
+					log.Info("Admin SSE stream evicted", "adminID", adminID)
 					return
 				}
 
@@ -231,7 +255,7 @@ streamLoop:
 	}
 }
 
-func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) replayOutcome {
+func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayOutcome, error) {
 	query := registrystore.OutboxQuery{
 		AfterCursor: after,
 		Limit:       batchSize,
@@ -249,16 +273,16 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 			return err
 		})
 		if err != nil {
-			if err == registrystore.ErrStaleOutboxCursor {
+			if errors.Is(err, registrystore.ErrStaleOutboxCursor) {
 				writeAdminSSEEvent(c, registryeventbus.Event{
 					Event: "invalidate",
 					Kind:  "stream",
 					Data:  map[string]string{"reason": "cursor beyond retention window"},
 				})
-				return replayOutcomeClosed
+				return replayOutcomeClosed, nil
 			}
 			log.Error("Admin SSE replay failed", "err", err, "after", after)
-			return replayOutcomeClosed
+			return replayOutcomeClosed, err
 		}
 		if page == nil {
 			break
@@ -296,7 +320,7 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 		select {
 		case event, ok := <-sub:
 			if !ok {
-				return replayOutcomeRecover
+				return replayOutcomeRecover, nil
 			}
 			if event.Internal {
 				continue
@@ -322,7 +346,7 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				writeAdminSSEEvent(c, enriched)
 			}
 		default:
-			return replayOutcomeContinue
+			return replayOutcomeContinue, nil
 		}
 	}
 }
