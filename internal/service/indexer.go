@@ -64,6 +64,12 @@ func (b *BackgroundIndexer) Start(ctx context.Context) {
 
 func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 	event := operationevent.New("job.entry_index")
+	failures := 0
+	defer recoverJobPanic(event, func() {
+		failures++
+		event.SetFailureCount(int64(failures))
+		event.EmitTerminal(operationevent.ResultFailed)
+	})
 	var entries []model.Entry
 	err := b.store.InReadTx(ctx, func(readCtx context.Context) error {
 		var err error
@@ -123,7 +129,6 @@ func (b *BackgroundIndexer) indexBatch(ctx context.Context) {
 	// Mark each entry as indexed and collect affected conversation group IDs.
 	now := time.Now()
 	count := 0
-	failures := 0
 	affectedGroups := map[uuid.UUID]bool{}
 	for _, c := range candidates {
 		if err := b.store.InWriteTx(ctx, func(writeCtx context.Context) error {

@@ -7,7 +7,6 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
@@ -27,12 +26,17 @@ func GRPCOperationUnaryInterceptor() grpc.UnaryServerInterceptor {
 		ctx = context.WithValue(ctx, grpcOperationStateContextKey{}, state)
 		ctx = operationevent.WithContext(ctx, event)
 		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.Error("gRPC request panic", "method", info.FullMethod, "panic", recovered, "stack", string(debug.Stack()))
-				retErr = status.Error(codes.Internal, "internal server error")
+			recovered := recover()
+			var stack []byte
+			if recovered != nil {
+				stack = debug.Stack()
 			}
 			if shouldEnrichOperationResources(state) {
 				resources.apply(event)
+			}
+			if recovered != nil {
+				operationevent.LogRecoveredPanic(event, "", recovered, stack)
+				retErr = status.Error(codes.Internal, "internal server error")
 			}
 			finishGRPCOperation(ctx, event, retErr)
 		}()
@@ -52,12 +56,17 @@ func GRPCOperationStreamInterceptor() grpc.StreamServerInterceptor {
 		wrapped := &operationServerStream{ServerStream: stream, ctx: ctx, event: event, fullMethod: info.FullMethod}
 		event.EmitStart()
 		defer func() {
-			if recovered := recover(); recovered != nil {
-				log.Error("gRPC stream panic", "method", info.FullMethod, "panic", recovered, "stack", string(debug.Stack()))
-				retErr = status.Error(codes.Internal, "internal server error")
+			recovered := recover()
+			var stack []byte
+			if recovered != nil {
+				stack = debug.Stack()
 			}
 			if shouldEnrichOperationResources(state) {
 				wrapped.applyResources()
+			}
+			if recovered != nil {
+				operationevent.LogRecoveredPanic(event, "", recovered, stack)
+				retErr = status.Error(codes.Internal, "internal server error")
 			}
 			finishGRPCOperation(ctx, event, retErr)
 		}()

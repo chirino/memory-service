@@ -61,6 +61,7 @@ func (w *errorEnvelopeWriter) WriteHeaderNow() {
 	w.size = 0
 	if !w.shouldCapture() {
 		w.ResponseWriter.WriteHeader(w.status)
+		w.ResponseWriter.WriteHeaderNow()
 	}
 }
 
@@ -141,6 +142,15 @@ func (w *errorEnvelopeWriter) finish(c *gin.Context) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
 	w.ResponseWriter.WriteHeader(w.status)
 	_, _ = w.ResponseWriter.Write(encoded)
+}
+
+func (w *errorEnvelopeWriter) finishRecoveredPanic(c *gin.Context) {
+	if !w.ResponseWriter.Written() {
+		w.status = http.StatusInternalServerError
+		w.body.Reset()
+		w.size = -1
+	}
+	w.finish(c)
 }
 
 func (w *errorEnvelopeWriter) shouldCapture() bool {

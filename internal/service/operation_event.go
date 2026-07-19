@@ -3,9 +3,23 @@ package service
 import (
 	"context"
 	"errors"
+	"runtime/debug"
 
 	"github.com/chirino/memory-service/internal/operationevent"
 )
+
+func recoverJobPanic(event *operationevent.Event, onPanic func()) {
+	recovered := recover()
+	if recovered == nil {
+		return
+	}
+	stack := debug.Stack()
+	event.SetReason("panic")
+	operationevent.LogRecoveredPanic(event, "", recovered, stack)
+	if onPanic != nil {
+		onPanic()
+	}
+}
 
 func jobContextResult(ctx context.Context, err error) (operationevent.Result, bool) {
 	if errors.Is(err, context.DeadlineExceeded) || (ctx != nil && errors.Is(ctx.Err(), context.DeadlineExceeded)) {

@@ -5,7 +5,9 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"runtime/debug"
 	"strings"
+	"syscall"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/operationevent"
@@ -33,13 +35,7 @@ func OperationEventMiddleware(skipPaths ...string) gin.HandlerFunc {
 			c.Next()
 			return
 		}
-		route := c.FullPath()
-		if route == "" {
-			route = "<unmatched>"
-		} else {
-			route = canonicalGinRoute(route)
-		}
-		event := operationevent.New(fmt.Sprintf("http %s %s", c.Request.Method, route))
+		event := operationevent.New(ginOperationName(c))
 		event.SetRequestID(RequestIDFromGin(c))
 		c.Request = c.Request.WithContext(operationevent.WithContext(c.Request.Context(), event))
 		c.Next()
@@ -93,14 +89,54 @@ func SetOperationTerminalError(c *gin.Context, reason string, err error) {
 	})
 }
 
-// OperationRecoveryMiddleware retains Gin's stack-bearing recovery diagnostic
-// and marks the canonical operation failed even when response headers were
-// committed before the panic.
+// OperationRecoveryMiddleware logs non-connection panics with their operation
+// correlation and marks the canonical event failed even after response headers
+// have committed. Expected connection-abort panics remain stack-suppressed.
 func OperationRecoveryMiddleware() gin.HandlerFunc {
-	return gin.CustomRecovery(func(c *gin.Context, _ any) {
-		c.Set(contextKeyOperationPanic, true)
-		c.AbortWithStatus(http.StatusInternalServerError)
-	})
+	return func(c *gin.Context) {
+		defer func() {
+			recovered := recover()
+			if recovered == nil {
+				return
+			}
+			if err, ok := recovered.(error); ok && isConnectionAbort(err) {
+				_ = c.Error(err)
+				c.Set(contextKeyOperationTerminal, operationTerminalOverride{
+					result: operationevent.ResultCanceled,
+					reason: "client_disconnect",
+				})
+				c.Abort()
+				return
+			}
+			stack := debug.Stack()
+			event := OperationEventFromGin(c)
+			operationevent.LogRecoveredPanic(event, ginOperationName(c), recovered, stack)
+			c.Set(contextKeyOperationPanic, true)
+			c.Abort()
+			if writer, ok := c.Writer.(*errorEnvelopeWriter); ok {
+				writer.finishRecoveredPanic(c)
+			} else {
+				c.Writer.WriteHeader(http.StatusInternalServerError)
+			}
+		}()
+		c.Next()
+	}
+}
+
+func isConnectionAbort(err error) bool {
+	return errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, http.ErrAbortHandler)
+}
+
+func ginOperationName(c *gin.Context) string {
+	route := c.FullPath()
+	if route == "" {
+		route = "<unmatched>"
+	} else {
+		route = canonicalGinRoute(route)
+	}
+	return fmt.Sprintf("http %s %s", c.Request.Method, route)
 }
 
 func canonicalGinRoute(route string) string {

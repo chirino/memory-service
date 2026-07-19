@@ -68,45 +68,53 @@ func (p *TaskProcessor) processBatch(ctx context.Context) {
 		return
 	}
 	for _, task := range tasks {
-		event := operationevent.New(taskOperationName(task.TaskType))
-		event.SetTaskID(task.ID.String())
-		event.SetRetryAttempt(task.RetryCount + 1)
-		taskCtx := operationevent.WithContext(ctx, event)
-		if err := p.executeTask(taskCtx, task.TaskType, task.TaskBody); err != nil {
-			if result, interrupted := jobContextResult(ctx, err); interrupted {
-				if result == operationevent.ResultTimedOut {
-					event.SetReason("deadline")
-				} else {
-					event.SetReason("shutdown")
-				}
-				event.EmitTerminal(result)
-				continue
-			}
-			p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
-			if fErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				return p.store.FailTask(writeCtx, task.ID, err.Error(), p.retryDelay)
-			}); fErr != nil {
-				p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
-				event.SetReason("retry_persistence_failed")
-				event.EnrichError(fErr)
-				event.EmitTerminal(operationevent.ResultFailed)
+		p.processClaimedTask(ctx, task)
+	}
+}
+
+func (p *TaskProcessor) processClaimedTask(ctx context.Context, task model.Task) {
+	event := operationevent.New(taskOperationName(task.TaskType))
+	event.SetTaskID(task.ID.String())
+	event.SetRetryAttempt(task.RetryCount + 1)
+	defer recoverJobPanic(event, func() {
+		event.SetFailureCount(1)
+		event.EmitTerminal(operationevent.ResultFailed)
+	})
+	taskCtx := operationevent.WithContext(ctx, event)
+	if err := p.executeTask(taskCtx, task.TaskType, task.TaskBody); err != nil {
+		if result, interrupted := jobContextResult(ctx, err); interrupted {
+			if result == operationevent.ResultTimedOut {
+				event.SetReason("deadline")
 			} else {
-				event.SetReason("retry_scheduled")
-				event.EnrichError(err)
-				event.EmitTerminal(operationevent.ResultRetrying)
+				event.SetReason("shutdown")
 			}
-		} else {
-			if dErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				return p.store.DeleteTask(writeCtx, task.ID)
-			}); dErr != nil {
-				p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
-				event.SetReason("task_cleanup_failed")
-				event.EnrichError(dErr)
-				event.EmitTerminal(operationevent.ResultFailed)
-			} else {
-				event.EmitTerminal(operationevent.ResultSuccess)
-			}
+			event.EmitTerminal(result)
+			return
 		}
+		p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
+		if fErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			return p.store.FailTask(writeCtx, task.ID, err.Error(), p.retryDelay)
+		}); fErr != nil {
+			p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
+			event.SetReason("retry_persistence_failed")
+			event.EnrichError(fErr)
+			event.EmitTerminal(operationevent.ResultFailed)
+		} else {
+			event.SetReason("retry_scheduled")
+			event.EnrichError(err)
+			event.EmitTerminal(operationevent.ResultRetrying)
+		}
+		return
+	}
+	if dErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		return p.store.DeleteTask(writeCtx, task.ID)
+	}); dErr != nil {
+		p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
+		event.SetReason("task_cleanup_failed")
+		event.EnrichError(dErr)
+		event.EmitTerminal(operationevent.ResultFailed)
+	} else {
+		event.EmitTerminal(operationevent.ResultSuccess)
 	}
 }
 

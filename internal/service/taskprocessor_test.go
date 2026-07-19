@@ -19,15 +19,16 @@ import (
 
 func TestTaskProcessorEmitsOneTerminalEventPerClaimedAttempt(t *testing.T) {
 	tests := []struct {
-		name       string
-		executeErr error
-		failErr    error
-		deleteErr  error
-		cancel     bool
-		deadline   bool
-		wantResult string
-		wantReason string
-		pointLogs  []string
+		name         string
+		executeErr   error
+		executePanic any
+		failErr      error
+		deleteErr    error
+		cancel       bool
+		deadline     bool
+		wantResult   string
+		wantReason   string
+		pointLogs    []string
 	}{
 		{name: "success", wantResult: "success"},
 		{name: "retry scheduled", executeErr: errors.New("private provider response"), wantResult: "retrying", wantReason: "retry_scheduled", pointLogs: []string{"TaskProcessor: task failed"}},
@@ -38,6 +39,7 @@ func TestTaskProcessorEmitsOneTerminalEventPerClaimedAttempt(t *testing.T) {
 		{name: "cancellation", executeErr: context.Canceled, cancel: true, wantResult: "canceled", wantReason: "shutdown"},
 		{name: "wrapped cancellation", executeErr: fmt.Errorf("vector request stopped: %w", context.Canceled), wantResult: "canceled", wantReason: "shutdown"},
 		{name: "deadline", executeErr: context.DeadlineExceeded, deadline: true, wantResult: "timed_out", wantReason: "deadline"},
+		{name: "panic", executePanic: "private panic", wantResult: "failed", wantReason: "panic", pointLogs: []string{"operation panic", "taskprocessor_test.go"}},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -57,7 +59,7 @@ func TestTaskProcessorEmitsOneTerminalEventPerClaimedAttempt(t *testing.T) {
 				}},
 				failErr: tt.failErr, deleteErr: tt.deleteErr,
 			}
-			processor := NewTaskProcessor(store, &taskProcessorTestVector{err: tt.executeErr})
+			processor := NewTaskProcessor(store, &taskProcessorTestVector{err: tt.executeErr, panicValue: tt.executePanic})
 			ctx := context.Background()
 			if tt.cancel {
 				var cancel context.CancelFunc
@@ -88,8 +90,8 @@ func TestTaskProcessorEmitsOneTerminalEventPerClaimedAttempt(t *testing.T) {
 				}
 			}
 			for _, line := range strings.Split(text, "\n") {
-				if strings.Contains(line, "job.vector_store_delete") &&
-					(strings.Contains(line, "private provider response") || strings.Contains(line, "private database error")) {
+				if strings.Contains(line, "job.vector_store_delete") && strings.Contains(line, "phase=complete") &&
+					(strings.Contains(line, "private provider response") || strings.Contains(line, "private database error") || strings.Contains(line, "private panic")) {
 					t.Fatalf("raw error leaked into canonical event:\n%s", line)
 				}
 			}
@@ -121,7 +123,8 @@ func (s *taskProcessorTestStore) DeleteTask(context.Context, uuid.UUID) error {
 }
 
 type taskProcessorTestVector struct {
-	err error
+	err        error
+	panicValue any
 }
 
 func (v *taskProcessorTestVector) Search(context.Context, []float32, []uuid.UUID, int) ([]registryvector.VectorSearchResult, error) {
@@ -131,6 +134,9 @@ func (v *taskProcessorTestVector) Upsert(context.Context, []registryvector.Upser
 	return nil
 }
 func (v *taskProcessorTestVector) DeleteByConversationGroupID(context.Context, uuid.UUID) error {
+	if v.panicValue != nil {
+		panic(v.panicValue)
+	}
 	return v.err
 }
 func (v *taskProcessorTestVector) IsEnabled() bool { return true }

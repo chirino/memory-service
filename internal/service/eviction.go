@@ -57,6 +57,7 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		event.SetFailureCount(int64(failures))
 		emitJobTerminal(event, ctx, int64(failures))
 	}()
+	defer recoverJobPanic(event, func() { failures++ })
 	cutoff := time.Now().Add(-e.retention)
 	var total int64
 	err := e.store.InReadTx(ctx, func(readCtx context.Context) error {

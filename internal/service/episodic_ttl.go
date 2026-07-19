@@ -70,6 +70,7 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		event.SetFailureCount(failures)
 		emitJobTerminal(event, ctx, failures)
 	}()
+	defer recoverJobPanic(event, func() { failures++ })
 	// Pass 1: expire memories whose TTL has elapsed.
 	var (
 		n   int64

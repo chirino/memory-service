@@ -234,16 +234,32 @@ func TestOperationEventMiddlewareUnmatchedRouteDoesNotExposeConcretePath(t *test
 }
 
 func TestOperationEventMiddlewareSuppressionAndPanic(t *testing.T) {
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetReportTimestamp(false)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetReportTimestamp(true)
+	})
+
 	gin.SetMode(gin.TestMode)
 	router := gin.New()
-	router.Use(RequestIDMiddleware(), OperationEventMiddleware("/health"), ErrorEnvelopeMiddleware(), OperationRecoveryMiddleware())
-	var healthEvent, panicEvent, committedPanicEvent *operationevent.Event
+	router.Use(RequestIDMiddleware(), OperationEventMiddleware("/health"), OperationRecoveryMiddleware(), ErrorEnvelopeMiddleware())
+	var healthEvent, panicEvent, committedPanicEvent, bufferedPanicEvent, middlewarePanicEvent, abortEvent *operationevent.Event
+	router.Use(func(c *gin.Context) {
+		if c.Request.URL.Path == "/middleware-panic" {
+			middlewarePanicEvent = OperationEventFromGin(c)
+			panic("middleware boom")
+		}
+		c.Next()
+	})
 	router.GET("/health", func(c *gin.Context) {
 		healthEvent = OperationEventFromGin(c)
 		c.Status(http.StatusOK)
 	})
 	router.GET("/panic", func(c *gin.Context) {
 		panicEvent = OperationEventFromGin(c)
+		panicEvent.SetConversationID("conversation-1")
 		panic("boom")
 	})
 	router.GET("/committed-panic", func(c *gin.Context) {
@@ -252,11 +268,31 @@ func TestOperationEventMiddlewareSuppressionAndPanic(t *testing.T) {
 		c.Writer.WriteHeaderNow()
 		panic("boom after commit")
 	})
+	router.GET("/buffered-error-panic", func(c *gin.Context) {
+		bufferedPanicEvent = OperationEventFromGin(c)
+		c.JSON(http.StatusBadRequest, gin.H{"error": "private buffered error"})
+		panic("boom after buffered error")
+	})
+	router.GET("/middleware-panic", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	router.GET("/connection-abort", func(c *gin.Context) {
+		abortEvent = OperationEventFromGin(c)
+		panic(http.ErrAbortHandler)
+	})
 	router.ServeHTTP(httptest.NewRecorder(), httptest.NewRequest(http.MethodGet, "/health", nil))
 	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/panic", nil))
+	panicRequest := httptest.NewRequest(http.MethodGet, "/panic", nil)
+	panicRequest.Header.Set(HeaderRequestID, "panic-request")
+	router.ServeHTTP(response, panicRequest)
 	committedResponse := httptest.NewRecorder()
 	router.ServeHTTP(committedResponse, httptest.NewRequest(http.MethodGet, "/committed-panic", nil))
+	bufferedResponse := httptest.NewRecorder()
+	router.ServeHTTP(bufferedResponse, httptest.NewRequest(http.MethodGet, "/buffered-error-panic", nil))
+	middlewareResponse := httptest.NewRecorder()
+	router.ServeHTTP(middlewareResponse, httptest.NewRequest(http.MethodGet, "/middleware-panic", nil))
+	abortResponse := httptest.NewRecorder()
+	abortRequest := httptest.NewRequest(http.MethodGet, "/connection-abort", nil)
+	abortRequest.Header.Set(HeaderRequestID, "abort-request")
+	router.ServeHTTP(abortResponse, abortRequest)
 	if healthEvent != nil {
 		t.Fatal("suppressed path received an operation event")
 	}
@@ -265,6 +301,36 @@ func TestOperationEventMiddlewareSuppressionAndPanic(t *testing.T) {
 	}
 	if committedPanicEvent == nil || committedPanicEvent.Snapshot().Result != operationevent.ResultFailed || committedPanicEvent.Snapshot().ErrorCode != "internal_error" || committedResponse.Code != http.StatusOK {
 		t.Fatalf("committed panic was not recorded as failed: status=%d event=%#v", committedResponse.Code, committedPanicEvent)
+	}
+	if bufferedPanicEvent == nil || bufferedPanicEvent.Snapshot().Result != operationevent.ResultFailed || bufferedPanicEvent.Snapshot().Status != http.StatusInternalServerError || bufferedPanicEvent.Snapshot().ErrorCode != "internal_error" || bufferedResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("buffered error panic was not normalized as failed: status=%d event=%#v body=%s", bufferedResponse.Code, bufferedPanicEvent, bufferedResponse.Body.String())
+	}
+	if strings.Contains(bufferedResponse.Body.String(), "private buffered error") {
+		t.Fatalf("buffered error leaked after panic: %s", bufferedResponse.Body.String())
+	}
+	if middlewarePanicEvent == nil || middlewarePanicEvent.Snapshot().Result != operationevent.ResultFailed || middlewareResponse.Code != http.StatusInternalServerError {
+		t.Fatalf("middleware panic was not recorded as failed: status=%d event=%#v", middlewareResponse.Code, middlewarePanicEvent)
+	}
+	if abortEvent == nil || abortEvent.Snapshot().Result != operationevent.ResultCanceled || abortEvent.Snapshot().Reason != "client_disconnect" {
+		t.Fatalf("connection abort was not recorded as canceled: status=%d event=%#v", abortResponse.Code, abortEvent)
+	}
+	text := output.String()
+	for _, expected := range []string{
+		"operation panic",
+		`operation="http GET /panic"`,
+		"requestID=panic-request",
+		"conversationID=conversation-1",
+		"operation_logging_test.go",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("panic diagnostic missing %q:\n%s", expected, text)
+		}
+	}
+	if count := strings.Count(text, "operation panic"); count != 4 {
+		t.Fatalf("got %d stack diagnostics, want 4 non-connection panics:\n%s", count, text)
+	}
+	if strings.Contains(text, "http: abort Handler") {
+		t.Fatalf("connection-abort panic was not suppressed:\n%s", text)
 	}
 }
 
@@ -334,12 +400,25 @@ func TestGRPCOperationUnaryLifecyclePanicAndCause(t *testing.T) {
 		t.Fatalf("post-validation rejection lost resources: %v %#v", err, event.Snapshot())
 	}
 
+	output.Reset()
 	_, err = interceptor(ctx, request, &grpc.UnaryServerInfo{FullMethod: "/memory.v1.ConversationsService/GetConversation"}, func(ctx context.Context, _ any) (any, error) {
 		event = operationevent.FromContext(ctx)
+		MarkGRPCOperationResourcesValidated(ctx)
 		panic("boom")
 	})
 	if status.Code(err) != codes.Internal || event.Snapshot().Result != operationevent.ResultFailed {
 		t.Fatalf("panic not converted to terminal failure: %v %#v", err, event.Snapshot())
+	}
+	for _, expected := range []string{
+		"operation panic",
+		`operation="grpc /memory.v1.ConversationsService/GetConversation"`,
+		"requestID=grpc-request",
+		"conversationID=conversation-1",
+		"operation_logging_test.go",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("gRPC panic diagnostic missing %q:\n%s", expected, output.String())
+		}
 	}
 }
 
@@ -393,6 +472,34 @@ func TestGRPCOperationStreamStartFinalAndFirstMessage(t *testing.T) {
 	snapshot := event.Snapshot()
 	if snapshot.ConversationID != "conversation-2" || snapshot.ConnectionID == "" || snapshot.Result != operationevent.ResultCanceled || snapshot.Phase != "complete" {
 		t.Fatalf("unexpected stream event: %#v", snapshot)
+	}
+
+	output.Reset()
+	incoming = &pb.ReplayRequest{ConversationId: "conversation-2"}
+	stream = &operationTestServerStream{ctx: ctx, incoming: incoming}
+	err = interceptor(nil, stream, &grpc.StreamServerInfo{FullMethod: "/memory.v1.ResponseRecorderService/Replay", IsServerStream: true}, func(_ any, serverStream grpc.ServerStream) error {
+		event = operationevent.FromContext(serverStream.Context())
+		var request pb.ReplayRequest
+		if err := serverStream.RecvMsg(&request); err != nil {
+			return err
+		}
+		MarkGRPCOperationResourcesValidated(serverStream.Context())
+		panic("stream boom")
+	})
+	if status.Code(err) != codes.Internal || event.Snapshot().Result != operationevent.ResultFailed {
+		t.Fatalf("stream panic not converted to terminal failure: %v %#v", err, event.Snapshot())
+	}
+	for _, expected := range []string{
+		"operation panic",
+		`operation="grpc /memory.v1.ResponseRecorderService/Replay"`,
+		"requestID=stream-request",
+		"conversationID=conversation-2",
+		"connectionID=",
+		"operation_logging_test.go",
+	} {
+		if !strings.Contains(output.String(), expected) {
+			t.Fatalf("gRPC stream panic diagnostic missing %q:\n%s", expected, output.String())
+		}
 	}
 }
 

@@ -80,6 +80,7 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) (stats EpisodicIndexRun
 		event.SetFailureCount(int64(stats.Failures))
 		emitJobTerminal(event, ctx, int64(stats.Failures))
 	}()
+	defer recoverJobPanic(event, func() { stats.Failures++ })
 	var pending []registryepisodic.PendingMemory
 	err := idx.store.InReadTx(ctx, func(readCtx context.Context) error {
 		var err error

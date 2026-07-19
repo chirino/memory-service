@@ -45,6 +45,45 @@ func TestBackgroundIndexerReportsMetadataWriteCancellation(t *testing.T) {
 	}
 }
 
+func TestBackgroundIndexerRecoversPanicWithOperationContext(t *testing.T) {
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetReportTimestamp(false)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetReportTimestamp(true)
+	})
+
+	indexedContent := "content"
+	store := &backgroundIndexerTestStore{entries: []model.Entry{{
+		ID:                  uuid.New(),
+		ConversationID:      "conversation-1",
+		ConversationGroupID: uuid.New(),
+		IndexedContent:      &indexedContent,
+	}}}
+	indexer := NewBackgroundIndexer(store, backgroundIndexerTestEmbedder{panicValue: "private panic"}, &taskProcessorTestVector{}, 10)
+	indexer.indexBatch(context.Background())
+
+	text := output.String()
+	for _, expected := range []string{
+		"operation panic",
+		"operation=job.entry_index",
+		"indexer_test.go",
+		"job.entry_index",
+		"phase=complete",
+		"result=failed",
+		"reason=panic",
+		"failureCount=1",
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("panic recovery missing %q:\n%s", expected, text)
+		}
+	}
+	if strings.Count(text, "phase=complete") != 1 {
+		t.Fatalf("panic emitted more than one terminal event:\n%s", text)
+	}
+}
+
 type backgroundIndexerTestStore struct {
 	registrystore.MemoryStore
 	entries       []model.Entry
@@ -67,9 +106,14 @@ func (s *backgroundIndexerTestStore) SetIndexedAt(context.Context, uuid.UUID, uu
 	return s.setIndexedErr
 }
 
-type backgroundIndexerTestEmbedder struct{}
+type backgroundIndexerTestEmbedder struct {
+	panicValue any
+}
 
-func (backgroundIndexerTestEmbedder) EmbedTexts(context.Context, []string) ([][]float32, error) {
+func (e backgroundIndexerTestEmbedder) EmbedTexts(context.Context, []string) ([][]float32, error) {
+	if e.panicValue != nil {
+		panic(e.panicValue)
+	}
 	return [][]float32{{1}}, nil
 }
 

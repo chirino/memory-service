@@ -68,6 +68,11 @@ Keep admin justification only in a distinct `Admin audit` record. The audit and 
 
 Keep startup and shutdown status, retry or reconnect-loop state changes, audit records, product events such as replay/eviction/slow-consumer events, and independently scoped failure diagnostics. Internal server failures must retain a separate stack-bearing point log. Remove success/open/close point logs that duplicate a canonical event.
 
+- At every recovery boundary, call `debug.Stack()` immediately after `recover()` and before other work so the diagnostic retains the panic origin frames.
+- Emit recovered stacks through `operationevent.LogRecoveredPanic`. The point log must share the stable operation name and safe correlation fields with the canonical failure event, record only the bounded panic type rather than the raw panic value, and never add the stack or panic value to the canonical event.
+- Keep connection-abort panics (`EPIPE`, `ECONNRESET`, and `http.ErrAbortHandler`) stack-suppressed and classify their canonical operation as a client cancellation.
+- Recover panics at background operation run boundaries, emit one terminal `failed` event with `reason=panic`, and allow the periodic worker loop to continue.
+
 For background jobs, classify context cancellation or deadline expiry before incrementing failure counts or emitting failure diagnostics. A normal shutdown remains `canceled` even when the interrupted call returned an error.
 
 ## Verification

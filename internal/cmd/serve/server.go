@@ -187,9 +187,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	} else {
 		router.Use(security.OperationEventMiddleware("/health", "/ready", "/metrics"))
 	}
+	router.Use(security.OperationRecoveryMiddleware())
 	router.Use(security.ErrorEnvelopeMiddleware())
 	router.Use(security.SourceRateLimitMiddleware(rateLimiter))
-	router.Use(security.OperationRecoveryMiddleware())
 	router.Use(securityHeadersMiddleware())
 	router.Use(security.MetricsMiddleware())
 	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
@@ -505,8 +505,8 @@ func startManagementRoutes(cfg *config.Config) (func(context.Context) error, err
 	if cfg.ManagementAccessLog {
 		mgmtRouter.Use(security.OperationEventMiddleware())
 	}
-	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
 	mgmtRouter.Use(security.OperationRecoveryMiddleware())
+	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
 	mgmtRouter.Use(securityHeadersMiddleware())
 	if err := loadManagementRoutes(mgmtRouter); err != nil {
 		return nil, err

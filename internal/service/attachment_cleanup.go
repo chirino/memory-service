@@ -50,6 +50,7 @@ func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 		event.SetFailureCount(failures)
 		emitJobTerminal(event, ctx, failures)
 	}()
+	defer recoverJobPanic(event, func() { failures++ })
 	var afterCursor *string
 	for {
 		var attachments []registrystore.AdminAttachment
