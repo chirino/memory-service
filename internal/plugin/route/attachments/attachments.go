@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"runtime/debug"
 	"strconv"
 	"strings"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -94,7 +96,7 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 			if err != nil {
 				return err
 			}
-			go completeSourceURLAttachment(store, attachStore, cfg, attachment.ID, userID, sourceURL, fileContentType)
+			StartSourceURLAttachmentDownload(ctx, store, attachStore, cfg, attachment.ID, userID, sourceURL, fileContentType)
 			c.JSON(http.StatusCreated, toUploadResponse(attachment))
 			return nil
 		}); err != nil {
@@ -578,19 +580,16 @@ func verifyDownloadToken(token string, secrets [][]byte, now time.Time) (string,
 	return payloadParts[0], true
 }
 
-func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-	defer cancel()
-
+func completeSourceURLAttachment(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) error {
 	if err := validateSourceURL(sourceURL, cfg.AllowPrivateSourceURLs); err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, sourceURL, nil)
 	if err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 	client := &http.Client{
 		Timeout:   3 * time.Minute,
@@ -605,12 +604,13 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 	resp, err := client.Do(req)
 	if err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, fmt.Errorf("source download failed: status %d", resp.StatusCode))
-		return
+		err := fmt.Errorf("source download failed: status %d", resp.StatusCode)
+		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
+		return err
 	}
 
 	resolvedContentType := strings.TrimSpace(contentType)
@@ -629,7 +629,7 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 	tmp, err := tempfiles.Create(cfg.ResolvedTempDir(), "memory-service-source-url-*")
 	if err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 	defer func() {
 		_ = tmp.Close()
@@ -640,21 +640,22 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 	written, err := io.Copy(tmp, limited)
 	if err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 	if written > cfg.AttachmentMaxSize {
-		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, fmt.Errorf("file exceeds maximum size of %d bytes", cfg.AttachmentMaxSize))
-		return
+		err := fmt.Errorf("file exceeds maximum size of %d bytes", cfg.AttachmentMaxSize)
+		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
+		return err
 	}
 	if _, err := tmp.Seek(0, io.SeekStart); err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 
 	result, err := attachStore.Store(ctx, tmp, cfg.AttachmentMaxSize, resolvedContentType)
 	if err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
-		return
+		return err
 	}
 
 	status := "ready"
@@ -674,13 +675,65 @@ func completeSourceURLAttachment(store registrystore.MemoryStore, attachStore re
 		return nil
 	}); err != nil {
 		log.Error("Failed to update downloaded attachment", "attachmentId", attachmentID.String(), "err", err)
+		return err
 	}
+	return nil
 }
 
 // StartSourceURLAttachmentDownload starts the same asynchronous source URL
 // download workflow used by the REST attachment API.
-func StartSourceURLAttachmentDownload(store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) {
-	go completeSourceURLAttachment(store, attachStore, cfg, attachmentID, userID, sourceURL, contentType)
+func StartSourceURLAttachmentDownload(parentCtx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) {
+	event := operationevent.New("job.attachment_download")
+	event.SetAttachmentID(attachmentID.String())
+	event.SetUserID(userID)
+	if parent := operationevent.FromContext(parentCtx); parent != nil {
+		event.SetRequestID(parent.Snapshot().RequestID)
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	ctx = operationevent.WithContext(ctx, event)
+	go func() {
+		defer cancel()
+		runSourceURLAttachmentOperation(ctx, event, func(ctx context.Context) error {
+			return completeSourceURLAttachment(ctx, store, attachStore, cfg, attachmentID, userID, sourceURL, contentType)
+		})
+	}()
+}
+
+func runSourceURLAttachmentOperation(ctx context.Context, event *operationevent.Event, work func(context.Context) error) {
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			stack := debug.Stack()
+			err := operationevent.RecoveredPanicError(event, "", recovered, stack)
+			event.EnrichError(err)
+			if errors.Is(err, context.Canceled) {
+				event.SetReason("client_disconnect")
+				event.EmitTerminal(operationevent.ResultCanceled)
+				return
+			}
+			event.SetFailureCount(1)
+			event.EmitTerminal(operationevent.ResultFailed)
+		}
+	}()
+	event.EmitStart()
+
+	err := work(ctx)
+	if err == nil {
+		event.EmitTerminal(operationevent.ResultSuccess)
+		return
+	}
+	event.EnrichError(err)
+	switch {
+	case errors.Is(err, context.DeadlineExceeded) || errors.Is(ctx.Err(), context.DeadlineExceeded):
+		event.SetReason("deadline")
+		event.EmitTerminal(operationevent.ResultTimedOut)
+	case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
+		event.SetReason("shutdown")
+		event.EmitTerminal(operationevent.ResultCanceled)
+	default:
+		event.SetReason("download_failed")
+		event.SetFailureCount(1)
+		event.EmitTerminal(operationevent.ResultFailed)
+	}
 }
 
 func markSourceURLAttachmentFailed(ctx context.Context, store registrystore.MemoryStore, attachmentID uuid.UUID, userID string, cause error) {

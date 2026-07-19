@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"runtime/debug"
 	"strings"
-	"syscall"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/operationevent"
@@ -99,7 +98,8 @@ func OperationRecoveryMiddleware() gin.HandlerFunc {
 			if recovered == nil {
 				return
 			}
-			if err, ok := recovered.(error); ok && isConnectionAbort(err) {
+			if operationevent.IsConnectionAbortPanic(recovered) {
+				err := recovered.(error)
 				_ = c.Error(err)
 				c.Set(contextKeyOperationTerminal, operationTerminalOverride{
 					result: operationevent.ResultCanceled,
@@ -110,7 +110,8 @@ func OperationRecoveryMiddleware() gin.HandlerFunc {
 			}
 			stack := debug.Stack()
 			event := OperationEventFromGin(c)
-			operationevent.LogRecoveredPanic(event, ginOperationName(c), recovered, stack)
+			panicErr := operationevent.RecoveredPanicError(event, ginOperationName(c), recovered, stack)
+			event.EnrichError(panicErr)
 			c.Set(contextKeyOperationPanic, true)
 			c.Abort()
 			if writer, ok := c.Writer.(*errorEnvelopeWriter); ok {
@@ -121,12 +122,6 @@ func OperationRecoveryMiddleware() gin.HandlerFunc {
 		}()
 		c.Next()
 	}
-}
-
-func isConnectionAbort(err error) bool {
-	return errors.Is(err, syscall.EPIPE) ||
-		errors.Is(err, syscall.ECONNRESET) ||
-		errors.Is(err, http.ErrAbortHandler)
 }
 
 func ginOperationName(c *gin.Context) string {

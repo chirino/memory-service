@@ -35,8 +35,13 @@ func GRPCOperationUnaryInterceptor() grpc.UnaryServerInterceptor {
 				resources.apply(event)
 			}
 			if recovered != nil {
-				operationevent.LogRecoveredPanic(event, "", recovered, stack)
-				retErr = status.Error(codes.Internal, "internal server error")
+				panicErr := operationevent.RecoveredPanicError(event, "", recovered, stack)
+				event.EnrichError(panicErr)
+				if errors.Is(panicErr, context.Canceled) {
+					retErr = status.Error(codes.Canceled, "request canceled")
+				} else {
+					retErr = status.Error(codes.Internal, "internal server error")
+				}
 			}
 			finishGRPCOperation(ctx, event, retErr)
 		}()
@@ -65,8 +70,13 @@ func GRPCOperationStreamInterceptor() grpc.StreamServerInterceptor {
 				wrapped.applyResources()
 			}
 			if recovered != nil {
-				operationevent.LogRecoveredPanic(event, "", recovered, stack)
-				retErr = status.Error(codes.Internal, "internal server error")
+				panicErr := operationevent.RecoveredPanicError(event, "", recovered, stack)
+				event.EnrichError(panicErr)
+				if errors.Is(panicErr, context.Canceled) {
+					retErr = status.Error(codes.Canceled, "request canceled")
+				} else {
+					retErr = status.Error(codes.Internal, "internal server error")
+				}
 			}
 			finishGRPCOperation(ctx, event, retErr)
 		}()

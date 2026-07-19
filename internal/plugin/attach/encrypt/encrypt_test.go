@@ -7,11 +7,14 @@ import (
 	"fmt"
 	"io"
 	"net/url"
+	"os"
 	"testing"
 	"time"
 
+	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
+	"github.com/chirino/memory-service/internal/operationevent"
 	attachencrypt "github.com/chirino/memory-service/internal/plugin/attach/encrypt"
 	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
@@ -60,6 +63,41 @@ func TestEncryptStoreRejectsOversizeInput(t *testing.T) {
 	require.EqualError(t, err, "file exceeds maximum size of 4 bytes")
 	require.Empty(t, inner.data)
 	require.Empty(t, inner.deletedKeys)
+}
+
+func TestEncryptStoreRecoversWorkerPanicWithOperationContext(t *testing.T) {
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetReportTimestamp(false)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetReportTimestamp(true)
+	})
+
+	svc := newEncryptionService(t)
+	store, err := attachencrypt.Wrap(&captureAttachmentStore{}, svc)
+	require.NoError(t, err)
+	event := operationevent.New("grpc /memory.v1.AttachmentsService/UploadAttachment", operationevent.WithEmitter(func(string, operationevent.Level, operationevent.Snapshot) {}))
+	event.SetRequestID("request-1")
+	ctx := operationevent.WithContext(context.Background(), event)
+
+	_, err = store.Store(ctx, panicReader{}, 1024, "text/plain")
+	require.ErrorIs(t, err, operationevent.ErrRecoveredPanic)
+	for _, expected := range []string{
+		"operation panic",
+		`operation="grpc /memory.v1.AttachmentsService/UploadAttachment"`,
+		"requestID=request-1",
+		"encrypt_test.go",
+	} {
+		require.Contains(t, output.String(), expected)
+	}
+	require.NotContains(t, output.String(), "private reader panic")
+}
+
+type panicReader struct{}
+
+func (panicReader) Read([]byte) (int, error) {
+	panic("private reader panic")
 }
 
 func newEncryptionService(t *testing.T) *dataencryption.Service {

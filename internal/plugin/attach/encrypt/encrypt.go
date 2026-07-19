@@ -3,13 +3,16 @@ package encrypt
 import (
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
 	"hash"
 	"io"
 	"net/url"
+	"runtime/debug"
 	"time"
 
 	"github.com/chirino/memory-service/internal/dataencryption"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 )
 
@@ -40,6 +43,14 @@ func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64,
 	errCh := make(chan error, 1)
 
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				stack := debug.Stack()
+				err := operationevent.RecoveredPanicError(operationevent.FromContext(ctx), "", recovered, stack)
+				_ = pw.CloseWithError(err)
+				errCh <- err
+			}
+		}()
 		enc, err := s.svc.EncryptStream(pw)
 		if err != nil {
 			_ = pw.CloseWithError(err)
@@ -62,7 +73,10 @@ func (s *EncryptStore) Store(ctx context.Context, data io.Reader, maxSize int64,
 	result, err := s.inner.Store(ctx, pr, -1, contentType)
 	if err != nil {
 		_ = pr.CloseWithError(err)
-		<-errCh
+		workerErr := <-errCh
+		if errors.Is(workerErr, operationevent.ErrRecoveredPanic) || errors.Is(workerErr, context.Canceled) {
+			return nil, workerErr
+		}
 		return nil, err
 	}
 	if err := <-errCh; err != nil {

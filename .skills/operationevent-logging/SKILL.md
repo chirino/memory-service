@@ -71,6 +71,7 @@ Keep startup and shutdown status, retry or reconnect-loop state changes, audit r
 - At every recovery boundary, call `debug.Stack()` immediately after `recover()` and before other work so the diagnostic retains the panic origin frames.
 - Emit recovered stacks through `operationevent.LogRecoveredPanic`. The point log must share the stable operation name and safe correlation fields with the canonical failure event, record only the bounded panic type rather than the raw panic value, and never add the stack or panic value to the canonical event.
 - Keep connection-abort panics (`EPIPE`, `ECONNRESET`, and `http.ErrAbortHandler`) stack-suppressed and classify their canonical operation as a client cancellation.
+- Recovery is goroutine-local. Every operation-owned child goroutine must recover at its own entry point, capture the stack there, and propagate a privacy-safe `operationevent.ErrRecoveredPanic` error to its parent so the parent canonical event terminates as failed. Detached work must instead own a complete `job.*` lifecycle.
 - Recover panics at background operation run boundaries, emit one terminal `failed` event with `reason=panic`, and allow the periodic worker loop to continue.
 
 For background jobs, classify context cancellation or deadline expiry before incrementing failure counts or emitting failure diagnostics. A normal shutdown remains `canceled` even when the interrupted call returned an error.

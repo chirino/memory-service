@@ -420,6 +420,18 @@ func TestGRPCOperationUnaryLifecyclePanicAndCause(t *testing.T) {
 			t.Fatalf("gRPC panic diagnostic missing %q:\n%s", expected, output.String())
 		}
 	}
+
+	output.Reset()
+	_, err = interceptor(ctx, request, &grpc.UnaryServerInfo{FullMethod: "/memory.v1.ConversationsService/GetConversation"}, func(ctx context.Context, _ any) (any, error) {
+		event = operationevent.FromContext(ctx)
+		panic(http.ErrAbortHandler)
+	})
+	if status.Code(err) != codes.Canceled || event.Snapshot().Result != operationevent.ResultCanceled {
+		t.Fatalf("connection-abort panic not converted to cancellation: %v %#v", err, event.Snapshot())
+	}
+	if strings.Contains(output.String(), "operation panic") || strings.Contains(output.String(), "stack=") {
+		t.Fatalf("connection-abort panic emitted a stack diagnostic:\n%s", output.String())
+	}
 }
 
 func TestGRPCOperationStreamStartFinalAndFirstMessage(t *testing.T) {

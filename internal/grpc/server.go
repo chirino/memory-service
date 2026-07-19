@@ -4442,6 +4442,12 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 			_ = writer.Close()
 			out := <-resultCh
 			if out.err != nil {
+				if errors.Is(out.err, operationevent.ErrRecoveredPanic) {
+					return grpcStatusWithCause(codes.Internal, "internal server error", out.err)
+				}
+				if errors.Is(out.err, context.Canceled) {
+					return grpcStatusWithCause(codes.Canceled, "request canceled", out.err)
+				}
 				return grpcStatusWithCause(codes.InvalidArgument, out.err.Error(), out.err)
 			}
 
@@ -4500,6 +4506,17 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 				err error
 			}, 1)
 			go func() {
+				defer func() {
+					if recovered := recover(); recovered != nil {
+						stack := debug.Stack()
+						err := operationevent.RecoveredPanicError(operationevent.FromContext(stream.Context()), "", recovered, stack)
+						_ = reader.CloseWithError(err)
+						resultCh <- struct {
+							res *registryattach.FileStoreResult
+							err error
+						}{err: err}
+					}
+				}()
 				res, err := s.AttachStore.Store(stream.Context(), reader, s.MaxBodySize, contentType)
 				_ = reader.Close()
 				resultCh <- struct {
@@ -4515,6 +4532,9 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 				continue
 			}
 			if _, err := writer.Write(payload.Chunk); err != nil {
+				if errors.Is(err, context.Canceled) {
+					return grpcStatusWithCause(codes.Canceled, "request canceled", err)
+				}
 				return grpcStatusWithCause(codes.Internal, "internal server error", err)
 			}
 		default:
@@ -4567,7 +4587,7 @@ func (s *AttachmentsServer) CreateAttachmentFromUrl(ctx context.Context, req *pb
 	if err != nil {
 		return nil, mapError(err)
 	}
-	routeattachments.StartSourceURLAttachmentDownload(s.Store, s.AttachStore, s.Config, attachment.ID, userID, sourceURL, contentType)
+	routeattachments.StartSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, attachment.ID, userID, sourceURL, contentType)
 	return uploadAttachmentResponseToProto(attachment), nil
 }
 
@@ -4941,6 +4961,16 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 	defer close(done)
 	recvCh := make(chan recvResult, 1)
 	go func() {
+		defer func() {
+			if recovered := recover(); recovered != nil {
+				stack := debug.Stack()
+				err := operationevent.RecoveredPanicError(operationevent.FromContext(stream.Context()), "", recovered, stack)
+				select {
+				case recvCh <- recvResult{err: err}:
+				case <-done:
+				}
+			}
+		}()
 		for {
 			req, err := stream.Recv()
 			select {
@@ -4982,6 +5012,12 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 				})
 			}
 			if err != nil {
+				if errors.Is(err, operationevent.ErrRecoveredPanic) {
+					return grpcStatusWithCause(codes.Internal, "internal server error", err)
+				}
+				if errors.Is(err, context.Canceled) {
+					return grpcStatusWithCause(codes.Canceled, "request canceled", err)
+				}
 				return err
 			}
 

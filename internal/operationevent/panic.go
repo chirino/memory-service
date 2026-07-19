@@ -1,10 +1,42 @@
 package operationevent
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"net/http"
+	"syscall"
 
 	"github.com/charmbracelet/log"
 )
+
+// ErrRecoveredPanic identifies an internal panic converted into an error at a
+// child-goroutine boundary.
+var ErrRecoveredPanic = errors.New("recovered panic")
+
+// IsConnectionAbortPanic reports whether recovered is an expected transport
+// disconnect that should remain stack-suppressed.
+func IsConnectionAbortPanic(recovered any) bool {
+	err, ok := recovered.(error)
+	return ok && (errors.Is(err, syscall.EPIPE) ||
+		errors.Is(err, syscall.ECONNRESET) ||
+		errors.Is(err, http.ErrAbortHandler))
+}
+
+// RecoveredPanicError logs a recovered panic at its recovery site and returns
+// a privacy-safe error that can be propagated to the operation boundary.
+// Expected connection aborts remain stack-suppressed and become cancellation.
+func RecoveredPanicError(event *Event, operation string, recovered any, stack []byte) error {
+	if IsConnectionAbortPanic(recovered) {
+		return context.Canceled
+	}
+	LogRecoveredPanic(event, operation, recovered, stack)
+	return WithErrorDetails(ErrRecoveredPanic, ErrorDetails{
+		ErrorType: "panic",
+		ErrorCode: "internal_panic",
+		Reason:    "panic",
+	})
+}
 
 // LogRecoveredPanic emits a stack-bearing diagnostic point log correlated
 // with an operation. Stacks and panic values intentionally remain outside the
