@@ -729,6 +729,10 @@ func runSourceURLAttachmentOperation(ctx context.Context, event *operationevent.
 	case errors.Is(err, context.Canceled) || errors.Is(ctx.Err(), context.Canceled):
 		event.SetReason("shutdown")
 		event.EmitTerminal(operationevent.ResultCanceled)
+	case errors.Is(err, operationevent.ErrRecoveredPanic):
+		event.SetReason("panic")
+		event.SetFailureCount(1)
+		event.EmitTerminal(operationevent.ResultFailed)
 	default:
 		event.SetReason("download_failed")
 		event.SetFailureCount(1)

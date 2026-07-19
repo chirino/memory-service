@@ -6,10 +6,12 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime/debug"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/chirino/memory-service/internal/tempfiles"
 )
 
@@ -54,6 +56,12 @@ type Recorder struct {
 	convID string
 	rec    *recording
 	once   sync.Once
+}
+
+// ReplayResult carries either replay content or a privacy-safe worker error.
+type ReplayResult struct {
+	Content string
+	Err     error
 }
 
 func NewTempFileStore(tempDir string, retention time.Duration, locatorStore LocatorStore) *Store {
@@ -146,7 +154,7 @@ func (s *Store) RecorderWithAddress(ctx context.Context, conversationID string, 
 	return &Recorder{store: s, convID: conversationID, rec: rec}, nil
 }
 
-func (s *Store) ReplayWithAddress(ctx context.Context, conversationID string, advertisedAddress string) (<-chan string, string, error) {
+func (s *Store) ReplayWithAddress(ctx context.Context, conversationID string, advertisedAddress string) (<-chan ReplayResult, string, error) {
 	if s.locatorStore.Available() && strings.TrimSpace(advertisedAddress) != "" {
 		locator, err := s.locatorStore.Get(ctx, conversationID)
 		if err != nil {
@@ -163,14 +171,35 @@ func (s *Store) ReplayWithAddress(ctx context.Context, conversationID string, ad
 	rec, ok := s.recordings[conversationID]
 	s.mu.Unlock()
 	if !ok {
-		ch := make(chan string)
+		ch := make(chan ReplayResult)
 		close(ch)
 		return ch, "", nil
 	}
 
-	ch := make(chan string, defaultReplayBufferSize)
-	go s.replayFromFile(ctx, rec, ch)
+	ch := make(chan ReplayResult, defaultReplayBufferSize)
+	go runReplayWorker(ctx, ch, func(out chan<- ReplayResult) {
+		s.replayFromFile(ctx, rec, out)
+	})
 	return ch, "", nil
+}
+
+func runReplayWorker(ctx context.Context, out chan<- ReplayResult, work func(chan<- ReplayResult)) {
+	defer close(out)
+	defer func() {
+		if recovered := recover(); recovered != nil {
+			stack := debug.Stack()
+			err := operationevent.RecoveredPanicError(operationevent.FromContext(ctx), "", recovered, stack)
+			select {
+			case out <- ReplayResult{Err: err}:
+			default:
+				select {
+				case out <- ReplayResult{Err: err}:
+				case <-ctx.Done():
+				}
+			}
+		}
+	}()
+	work(out)
 }
 
 func (s *Store) RequestCancelWithAddress(ctx context.Context, conversationID string, advertisedAddress string) (string, error) {
@@ -298,9 +327,7 @@ func (s *Store) startLocatorRefresh(conversationID string, rec *recording, locat
 	}()
 }
 
-func (s *Store) replayFromFile(ctx context.Context, rec *recording, out chan<- string) {
-	defer close(out)
-
+func (s *Store) replayFromFile(ctx context.Context, rec *recording, out chan<- ReplayResult) {
 	reader, err := os.Open(rec.path)
 	if err != nil {
 		return
@@ -330,7 +357,7 @@ func (s *Store) replayFromFile(ctx context.Context, rec *recording, out chan<- s
 				select {
 				case <-ctx.Done():
 					return
-				case out <- string(chunk):
+				case out <- ReplayResult{Content: string(chunk)}:
 				}
 			}
 			continue

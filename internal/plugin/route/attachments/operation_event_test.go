@@ -3,6 +3,7 @@ package attachments
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"net/http"
 	"os"
 	"strings"
@@ -71,5 +72,21 @@ func TestSourceURLAttachmentOperationSuppressesConnectionAbortPanic(t *testing.T
 	}
 	if output.Len() != 0 {
 		t.Fatalf("connection abort emitted a stack diagnostic:\n%s", output.String())
+	}
+}
+
+func TestSourceURLAttachmentOperationPreservesPropagatedPanicReason(t *testing.T) {
+	var terminal operationevent.Snapshot
+	event := operationevent.New("job.attachment_download", operationevent.WithEmitter(func(_ string, _ operationevent.Level, snapshot operationevent.Snapshot) {
+		if snapshot.Phase == "complete" {
+			terminal = snapshot
+		}
+	}))
+	runSourceURLAttachmentOperation(context.Background(), event, func(context.Context) error {
+		return fmt.Errorf("worker stopped: %w", operationevent.ErrRecoveredPanic)
+	})
+
+	if terminal.Result != operationevent.ResultFailed || terminal.Reason != "panic" || terminal.FailureCount != 1 {
+		t.Fatalf("unexpected propagated-panic event: %#v", terminal)
 	}
 }

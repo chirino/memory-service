@@ -5092,8 +5092,17 @@ func (s *ResponseRecorderServer) Replay(req *pb.ReplayRequest, stream pb.Respons
 	if redirectAddress != "" {
 		return stream.Send(&pb.ReplayResponse{RedirectAddress: redirectAddress})
 	}
-	for token := range ch {
-		if err := stream.Send(&pb.ReplayResponse{Content: token}); err != nil {
+	for result := range ch {
+		if result.Err != nil {
+			if errors.Is(result.Err, operationevent.ErrRecoveredPanic) {
+				return grpcStatusWithCause(codes.Internal, "internal server error", result.Err)
+			}
+			if errors.Is(result.Err, context.Canceled) {
+				return grpcStatusWithCause(codes.Canceled, "request canceled", result.Err)
+			}
+			return grpcStatusWithCause(codes.Internal, "internal server error", result.Err)
+		}
+		if err := stream.Send(&pb.ReplayResponse{Content: result.Content}); err != nil {
 			return err
 		}
 	}
