@@ -357,8 +357,8 @@ A background goroutine expires memories on a configurable interval (default: 60 
 
 Memory access is enforced by embedded **OPA/Rego policies** evaluated on every memory API call. The service loads policy files from:
 
-- `--policy-dir`
-- `MEMORY_SERVICE_POLICY_DIR`
+- `--episodic-policy-dir`
+- `MEMORY_SERVICE_EPISODIC_POLICY_DIR`
 
 Expected files in that directory:
 
