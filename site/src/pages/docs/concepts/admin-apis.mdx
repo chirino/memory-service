@@ -24,11 +24,11 @@ Key differences:
 
 There are three admin roles, each granting a different level of privilege:
 
-| Role      | Access       | Description                                                                                       |
-| --------- | ------------ | ------------------------------------------------------------------------------------------------- |
-| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.                     |
-| `auditor` | Read-only    | View any user's conversations, attachments, and memories; search system-wide. Cannot modify data. |
-| `indexer` | Index only   | Index any conversation's transcript for search. Cannot view or modify other data.                 |
+| Role      | Access       | Description                                                                                                                        |
+| --------- | ------------ | ---------------------------------------------------------------------------------------------------------------------------------- |
+| `admin`   | Read + Write | Full administrative access across all users. Implies `auditor` and `indexer`.                                                      |
+| `auditor` | Read-only    | View any user's conversations, attachments, and memories; search system-wide. Cannot modify data.                                  |
+| `indexer` | Index only   | Read full unindexed history entries system-wide and set or replace their searchable indexed text. Does not grant other Admin APIs. |
 
 Roles can be assigned via OIDC token roles, explicit user lists, or API key client IDs. See the [Admin Access Configuration](/docs/configuration/#admin-access-configuration) section of the configuration guide for details.
 

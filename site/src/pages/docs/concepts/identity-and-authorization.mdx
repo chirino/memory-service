@@ -1,0 +1,274 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Identity and Authorization
+description: How Memory Service establishes client and user identity and applies roles, conversation access levels, client-scoped entry rules, and memory policies.
+---
+
+import ConfigToggle from "../../../components/ConfigToggle.astro";
+import Cfg from "../../../components/Cfg.astro";
+
+Memory Service treats the calling application and the end user as separate identities:
+
+- The **client ID** identifies the agent application, service, or trusted local process making the request.
+- The **user ID** identifies the person on whose behalf the client is acting.
+- **Roles** grant system-wide administrative capabilities to a user or client.
+
+Most agent-facing operations require a user identity. Operations involving agent-private context also require a client identity. Authorization is evaluated from the effective user ID, client ID, assigned roles, and the resource being accessed.
+
+Use the toggle below to switch every configuration name on this page between CLI flags and environment variables.
+
+<ConfigToggle />
+
+## Establishing Client Identity
+
+A client ID represents an application or service principal, not a human user and not necessarily a logical agent. Memory Service establishes it through one of the following trusted mechanisms.
+
+### API Key
+
+Configure one or more API keys for each client with a dynamic environment variable. There is no equivalent CLI flag.
+
+| Configuration                                                        | Request credential | Resulting client ID                                                     |
+| -------------------------------------------------------------------- | ------------------ | ----------------------------------------------------------------------- |
+| <Cfg p="environment only" e="MEMORY_SERVICE_API_KEYS_<CLIENT_ID>" /> | `X-API-Key`        | The lower-cased environment-variable suffix, with underscores preserved |
+
+For example, `MEMORY_SERVICE_API_KEYS_AGENT_A=secret-1,secret-2` registers two keys for client `agent_a`. Supplying either key in `X-API-Key` authenticates that client. An invalid supplied key rejects the request.
+
+An API key by itself establishes only a client service principal. Normal user APIs still require a user identity, which can be supplied by a trusted client assertion described below. A client-only principal can call an administrative or operational API when its client ID has the required role.
+
+### OIDC Access Token
+
+When OIDC is enabled, Memory Service verifies the token signature, issuer, and audience. The signed `azp` claim establishes the client ID; if `azp` is absent, the signed `client_id` claim is used.
+
+| Configuration                                                                  | Required | Purpose                                                                                           |
+| ------------------------------------------------------------------------------ | -------- | ------------------------------------------------------------------------------------------------- |
+| <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_OIDC_ISSUER" />                       | Yes      | Enables OIDC and identifies the trusted issuer                                                    |
+| <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" /> | Yes      | Comma-separated audiences accepted by Memory Service                                              |
+| <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />     | No       | Restricts accepted `azp` or `client_id` values; an empty value permits any client from the issuer |
+| <Cfg p="--oidc-discovery-url" e="MEMORY_SERVICE_OIDC_DISCOVERY_URL" />         | No       | Uses a different internal URL for discovery and JWKS retrieval                                    |
+
+When an OIDC token and API key are both supplied, OIDC authenticates the user while the API key becomes the effective client identity. This is useful when the user's token identifies a browser or gateway but the agent service itself needs a stable client boundary.
+
+### Trusted Local Unix Socket
+
+Local socket authentication creates one configured user/client identity for every request received on the main Unix domain socket.
+
+| Configuration                                                      | Default                              | Purpose                                             |
+| ------------------------------------------------------------------ | ------------------------------------ | --------------------------------------------------- |
+| <Cfg p="--unix-socket" e="MEMORY_SERVICE_UNIX_SOCKET" />           | _(unset)_                            | Exposes the main API on a Unix domain socket        |
+| <Cfg p="--unix-socket-auth" e="MEMORY_SERVICE_UNIX_SOCKET_AUTH" /> | `credentials`                        | Set to `local` to trust access to the socket        |
+| <Cfg p="--local-client-id" e="MEMORY_SERVICE_LOCAL_CLIENT_ID" />   | `local-agent`                        | Client ID assigned to every request in `local` mode |
+| <Cfg p="--local-user-id" e="MEMORY_SERVICE_LOCAL_USER_ID" />       | Memory Service process's OS username | User ID assigned to every request in `local` mode   |
+
+<Cfg p="--local-client-id" e="MEMORY_SERVICE_LOCAL_CLIENT_ID" /> defaults to `local-agent`. This identity is stored on
+newly created conversations and is used to authorize access to client-private `context` and `journal` entries. Override
+it when the local application needs a stable, descriptive client ID such as `desktop-assistant`, when separate Memory
+Service instances should have separate context boundaries, or when client-based role assignments must match a particular
+ID.
+
+<Cfg p="--local-user-id" e="MEMORY_SERVICE_LOCAL_USER_ID" /> defaults to the OS username of the **Memory Service
+process** at startup. If the OS username cannot be resolved, startup fails and this setting must be provided explicitly.
+The user ID owns newly created conversations and is used for memberships, conversation filtering, episodic-memory
+namespaces, and user-based role assignments. Override it when an operating-system account such as `root`,
+`memory-service`, or a container user does not represent the logical application user, or when the identity must remain
+stable across machines and containers.
+
+These settings do not inspect peer credentials and do not identify each process that connects to the socket. Every request on that socket receives the same configured user and client identity. If multiple applications sharing a socket must remain distinct, keep the default `credentials` mode and authenticate each application with API keys or OIDC, or give each trusted application a separate Memory Service instance and socket.
+
+Local authentication is accepted only when the main API is exposed exclusively through the Unix socket. Filesystem access to the socket is the trust boundary. The configured local identities do not automatically receive admin, auditor, or indexer privileges. See [Unix Domain Sockets](/docs/concepts/unix-domain-sockets/) for deployment guidance.
+
+### Embedded and Remote MCP
+
+`memory-service mcp embedded` does **not** use a Unix domain socket. The MCP server and Memory Service router run in the same process. MCP requests arrive over standard input/output, and the MCP bridge invokes the HTTP router directly through an in-memory transport without opening a TCP or Unix socket connection.
+
+Before invoking the router, that transport adds an internal marker to the Go request context. Authentication accepts the embedded identity only when this marker is present. There is no HTTP header, gRPC metadata value, query parameter, or other network input that maps to the marker, so a remote caller cannot reproduce it. The security boundary is therefore control of the embedded MCP process, its standard input/output, and its local data files—not access to a socket. Code already executing inside the process is inherently inside that trust boundary.
+
+The embedded identity's client ID is fixed as `embedded-mcp`; its user ID is configurable:
+
+| Configuration                                                 | Default             | Purpose                                              |
+| ------------------------------------------------------------- | ------------------- | ---------------------------------------------------- |
+| <Cfg p="--user-id" e="MEMORY_SERVICE_MCP_EMBEDDED_USER_ID" /> | `embedded-mcp-user` | Sets the synthetic user for the embedded MCP process |
+
+Embedded MCP is intended for a single-user desktop process whose database and attachments are protected by filesystem permissions. The embedded client receives the admin role by default.
+
+`memory-service mcp remote` does not create a special server-side identity. It forwards its API key and optional bearer token, so the normal API-key and OIDC rules apply.
+
+### Testing-Only Identity
+
+Production builds ignore `X-Client-ID` and reject raw bearer usernames. Those shortcuts exist only in binaries built with the `auth_testfixtures` tag and run in testing mode; they are not production authentication options.
+
+## Establishing User Identity
+
+Memory Service does not maintain a local user account database. A user is established by a verified identity provider, a trusted client acting for a user, or a trusted local transport.
+
+### OIDC User
+
+An OIDC token establishes both a user and, when present, a client. The user ID is selected from signed claims in this order:
+
+1. `preferred_username`
+2. `upn`
+3. `sub`
+
+The OIDC settings are <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_OIDC_ISSUER" />, <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />, and optionally <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />. Raw, unsigned usernames in the bearer-token position are rejected by production builds.
+
+### Trusted Client Acting for a User
+
+A service authenticated by API key or OIDC may assert the effective user on normal user-facing APIs. This supports agents and gateways that authenticate their end users outside Memory Service.
+
+| Configuration                                                                    | Request value                                              | Purpose                                                                |
+| -------------------------------------------------------------------------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------- |
+| <Cfg p="--trusted-user-id-clients" e="MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS" /> | `X-User-ID: alice` for REST or `x-user-id: alice` for gRPC | Comma-separated, exact client IDs allowed to select the effective user |
+
+This is delegated user identity, not a general impersonation permission:
+
+- The request must first have valid API-key or OIDC credentials.
+- Client IDs are matched exactly and case-sensitively; wildcards are not supported.
+- An assertion from an untrusted client is ignored.
+- Multiple non-empty asserted user values are rejected.
+- The assertion applies only to normal user APIs. Admin and system APIs ignore it.
+- Changing the effective user drops roles derived from the originally authenticated user. Roles assigned to the client and configured OIDC scope gates remain in effect.
+- Trusting a client to assert users does not grant that client an admin, auditor, or indexer role.
+
+For example, a client authenticated as `agent_a` and trusted by <Cfg p="--trusted-user-id-clients=agent_a" e="MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS=agent_a" /> may send `X-User-ID: alice`. Conversation authorization is then evaluated for user `alice`, while client-scoped context authorization is evaluated for client `agent_a`.
+
+### Trusted Local and Embedded Users
+
+Unix socket local authentication uses <Cfg p="--local-user-id" e="MEMORY_SERVICE_LOCAL_USER_ID" />, defaulting to the current OS username. Embedded MCP uses <Cfg p="--user-id" e="MEMORY_SERVICE_MCP_EMBEDDED_USER_ID" />, defaulting to `embedded-mcp-user`.
+
+An API key without one of these user-establishing mechanisms has no user identity and cannot call normal user-scoped APIs.
+
+## Authorization Rules
+
+Memory Service combines several authorization models:
+
+1. **Global RBAC** grants the `admin`, `auditor`, and `indexer` roles.
+2. **Relationship-based access control** grants a user `reader`, `writer`, `manager`, or `owner` access to a conversation fork tree.
+3. **Client-scoped access control** isolates agent-private `context` and `journal` entries by client ID.
+4. **OPA/Rego policy** controls namespaced episodic memories.
+5. Optional **OIDC scope gates** can further restrict API categories for OIDC-authenticated requests.
+
+Conversation filtering is enforced by Memory Service in its application queries. It is row-level filtering in the general sense, but it is not PostgreSQL native Row-Level Security.
+
+### Administrative Roles
+
+Global roles can be assigned from OIDC token roles, explicit user IDs, or client IDs. A role granted by any configured source is effective.
+
+| Role      | Authorization                                                                                                                                                                           |
+| --------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `admin`   | Cross-user read and write through Admin APIs; also implies `auditor` and `indexer`                                                                                                      |
+| `auditor` | Cross-user, read-only access through Admin APIs, including conversations, entries, attachments, events, and memories                                                                    |
+| `indexer` | Narrow cross-user indexing access: read full unindexed history entries and set or replace searchable `indexedContent`; no general Admin API, conversation, attachment, or memory access |
+
+An admin or auditor can inspect every user's conversations, but must use the Admin APIs. Holding a global role does not turn a normal user endpoint into an unscoped endpoint.
+
+Every Admin API call produces an audit record. Justification can be made mandatory with <Cfg p="--admin-require-justification" e="MEMORY_SERVICE_ADMIN_REQUIRE_JUSTIFICATION" />. See [Admin APIs](/docs/concepts/admin-apis/) for endpoint behavior.
+
+#### What the Indexer Role Can Do
+
+The indexer role is for an external batch processor that derives safe, searchable text from conversation history. It grants exactly two cross-user operations through REST or the gRPC `SearchService`:
+
+| Operation      | REST / gRPC                                                | Access granted                                                                                                                                                                           |
+| -------------- | ---------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Discover work  | `GET /v1/conversations/unindexed` / `ListUnindexedEntries` | Page through history entries from all users whose `indexedContent` is not set. Results include the decrypted, full entry content and metadata needed to derive searchable text.          |
+| Submit results | `POST /v1/conversations/index` / `IndexConversations`      | Set or replace `indexedContent` for referenced entries across conversation groups. The service stores that derived text for full-text search and handles vector indexing asynchronously. |
+
+These two operations bypass conversation membership so one indexing worker can process the system-wide queue. This makes `indexer` a sensitive data-processing role, not a blind write-only role. It does **not** grant cross-user conversation listing or search, access to already-indexed entries through normal conversation APIs, attachment or episodic-memory access, membership changes, archival, eviction, or other Admin APIs. Episodic-memory index status and trigger endpoints still require `admin`.
+
+Configure role mappings with:
+
+| Role source    | Admin                                                                        | Auditor                                                                          | Indexer                                                                          |
+| -------------- | ---------------------------------------------------------------------------- | -------------------------------------------------------------------------------- | -------------------------------------------------------------------------------- |
+| OIDC role name | <Cfg p="--roles-admin-oidc-role" e="MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE" /> | <Cfg p="--roles-auditor-oidc-role" e="MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE" /> | <Cfg p="--roles-indexer-oidc-role" e="MEMORY_SERVICE_ROLES_INDEXER_OIDC_ROLE" /> |
+| User ID list   | <Cfg p="--roles-admin-users" e="MEMORY_SERVICE_ROLES_ADMIN_USERS" />         | <Cfg p="--roles-auditor-users" e="MEMORY_SERVICE_ROLES_AUDITOR_USERS" />         | <Cfg p="--roles-indexer-users" e="MEMORY_SERVICE_ROLES_INDEXER_USERS" />         |
+| Client ID list | <Cfg p="--roles-admin-clients" e="MEMORY_SERVICE_ROLES_ADMIN_CLIENTS" />     | <Cfg p="--roles-auditor-clients" e="MEMORY_SERVICE_ROLES_AUDITOR_CLIENTS" />     | <Cfg p="--roles-indexer-clients" e="MEMORY_SERVICE_ROLES_INDEXER_CLIENTS" />     |
+
+OIDC roles are read from configurable JSON Pointer paths. The default is `/realm_access/roles`:
+
+| Configuration                                                     | Default               | Purpose                                                                             |
+| ----------------------------------------------------------------- | --------------------- | ----------------------------------------------------------------------------------- |
+| <Cfg p="--oidc-role-claim" e="MEMORY_SERVICE_OIDC_ROLE_CLAIMS" /> | `/realm_access/roles` | Repeatable claim path as a CLI flag; the environment value is a JSON array of paths |
+
+### Normal User Access
+
+A normal user can see conversations they own **or that have been explicitly shared with them**. They cannot see conversations belonging to unrelated users. Search results, event streams, response recordings, forks, and linked attachments are narrowed by the same conversation membership boundary.
+
+Conversation membership applies to the entire fork tree, not just one branch. A fork shares its conversation-group membership with its ancestors and sibling forks.
+
+| Access level | Capabilities                                                                                                                                                |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reader`     | Read conversation metadata, visible entries, fork navigation, linked attachments, and response results; create a non-destructive fork from readable history |
+| `writer`     | All reader capabilities; append and synchronize entries, update conversation metadata, record or cancel responses, and create child-agent conversations     |
+| `manager`    | All writer capabilities; add, update, and remove memberships; membership APIs cannot assign `owner`                                                         |
+| `owner`      | All manager capabilities; grant manager access, archive or unarchive the fork tree, and initiate ownership transfer                                         |
+
+There is exactly one owner. Ownership cannot be assigned through an ordinary membership update. The current owner initiates a transfer to an existing member, the recipient accepts it, and the previous owner becomes a manager. Either party can cancel the pending transfer.
+
+Archived conversations remain readable to authorized callers until an administrator evicts them, although normal list operations exclude archived conversations by default.
+
+### Client-Scoped Agent Context
+
+The entry channel determines whether conversation membership alone is sufficient:
+
+| Channel   | Visibility rule                                                                                                      |
+| --------- | -------------------------------------------------------------------------------------------------------------------- |
+| `history` | Visible to every user with reader-or-higher membership in the conversation group                                     |
+| `context` | Requires reader-or-higher membership **and** the same client ID as the conversation; context epochs are also applied |
+| `journal` | Requires reader-or-higher membership **and** the same client ID as the conversation                                  |
+
+Writes require writer-or-higher membership. Writes to `context` and `journal` additionally require the authenticated client to match the conversation's client ID. When all channels are requested, another client's `context` and `journal` entries are removed from the result.
+
+This gives the common multi-agent rule:
+
+- User `u1` through client `A1` can read `u1`'s history and the private context for conversations created by `A1`.
+- User `u1` through client `A2` can still read shared history, but cannot read or write `A1`'s context or journal.
+- If `A1` and `A2` authenticate with the same client ID, Memory Service treats them as the same client. The optional conversation `agentId` is metadata and is not currently an authorization boundary.
+
+Use a distinct API-key client ID or distinct OIDC `azp`/`client_id` for each isolation boundary you need.
+
+### Optional OIDC Scope Gates
+
+When configured, scope gates add a second check to OIDC-authenticated requests. The token must pass normal role and resource authorization **and** contain at least one configured scope for the operation. Scope gates do not apply to API-key-only, local-socket, or embedded-MCP identities.
+
+Broad examples include <Cfg p="--oidc-scopes-user" e="MEMORY_SERVICE_OIDC_SCOPES_USER" /> for user APIs and <Cfg p="--oidc-scopes-admin" e="MEMORY_SERVICE_OIDC_SCOPES_ADMIN" /> for Admin APIs. More specific settings can separate reads, writes, conversations, sharing, search, memories, attachments, events, recordings, and individual Admin API categories. See [Admin Access Configuration](/docs/configuration/#admin-access-configuration) for the complete list.
+
+### Episodic Memory Policy
+
+Conversation memberships do not authorize `/v1/memories`. Every user-facing episodic-memory operation is evaluated by OPA/Rego against the effective user, client, JWT claims, namespace, operation, and request data.
+
+The built-in policy restricts user-facing direct operations to the caller's own `["user", userID, ...]` namespace subtree and limits writes to eight index fields. Deployments can replace the policy bundle with:
+
+| Configuration                                                            | Default           | Purpose                                                                 |
+| ------------------------------------------------------------------------ | ----------------- | ----------------------------------------------------------------------- |
+| <Cfg p="--episodic-policy-dir" e="MEMORY_SERVICE_EPISODIC_POLICY_DIR" /> | Built-in policies | Directory containing `authz.rego`, `attributes.rego`, and `filter.rego` |
+
+The administrative memory routes bypass the normal user namespace boundary and enforce their documented admin or auditor role instead. See [Memories](/docs/concepts/memories/#access-control) for policy inputs and behavior.
+
+### Attachments, Events, and Signed URLs
+
+- An unlinked attachment is available only to its uploader. After it is linked to an entry, users with read access to the conversation can download it.
+- User event streams are filtered by conversation membership and client-scoped entry visibility. Admin event streams require admin or auditor access and can observe all users.
+- A signed attachment download URL is a short-lived bearer capability. Authorization is checked when the URL is issued; possession of the unexpired signed URL authorizes the subsequent download.
+
+## Recommended Multi-Agent Setup
+
+### Clients and Agents Are Different Boundaries
+
+A **client** is the authenticated agentic application, service, or process. An **agent** is a logical participant within that application. A single process can therefore authenticate with one client ID while hosting several cooperating agents, such as a planner, researcher, and writer.
+
+| Identity   | Established by                                                                       | Memory Service behavior                                                                                                                  |
+| ---------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------------------------------------------------------------------------------------------- |
+| `clientId` | API key, signed OIDC client claim, trusted local transport, or embedded MCP identity | Treats it as an authenticated security principal and enforces client-scoped access to `context` and `journal`                            |
+| `agentId`  | A value stated by the agentic application when it creates a conversation             | Records it as the logical agent associated with the conversation and accepts it when selecting agent context; it is not a security grant |
+
+Memory Service enforces isolation at the `clientId` boundary. It does not authenticate an `agentId` or use it as an authorization boundary. All cooperating agents that share a client ID are inside the same Memory Service trust boundary, even when they use different agent IDs. The agentic application is responsible for deciding which of those agents may invoke each operation and for enforcing any trust boundaries between them.
+
+This separation gives the application flexibility. Cooperating agents can share one authenticated client identity and use `agentId` to label and select their respective state without Memory Service preventing intentional collaboration. If the application wants to delegate enforcement of agent isolation to Memory Service, it must authenticate each isolated agent with a different client ID. Memory Service will then prevent one agent's client identity from reading or writing another client's private `context` and `journal` entries.
+
+For multiple agents serving the same users:
+
+1. Decide which agents belong inside one application-managed trust boundary. Give cooperating agents one client ID. Give each agent a separate API-key client ID or OIDC client identity when Memory Service must enforce isolation between them.
+2. Set `agentId` to identify the logical agent associated with each conversation. Use it for organization and context selection, not as proof that the caller is that agent.
+3. Authenticate the end user with OIDC, or allowlist the agent client with <Cfg p="--trusted-user-id-clients" e="MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS" /> and assert the user per request.
+4. Store user-visible messages in `history` and client-private working state in `context` or `journal`.
+5. Assign admin, auditor, or indexer roles only to dedicated operational identities.
+
+This preserves shared user history, lets cooperating agents coordinate within an application, and uses client IDs wherever Memory Service must enforce isolation.
