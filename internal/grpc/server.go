@@ -736,9 +736,13 @@ func (s *ConversationsServer) ListForks(ctx context.Context, req *pb.ListForksRe
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, "invalid conversation_id")
 	}
+	var clientID *string
+	if value := strings.TrimSpace(getClientID(ctx)); value != "" {
+		clientID = &value
+	}
 
 	forks, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationForkNavigation, error) {
-		return s.Store.ListForks(txCtx, userID, convID)
+		return s.Store.ListForks(txCtx, userID, convID, clientID)
 	})
 	if err != nil {
 		return nil, mapError(err)

@@ -1547,7 +1547,11 @@ func (s *MongoStore) GetGroupMemberUserIDs(ctx context.Context, conversationGrou
 
 // --- Forks ---
 
-func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationForkNavigation, error) {
+func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationID string, clientID *string) (*registrystore.ConversationForkNavigation, error) {
+	return s.listForks(ctx, userID, conversationID, registrystore.ForkNavigationVisibility{ClientID: clientID})
+}
+
+func (s *MongoStore) listForks(ctx context.Context, userID string, conversationID string, visibility registrystore.ForkNavigationVisibility) (*registrystore.ConversationForkNavigation, error) {
 	var doc convDoc
 	err := s.conversations().FindOne(ctx, bson.M{
 		"_id": string(conversationID),
@@ -1616,8 +1620,18 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 			entryMap[value.ID] = value
 		}
 	}
+	firstEntryMatch := bson.M{"conversation_group_id": doc.ConversationGroupID, "channel": string(model.ChannelHistory)}
+	if visibility.IncludeAllJournals {
+		firstEntryMatch["channel"] = bson.M{"$in": bson.A{string(model.ChannelHistory), string(model.ChannelJournal)}}
+	} else if visibility.ClientID != nil {
+		delete(firstEntryMatch, "channel")
+		firstEntryMatch["$or"] = bson.A{
+			bson.M{"channel": string(model.ChannelHistory)},
+			bson.M{"channel": string(model.ChannelJournal), "client_id": *visibility.ClientID},
+		}
+	}
 	pipeline := mongo.Pipeline{
-		{{Key: "$match", Value: bson.M{"conversation_group_id": doc.ConversationGroupID, "channel": string(model.ChannelHistory)}}},
+		{{Key: "$match", Value: firstEntryMatch}},
 		{{Key: "$sort", Value: bson.D{{Key: "conversation_id", Value: 1}, {Key: "created_at", Value: 1}, {Key: "seq", Value: 1}, {Key: "_id", Value: 1}}}},
 		{{Key: "$group", Value: bson.M{"_id": "$conversation_id", "entry": bson.M{"$first": "$$ROOT"}}}},
 	}
@@ -1660,7 +1674,7 @@ func (s *MongoStore) ListForks(ctx context.Context, userID string, conversationI
 		}
 		records = append(records, record)
 	}
-	return registrystore.BuildForkNavigation(records, ancestry, entryMap)
+	return registrystore.BuildForkNavigation(records, ancestry, entryMap, visibility)
 }
 
 // --- Ownership Transfers ---
@@ -3225,7 +3239,7 @@ func (s *MongoStore) AdminListForks(ctx context.Context, conversationID string) 
 	if err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-	return s.ListForks(ctx, conv.OwnerUserID, conversationID)
+	return s.listForks(ctx, conv.OwnerUserID, conversationID, registrystore.ForkNavigationVisibility{IncludeAllJournals: true})
 }
 
 func (s *MongoStore) AdminSearchEntries(ctx context.Context, query registrystore.AdminSearchQuery) (*registrystore.SearchResults, error) {

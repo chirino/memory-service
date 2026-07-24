@@ -13,6 +13,8 @@ import {
   type ViewMode,
 } from "@/components/content-renderers";
 import { cn } from "@/lib/utils";
+import { buildRenderItems, filterRenderItemsByChannel, type ChannelFilter } from "@/lib/entry-render-items";
+import { buildForkNavigationSearch } from "@/lib/fork-navigation";
 import { useScrollToEntry, useLineageEntries, type EntryWithForkPoint } from "@/hooks";
 import {
   adminGetConversationOptions,
@@ -22,7 +24,7 @@ import {
   type ConversationMembership,
 } from "@/api/client";
 
-const validChannels = ["all", "history", "context"] as const;
+const validChannels = ["all", "history", "context", "journal"] as const;
 type ChannelParam = (typeof validChannels)[number];
 
 export const Route = createFileRoute("/conversations/$conversationId")({
@@ -41,7 +43,6 @@ export const Route = createFileRoute("/conversations/$conversationId")({
 });
 
 type TabType = "entries" | "memberships";
-type ChannelFilter = "all" | "history" | "context";
 type ContextGroupView = "entries" | "resolved";
 
 // Fork tree item type (for UI display)
@@ -336,7 +337,7 @@ function ConversationDetailPage() {
               <div>
                 <div className="mb-1.5 text-xs font-medium text-muted-foreground">Channel</div>
                 <div className="console-segmented">
-                  {(["history", "all", "context"] as ChannelFilter[]).map((channel) => (
+                  {(["history", "all", "context", "journal"] as ChannelFilter[]).map((channel) => (
                     <button
                       key={channel}
                       onClick={() => setChannelFilter(channel)}
@@ -350,7 +351,7 @@ function ConversationDetailPage() {
                   ))}
                 </div>
               </div>
-              {channelFilter !== "context" && (
+              {(channelFilter === "history" || channelFilter === "all") && (
                 <div>
                   <div className="mb-1.5 text-xs font-medium text-muted-foreground">History view</div>
                   <div className="console-segmented">
@@ -375,7 +376,7 @@ function ConversationDetailPage() {
                   </div>
                 </div>
               )}
-              {channelFilter !== "history" && (
+              {(channelFilter === "context" || channelFilter === "all") && (
                 <div>
                   <div className="mb-1.5 text-xs font-medium text-muted-foreground">Context view</div>
                   <div className="console-segmented">
@@ -505,65 +506,6 @@ function ConversationDetailPage() {
   );
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
-
-type RenderItem =
-  | { type: "entry"; entry: EntryWithForkPoint }
-  | { type: "context-group"; entries: EntryWithForkPoint[] };
-
-/**
- * Splits the entry list into render items: individual entry cards and
- * context-group blocks. A context group is a run of consecutive `context`
- * channel entries that follows at least one non-context entry (i.e. a user
- * history entry). Groups do NOT require a shared epoch — that's only used
- * when computing the "Resolved" view.
- */
-function buildRenderItems(entries: EntryWithForkPoint[]): RenderItem[] {
-  const items: RenderItem[] = [];
-  let contextRun: EntryWithForkPoint[] = [];
-  let seenNonContext = false;
-
-  const flushContextRun = () => {
-    if (contextRun.length > 0) {
-      items.push({ type: "context-group", entries: contextRun });
-      contextRun = [];
-    }
-  };
-
-  for (const entry of entries) {
-    if (entry.channel === "context" && seenNonContext) {
-      contextRun.push(entry);
-    } else {
-      flushContextRun();
-      if (entry.channel !== "context") seenNonContext = true;
-      items.push({ type: "entry", entry });
-    }
-  }
-  flushContextRun();
-  return items;
-}
-
-function filterRenderItemsByChannel(items: RenderItem[], channelFilter: ChannelFilter): RenderItem[] {
-  if (channelFilter === "all") {
-    return items;
-  }
-
-  const filtered: RenderItem[] = [];
-  for (const item of items) {
-    if (item.type === "entry") {
-      if (item.entry.channel === channelFilter) {
-        filtered.push(channelFilter === "context" ? { type: "context-group", entries: [item.entry] } : item);
-      }
-      continue;
-    }
-
-    if (channelFilter === "context") {
-      filtered.push(item);
-    }
-  }
-  return filtered;
-}
-
 // ─── Context Group ───────────────────────────────────────────────────────────
 
 function ContextGroup({
@@ -584,7 +526,7 @@ function ContextGroup({
   highlightedEntryId: string | null;
   getEntryRef: (entryId: string) => (el: HTMLElement | null) => void;
   onEntryClick: (id: string) => void;
-  channelFilter?: string;
+  channelFilter?: ChannelFilter;
   historyViewMode: ViewMode;
 }) {
   if (view === "resolved") {
@@ -639,7 +581,7 @@ const EntryCard = React.forwardRef<
     formatDate: (date: string) => string;
     isHighlighted?: boolean;
     onClick?: () => void;
-    channelFilter?: string;
+    channelFilter?: ChannelFilter;
     historyViewMode: ViewMode;
     entryIdLabel?: string;
     entryIdTitle?: string;
@@ -658,6 +600,8 @@ const EntryCard = React.forwardRef<
           return "bg-sage-soft text-primary";
         case "context":
           return "bg-[#eadccd] text-[#98613d]";
+        case "journal":
+          return "bg-[#e2e0eb] text-[#615a7a]";
         default:
           return "bg-secondary text-muted-foreground";
       }
@@ -727,14 +671,7 @@ function ForkCard({
   formatDate: (date: string) => string;
   channelFilter: ChannelFilter;
 }) {
-  // Build search params preserving channel filter
-  const searchParams: { forkedAt?: string; channel?: ChannelParam } = {};
-  if (fork.forkedAtEntryId) {
-    searchParams.forkedAt = fork.forkedAtEntryId;
-  }
-  if (channelFilter !== "history") {
-    searchParams.channel = channelFilter;
-  }
+  const searchParams = buildForkNavigationSearch(fork.forkedAtEntryId, channelFilter);
 
   return (
     <Link

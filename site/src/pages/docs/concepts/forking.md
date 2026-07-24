@@ -68,7 +68,7 @@ When you fork a conversation, the new conversation has:
 
 When you create a conversation, the service internally groups it with any future forks. When you fork a conversation, the new fork is linked to the original. All conversations that share a common ancestor belong to the same fork tree.
 
-Use the `/forks` endpoint on any conversation to obtain all accessible conversation IDs in the group and the fork controls relevant to that conversation's visible history.
+Use the `/forks` endpoint on any conversation to obtain all accessible conversation IDs in the group and the fork controls relevant to that conversation's visible history and journal.
 
 Deleting any conversation in a fork tree deletes the entire tree (root and all forks), along with associated entries and memberships.
 
@@ -81,7 +81,7 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-The `conversationIds` array contains the accessible group membership. Each `forkPoints` item identifies an entry visible in the requested conversation and the alternative conversation/entry options at that position.
+The `conversationIds` array contains the accessible group membership. Each `forkPoints` item identifies a history or journal entry visible in the requested conversation and the alternative conversation/entry options at that position. Journal points are client-scoped: user navigation returns them only to the authenticated client that can read the journal entry, while admin navigation includes every journal point.
 
 ## Use Cases
 
@@ -106,7 +106,7 @@ curl "http://localhost:8080/v1/conversations/{conversationId}/forks" \
   -H "Authorization: Bearer <token>"
 ```
 
-This returns the complete group ID list and the fork points relevant to the requested conversation. It is intentionally not paginated so clients can index fork controls before paging entries in either direction.
+This returns the complete group ID list and the fork points relevant to the requested conversation. Each continuation uses its first navigation-visible history or journal entry as the active display location. The response is intentionally not paginated so clients can index fork controls before paging entries in either direction.
 
 ## Limitations
 

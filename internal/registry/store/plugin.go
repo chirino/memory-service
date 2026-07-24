@@ -322,7 +322,7 @@ type MemoryStore interface {
 	GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error)
 
 	// Forks
-	ListForks(ctx context.Context, userID string, conversationID string) (*ConversationForkNavigation, error)
+	ListForks(ctx context.Context, userID string, conversationID string, clientID *string) (*ConversationForkNavigation, error)
 	ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]ConversationSummary, *string, error)
 
 	// Ownership Transfers

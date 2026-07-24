@@ -436,8 +436,13 @@ Feature: Journal-anchored conversation forks
 - [x] gRPC append/create-conversation paths: return consistent validation/authorization errors for invalid journal fork anchors
 - [x] BDD feature file: REST journal-anchored fork scenarios across PostgreSQL, SQLite, and MongoDB
 - [x] BDD feature file: gRPC journal-anchored fork scenarios
+- [x] User REST/gRPC fork navigation: include same-client journal anchors and suppress foreign/no-client journal points
+- [x] Admin fork navigation: include all history and journal anchors
+- [x] PostgreSQL, SQLite, and MongoDB navigation queries: select the first caller-visible history or journal continuation
+- [x] Shared navigation unit tests and REST/gRPC BDD coverage for journal visibility and journal-first continuations
+- [x] REST BDD parity: cover sibling forks at one journal location and exclusive journal-channel boundaries with continued root appends
 - [x] Frontend chat library: ensure fork view helpers handle fork anchors that are not present in the visible history list
-- [x] Developer frontend: ensure fork badges, labels, and scroll targets handle journal-anchored forks without assuming a user history message
+- [x] Developer frontend: add journal filtering and render fork badges on journal entry locations without changing the history-only chat UI
 - [x] Docs: update `docs/entry-data-model.md`, `docs/design.md`, and `docs/db-design.md` for journal fork-anchor semantics and current channel names
 - [x] Site docs: update concept forking docs, framework forking guides, and FAQ with the journal-anchor caveat
 
@@ -450,13 +455,16 @@ Feature: Journal-anchored conversation forks
 | `contracts/protobuf/memory/v1/memory_service.proto` | Add `JOURNAL = 3`; add `seq` fields to `Entry` and `CreateEntryRequest`; add `from_seq` to user/admin list requests; document history-or-journal fork anchors |
 | `internal/model/model.go` | Add `Seq *uint32`; JSON marshal/unmarshal remains symmetric through the alias path |
 | `internal/plugin/store/postgres/db/schema.sql` | Add `seq` column, range check, and partition-compatible partial unique index |
-| `internal/plugin/store/postgres/postgres.go` | Persist `seq`, map duplicate `seq` conflicts, implement `fromSeq` list ordering, and allow same-client journal fork anchors |
+| `internal/plugin/store/postgres/postgres.go` | Persist `seq`, map duplicate `seq` conflicts, implement `fromSeq` list ordering, and include caller-visible journal anchors/continuations in fork navigation |
 | `internal/plugin/store/sqlite/db/schema.sql` | Add `seq` column, range check, and partial unique index |
-| `internal/plugin/store/sqlite/sqlite.go` | Persist `seq`, map duplicate `seq` conflicts, implement `fromSeq` list ordering, and allow same-client journal fork anchors |
-| `internal/plugin/store/mongo/mongo.go` | Add `seq` field, unique partial index, duplicate check, `fromSeq` list path, and same-client journal fork anchors |
-| `internal/registry/store/plugin.go` | Add `seq` to `CreateEntryRequest` and entry-list query shape |
+| `internal/plugin/store/sqlite/sqlite.go` | Persist `seq`, map duplicate `seq` conflicts, implement `fromSeq` list ordering, and include caller-visible journal anchors/continuations in fork navigation |
+| `internal/plugin/store/mongo/mongo.go` | Add `seq` field, unique partial index, duplicate check, `fromSeq` list path, and caller-visible journal fork navigation |
+| `internal/registry/store/plugin.go` | Add `seq` to `CreateEntryRequest` and pass client identity through user fork listing |
+| `internal/registry/store/forks.go` | Apply client-scoped history/journal visibility while assembling fork navigation |
+| `internal/registry/store/forks_test.go` | Cover history, journal-client, admin, context, and active-continuation navigation rules |
 | `internal/plugin/store/metrics/metrics.go` | Forward the updated entry-list query shape |
 | `internal/plugin/route/entries/entries.go` | Wire `seq` from request body; validate `journal`; return `409` on store duplicate error; pass `fromSeq` to store |
+| `internal/plugin/route/conversations/conversations.go` | Pass authenticated client identity to user fork navigation |
 | `internal/plugin/route/admin/admin.go` | Pass `fromSeq` through admin entry listing |
 | `internal/grpc/server.go` | Wire `seq`, `from_seq`, and `JOURNAL` for user/admin entry APIs; propagate fork auto-create validation errors |
 | `internal/generated/apiclient/` | Regenerated — do not edit manually |
@@ -468,6 +476,9 @@ Feature: Journal-anchored conversation forks
 | `frontends/chat-frontend/src/lib/conversation.ts` | Handle fork anchors that are not visible in history-only entry views |
 | `frontends/developer/src/lib/conversation.ts` | Mirror fork-view handling for non-history fork anchors |
 | `frontends/developer/src/components/ui/fork-point-badge.tsx` | Avoid assuming journal-anchored forks can be labeled from the next user message |
+| `frontends/developer/src/routes/conversations/$conversationId.tsx` | Add the journal channel filter and journal-specific controls |
+| `frontends/developer/src/lib/entry-render-items.ts` | Preserve journal entry fork metadata while filtering the inspector timeline |
+| `frontends/developer/src/lib/entry-render-items.test.ts` | Verify journal-only filtering retains fork navigation metadata |
 | `docs/entry-data-model.md` | Document history-or-journal fork anchors, journal client scoping, and exclusive-stop semantics |
 | `docs/design.md` | Update high-level fork and channel descriptions; remove stale explicit fork-endpoint wording where appropriate |
 | `docs/db-design.md` | Update stale channel names and note journal entries may be fork anchors |
@@ -485,9 +496,16 @@ go build ./...
 go test ./internal/bdd -run TestFeaturesPgKeycloak -count=1 > test.log 2>&1
 # Search test.log for failures
 
-# BDD suite (SQLite)
-go test ./internal/bdd -run TestFeaturesSQLite -count=1 >> test.log 2>&1
+# BDD suite (SQLite with fixture authentication)
+CGO_ENABLED=1 go test -race -tags='sqlite_fts5 auth_testfixtures' \
+  ./internal/bdd -run '^TestFeaturesSQLite$' -count=1 >> test.log 2>&1
 
 # BDD suite (MongoDB)
 go test ./internal/bdd -run TestFeaturesMongo -count=1 >> test.log 2>&1
+
+# Developer inspector
+cd frontends/developer
+npm test
+npm run lint
+npm run build
 ```

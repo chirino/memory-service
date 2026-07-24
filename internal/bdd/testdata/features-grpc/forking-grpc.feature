@@ -126,6 +126,7 @@ Feature: Conversation Forking gRPC API
     }
     """
     Then the gRPC response should not have an error
+    And set "journalForkEntryId" to the gRPC response field "id"
     When I send gRPC request "ConversationsService/GetConversation" with body:
     """
     conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02" | uuid_to_hex_string}"
@@ -133,6 +134,47 @@ Feature: Conversation Forking gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "forkedAtEntryId" should be "${journalEntryId}"
     And the gRPC response field "forkedAtConversationId" should be "${parentConversationId}"
+
+    When I send gRPC request "ConversationsService/ListForks" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkPoints" should have size 1
+    And the gRPC response field "forkPoints[0].entryId" should be "${journalEntryId}"
+
+    When I send gRPC request "ConversationsService/ListForks" with body:
+    """
+    conversation_id: "${"aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeee02" | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkPoints" should have size 1
+    And the gRPC response field "forkPoints[0].entryId" should be "${journalForkEntryId}"
+
+    Given I am authenticated as user "alice"
+    When I send gRPC request "ConversationsService/ListForks" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkPoints" should have size 0
+
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I send gRPC request "ConversationsService/ListForks" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkPoints" should have size 0
+
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListForks" with body:
+    """
+    conversation_id: "${parentConversationId | uuid_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "forkPoints" should have size 1
+    And the gRPC response field "forkPoints[0].entryId" should be "${journalEntryId}"
 
   Scenario: Different client cannot fork at another client's journal entry via gRPC
     Given I am authenticated as agent with API key "test-agent-key"
