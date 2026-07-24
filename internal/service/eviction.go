@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/service/eventstream"
@@ -49,6 +50,14 @@ func (e *EvictionService) Start(ctx context.Context) {
 }
 
 func (e *EvictionService) runEviction(ctx context.Context) {
+	event := operationevent.New("job.eviction")
+	var evicted, failures int
+	defer func() {
+		event.SetWorkCount(int64(evicted))
+		event.SetFailureCount(int64(failures))
+		emitJobTerminal(event, ctx, int64(failures))
+	}()
+	defer recoverJobPanic(event, func() { failures++ })
 	cutoff := time.Now().Add(-e.retention)
 	var total int64
 	err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
@@ -57,15 +66,21 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		return err
 	})
 	if err != nil {
+		if markJobInterrupted(event, ctx, err) {
+			return
+		}
 		log.Error("Eviction: count failed", "err", err)
+		event.SetReason("count_failed")
+		event.EnrichError(err)
+		failures++
 		return
 	}
 	if total == 0 {
 		return
 	}
 
-	log.Info("Eviction: starting", "total", total, "cutoff", cutoff)
-	evicted := 0
+	event.SetWorkCount(total)
+	event.EmitStart()
 	for {
 		var ids []uuid.UUID
 		err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
@@ -74,7 +89,13 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			return err
 		})
 		if err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				return
+			}
 			log.Error("Eviction: find IDs failed", "err", err)
+			event.SetReason("list_failed")
+			event.EnrichError(err)
+			failures++
 			return
 		}
 		if len(ids) == 0 {
@@ -87,7 +108,13 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			for _, id := range ids {
 				body := map[string]interface{}{"conversationGroupId": id.String()}
 				if err := e.store.CreateTask(writeCtx, "vector_store_delete", body); err != nil {
+					if _, interrupted := jobContextResult(ctx, err); interrupted {
+						return err
+					}
 					log.Error("Eviction: create vector delete task failed", "groupId", id, "err", err)
+					event.SetReason("task_create_failed")
+					event.EnrichError(err)
+					failures++
 				}
 			}
 			deletedGroups, err := e.store.LoadDeletedConversationGroups(writeCtx, ids)
@@ -105,11 +132,25 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			}
 			return e.store.HardDeleteConversationGroups(writeCtx, ids)
 		}); err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				return
+			}
 			log.Error("Eviction: hard delete failed", "err", err)
+			event.SetReason("delete_failed")
+			event.EnrichError(err)
+			failures++
 		} else if err := eventstream.PublishEvents(ctx, e.store, e.eventBus, eventsToPublish...); err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				return
+			}
 			log.Error("Eviction: publish delete events failed", "err", err)
+			event.SetReason("event_publish_failed")
+			event.EnrichError(err)
+			failures++
+			evicted += len(ids)
+		} else {
+			evicted += len(ids)
 		}
-		evicted += len(ids)
 
 		if e.delay > 0 {
 			select {
@@ -119,5 +160,4 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			}
 		}
 	}
-	log.Info("Eviction: completed", "evicted", evicted)
 }

@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 )
@@ -72,8 +73,14 @@ func (idx *EpisodicIndexer) Trigger(ctx context.Context) (EpisodicIndexRunStats,
 	return idx.runOnce(ctx), nil
 }
 
-func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
-	stats := EpisodicIndexRunStats{}
+func (idx *EpisodicIndexer) runOnce(ctx context.Context) (stats EpisodicIndexRunStats) {
+	event := operationevent.New("job.episodic_index")
+	defer func() {
+		event.SetWorkCount(int64(stats.Processed))
+		event.SetFailureCount(int64(stats.Failures))
+		emitJobTerminal(event, ctx, int64(stats.Failures))
+	}()
+	defer recoverJobPanic(event, func() { stats.Failures++ })
 	var pending []registryepisodic.PendingMemory
 	err := idx.store.InReadTx(ctx, func(readCtx context.Context) error {
 		var err error
@@ -81,11 +88,20 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		return err
 	})
 	if err != nil {
+		if markJobInterrupted(event, ctx, err) {
+			return stats
+		}
 		log.Error("Episodic indexer: find pending failed", "err", err)
+		event.SetReason("list_failed")
+		event.EnrichError(err)
 		stats.Failures++
 		return stats
 	}
 	stats.Pending = len(pending)
+	if len(pending) > 0 {
+		event.SetWorkCount(int64(len(pending)))
+		event.EmitStart()
+	}
 	for _, m := range pending {
 		stats.Processed++
 		if m.ArchivedAt != nil {
@@ -97,7 +113,12 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 					}
 					return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
 				}); err != nil {
+					if markJobInterrupted(event, ctx, err) {
+						return stats
+					}
 					log.Warn("Episodic indexer: delete vectors failed", "id", m.ID, "err", err)
+					event.SetReason("vector_delete_failed")
+					event.EnrichError(err)
 					stats.Failures++
 					continue
 				}
@@ -113,7 +134,12 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 			if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
 			}); err != nil {
+				if markJobInterrupted(event, ctx, err) {
+					return stats
+				}
 				log.Error("Episodic indexer: set indexed_at failed", "id", m.ID, "err", err)
+				event.SetReason("index_update_failed")
+				event.EnrichError(err)
 				stats.Failures++
 			}
 			continue
@@ -142,7 +168,12 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 			}
 			embeddings, err := idx.embedder.EmbedTexts(ctx, texts)
 			if err != nil {
+				if markJobInterrupted(event, ctx, err) {
+					return stats
+				}
 				log.Warn("Episodic indexer: embed failed", "id", m.ID, "err", err)
+				event.SetReason("embed_failed")
+				event.EnrichError(err)
 				stats.Failures++
 			} else {
 				stats.Embedded += len(embeddings)
@@ -168,7 +199,12 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 				}
 				return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
 			}); err != nil {
+				if markJobInterrupted(event, ctx, err) {
+					return stats
+				}
 				log.Warn("Episodic indexer: upsert vectors failed", "id", m.ID, "err", err)
+				event.SetReason("vector_upsert_failed")
+				event.EnrichError(err)
 				stats.Failures++
 				continue
 			}
@@ -176,7 +212,12 @@ func (idx *EpisodicIndexer) runOnce(ctx context.Context) EpisodicIndexRunStats {
 		} else if err := idx.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			return idx.store.SetMemoryIndexedAt(writeCtx, m.ID, time.Now())
 		}); err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				return stats
+			}
 			log.Error("Episodic indexer: set indexed_at failed", "id", m.ID, "err", err)
+			event.SetReason("index_update_failed")
+			event.EnrichError(err)
 			stats.Failures++
 		}
 	}

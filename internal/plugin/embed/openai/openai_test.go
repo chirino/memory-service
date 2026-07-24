@@ -4,11 +4,14 @@ package openai
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
+
+	"github.com/chirino/memory-service/internal/operationevent"
 )
 
 func TestRedactAPIKey(t *testing.T) {
@@ -54,6 +57,7 @@ func TestEmbedTextsUsesGenericErrorForProviderAuthFailure(t *testing.T) {
 			t.Fatalf("Authorization header = %q, want %q", got, want)
 		}
 		w.Header().Set("Content-Type", "application/json")
+		w.Header().Set("X-Request-ID", "provider-request-1")
 		w.WriteHeader(http.StatusUnauthorized)
 		fmt.Fprintf(w, `{"error":{"message":"Incorrect API key provided: %s."}}`, apiKey)
 	}))
@@ -79,9 +83,17 @@ func TestEmbedTextsUsesGenericErrorForProviderAuthFailure(t *testing.T) {
 	if !strings.Contains(got, "authentication failed with status 401") {
 		t.Fatalf("error missing generic auth failure: %q", got)
 	}
+	var detailer operationevent.ErrorDetailer
+	if !errors.As(err, &detailer) {
+		t.Fatalf("error does not expose typed provider details: %T", err)
+	}
+	details := detailer.OperationErrorDetails()
+	if details.Provider == nil || details.Provider.Name != "openai" || details.Provider.StatusCode != http.StatusUnauthorized || details.Provider.TransactionID != "provider-request-1" || details.Reason != "authentication_failed" {
+		t.Fatalf("unexpected provider details: %#v", details)
+	}
 }
 
-func TestEmbedTextsRedactsConfiguredAPIKeyFromNonAuthProviderError(t *testing.T) {
+func TestEmbedTextsOmitsProviderBodyFromNonAuthProviderError(t *testing.T) {
 	apiKey := "provider/key:with+symbols=and.dots"
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
@@ -104,7 +116,7 @@ func TestEmbedTextsRedactsConfiguredAPIKeyFromNonAuthProviderError(t *testing.T)
 	if strings.Contains(got, apiKey) {
 		t.Fatalf("error still contains API key: %q", got)
 	}
-	if !strings.Contains(got, "[REDACTED_OPENAI_API_KEY]") {
-		t.Fatalf("error missing redaction marker: %q", got)
+	if strings.Contains(got, "Bad request included key") || strings.Contains(got, "[REDACTED_OPENAI_API_KEY]") {
+		t.Fatalf("error included provider response content: %q", got)
 	}
 }

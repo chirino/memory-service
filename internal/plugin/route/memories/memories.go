@@ -1176,6 +1176,7 @@ func adminMemoryPolicyContext(c *gin.Context) episodic.PolicyContext {
 }
 
 func handleError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": "memory revision conflict"})
 		return

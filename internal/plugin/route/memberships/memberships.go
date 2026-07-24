@@ -257,6 +257,7 @@ func deleteMembership(c *gin.Context, store registrystore.MemoryStore, eventBus 
 }
 
 func handleError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	var notFound *registrystore.NotFoundError
 	var validation *registrystore.ValidationError
 	var conflict *registrystore.ConflictError

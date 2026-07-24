@@ -3,6 +3,7 @@ package bdd
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -114,7 +115,7 @@ func (e *grpcEventSteps) openGRPCEventStreamWithContext(streamID string, authCtx
 		defer conn.Close()
 		for {
 			msg, err := stream.Recv()
-			if err == io.EOF || ctx.Err() != nil {
+			if errors.Is(err, io.EOF) || ctx.Err() != nil {
 				return
 			}
 			if err != nil {

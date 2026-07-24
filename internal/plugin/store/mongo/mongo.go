@@ -2087,7 +2087,7 @@ func (s *MongoStore) AdminGetEntryByID(ctx context.Context, entryID uuid.UUID) (
 	var doc entryDoc
 	err := s.entries().FindOne(ctx, bson.M{"_id": uuidToStr(entryID)}).Decode(&doc)
 	if err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
 		}
 		return nil, err

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -234,29 +235,39 @@ func (h *prometheusStatsHandler) queryRange(ctx context.Context, promQL, start, 
 	}
 	resp, err := h.httpClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("could not connect to Prometheus server: %w", err)
+		return nil, prometheusProviderError(fmt.Errorf("could not connect to metrics provider: %w", err), 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("prometheus query failed with status %d", resp.StatusCode)
+		return nil, prometheusProviderError(fmt.Errorf("metrics query failed with status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	var payload prometheusRangeResponse
 	if err := json.NewDecoder(resp.Body).Decode(&payload); err != nil {
-		return nil, fmt.Errorf("failed to decode Prometheus response: %w", err)
+		return nil, prometheusProviderError(fmt.Errorf("failed to decode metrics response: %w", err), resp.StatusCode, "invalid_response", resp.Header.Get("X-Request-ID"))
 	}
 	if !strings.EqualFold(payload.Status, "success") {
-		msg := strings.TrimSpace(payload.Error)
-		if msg == "" {
-			msg = "prometheus query failed"
-		}
-		return nil, fmt.Errorf("%s", msg)
+		return nil, prometheusProviderError(fmt.Errorf("metrics provider returned an error"), resp.StatusCode, "provider_error", resp.Header.Get("X-Request-ID"))
 	}
 	return &payload, nil
 }
 
+func prometheusProviderError(err error, statusCode int, reason, transactionID string) error {
+	return operationevent.WithErrorDetails(err, operationevent.ErrorDetails{
+		ErrorType: "provider",
+		ErrorCode: "monitoring_provider_error",
+		Reason:    reason,
+		Provider: &operationevent.ErrorDetailsProvider{
+			Name:          "prometheus",
+			StatusCode:    statusCode,
+			TransactionID: transactionID,
+		},
+	})
+}
+
 func (h *prometheusStatsHandler) writePrometheusError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	if errors.Is(err, errPrometheusNotConfigured) {
 		c.JSON(http.StatusNotImplemented, gin.H{
 			"error": "Prometheus not configured",

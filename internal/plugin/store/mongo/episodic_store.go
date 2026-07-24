@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"math"
 	"regexp"
@@ -304,7 +305,7 @@ func (s *mongoEpisodicStore) GetMemory(ctx context.Context, namespace []string, 
 		bson.M{"namespace": nsEncoded, "key": key},
 		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}),
 	).Decode(&doc); err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get memory: %w", err)
@@ -375,7 +376,7 @@ func (s *mongoEpisodicStore) GetMemoryUsage(ctx context.Context, namespace []str
 
 	var doc memoryUsageDoc
 	if err := s.usage.FindOne(ctx, bson.M{"namespace": nsEncoded, "key": key}).Decode(&doc); err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("get memory usage: %w", err)
@@ -1198,7 +1199,7 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 func (s *mongoEpisodicStore) AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
 	var doc memoryDoc
 	if err := s.col.FindOne(ctx, bson.M{"_id": memoryID.String()}).Decode(&doc); err != nil {
-		if err == mongo.ErrNoDocuments {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, nil
 		}
 		return nil, fmt.Errorf("admin get memory: %w", err)

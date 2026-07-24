@@ -628,6 +628,7 @@ func listUnindexed(c *gin.Context, store registrystore.MemoryStore) {
 }
 
 func handleError(c *gin.Context, err error) {
+	_ = c.Error(err)
 	var notFound *registrystore.NotFoundError
 	var forbidden *registrystore.ForbiddenError
 	switch {

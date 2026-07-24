@@ -9,6 +9,8 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/operationevent"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/stretchr/testify/require"
@@ -77,11 +79,54 @@ func TestMapErrorMapsFailedPreconditionConflictsToAborted(t *testing.T) {
 	require.Equal(t, "state conflict", status.Convert(err).Message())
 }
 
+func TestGRPCStatusWithCausePreservesSentinelClassification(t *testing.T) {
+	err := grpcStatusWithCause(codes.Aborted, "memory revision conflict", registryepisodic.ErrMemoryRevisionConflict)
+
+	require.Equal(t, codes.Aborted, status.Code(err))
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+}
+
 func TestEpisodicInternalErrorUsesStablePublicMessage(t *testing.T) {
-	err := episodicInternalError("semantic search backend leaked detail", errors.New("postgres://user:secret@example/internal detail"))
+	original := operationevent.WithErrorDetails(errors.New("postgres://user:secret@example/internal detail"), operationevent.ErrorDetails{
+		ErrorType: "provider",
+		ErrorCode: "embedding_provider_error",
+	})
+	err := episodicInternalError("semantic search backend leaked detail", original)
 
 	require.Equal(t, codes.Internal, status.Code(err))
 	require.Equal(t, "internal server error", status.Convert(err).Message())
+	require.ErrorIs(t, err, original)
+	var detailer operationevent.ErrorDetailer
+	require.ErrorAs(t, err, &detailer)
+	require.Equal(t, "embedding_provider_error", detailer.OperationErrorDetails().ErrorCode)
+}
+
+func TestMapCheckpointErrorPreservesOriginalCause(t *testing.T) {
+	tests := []struct {
+		name string
+		err  error
+		code codes.Code
+	}{
+		{name: "not found", err: &registrystore.NotFoundError{Resource: "checkpoint"}, code: codes.NotFound},
+		{name: "validation", err: &registrystore.ValidationError{Field: "client_id", Message: "invalid"}, code: codes.InvalidArgument},
+		{name: "internal", err: errors.New("private datastore detail"), code: codes.Internal},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			mapped := mapCheckpointError(tt.err)
+			require.Equal(t, tt.code, status.Code(mapped))
+			require.ErrorIs(t, mapped, tt.err)
+		})
+	}
+}
+
+func TestGRPCOperationConnectionIDReusesCanonicalStreamID(t *testing.T) {
+	event := operationevent.New("grpc /memory.v1.EventStreamService/SubscribeEvents", operationevent.WithEmitter(func(string, operationevent.Level, operationevent.Snapshot) {}))
+	event.SetConnectionID("connection-1")
+	ctx := operationevent.WithContext(context.Background(), event)
+
+	require.Equal(t, "connection-1", grpcOperationConnectionID(ctx))
+	require.NotEmpty(t, grpcOperationConnectionID(context.Background()))
 }
 
 func TestProtoPerQueryLimitCapsDefaultCandidateBudget(t *testing.T) {

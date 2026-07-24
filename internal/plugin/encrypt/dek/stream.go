@@ -8,6 +8,7 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/binary"
+	"errors"
 	"fmt"
 	"io"
 	"math"
@@ -222,7 +223,7 @@ func (r *gcmStreamReader) Read(p []byte) (int, error) {
 func (r *gcmStreamReader) readNextRecord() error {
 	var header [streamV3RecordHeaderSize]byte
 	if _, err := io.ReadFull(r.src, header[:]); err != nil {
-		if err == io.EOF || err == io.ErrUnexpectedEOF {
+		if errors.Is(err, io.EOF) || errors.Is(err, io.ErrUnexpectedEOF) {
 			return fmt.Errorf("dek: missing MSEH v3 FINAL record: %w", err)
 		}
 		return err

@@ -7,6 +7,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
 	"github.com/google/uuid"
@@ -67,21 +68,61 @@ func (p *TaskProcessor) processBatch(ctx context.Context) {
 		return
 	}
 	for _, task := range tasks {
-		if err := p.executeTask(ctx, task.TaskType, task.TaskBody); err != nil {
-			p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
-			if fErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				return p.store.FailTask(writeCtx, task.ID, err.Error(), p.retryDelay)
-			}); fErr != nil {
-				p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
-			}
-		} else {
-			if dErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				return p.store.DeleteTask(writeCtx, task.ID)
-			}); dErr != nil {
-				p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
-			}
-		}
+		p.processClaimedTask(ctx, task)
 	}
+}
+
+func (p *TaskProcessor) processClaimedTask(ctx context.Context, task model.Task) {
+	event := operationevent.New(taskOperationName(task.TaskType))
+	event.SetTaskID(task.ID.String())
+	event.SetRetryAttempt(task.RetryCount + 1)
+	defer recoverJobPanic(event, func() {
+		event.SetFailureCount(1)
+		event.EmitTerminal(operationevent.ResultFailed)
+	})
+	taskCtx := operationevent.WithContext(ctx, event)
+	if err := p.executeTask(taskCtx, task.TaskType, task.TaskBody); err != nil {
+		if result, interrupted := jobContextResult(ctx, err); interrupted {
+			if result == operationevent.ResultTimedOut {
+				event.SetReason("deadline")
+			} else {
+				event.SetReason("shutdown")
+			}
+			event.EmitTerminal(result)
+			return
+		}
+		p.logErr(ctx, "TaskProcessor: task failed", "taskId", task.ID, "type", task.TaskType, "err", err)
+		if fErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+			return p.store.FailTask(writeCtx, task.ID, err.Error(), p.retryDelay)
+		}); fErr != nil {
+			p.logErr(ctx, "TaskProcessor: fail task record failed", "taskId", task.ID, "err", fErr)
+			event.SetReason("retry_persistence_failed")
+			event.EnrichError(fErr)
+			event.EmitTerminal(operationevent.ResultFailed)
+		} else {
+			event.SetReason("retry_scheduled")
+			event.EnrichError(err)
+			event.EmitTerminal(operationevent.ResultRetrying)
+		}
+		return
+	}
+	if dErr := p.store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		return p.store.DeleteTask(writeCtx, task.ID)
+	}); dErr != nil {
+		p.logErr(ctx, "TaskProcessor: delete task failed", "taskId", task.ID, "err", dErr)
+		event.SetReason("task_cleanup_failed")
+		event.EnrichError(dErr)
+		event.EmitTerminal(operationevent.ResultFailed)
+	} else {
+		event.EmitTerminal(operationevent.ResultSuccess)
+	}
+}
+
+func taskOperationName(taskType string) string {
+	if taskType == "vector_store_delete" {
+		return "job.vector_store_delete"
+	}
+	return "job.task"
 }
 
 func (p *TaskProcessor) executeTask(ctx context.Context, taskType string, body map[string]any) error {

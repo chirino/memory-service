@@ -1,0 +1,4 @@
+interface:
+  display_name: "Prepare Pull Request"
+  short_description: "Format and verify changes before pull requests"
+  default_prompt: "Use $prepare-pull-request to prepare the current changes for pull request submission."

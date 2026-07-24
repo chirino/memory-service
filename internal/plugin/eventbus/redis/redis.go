@@ -9,6 +9,7 @@ package redis
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -339,7 +340,7 @@ func (r *redisBus) subscribeLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err == errRedisRefresh {
+		if errors.Is(err, errRedisRefresh) {
 			continue
 		}
 		r.markDegraded()

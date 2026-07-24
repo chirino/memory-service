@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"sort"
 	"strings"
@@ -309,7 +310,7 @@ func (p *postgresBus) subscribeLoop(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
-		if err == errPostgresRefresh {
+		if errors.Is(err, errPostgresRefresh) {
 			continue
 		}
 		p.markDegraded()

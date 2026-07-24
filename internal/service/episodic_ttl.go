@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 )
 
@@ -50,6 +51,26 @@ func (s *EpisodicTTLService) Start(ctx context.Context) {
 }
 
 func (s *EpisodicTTLService) runOnce(ctx context.Context) {
+	event := operationevent.New("job.episodic_maintenance")
+	var work, failures int64
+	started := false
+	recordWork := func(count int64) {
+		if count <= 0 {
+			return
+		}
+		work += count
+		if !started {
+			event.SetWorkCount(work)
+			event.EmitStart()
+			started = true
+		}
+	}
+	defer func() {
+		event.SetWorkCount(work)
+		event.SetFailureCount(failures)
+		emitJobTerminal(event, ctx, failures)
+	}()
+	defer recoverJobPanic(event, func() { failures++ })
 	// Pass 1: expire memories whose TTL has elapsed.
 	var (
 		n   int64
@@ -60,9 +81,15 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		return err
 	})
 	if err != nil {
+		if markJobInterrupted(event, ctx, err) {
+			return
+		}
 		log.Error("Episodic TTL expiry failed", "err", err)
+		event.SetReason("expiry_failed")
+		event.EnrichError(err)
+		failures++
 	} else if n > 0 {
-		log.Info("Episodic TTL expiry", "expired", n)
+		recordWork(n)
 	}
 
 	// Pass 2A: hard-delete superseded update rows once vector cleanup is confirmed.
@@ -71,9 +98,15 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		return err
 	})
 	if err != nil {
+		if markJobInterrupted(event, ctx, err) {
+			return
+		}
 		log.Error("Episodic eviction (updates) failed", "err", err)
+		event.SetReason("update_eviction_failed")
+		event.EnrichError(err)
+		failures++
 	} else if n > 0 {
-		log.Info("Episodic eviction (updates)", "deleted", n)
+		recordWork(n)
 	}
 
 	// Pass 2B: tombstone delete/expired rows once vector cleanup is confirmed.
@@ -82,9 +115,15 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		return err
 	})
 	if err != nil {
+		if markJobInterrupted(event, ctx, err) {
+			return
+		}
 		log.Error("Episodic tombstone pass failed", "err", err)
+		event.SetReason("tombstone_failed")
+		event.EnrichError(err)
+		failures++
 	} else if n > 0 {
-		log.Info("Episodic tombstone pass", "tombstoned", n)
+		recordWork(n)
 	}
 
 	// Pass 3: hard-delete tombstones older than the retention period.
@@ -95,9 +134,15 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 			return err
 		})
 		if err != nil {
+			if markJobInterrupted(event, ctx, err) {
+				return
+			}
 			log.Error("Episodic tombstone cleanup failed", "err", err)
+			event.SetReason("tombstone_cleanup_failed")
+			event.EnrichError(err)
+			failures++
 		} else if n > 0 {
-			log.Info("Episodic tombstone cleanup", "deleted", n)
+			recordWork(n)
 		}
 	}
 }

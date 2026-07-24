@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/operationevent"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	"github.com/urfave/cli/v3"
 )
@@ -114,32 +115,32 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]fl
 
 	resp, err := http.DefaultClient.Do(req)
 	if err != nil {
-		return nil, fmt.Errorf("openai embed request failed: %w", err)
+		return nil, openAIProviderError(fmt.Errorf("embedding request failed: %w", err), 0, "request_failed", "")
 	}
 	defer resp.Body.Close()
 
 	body, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return nil, fmt.Errorf("openai embed: read response: %w", err)
+		return nil, openAIProviderError(fmt.Errorf("embedding response read failed: %w", err), resp.StatusCode, "response_read_failed", resp.Header.Get("X-Request-ID"))
 	}
 
 	// Check status code before attempting JSON parse
 	if resp.StatusCode == http.StatusUnauthorized || resp.StatusCode == http.StatusForbidden {
-		return nil, fmt.Errorf("openai embed: authentication failed with status %d", resp.StatusCode)
+		return nil, openAIProviderError(fmt.Errorf("embedding authentication failed with status %d", resp.StatusCode), resp.StatusCode, "authentication_failed", resp.Header.Get("X-Request-ID"))
 	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return nil, fmt.Errorf("openai embed: request failed with status %d: %s", resp.StatusCode, redactAPIKey(string(body), e.apiKey))
+		return nil, openAIProviderError(fmt.Errorf("embedding request failed with status %d", resp.StatusCode), resp.StatusCode, "request_rejected", resp.Header.Get("X-Request-ID"))
 	}
 
 	var result embeddingResponse
 	if err := json.Unmarshal(body, &result); err != nil {
-		return nil, fmt.Errorf("openai embed: parse response (status %d): %w, body: %s", resp.StatusCode, err, redactAPIKey(string(body), e.apiKey))
+		return nil, openAIProviderError(fmt.Errorf("embedding response was invalid: %w", err), resp.StatusCode, "invalid_response", resp.Header.Get("X-Request-ID"))
 	}
 	if result.Error != nil {
-		return nil, fmt.Errorf("openai embed error: %s", redactAPIKey(result.Error.Message, e.apiKey))
+		return nil, openAIProviderError(fmt.Errorf("embedding provider returned an error"), resp.StatusCode, "provider_error", resp.Header.Get("X-Request-ID"))
 	}
 	if len(result.Data) != len(texts) {
-		return nil, fmt.Errorf("openai embed: expected %d embeddings, got %d", len(texts), len(result.Data))
+		return nil, openAIProviderError(fmt.Errorf("embedding response count mismatch"), resp.StatusCode, "invalid_response", resp.Header.Get("X-Request-ID"))
 	}
 
 	// The API may return results in any order; sort by index.
@@ -148,6 +149,19 @@ func (e *OpenAIEmbedder) EmbedTexts(ctx context.Context, texts []string) ([][]fl
 		embeddings[d.Index] = d.Embedding
 	}
 	return embeddings, nil
+}
+
+func openAIProviderError(err error, statusCode int, reason, transactionID string) error {
+	return operationevent.WithErrorDetails(err, operationevent.ErrorDetails{
+		ErrorType: "provider",
+		ErrorCode: "embedding_provider_error",
+		Reason:    reason,
+		Provider: &operationevent.ErrorDetailsProvider{
+			Name:          "openai",
+			StatusCode:    statusCode,
+			TransactionID: transactionID,
+		},
+	})
 }
 
 func ptrIfPositive(v int) *int {

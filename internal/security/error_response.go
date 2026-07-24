@@ -10,6 +10,16 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+const contextKeyRESTErrorCode = "operationEventRESTErrorCode"
+
+// RESTErrorCodeFromGin returns the stable code selected by error normalization.
+func RESTErrorCodeFromGin(c *gin.Context) string {
+	if c == nil {
+		return ""
+	}
+	return c.GetString(contextKeyRESTErrorCode)
+}
+
 // ErrorEnvelopeMiddleware normalizes non-streaming REST error responses that reach
 // application middleware. Transport-level errors that happen before gin are outside this path.
 func ErrorEnvelopeMiddleware() gin.HandlerFunc {
@@ -51,6 +61,7 @@ func (w *errorEnvelopeWriter) WriteHeaderNow() {
 	w.size = 0
 	if !w.shouldCapture() {
 		w.ResponseWriter.WriteHeader(w.status)
+		w.ResponseWriter.WriteHeaderNow()
 	}
 }
 
@@ -118,6 +129,11 @@ func (w *errorEnvelopeWriter) finish(c *gin.Context) {
 		requestID = RequestIDFromGin(c)
 	}
 	body := normalizeErrorBody(w.status, requestID, w.body.Bytes())
+	if c != nil {
+		if code, ok := body["code"].(string); ok {
+			c.Set(contextKeyRESTErrorCode, code)
+		}
+	}
 	encoded, err := json.Marshal(body)
 	if err != nil {
 		encoded = []byte(`{"code":"internal_error","error":"internal server error"}`)
@@ -126,6 +142,15 @@ func (w *errorEnvelopeWriter) finish(c *gin.Context) {
 	w.Header().Set("Content-Length", strconv.Itoa(len(encoded)))
 	w.ResponseWriter.WriteHeader(w.status)
 	_, _ = w.ResponseWriter.Write(encoded)
+}
+
+func (w *errorEnvelopeWriter) finishRecoveredPanic(c *gin.Context) {
+	if !w.ResponseWriter.Written() {
+		w.status = http.StatusInternalServerError
+		w.body.Reset()
+		w.size = -1
+	}
+	w.finish(c)
 }
 
 func (w *errorEnvelopeWriter) shouldCapture() bool {
