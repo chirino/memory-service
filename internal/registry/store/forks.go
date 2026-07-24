@@ -36,7 +36,7 @@ func ForkEntryPreview(content []byte) *string {
 // group, the requested conversation's ancestry rows, and the fork-anchor
 // entries. Ancestry rows use the same exclusive BeforeEntryID semantics as
 // visible entry listing.
-func BuildForkNavigation(conversations []ForkNavigationConversation, ancestry []model.ConversationAncestry, anchors map[uuid.UUID]model.Entry) (*ConversationForkNavigation, error) {
+func BuildForkNavigation(conversations []ForkNavigationConversation, ancestry []model.ConversationAncestry, anchors map[uuid.UUID]model.Entry, visibility ForkNavigationVisibility) (*ConversationForkNavigation, error) {
 	result := &ConversationForkNavigation{ConversationIDs: make([]string, 0, len(conversations)), ForkPoints: []ConversationForkPoint{}}
 	byID := make(map[string]ForkNavigationConversation, len(conversations))
 	for _, conversation := range conversations {
@@ -78,7 +78,7 @@ func BuildForkNavigation(conversations []ForkNavigationConversation, ancestry []
 	for key, alternatives := range children {
 		parentPath, parentVisible := path[key.parent]
 		anchor, anchorFound := anchors[key.anchor]
-		if !parentVisible || !anchorFound || anchor.Channel != model.ChannelHistory {
+		if !parentVisible || !anchorFound || !visibility.EntryVisible(anchor) {
 			continue
 		}
 
@@ -141,6 +141,28 @@ func BuildForkNavigation(conversations []ForkNavigationConversation, ancestry []
 		result.ForkPoints = append(result.ForkPoints, point.point)
 	}
 	return result, nil
+}
+
+// ForkNavigationVisibility applies the channel visibility rules used by fork
+// navigation. User-scoped navigation can see only journals written by its
+// authenticated client; admin navigation can see every journal.
+type ForkNavigationVisibility struct {
+	ClientID           *string
+	IncludeAllJournals bool
+}
+
+func (v ForkNavigationVisibility) EntryVisible(entry model.Entry) bool {
+	switch entry.Channel {
+	case model.ChannelHistory:
+		return true
+	case model.ChannelJournal:
+		if v.IncludeAllJournals {
+			return true
+		}
+		return v.ClientID != nil && entry.ClientID != nil && *entry.ClientID == *v.ClientID
+	default:
+		return false
+	}
 }
 
 func compareForkEntries(a, b model.Entry) int {

@@ -147,7 +147,8 @@ Conversation IDs are arbitrary non-empty strings. Server-generated IDs are UUID-
 - `GET /v1/conversations/{conversationId}/forks`
   - Returns a complete navigation snapshot for the requested conversation.
   - `conversationIds` lists every accessible conversation in the fork group.
-  - `forkPoints` is keyed by visible entry ID and lists the alternative conversation/entry pairs available at that position. The option whose entry ID matches the fork point is active.
+  - `forkPoints` is keyed by a visible `history` or `journal` entry ID and lists the alternative conversation/entry pairs available at that position. User-scoped navigation includes journal points only for the authenticated client that owns them; admin navigation includes all journal points.
+  - Each continuation is represented by its first navigation-visible history or journal entry. The option whose entry ID matches the fork point is active.
 
 See [Conversation Forking Design](conversation-forking-design.md) and [Entry Data Model](entry-data-model.md) for detailed data model and fork-aware entry retrieval.
 

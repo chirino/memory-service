@@ -152,7 +152,7 @@
 
 **Latest context cache reads**: PostgreSQL, SQLite, and MongoDB fetch/warm latest context entries with datastore-side ancestry and latest-epoch filters instead of loading all visible entries first.
 
-**Conversation fork navigation**: user and admin `/conversations/{id}/forks` endpoints return `conversationIds` for the group and `forkPoints` keyed by the active visible entry. Each point includes the original continuation and sibling fork options; the option whose `entryId` matches the point is active.
+**Conversation fork navigation**: user and admin `/conversations/{id}/forks` endpoints return `conversationIds` for the group and `forkPoints` keyed by the active visible history or journal entry. User navigation receives the authenticated client ID and includes only matching journal anchors/continuations; admin navigation includes all journals. Each point includes the original continuation and sibling fork options, and the option whose `entryId` matches the point is active.
 
 **Clean-break schema baseline**: PostgreSQL, SQLite, and MongoDB use reset-only core schema version 1. Existing datastores with any other version are rejected and must be reset; no historical migration chain or episodic backfill remains.
 

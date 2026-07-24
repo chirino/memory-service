@@ -458,6 +458,95 @@ Feature: Conversation Forking REST API
     And the response body "forkedAtEntryId" should be "${journalEntryId}"
     And the response body "forkedAtConversationId" should be "${conversationId}"
 
+  Scenario: Journal fork navigation is client scoped and supports journal continuations
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "Parent journal branch"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    And set "journalForkConversationId" to "00000000-0000-4000-8000-000000000043"
+    When I call POST "/v1/conversations/${journalForkConversationId}/entries" with body:
+    """
+    {
+      "forkedAtConversationId": "${conversationId}",
+      "forkedAtEntryId": "${journalEntryId}",
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "retry", "text": "Journal continuation"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalContinuationEntryId" to the json response field "id"
+
+    When I list forks for the conversation
+    Then the response status should be 200
+    And the response body "forkPoints" should have 1 item
+    And the response body field "forkPoints[0].entryId" should be "${journalEntryId}"
+
+    When I list forks for conversation "${journalForkConversationId}"
+    Then the response status should be 200
+    And the response body "forkPoints" should have 1 item
+    And the response body field "forkPoints[0].entryId" should be "${journalContinuationEntryId}"
+
+    Given I am authenticated as user "alice"
+    When I list forks for the conversation
+    Then the response status should be 200
+    And the response body "forkPoints" should have 0 items
+
+    Given I am authenticated as agent with API key "test-agent-key-b"
+    When I list forks for the conversation
+    Then the response status should be 200
+    And the response body "forkPoints" should have 0 items
+
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${conversationId}/forks"
+    Then the response status should be 200
+    And the response body "forkPoints" should have 1 item
+    And the response body field "forkPoints[0].entryId" should be "${journalEntryId}"
+
+  Scenario: List sibling forks at the same journal entry
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "Shared journal branch point"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 200
+    And set "journalFork1Id" to "${forkedConversationId}"
+
+    When I fork the conversation at entry "${journalEntryId}" with request:
+    """
+    {}
+    """
+    Then the response status should be 200
+    And set "journalFork2Id" to "${forkedConversationId}"
+
+    When I list forks for the conversation
+    Then the response status should be 200
+    And the response body "conversationIds" should have 3 items
+    And the response body "forkPoints" should have 1 item
+    And the response body field "forkPoints[0].entryId" should be "${journalEntryId}"
+    And the response body "forkPoints[0].options" should have 3 items
+    And the response body should contain "${conversationId}"
+    And the response body should contain "${journalFork1Id}"
+    And the response body should contain "${journalFork2Id}"
+
   Scenario: User without client identity cannot fork at a journal entry
     Given I am authenticated as agent with API key "test-agent-key"
     When I call POST "/v1/conversations/${conversationId}/entries" with body:
@@ -561,3 +650,71 @@ Feature: Conversation Forking REST API
     And the response should contain 2 entries
     And entry at index 0 should have content "H1 before journal"
     And entry at index 1 should have content "Fork message"
+
+  Scenario: Journal listing honors an exclusive journal fork boundary
+    Given I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "J1 before anchor"}]
+    }
+    """
+    Then the response status should be 201
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "J2 anchor"}]
+    }
+    """
+    Then the response status should be 201
+    And set "journalEntryId" to the json response field "id"
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "J3 after anchor"}]
+    }
+    """
+    Then the response status should be 201
+
+    And set "journalForkConversationId" to "00000000-0000-4000-8000-000000000045"
+    When I call POST "/v1/conversations/${journalForkConversationId}/entries" with body:
+    """
+    {
+      "forkedAtConversationId": "${conversationId}",
+      "forkedAtEntryId": "${journalEntryId}",
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "retry", "text": "JF fork continuation"}]
+    }
+    """
+    Then the response status should be 201
+
+    When I call POST "/v1/conversations/${conversationId}/entries" with body:
+    """
+    {
+      "channel": "JOURNAL",
+      "contentType": "agent/step",
+      "content": [{"stepType": "checkpoint", "text": "J4 root continuation"}]
+    }
+    """
+    Then the response status should be 201
+
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=JOURNAL"
+    Then the response status should be 200
+    And the response should contain 4 entries
+    And entry at index 0 should have content "J1 before anchor"
+    And entry at index 1 should have content "J2 anchor"
+    And entry at index 2 should have content "J3 after anchor"
+    And entry at index 3 should have content "J4 root continuation"
+
+    When I call GET "/v1/conversations/${journalForkConversationId}/entries?channel=JOURNAL"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "J1 before anchor"
+    And entry at index 1 should have content "JF fork continuation"

@@ -333,6 +333,10 @@ func updateConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 
 func listForks(c *gin.Context, store registrystore.MemoryStore) {
 	userID := security.GetUserID(c)
+	var clientID *string
+	if value := strings.TrimSpace(security.GetClientID(c)); value != "" {
+		clientID = &value
+	}
 	convID := strings.TrimSpace(c.Param("conversationId"))
 	if convID == "" {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": "conversation not found"})
@@ -340,7 +344,7 @@ func listForks(c *gin.Context, store registrystore.MemoryStore) {
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		forks, err := store.ListForks(ctx, userID, convID)
+		forks, err := store.ListForks(ctx, userID, convID, clientID)
 		if err != nil {
 			return err
 		}

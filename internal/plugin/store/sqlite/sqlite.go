@@ -836,7 +836,11 @@ func (s *SQLiteStore) GetGroupMemberUserIDs(ctx context.Context, conversationGro
 
 // --- Forks ---
 
-func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID string) (*registrystore.ConversationForkNavigation, error) {
+func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversationID string, clientID *string) (*registrystore.ConversationForkNavigation, error) {
+	return s.listForks(ctx, userID, conversationID, registrystore.ForkNavigationVisibility{ClientID: clientID})
+}
+
+func (s *SQLiteStore) listForks(ctx context.Context, userID string, conversationID string, visibility registrystore.ForkNavigationVisibility) (*registrystore.ConversationForkNavigation, error) {
 	var conv model.Conversation
 	result := s.dbFor(ctx).Where("id = ?", conversationID).Limit(1).Find(&conv)
 	if result.Error != nil {
@@ -886,10 +890,20 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 		return nil, err
 	}
 	var firstEntries []model.Entry
-	if err := db.Raw(`SELECT * FROM (
+	firstEntryPredicate := "e.channel = ?"
+	firstEntryArgs := []any{conv.ConversationGroupID, model.ChannelHistory}
+	if visibility.IncludeAllJournals {
+		firstEntryPredicate = "e.channel IN (?, ?)"
+		firstEntryArgs = []any{conv.ConversationGroupID, model.ChannelHistory, model.ChannelJournal}
+	} else if visibility.ClientID != nil {
+		firstEntryPredicate = "(e.channel = ? OR (e.channel = ? AND e.client_id = ?))"
+		firstEntryArgs = []any{conv.ConversationGroupID, model.ChannelHistory, model.ChannelJournal, *visibility.ClientID}
+	}
+	firstEntrySQL := fmt.Sprintf(`SELECT * FROM (
 		SELECT e.*, ROW_NUMBER() OVER (PARTITION BY e.conversation_id ORDER BY e.created_at ASC, CASE WHEN e.seq IS NULL THEN 0 ELSE 1 END ASC, e.seq ASC, e.id ASC) AS fork_row
-		FROM entries e WHERE e.conversation_group_id = ? AND e.channel = ?
-	) ranked WHERE fork_row = 1`, conv.ConversationGroupID, model.ChannelHistory).Scan(&firstEntries).Error; err != nil {
+		FROM entries e WHERE e.conversation_group_id = ? AND %s
+	) ranked WHERE fork_row = 1`, firstEntryPredicate)
+	if err := db.Raw(firstEntrySQL, firstEntryArgs...).Scan(&firstEntries).Error; err != nil {
 		return nil, err
 	}
 	if err := decryptEntries(s, firstEntries); err != nil {
@@ -922,7 +936,7 @@ func (s *SQLiteStore) ListForks(ctx context.Context, userID string, conversation
 		}
 		records = append(records, record)
 	}
-	return registrystore.BuildForkNavigation(records, ancestry, entryMap)
+	return registrystore.BuildForkNavigation(records, ancestry, entryMap, visibility)
 }
 
 func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
@@ -2468,7 +2482,7 @@ func (s *SQLiteStore) AdminListForks(ctx context.Context, conversationID string)
 	if result.RowsAffected == 0 {
 		return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
-	return s.ListForks(ctx, conv.OwnerUserID, conversationID)
+	return s.listForks(ctx, conv.OwnerUserID, conversationID, registrystore.ForkNavigationVisibility{IncludeAllJournals: true})
 }
 
 func (s *SQLiteStore) AdminListChildConversations(ctx context.Context, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {

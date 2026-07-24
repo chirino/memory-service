@@ -35,6 +35,8 @@ Developer-oriented frontend for inspecting conversations and episodic memories a
 - History attachment rendering uses stored `attachmentId` to build admin download-url endpoints; do not parse internal `/v1/attachments/{id}` IDs out of `href`, because stored history entries no longer include server-generated attachment hrefs.
 - History attachment renderers must validate both external `href` values and server-returned download URLs before assigning them to `window.open`, `<img src>`, or temporary download anchors. Only `http:` and `https:` URLs are allowed, and `image/svg+xml` is not treated as an inline image preview.
 - Conversation detail entry loading follows only the selected ancestry path (`forks=none`) and reverse-pages with `beforeCursor`; fork badges and the group list use the admin `{conversationIds, forkPoints}` navigation snapshot and must not fetch sibling entries with `forks=all`.
+- The conversation detail channel selector includes `journal`; journal cards can carry fork badges from admin fork navigation, while history/context-specific view controls remain hidden in journal-only mode.
+- Fork-navigation option `entryId` is the continuation's display entry, so inspector links must target it with the `entryId` search parameter. Do not pass it as `forkedAt`, whose legacy scroll behavior searches for a later history user message.
 - In-app navigation must use TanStack Router links or `useNavigate`; root-relative `window.location` URLs omit the production `/developer` base path.
 
 ### Design System

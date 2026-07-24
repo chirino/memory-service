@@ -10,6 +10,8 @@ import {
   DropdownMenuTrigger,
 } from "./dropdown-menu";
 import { cn } from "@/lib/utils";
+import { buildForkNavigationSearch } from "@/lib/fork-navigation";
+import type { ChannelFilter } from "@/lib/entry-render-items";
 import type { ForkOption } from "@/hooks";
 
 interface ForkPointBadgeProps {
@@ -18,7 +20,7 @@ interface ForkPointBadgeProps {
   /** Visual variant */
   variant?: "default" | "terminal" | "slate";
   /** Current channel filter to preserve in navigation */
-  channelFilter?: string;
+  channelFilter?: ChannelFilter;
 }
 
 /** Format fork label to 40 characters */
@@ -47,18 +49,6 @@ export function ForkPointBadge({ forksAtPoint = [], variant = "default", channel
       day: "numeric",
       year: "numeric",
     });
-  };
-
-  // Build search params preserving channel filter and adding forkedAt for navigation
-  const buildSearchParams = (forkedAtEntryId?: string | null): Record<string, string> | undefined => {
-    const params: Record<string, string> = {};
-    if (channelFilter && channelFilter !== "all") {
-      params.channel = channelFilter;
-    }
-    if (forkedAtEntryId) {
-      params.forkedAt = forkedAtEntryId;
-    }
-    return Object.keys(params).length > 0 ? params : undefined;
   };
 
   const badgeStyles = {
@@ -98,11 +88,11 @@ export function ForkPointBadge({ forksAtPoint = [], variant = "default", channel
               key={fork.conversationId}
               className={cn("flex cursor-pointer flex-col items-start gap-1", fork.isActive && "bg-accent")}
               onSelect={() => {
-                const searchParams = buildSearchParams(fork.entryId);
+                const searchParams = buildForkNavigationSearch(fork.entryId, channelFilter);
                 void navigate({
                   to: "/conversations/$conversationId",
                   params: { conversationId: fork.conversationId },
-                  search: searchParams ?? {},
+                  search: searchParams,
                 });
               }}
             >
