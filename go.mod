@@ -14,7 +14,7 @@ require (
 	github.com/coreos/go-oidc/v3 v3.20.0
 	github.com/cucumber/godog v0.15.1
 	github.com/dgraph-io/ristretto/v2 v2.4.2
-	github.com/getkin/kin-openapi v0.142.0
+	github.com/getkin/kin-openapi v0.144.0
 	github.com/gin-gonic/gin v1.12.0
 	github.com/go-task/task/v3 v3.52.0
 	github.com/google/uuid v1.6.0
