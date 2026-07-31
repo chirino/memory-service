@@ -134,6 +134,8 @@ func (am *authModeSteps) buildOIDCConfig() (config.Config, error) {
 	cfg.AdminOIDCRole = "admin"
 	cfg.AuditorOIDCRole = "auditor"
 	cfg.IndexerOIDCRole = "indexer"
+	// Keycloak BDD tests use readable usernames; preferred_username is stable in the test realm.
+	cfg.OIDCUserIDClaim = "/preferred_username"
 	// Grant admin to alice (she has admin realm role in Keycloak).
 	cfg.AdminUsers = am.s.IsolatedUser("alice")
 	return cfg, nil
