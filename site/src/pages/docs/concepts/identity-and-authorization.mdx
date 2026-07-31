@@ -299,4 +299,3 @@ Migrating persisted ownership keys from one claim value to another—for example
 **Spring** (`memory-service-spring-boot-autoconfigure`): the library omits `userId` from entry requests and lets Memory Service derive the user identity from the bearer token. No client-side action required.
 
 **Quarkus** (`memory-service-extension`): the library previously sent the Quarkus principal name as `userId` on every entry request. This has been fixed to omit `userId` and let Memory Service resolve identity from the bearer token. If you are using a version prior to the fix, you must configure both the Quarkus OIDC principal name source and `MEMORY_SERVICE_OIDC_USER_ID_CLAIM` to produce the same string, or entry appends will return `400 userId does not match the authenticated user`.
-
