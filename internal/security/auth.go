@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/charmbracelet/log"
@@ -233,6 +234,9 @@ type TokenResolver struct {
 	allowedClients  map[string]bool // empty = no client check
 	allowedAudience map[string]bool // empty = no audience check
 	roleClaims      []string
+	// userIDClaim is the validated RFC 6901 JSON Pointer used to extract the user identity
+	// from OIDC tokens. Defaults to "/sub".
+	userIDClaim     string
 	apiKeys         map[string]string
 	adminOIDCRole   string
 	auditorOIDCRole string
@@ -333,12 +337,21 @@ func NewTokenResolver(cfg *config.Config) (*TokenResolver, error) {
 		return nil, err
 	}
 
+	userIDClaim := strings.TrimSpace(cfg.OIDCUserIDClaim)
+	if userIDClaim == "" {
+		userIDClaim = "/sub"
+	}
+	if err := validateJSONPointer(userIDClaim); err != nil {
+		return nil, fmt.Errorf("invalid MEMORY_SERVICE_OIDC_USER_ID_CLAIM %q: %w", userIDClaim, err)
+	}
+
 	return &TokenResolver{
 		verifier:        verifier,
 		oidcEnabled:     oidcEnabled,
 		allowedClients:  splitCSV(cfg.OIDCAllowedClients),
 		allowedAudience: splitCSV(cfg.OIDCAllowedAudiences),
 		roleClaims:      roleClaims,
+		userIDClaim:     userIDClaim,
 		apiKeys:         cfg.APIKeys,
 		adminOIDCRole:   adminOIDCRole,
 		auditorOIDCRole: auditorOIDCRole,
@@ -433,30 +446,35 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 			return nil, errors.Join(errInvalidJWT, err)
 		}
 
-		// Extract user ID from JWT: prefer "preferred_username" (Quarkus OIDC parity),
-		// then "upn", then fall back to "sub".
-		var claims struct {
-			Sub               string `json:"sub"`
-			PreferredUsername string `json:"preferred_username"`
-			UPN               string `json:"upn"`
-			AZP               string `json:"azp"`       // Keycloak authorized party
-			ClientID          string `json:"client_id"` // client-credentials style
-			Aud               any    `json:"aud"`
-			Scope             string `json:"scope"`
-		}
-		if err := idToken.Claims(&claims); err != nil {
+		// Extract user ID from the configured RFC 6901 JSON Pointer claim (default "/sub").
+		// No fallback: absence, blank value, or non-string type is a hard auth failure.
+		var rawClaims map[string]any
+		if err := idToken.Claims(&rawClaims); err != nil {
 			return nil, errors.Join(errInvalidJWT, err)
 		}
 
-		userID = claims.PreferredUsername
-		if userID == "" {
-			userID = claims.UPN
+		userIDRaw, found := jsonPointerValue(rawClaims, r.userIDClaim)
+		if !found {
+			return nil, fmt.Errorf("%w: configured user ID claim %q not present in token", errMissingIdentity, r.userIDClaim)
 		}
-		if userID == "" {
-			userID = claims.Sub
+		userIDStr, ok := userIDRaw.(string)
+		if !ok {
+			return nil, fmt.Errorf("%w: configured user ID claim %q must be a string", errMissingIdentity, r.userIDClaim)
 		}
+		userID = strings.TrimSpace(userIDStr)
 		if userID == "" {
-			return nil, errMissingIdentity
+			return nil, fmt.Errorf("%w: configured user ID claim %q is blank", errMissingIdentity, r.userIDClaim)
+		}
+
+		// Extract standard JWT claims needed for client identity, audience, and scope.
+		var claims struct {
+			AZP      string `json:"azp"`       // Keycloak authorized party
+			ClientID string `json:"client_id"` // client-credentials style
+			Aud      any    `json:"aud"`
+			Scope    string `json:"scope"`
+		}
+		if err := idToken.Claims(&claims); err != nil {
+			return nil, errors.Join(errInvalidJWT, err)
 		}
 
 		// Resolve OIDC client identity from azp or client_id.
@@ -498,11 +516,8 @@ func (r *TokenResolver) Resolve(ctx context.Context, creds RequestCredentials) (
 		// roles derived from the authenticated client. Delegation may discard
 		// the former while preserving the latter.
 		userRoles := map[string]bool{}
-		var rawClaims map[string]any
-		if err := idToken.Claims(&rawClaims); err == nil {
-			if err := r.addTokenRoles(userRoles, rawClaims); err != nil {
-				return nil, errors.Join(errInvalidJWT, err)
-			}
+		if err := r.addTokenRoles(userRoles, rawClaims); err != nil {
+			return nil, errors.Join(errInvalidJWT, err)
 		}
 
 		r.addUserRoles(userRoles, userID)
@@ -1208,6 +1223,27 @@ func validateJSONPointer(pointer string) error {
 	return nil
 }
 
+// isRFC6901ArrayIndex reports whether s is a valid RFC 6901 array index token:
+// "0" or a non-zero decimal digit followed by zero or more decimal digits.
+// Leading zeros (e.g. "01"), signs (e.g. "+1", "-0"), and empty strings are rejected.
+func isRFC6901ArrayIndex(s string) bool {
+	if len(s) == 0 {
+		return false
+	}
+	if s[0] < '0' || s[0] > '9' {
+		return false
+	}
+	if s[0] == '0' && len(s) > 1 {
+		return false // leading zero
+	}
+	for i := 1; i < len(s); i++ {
+		if s[i] < '0' || s[i] > '9' {
+			return false
+		}
+	}
+	return true
+}
+
 func jsonPointerValue(doc any, pointer string) (any, bool) {
 	if pointer == "" {
 		return doc, true
@@ -1222,6 +1258,18 @@ func jsonPointerValue(doc any, pointer string) (any, bool) {
 				return nil, false
 			}
 			current = next
+		case []any:
+			// RFC 6901 §4: array index must be "0" or a non-zero decimal digit followed by
+			// decimal digits only. strconv.Atoi accepts leading signs and leading zeros, so
+			// we validate the token syntax before converting.
+			if !isRFC6901ArrayIndex(part) {
+				return nil, false
+			}
+			idx, err := strconv.Atoi(part)
+			if err != nil || idx >= len(node) {
+				return nil, false
+			}
+			current = node[idx]
 		default:
 			return nil, false
 		}

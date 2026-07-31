@@ -102,11 +102,11 @@ Memory Service does not maintain a local user account database. A user is establ
 
 ### OIDC User
 
-An OIDC token establishes both a user and, when present, a client. The user ID is selected from signed claims in this order:
+An OIDC token establishes both a user and, when present, a client. The user ID is read from the single claim configured by <Cfg p="--oidc-user-id-claim" e="MEMORY_SERVICE_OIDC_USER_ID_CLAIM" /> (an RFC 6901 JSON Pointer, default `/sub`). Authentication fails immediately if that claim is absent, blank, or not a string — there is no fallback to other claims.
 
-1. `preferred_username`
-2. `upn`
-3. `sub`
+The default `/sub` claim is locally stable and unique within a single issuer, which is sufficient for Memory Service's single-issuer deployment model. It is not globally unique across different providers. Some providers issue pairwise subjects that vary per client or sector; in those cases a different immutable claim such as `/oid` (Microsoft Entra) may be more appropriate. Keycloak demo environments should set `/preferred_username` so conversations can be shared by readable username.
+
+The user ID derived from this claim is stored durably with conversations, memberships, memories, attachments, and event routing. **Changing the configured claim on an existing deployment will make all existing ownership records inaccessible to returning users.** See [Upgrading the user ID claim](#upgrading-the-user-id-claim) below before changing this setting on a live system.
 
 The OIDC settings are <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_OIDC_ISSUER" />, <Cfg p="--oidc-allowed-audiences" e="MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES" />, and optionally <Cfg p="--oidc-allowed-clients" e="MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS" />. Raw, unsigned usernames in the bearer-token position are rejected by production builds.
 
@@ -272,3 +272,31 @@ For multiple agents serving the same users:
 5. Assign admin, auditor, or indexer roles only to dedicated operational identities.
 
 This preserves shared user history, lets cooperating agents coordinate within an application, and uses client IDs wherever Memory Service must enforce isolation.
+
+## Upgrading the User ID Claim
+
+The `--oidc-user-id-claim` setting controls the claim used to derive the persistent user identity stored with conversations, memberships, memories, attachments, and event routing. Changing this claim on a live deployment changes the user key that returning users authenticate as, making existing ownership records unreachable to those users.
+
+### New deployments
+
+Set `--oidc-user-id-claim` before storing any data. Use `/sub` (the default) for production systems unless your provider has a documented stable alternative. Use `/preferred_username` for local Keycloak demos.
+
+### Existing deployments that used the old fallback behavior
+
+Before this setting was introduced, Memory Service resolved user IDs in this order: `preferred_username` → `upn` → `sub`. If your provider tokens contained `preferred_username`, all stored ownership keys are those usernames.
+
+To preserve access after upgrade:
+
+- Set `MEMORY_SERVICE_OIDC_USER_ID_CLAIM=/preferred_username`. This restores exactly the previous primary behavior and requires no data migration.
+- This is always the correct setting for local Keycloak deployments where conversations are shared by username.
+
+### Migrating to a Different Claim
+
+Migrating persisted ownership keys from one claim value to another—for example, from `preferred_username` to `sub`—requires a data migration that Memory Service does not currently provide. Keep the existing OIDC issuer and user ID claim configured on live systems.
+
+### Quarkus and Spring client libraries
+
+**Spring** (`memory-service-spring-boot-autoconfigure`): the library omits `userId` from entry requests and lets Memory Service derive the user identity from the bearer token. No client-side action required.
+
+**Quarkus** (`memory-service-extension`): the library previously sent the Quarkus principal name as `userId` on every entry request. This has been fixed to omit `userId` and let Memory Service resolve identity from the bearer token. If you are using a version prior to the fix, you must configure both the Quarkus OIDC principal name source and `MEMORY_SERVICE_OIDC_USER_ID_CLAIM` to produce the same string, or entry appends will return `400 userId does not match the authenticated user`.
+

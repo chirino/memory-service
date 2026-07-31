@@ -13,8 +13,6 @@
 * Enhancement 091 Mongo follow-up: implement [091-mongo-outbox-transactions.md](docs/enhancements/091-mongo-outbox-transactions.md) so `MongoStore.InWriteTx` uses `mongo.Session` / `WithTransaction` and Mongo outbox replay uses change-stream resume tokens instead of best-effort ObjectID cursors.
 * Define how memory policy changes that alter selected indexed attributes trigger schema or reindex migrations.
 * Implement the sub agent flows for all the other frameworks.
-* Review whether OIDC user ID extraction (`preferred_username` -> `upn` -> `sub`) uses the correct stable identity.
-
 ## Better Demo / Usecases
 
 * Extend the conversation index/search examples into a complete RAG example that feeds retrieved results back into the LLM (see [042-index-search-docs.md](docs/enhancements/implemented/042-index-search-docs.md)).

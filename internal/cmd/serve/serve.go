@@ -713,6 +713,13 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Usage:       "Skip TLS certificate verification for OIDC discovery and JWKS requests (unsafe; for self-signed development issuers)",
 		},
 		&cli.StringFlag{
+			Name:        "oidc-user-id-claim",
+			Category:    "Authorization:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OIDC_USER_ID_CLAIM"),
+			Destination: &cfg.OIDCUserIDClaim,
+			Usage:       "RFC 6901 JSON Pointer to the OIDC token claim used as the persistent user identity (default /sub); set to /preferred_username for human-readable Keycloak demo usernames",
+		},
+		&cli.StringFlag{
 			Name:        "roles-admin-oidc-role",
 			Category:    "Authorization:",
 			Sources:     cli.EnvVars("MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE"),

@@ -66,7 +66,7 @@ func (m *mockOIDCServer) jwk() map[string]any {
 
 func (m *mockOIDCServer) issueToken(username string, realmRoles []string, scopes string) string {
 	now := time.Now()
-	payload := map[string]any{
+	return m.issueTokenWithClaims(map[string]any{
 		"sub":                username,
 		"preferred_username": username,
 		"iss":                m.server.URL,
@@ -78,6 +78,18 @@ func (m *mockOIDCServer) issueToken(username string, realmRoles []string, scopes
 		"realm_access": map[string]any{
 			"roles": realmRoles,
 		},
+	})
+}
+
+// issueTokenWithClaims signs a JWT with the exact payload provided. The caller is responsible
+// for including all required claims (iss, aud, exp, etc.).
+func (m *mockOIDCServer) issueTokenWithClaims(payload map[string]any) string {
+	now := time.Now()
+	if _, ok := payload["iat"]; !ok {
+		payload["iat"] = now.Unix()
+	}
+	if _, ok := payload["exp"]; !ok {
+		payload["exp"] = now.Add(1 * time.Hour).Unix()
 	}
 	headerB64 := base64url(mustMarshal(map[string]any{"alg": "RS256", "typ": "JWT", "kid": "test-1"}))
 	payloadB64 := base64url(mustMarshal(payload))

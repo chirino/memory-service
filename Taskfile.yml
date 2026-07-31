@@ -214,6 +214,7 @@ tasks:
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
+      MEMORY_SERVICE_OIDC_USER_ID_CLAIM: /preferred_username
       MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
@@ -294,6 +295,7 @@ tasks:
       MEMORY_SERVICE_OIDC_ISSUER: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://localhost:8081/realms/memory-service
       MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
+      MEMORY_SERVICE_OIDC_USER_ID_CLAIM: /preferred_username
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: agent
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor

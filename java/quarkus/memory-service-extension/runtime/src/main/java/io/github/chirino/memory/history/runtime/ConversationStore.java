@@ -1,7 +1,6 @@
 package io.github.chirino.memory.history.runtime;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
-import static io.github.chirino.memory.security.SecurityHelper.principalName;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -98,10 +97,9 @@ public class ConversationStore {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history");
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
+        // Sending it explicitly causes mismatches when the Quarkus principal name
+        // differs from the server's configured MEMORY_SERVICE_OIDC_USER_ID_CLAIM value.
         Map<String, Object> block = new HashMap<>();
         block.put("text", content);
         block.put("role", "USER");
@@ -146,10 +144,7 @@ public class ConversationStore {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history");
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
         Map<String, Object> block = new HashMap<>();
         block.put("text", content);
         block.put("role", "AI");
@@ -271,10 +266,7 @@ public class ConversationStore {
         CreateEntryRequest request = new CreateEntryRequest();
         request.setChannel(ChannelEnum.HISTORY);
         request.setContentType("history/lc4j");
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
 
         // Convert JsonNode list to Object list for the API
         List<Object> eventObjects =
@@ -338,14 +330,6 @@ public class ConversationStore {
 
     private ConversationsApi conversationsApi(String bearerToken) {
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
-    }
-
-    private String resolveUserId() {
-        if (Arc.container().requestContext().isActive()) {
-            return principalName(securityIdentity);
-        }
-        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
-        return state != null ? state.userId() : null;
     }
 
     private String resolveBearerToken() {

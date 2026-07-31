@@ -5,6 +5,14 @@ resources:
   - deployment.yaml
   - service.yaml
 
+# The chat demo uses Keycloak usernames as the visible sharing identity, so
+# Memory Service must derive its user ID from preferred_username (not sub).
+configMapGenerator:
+  - name: memory-service-config
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_OIDC_USER_ID_CLAIM=/preferred_username
+
 secretGenerator:
   - name: chat-quarkus-secret
     literals:

@@ -244,6 +244,10 @@ type Config struct {
 	OIDCAllowedAudiences string
 	OIDCRoleClaims       []string
 	OIDCScopes           map[string]string // permission key -> comma-separated accepted OIDC scopes
+	// OIDCUserIDClaim is an RFC 6901 JSON Pointer to the OIDC token claim used as the
+	// persistent user identity. Defaults to "/sub". Demo and development environments
+	// should set this to "/preferred_username" for human-readable sharing.
+	OIDCUserIDClaim string
 
 	// Encryption
 	EncryptionProviders       string

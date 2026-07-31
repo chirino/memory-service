@@ -1,7 +1,6 @@
 package io.github.chirino.memory.langchain4j;
 
 import static io.github.chirino.memory.security.SecurityHelper.bearerToken;
-import static io.github.chirino.memory.security.SecurityHelper.principalName;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.util.RawValue;
@@ -153,10 +152,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
 
         // Sync with empty content to clear context by creating an empty epoch
         CreateEntryRequest syncEntry = new CreateEntryRequest();
-        String userId = resolveUserId();
-        if (userId != null) {
-            syncEntry.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
         syncEntry.setChannel(ChannelEnum.CONTEXT);
         syncEntry.setContentType("LC4J");
         syncEntry.setContent(new ArrayList<>());
@@ -180,10 +176,7 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
      */
     private CreateEntryRequest toSyncEntryRequest(List<ChatMessage> messages) {
         CreateEntryRequest request = new CreateEntryRequest();
-        String userId = resolveUserId();
-        if (userId != null) {
-            request.setUserId(userId);
-        }
+        // Don't send userId — the server resolves it from the Bearer token.
         request.setChannel(ChannelEnum.CONTEXT);
         request.setContentType("LC4J");
         List<Object> contentBlocks = new ArrayList<>();
@@ -232,14 +225,6 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
             return null;
         }
         return securityIdentityInstance.isResolvable() ? securityIdentityInstance.get() : null;
-    }
-
-    private String resolveUserId() {
-        SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
-        if (state != null && state.userId() != null && !state.userId().isBlank()) {
-            return state.userId();
-        }
-        return principalName(resolveSecurityIdentity());
     }
 
     private String resolveBearerToken(Object memoryId) {
