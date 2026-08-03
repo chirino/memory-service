@@ -9,10 +9,10 @@
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.115",
+    "@ai-sdk/openai": "^4.0.20",
     "@chirino/memory-service-vercelai": "file:../../../../vercelai",
     "ai": "^5.0.220",
-    "express": "^4.22.2"
+    "express": "^5.2.1"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
