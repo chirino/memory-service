@@ -81,8 +81,9 @@ func (m *mockOIDCServer) issueToken(username string, realmRoles []string, scopes
 	})
 }
 
-// issueTokenWithClaims signs a JWT with the exact payload provided. The caller is responsible
-// for including all required claims (iss, aud, exp, etc.).
+// issueTokenWithClaims signs a JWT with the provided payload. It will default
+// iat and exp when they are not present. The caller is responsible for including
+// other required claims (iss, aud, etc.).
 func (m *mockOIDCServer) issueTokenWithClaims(payload map[string]any) string {
 	now := time.Now()
 	if _, ok := payload["iat"]; !ok {
