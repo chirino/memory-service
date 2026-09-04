@@ -92,6 +92,23 @@ func (m *MongoTestDB) SetConversationEntriesCreatedAt(ctx context.Context, conve
 	return nil
 }
 
+func (m *MongoTestDB) SetEntryCreatedAt(ctx context.Context, entryID string, createdAt time.Time) error {
+	client, db, err := m.db(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+
+	_, err = db.Collection("entries").UpdateOne(ctx,
+		bson.M{"_id": entryID},
+		bson.M{"$set": bson.M{"created_at": createdAt}},
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set entry timestamp for %s: %w", entryID, err)
+	}
+	return nil
+}
+
 func (m *MongoTestDB) ExecSQL(_ context.Context, _ string) ([]map[string]interface{}, error) {
 	// Java parity: SQL verification queries are skipped for MongoDB backend.
 	// Return nil (not empty slice) to signal "skip" to assertion steps.

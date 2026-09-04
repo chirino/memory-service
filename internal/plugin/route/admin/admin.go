@@ -485,6 +485,44 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		query.FromSeq = &v
 	}
 
+	// Parse createdAt date filters.
+	createdAtAfterStr := strings.TrimSpace(c.Query("createdAtAfter"))
+	createdAtBeforeStr := strings.TrimSpace(c.Query("createdAtBefore"))
+	createdAtStr := strings.TrimSpace(c.Query("createdAt"))
+
+	if createdAtStr != "" && (createdAtAfterStr != "" || createdAtBeforeStr != "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "createdAt is mutually exclusive with createdAtAfter and createdAtBefore"})
+		return
+	}
+
+	if createdAtStr != "" {
+		t, err := parseTimestamp(createdAtStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAt: must be a valid RFC 3339 datetime string"})
+			return
+		}
+		query.CreatedAtFilter = &registrystore.CreatedAtFilter{Eq: &t}
+	} else if createdAtAfterStr != "" || createdAtBeforeStr != "" {
+		f := &registrystore.CreatedAtFilter{}
+		if createdAtAfterStr != "" {
+			t, err := parseTimestamp(createdAtAfterStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAtAfter: must be a valid RFC 3339 datetime string"})
+				return
+			}
+			f.After = &t
+		}
+		if createdAtBeforeStr != "" {
+			t, err := parseTimestamp(createdAtBeforeStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAtBefore: must be a valid RFC 3339 datetime string"})
+				return
+			}
+			f.Before = &t
+		}
+		query.CreatedAtFilter = f
+	}
+
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		result, err := store.AdminGetEntries(ctx, conversationID, query)
 		if err != nil {
@@ -1212,6 +1250,16 @@ func parseDuration(iso string) (time.Duration, error) {
 		}
 	}
 	return d, nil
+}
+
+// parseTimestamp parses an RFC 3339 timestamp string, accepting both
+// sub-second (RFC3339Nano) and whole-second (RFC3339) formats.
+func parseTimestamp(s string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, s)
+	}
+	return t, err
 }
 
 func handleError(c *gin.Context, err error) {

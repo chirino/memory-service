@@ -21,6 +21,7 @@ func init() {
 		ctx.Step(`^the conversation has an entry "([^"]*)" in channel "([^"]*)" with contentType "([^"]*)"$`, e.theConversationHasAnEntryInChannelWithContentType)
 		ctx.Step(`^the conversation has a context entry "([^"]*)" with epoch (\d+) and contentType "([^"]*)"$`, e.theConversationHasAMemoryEntryWithEpochAndContentType)
 		ctx.Step(`^the conversation entries share the same createdAt timestamp$`, e.theConversationEntriesShareTheSameCreatedAtTimestamp)
+		ctx.Step(`^entry "([^"]*)" has createdAt "([^"]*)"$`, e.entryHasCreatedAt)
 
 		// When steps - entry operations
 		ctx.Step(`^I list entries for the conversation$`, e.iListEntriesForTheConversation)
@@ -165,6 +166,28 @@ func (e *entrySteps) theConversationEntriesShareTheSameCreatedAtTimestamp() erro
 		return err
 	}
 	return e.s.TestDB().SetConversationEntriesCreatedAt(context.Background(), convID, time.Date(2026, 1, 2, 3, 4, 5, 0, time.UTC))
+}
+
+func (e *entrySteps) entryHasCreatedAt(entryIDRef, dateStr string) error {
+	entryID, err := e.s.ResolveString(entryIDRef)
+	if err != nil {
+		entryID = entryIDRef
+	}
+	expandedDate, err := e.s.Expand(dateStr)
+	if err != nil {
+		return err
+	}
+	t, err := time.Parse(time.RFC3339Nano, expandedDate)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, expandedDate)
+		if err != nil {
+			return fmt.Errorf("invalid date format %q: %w", expandedDate, err)
+		}
+	}
+	if e.s.TestDB() == nil {
+		return fmt.Errorf("no TestDB configured")
+	}
+	return e.s.TestDB().SetEntryCreatedAt(context.Background(), entryID, t)
 }
 
 func (e *entrySteps) iListEntriesForTheConversation() error {

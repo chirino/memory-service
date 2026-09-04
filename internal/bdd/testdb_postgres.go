@@ -89,6 +89,24 @@ func (p *PostgresTestDB) SetConversationEntriesCreatedAt(ctx context.Context, co
 	return nil
 }
 
+func (p *PostgresTestDB) SetEntryCreatedAt(ctx context.Context, entryID string, createdAt time.Time) error {
+	conn, err := p.conn(ctx)
+	if err != nil {
+		return err
+	}
+	defer conn.Close(ctx)
+
+	_, err = conn.Exec(ctx,
+		`UPDATE entries
+		 SET created_at = $1
+		 WHERE id = $2`,
+		createdAt, entryID)
+	if err != nil {
+		return fmt.Errorf("failed to set entry timestamp for %s: %w", entryID, err)
+	}
+	return nil
+}
+
 func (p *PostgresTestDB) ExecSQL(ctx context.Context, query string) ([]map[string]interface{}, error) {
 	conn, err := p.conn(ctx)
 	if err != nil {

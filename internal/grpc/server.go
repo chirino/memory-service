@@ -1095,19 +1095,41 @@ func (s *EntriesServer) ListEntries(ctx context.Context, req *pb.ListEntriesRequ
 	allForks := req.GetForks() == "all"
 	fromSeq := req.FromSeq
 
+	// Parse createdAt date filters.
+	var createdAtFilter *registrystore.CreatedAtFilter
+	if req.CreatedAtEq != nil && (req.CreatedAtAfter != nil || req.CreatedAtBefore != nil) {
+		return nil, status.Error(codes.InvalidArgument, "created_at_eq is mutually exclusive with created_at_after and created_at_before")
+	}
+	if req.CreatedAtEq != nil {
+		t := req.CreatedAtEq.AsTime()
+		createdAtFilter = &registrystore.CreatedAtFilter{Eq: &t}
+	} else if req.CreatedAtAfter != nil || req.CreatedAtBefore != nil {
+		f := &registrystore.CreatedAtFilter{}
+		if req.CreatedAtAfter != nil {
+			t := req.CreatedAtAfter.AsTime()
+			f.After = &t
+		}
+		if req.CreatedAtBefore != nil {
+			t := req.CreatedAtBefore.AsTime()
+			f.Before = &t
+		}
+		createdAtFilter = f
+	}
+
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
 		return s.Store.GetEntries(txCtx, userID, convID, registrystore.EntryListQuery{
-			AfterCursor:  afterCursor,
-			BeforeCursor: beforeCursor,
-			Tail:         tail,
-			UpToEntryID:  upToEntryID,
-			Limit:        limit,
-			Channel:      channelPtr,
-			EpochFilter:  epochFilter,
-			ClientID:     clientIDPtr,
-			AgentID:      agentIDPtr,
-			AllForks:     allForks,
-			FromSeq:      fromSeq,
+			AfterCursor:     afterCursor,
+			BeforeCursor:    beforeCursor,
+			Tail:            tail,
+			UpToEntryID:     upToEntryID,
+			Limit:           limit,
+			Channel:         channelPtr,
+			EpochFilter:     epochFilter,
+			ClientID:        clientIDPtr,
+			AgentID:         agentIDPtr,
+			AllForks:        allForks,
+			FromSeq:         fromSeq,
+			CreatedAtFilter: createdAtFilter,
 		})
 	})
 	if err != nil {
@@ -1213,6 +1235,26 @@ func (s *AdminEntriesServer) ListEntries(ctx context.Context, req *pb.AdminListE
 	}
 	query.AllForks = req.GetForks() == "all"
 	query.FromSeq = req.FromSeq
+
+	// Parse createdAt date filters.
+	if req.CreatedAtEq != nil && (req.CreatedAtAfter != nil || req.CreatedAtBefore != nil) {
+		return nil, status.Error(codes.InvalidArgument, "created_at_eq is mutually exclusive with created_at_after and created_at_before")
+	}
+	if req.CreatedAtEq != nil {
+		t := req.CreatedAtEq.AsTime()
+		query.CreatedAtFilter = &registrystore.CreatedAtFilter{Eq: &t}
+	} else if req.CreatedAtAfter != nil || req.CreatedAtBefore != nil {
+		f := &registrystore.CreatedAtFilter{}
+		if req.CreatedAtAfter != nil {
+			t := req.CreatedAtAfter.AsTime()
+			f.After = &t
+		}
+		if req.CreatedAtBefore != nil {
+			t := req.CreatedAtBefore.AsTime()
+			f.Before = &t
+		}
+		query.CreatedAtFilter = f
+	}
 
 	result, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (*registrystore.PagedEntries, error) {
 		return s.Store.AdminGetEntries(txCtx, convID, query)

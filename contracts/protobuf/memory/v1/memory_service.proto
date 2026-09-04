@@ -351,6 +351,12 @@ message ListEntriesRequest {
   optional bool tail = 9;
   // Optional agent identity filter. Requires an authenticated client ID.
   optional string agent_id = 10;
+  // Return only entries with created_at >= created_at_after.
+  optional google.protobuf.Timestamp created_at_after = 11;
+  // Return only entries with created_at <= created_at_before.
+  optional google.protobuf.Timestamp created_at_before = 12;
+  // Return only entries with created_at = created_at_eq. Mutually exclusive with created_at_after and created_at_before.
+  optional google.protobuf.Timestamp created_at_eq = 13;
 }
 
 message ListEntriesResponse {
@@ -378,6 +384,12 @@ message AdminListEntriesRequest {
   // When true, return the last page_size entries (newest page). Mutually exclusive with
   // page.page_token and before_page_token.
   optional bool tail = 9;
+  // Return only entries with created_at >= created_at_after.
+  optional google.protobuf.Timestamp created_at_after = 10;
+  // Return only entries with created_at <= created_at_before.
+  optional google.protobuf.Timestamp created_at_before = 11;
+  // Return only entries with created_at = created_at_eq. Mutually exclusive with created_at_after and created_at_before.
+  optional google.protobuf.Timestamp created_at_eq = 12;
 }
 
 message AdminGetConversationRequest {

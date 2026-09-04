@@ -1579,6 +1579,19 @@ export type AdminGetEntriesData = {
      * ordering is created_at ASC, seq ASC NULLS FIRST, then id ASC.
      */
     fromSeq?: number;
+    /**
+     * Return only entries with createdAt >= this value (RFC 3339).
+     */
+    createdAtAfter?: string;
+    /**
+     * Return only entries with createdAt <= this value (RFC 3339).
+     */
+    createdAtBefore?: string;
+    /**
+     * Return only entries with createdAt equal to this value (RFC 3339).
+     * Mutually exclusive with createdAtAfter and createdAtBefore.
+     */
+    createdAt?: string;
   };
   url: "/v1/admin/conversations/{id}/entries";
 };

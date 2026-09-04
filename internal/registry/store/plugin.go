@@ -187,32 +187,42 @@ type AdminConversationQuery struct {
 	Limit          int
 }
 
+// CreatedAtFilter constrains entries by their createdAt timestamp.
+// Exactly one of Eq, After, Before, or a combination of After+Before may be set.
+type CreatedAtFilter struct {
+	After  *time.Time // createdAt >= After
+	Before *time.Time // createdAt <= Before
+	Eq     *time.Time // createdAt = Eq (exclusive with After/Before)
+}
+
 // EntryListQuery holds all parameters for user and admin entry listing.
 type EntryListQuery struct {
-	AfterCursor  *string
-	BeforeCursor *string
-	Tail         bool
-	UpToEntryID  *string
-	Limit        int
-	Channel      *model.Channel
-	EpochFilter  *MemoryEpochFilter
-	ClientID     *string
-	AgentID      *string
-	AllForks     bool
-	FromSeq      *uint32
+	AfterCursor     *string
+	BeforeCursor    *string
+	Tail            bool
+	UpToEntryID     *string
+	Limit           int
+	Channel         *model.Channel
+	EpochFilter     *MemoryEpochFilter
+	ClientID        *string
+	AgentID         *string
+	AllForks        bool
+	FromSeq         *uint32
+	CreatedAtFilter *CreatedAtFilter
 }
 
 // AdminMessageQuery holds parameters for admin entry listing.
 type AdminMessageQuery struct {
-	AfterCursor  *string
-	BeforeCursor *string
-	Tail         bool
-	UpToEntryID  *string
-	Limit        int
-	Channel      *model.Channel
-	EpochFilter  *MemoryEpochFilter
-	AllForks     bool
-	FromSeq      *uint32
+	AfterCursor     *string
+	BeforeCursor    *string
+	Tail            bool
+	UpToEntryID     *string
+	Limit           int
+	Channel         *model.Channel
+	EpochFilter     *MemoryEpochFilter
+	AllForks        bool
+	FromSeq         *uint32
+	CreatedAtFilter *CreatedAtFilter
 }
 
 // AdminSearchQuery holds parameters for admin search.

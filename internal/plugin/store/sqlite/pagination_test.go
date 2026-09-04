@@ -151,6 +151,7 @@ func TestBoundedGroupContextMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
 			nil,
 			true,
 			10,
+			nil,
 		)
 		return scanErr
 	}))

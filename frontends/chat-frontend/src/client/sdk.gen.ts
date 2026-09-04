@@ -315,6 +315,9 @@ export class ConversationsService {
       epoch?: string;
       fromSeq?: number;
       forks?: "none" | "all";
+      createdAtAfter?: string;
+      createdAtBefore?: string;
+      createdAt?: string;
     },
     options?: Options<never, ThrowOnError>,
   ) {
@@ -333,6 +336,9 @@ export class ConversationsService {
             { in: "query", key: "epoch" },
             { in: "query", key: "fromSeq" },
             { in: "query", key: "forks" },
+            { in: "query", key: "createdAtAfter" },
+            { in: "query", key: "createdAtBefore" },
+            { in: "query", key: "createdAt" },
           ],
         },
       ],

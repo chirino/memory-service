@@ -1003,6 +1003,32 @@ paths:
             When set, return only entries with seq >= fromSeq, ordered by seq ASC.
             Entries without a seq value are excluded. When omitted, the default
             ordering is created_at ASC, seq ASC NULLS FIRST, then id ASC.
+        - name: createdAtAfter
+          in: query
+          required: false
+          description: Return only entries with createdAt >= this value (RFC 3339).
+          schema:
+            type: string
+            format: date-time
+            nullable: true
+        - name: createdAtBefore
+          in: query
+          required: false
+          description: Return only entries with createdAt <= this value (RFC 3339).
+          schema:
+            type: string
+            format: date-time
+            nullable: true
+        - name: createdAt
+          in: query
+          required: false
+          description: |-
+            Return only entries with createdAt equal to this value (RFC 3339).
+            Mutually exclusive with createdAtAfter and createdAtBefore.
+          schema:
+            type: string
+            format: date-time
+            nullable: true
       responses:
         '200':
           description: Entries.

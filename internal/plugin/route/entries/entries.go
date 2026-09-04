@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
@@ -149,19 +150,59 @@ func listEntries(c *gin.Context, store registrystore.MemoryStore) {
 		fromSeq = &v
 	}
 
+	// Parse createdAt date filters.
+	var createdAtFilter *registrystore.CreatedAtFilter
+	createdAtAfterStr := strings.TrimSpace(c.Query("createdAtAfter"))
+	createdAtBeforeStr := strings.TrimSpace(c.Query("createdAtBefore"))
+	createdAtStr := strings.TrimSpace(c.Query("createdAt"))
+
+	if createdAtStr != "" && (createdAtAfterStr != "" || createdAtBeforeStr != "") {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "createdAt is mutually exclusive with createdAtAfter and createdAtBefore"})
+		return
+	}
+
+	if createdAtStr != "" {
+		t, err := parseTimestamp(createdAtStr)
+		if err != nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAt: must be a valid RFC 3339 datetime string"})
+			return
+		}
+		createdAtFilter = &registrystore.CreatedAtFilter{Eq: &t}
+	} else if createdAtAfterStr != "" || createdAtBeforeStr != "" {
+		f := &registrystore.CreatedAtFilter{}
+		if createdAtAfterStr != "" {
+			t, err := parseTimestamp(createdAtAfterStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAtAfter: must be a valid RFC 3339 datetime string"})
+				return
+			}
+			f.After = &t
+		}
+		if createdAtBeforeStr != "" {
+			t, err := parseTimestamp(createdAtBeforeStr)
+			if err != nil {
+				c.JSON(http.StatusBadRequest, gin.H{"error": "invalid createdAtBefore: must be a valid RFC 3339 datetime string"})
+				return
+			}
+			f.Before = &t
+		}
+		createdAtFilter = f
+	}
+
 	if err := routetx.MemoryRead(c, store, func(context.Context) error {
 		result, err := store.GetEntries(c.Request.Context(), userID, convID, registrystore.EntryListQuery{
-			AfterCursor:  afterCursor,
-			BeforeCursor: beforeCursor,
-			Tail:         tail,
-			UpToEntryID:  upToEntryID,
-			Limit:        limit,
-			Channel:      channelPtr,
-			EpochFilter:  epochFilter,
-			ClientID:     clientIDParam,
-			AgentID:      agentIDParam,
-			AllForks:     allForks,
-			FromSeq:      fromSeq,
+			AfterCursor:     afterCursor,
+			BeforeCursor:    beforeCursor,
+			Tail:            tail,
+			UpToEntryID:     upToEntryID,
+			Limit:           limit,
+			Channel:         channelPtr,
+			EpochFilter:     epochFilter,
+			ClientID:        clientIDParam,
+			AgentID:         agentIDParam,
+			AllForks:        allForks,
+			FromSeq:         fromSeq,
+			CreatedAtFilter: createdAtFilter,
 		})
 		if err != nil {
 			return err
@@ -634,6 +675,16 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 func isNotFoundError(err error) bool {
 	var notFound *registrystore.NotFoundError
 	return errors.As(err, &notFound)
+}
+
+// parseTimestamp parses an RFC 3339 timestamp string, accepting both
+// sub-second (RFC3339Nano) and whole-second (RFC3339) formats.
+func parseTimestamp(s string) (time.Time, error) {
+	t, err := time.Parse(time.RFC3339Nano, s)
+	if err != nil {
+		t, err = time.Parse(time.RFC3339, s)
+	}
+	return t, err
 }
 
 func cloneCreateEntryRequests(entries []registrystore.CreateEntryRequest) []registrystore.CreateEntryRequest {

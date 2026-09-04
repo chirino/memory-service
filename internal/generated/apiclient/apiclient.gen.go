@@ -1410,6 +1410,16 @@ type ListConversationEntriesParams struct {
 	// forks in the conversation group, useful for debugging or getting a
 	// complete picture of all activity across forks.
 	Forks *ListConversationEntriesParamsForks `form:"forks,omitempty" json:"forks,omitempty"`
+
+	// CreatedAtAfter Return only entries with createdAt >= this value (RFC 3339).
+	CreatedAtAfter *time.Time `form:"createdAtAfter,omitempty" json:"createdAtAfter,omitempty"`
+
+	// CreatedAtBefore Return only entries with createdAt <= this value (RFC 3339).
+	CreatedAtBefore *time.Time `form:"createdAtBefore,omitempty" json:"createdAtBefore,omitempty"`
+
+	// CreatedAt Return only entries with createdAt equal to this value (RFC 3339).
+	// Mutually exclusive with createdAtAfter and createdAtBefore.
+	CreatedAt *time.Time `form:"createdAt,omitempty" json:"createdAt,omitempty"`
 }
 
 // ListConversationEntriesParamsForks defines parameters for ListConversationEntries.
@@ -4377,6 +4387,42 @@ func NewListConversationEntriesRequest(server string, conversationId string, par
 		if params.Forks != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "forks", *params.Forks, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.CreatedAtAfter != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "createdAtAfter", *params.CreatedAtAfter, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.CreatedAtBefore != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "createdAtBefore", *params.CreatedAtBefore, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.CreatedAt != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "createdAt", *params.CreatedAt, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: "date-time"}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
