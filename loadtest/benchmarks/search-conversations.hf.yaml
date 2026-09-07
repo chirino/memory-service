@@ -1,7 +1,10 @@
 name: search-conversations
 
-# Sustained POST /v1/conversations/search load with pagination.
-# SLO: p99 < 1000ms (checked in run.sh from exported JSON)
+# Measures per-request latency for POST /v1/conversations/search under load.
+# Each VU session issues one search request.  The constantRate phase drives
+# a fixed arrival rate for sustained throughput measurement.
+# Pagination correctness is covered by the Go correctness tests.
+# SLO: p99 < 1000ms per request.
 #
 # conversation-ids.csv has TWO columns:
 #   col 0 — conversationId
@@ -37,26 +40,3 @@ phases:
                   body: |
                     {"query":"load-test","limit":5}
                   metric: search-conversations
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor
-              - breakSequence:
-                  stringCondition:
-                    fromVar: afterCursor
-                    equalTo: null
-              - httpRequest:
-                  POST: /v1/conversations/search
-                  headers:
-                    Content-Type: application/json
-                    X-API-Key: agent-api-key-1
-                    X-User-ID: ${ownerID}
-                  body: |
-                    {"query":"load-test","limit":5,"afterCursor":"${afterCursor}"}
-                  metric: search-conversations
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor

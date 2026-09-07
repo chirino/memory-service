@@ -16,7 +16,7 @@ import (
 type conversationRecord struct {
 	ID              string `json:"id"`
 	OwnerID         string `json:"ownerID"`
-	EntryCount      int    `json:"entryCount"`
+	EntryCount      int    `json:"entryCount"` // actual stored entries (turnPairs * 2)
 	ParticipantType string `json:"participantType"`
 }
 
@@ -63,6 +63,7 @@ func main() {
 		conversations []conversationRecord
 		indexQueue    []indexEntryRequest
 		seeded        int
+		failures      int
 	)
 
 	var wg sync.WaitGroup
@@ -75,7 +76,7 @@ func main() {
 
 			for j := range jobs {
 				title := "load-test-" + uuid.New().String()
-				entryCount := EntryCount(wr)
+				turnPairs := TurnPairCount(wr)
 				participantType := ParticipantType(j.index)
 
 				// Assign owners from a small fixed pool so each user owns many
@@ -91,12 +92,18 @@ func main() {
 				convID, err := createConversation(client, cfg, title, ownerID)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "ERROR createConversation: %v\n", err)
+					mu.Lock()
+					failures++
+					mu.Unlock()
 					continue
 				}
 
-				entries, err := seedEntriesWithIndex(client, cfg, wr, convID, ownerID, entryCount, participantType)
+				entries, err := seedEntriesWithIndex(client, cfg, wr, convID, ownerID, turnPairs, participantType)
 				if err != nil {
 					fmt.Fprintf(os.Stderr, "ERROR seedEntries conv=%s: %v\n", convID, err)
+					mu.Lock()
+					failures++
+					mu.Unlock()
 					continue
 				}
 
@@ -104,7 +111,7 @@ func main() {
 				conversations = append(conversations, conversationRecord{
 					ID:              convID,
 					OwnerID:         ownerID,
-					EntryCount:      entryCount,
+					EntryCount:      turnPairs * 2, // actual stored entries (USER + AI per pair)
 					ParticipantType: participantType,
 				})
 				indexQueue = append(indexQueue, entries...)
@@ -115,6 +122,15 @@ func main() {
 		}()
 	}
 	wg.Wait()
+
+	// Fail fast if any conversations could not be seeded — a partial manifest
+	// would report TotalConversations as the requested count while containing
+	// fewer records, causing correctness tests to silently pass with less data.
+	if failures > 0 {
+		fmt.Fprintf(os.Stderr, "ERROR: %d/%d conversations failed to seed — aborting manifest write\n",
+			failures, cfg.TotalConversations)
+		os.Exit(1)
+	}
 
 	// --- index all seeded entries for search ---
 	fmt.Fprintf(os.Stderr, "Indexing %d entries for search (batch size %d)...\n", len(indexQueue), cfg.IndexBatchSize)
@@ -133,9 +149,10 @@ func main() {
 	}
 
 	// --- write manifest ---
+	// TotalConversations reflects the actual seeded count, not the requested count.
 	manifest := seedManifest{
 		BaseURL:            cfg.BaseURL,
-		TotalConversations: cfg.TotalConversations,
+		TotalConversations: len(conversations),
 		Conversations:      conversations,
 		Forks:              forks,
 	}
@@ -149,9 +166,10 @@ func main() {
 		len(conversations), len(forks), cfg.SeedManifestPath)
 }
 
-// seedEntriesWithIndex appends entryCount entry pairs to convID according to
-// the participant type. Returns index requests for all appended entries so the
-// caller can submit them to POST /v1/conversations/index.
+// seedEntriesWithIndex appends turnPairs turn pairs to convID according to the
+// participant type. Each turn pair produces 2 stored entries. Returns index
+// requests for all first-turn entries so the caller can submit them to
+// POST /v1/conversations/index.
 //
 // Participant types:
 //   - "single-user": USER+AI turns; both authenticated as ownerID
@@ -166,7 +184,7 @@ func seedEntriesWithIndex(
 	cfg GeneratorConfig,
 	r *rand.Rand,
 	convID, ownerID string,
-	entryCount int,
+	turnPairs int,
 	participantType string,
 ) ([]indexEntryRequest, error) {
 	var idxReqs []indexEntryRequest
@@ -184,9 +202,9 @@ func seedEntriesWithIndex(
 		}
 	}
 
-	// entryCount is the number of first-turn exchanges; each is followed by a
-	// second-turn reply, so the total entries stored is entryCount*2.
-	for range entryCount {
+	// Each iteration appends one first-turn entry and one second-turn reply,
+	// producing 2 stored entries per turn pair.
+	for range turnPairs {
 		var firstRole, secondRole, firstUserID, secondUserID string
 		switch participantType {
 		case "two-agent":

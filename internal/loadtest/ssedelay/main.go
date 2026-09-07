@@ -324,7 +324,12 @@ func subscriberLoop(
 				select {
 				case ev, ok := <-eventCh:
 					if !ok {
+						// Subscriber disconnected while waiting for an event.
+						// Signal the in-flight pending append as a timeout so the
+						// sender records a failure instead of silently disappearing.
 						deadline.Stop()
+						p.resultCh <- sample{timedOut: true}
+						record(sample{timedOut: true})
 						return
 					}
 					// Match any conversation or entry event for our convID.

@@ -84,11 +84,11 @@ go run ./internal/loadtest/generator/ --help
 
 **Entry count distribution** (matches real-world chat patterns):
 
-| Bucket | Probability | Range |
-|---|---|---|
-| Short | 60% | 2–10 entries |
-| Medium | 30% | 11–100 entries |
-| Long tail | 10% | 101–2000 entries |
+| Bucket | Probability | Turn pairs | Stored entries |
+|---|---|---|---|
+| Short | 60% | 2–10 | 4–20 |
+| Medium | 30% | 11–100 | 22–200 |
+| Long tail | 10% | 101–2000 | 202–4000 |
 
 ### `task loadtest:bench`
 
@@ -157,8 +157,9 @@ and participant type breakdown (single-user / two-user / two-agent).
 task loadtest:report
 ```
 
-The report binary exits 0 even if result files are absent (partial report with "not yet run" notes).
-It exits 1 only if it cannot write the output files.
+The report binary exits 0 when all benchmarks and correctness checks pass.
+It exits 1 when any SLO threshold is breached, any correctness check fails, or the output files cannot be written.
+When result files are absent the corresponding section shows "not yet run" and those sections are excluded from the pass/fail determination.
 
 ---
 
@@ -171,8 +172,7 @@ It exits 1 only if it cannot write the output files.
 | list-entries | 300 ms |
 | search-conversations | 1000 ms |
 | list-forks | 300 ms |
-| sse-fan-out/sse-connection | N/A (TTFB only) |
-| sse-fan-out/burst-append | N/A |
+| sse-fan-out/burst-append | 500 ms |
 | sse-event-delay/users-1 | N/A (observability) |
 | sse-event-delay/users-10 | N/A (observability) |
 | sse-event-delay/users-50 | N/A (observability) |

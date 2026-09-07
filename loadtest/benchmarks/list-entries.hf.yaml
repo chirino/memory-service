@@ -1,13 +1,16 @@
 name: list-entries
 
-# Walks all entry pages for long-tail conversations (>100 entries).
-# SLO: p99 < 300ms per page request (checked in run.sh from exported JSON)
+# Measures per-page request latency for GET /v1/conversations/{id}/entries
+# under load using long-tail conversations (>100 entries).
+# Each VU session issues one page request.  The always phase loops VUs
+# continuously for sustained throughput measurement.
+# Pagination correctness is covered by the Go correctness tests.
+# SLO: p99 < 300ms per page request.
 #
 # long-tail-conversation-ids.csv has TWO columns:
 #   col 0 — conversationId
-#   col 1 — ownerID   (the user who created the conversation)
+#   col 1 — ownerID (the user who created the conversation)
 # We bind ownerID to X-User-ID so the server authorises the request.
-# Without the correct owner header the server returns 403.
 
 http:
   - host: localhost
@@ -33,23 +36,3 @@ phases:
                     X-API-Key: agent-api-key-1
                     X-User-ID: ${ownerID}
                   metric: list-entries-page
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor
-              - breakSequence:
-                  stringCondition:
-                    fromVar: afterCursor
-                    equalTo: null
-              - httpRequest:
-                  GET: /v1/conversations/${conversationId}/entries?limit=10&afterCursor=${afterCursor}
-                  headers:
-                    X-API-Key: agent-api-key-1
-                    X-User-ID: ${ownerID}
-                  metric: list-entries-page
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor

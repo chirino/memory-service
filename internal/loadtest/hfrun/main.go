@@ -153,6 +153,130 @@ func main() {
 	}
 	fmt.Printf("[hfrun] written: %s\n", absOut)
 	printSummary(raw, benchmarkName)
+
+	// Inspect statistics for invalid requests and SLO violations.
+	// We do this after writing the file so partial results are always saved.
+	if err := checkStats(raw, benchmarkName); err != nil {
+		fmt.Fprintf(os.Stderr, "[hfrun] FAIL %s: %v\n", benchmarkName, err)
+		os.Exit(1)
+	}
+}
+
+// checkStats inspects the parsed Hyperfoil statistics for error rates and p99
+// SLO violations. Returns a non-nil error if either threshold is breached.
+//
+// Error rate: sum of invalid + connectionErrors + requestTimeouts +
+// internalErrors across all statistics entries. If this exceeds 1% of total
+// requests the benchmark is considered failed.
+//
+// SLO: p99 for each metric must not exceed the threshold defined in
+// sloThresholds. Benchmarks with a single metric use the benchmark name as
+// the key; multi-metric benchmarks use "<benchmark>/<metric>".
+func checkStats(raw map[string]any, benchmarkName string) error {
+	statsArr, ok := raw["statistics"].([]any)
+	if !ok || len(statsArr) == 0 {
+		return nil
+	}
+
+	// sloThresholds mirrors the values in report/main.go.
+	sloThresholds := map[string]float64{
+		"append-throughput":        500,
+		"list-conversations":       300,
+		"list-entries":             300,
+		"search-conversations":     1000,
+		"list-forks":               300,
+		"sse-fan-out/burst-append": 500,
+	}
+	defaultSLO := 1000.0
+
+	var totalRequests, totalErrors float64
+	var sloViolations []string
+
+	// Collect unique metric names to decide whether to use "<bench>/<metric>" keys.
+	metricNames := make(map[string]struct{})
+	for _, s := range statsArr {
+		stat, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		metricNames[strVal(stat, "metric")] = struct{}{}
+	}
+	multiMetric := len(metricNames) > 1
+
+	for _, s := range statsArr {
+		stat, ok := s.(map[string]any)
+		if !ok {
+			continue
+		}
+		summary, ok := stat["summary"].(map[string]any)
+		if !ok {
+			continue
+		}
+
+		rc, _ := floatVal(summary, "requestCount")
+		invalid, _ := floatVal(summary, "invalid")
+		connErr, _ := floatVal(summary, "connectionErrors")
+		timeouts, _ := floatVal(summary, "requestTimeouts")
+		internal, _ := floatVal(summary, "internalErrors")
+
+		totalRequests += rc
+		totalErrors += invalid + connErr + timeouts + internal
+
+		// Determine the SLO key for this metric.
+		metricName := strVal(stat, "metric")
+		sloKey := benchmarkName
+		if multiMetric && metricName != "" {
+			sloKey = benchmarkName + "/" + metricName
+		}
+		limit, ok := sloThresholds[sloKey]
+		if !ok {
+			limit = defaultSLO
+		}
+
+		if pcts, ok := summary["percentileResponseTime"].(map[string]any); ok {
+			if p99, ok := floatVal(pcts, "99.0"); ok {
+				p99ms := p99 / 1e6
+				if p99ms > limit {
+					sloViolations = append(sloViolations,
+						fmt.Sprintf("%s p99=%.0fms > SLO %.0fms", sloKey, p99ms, limit))
+				}
+			}
+		}
+	}
+
+	// Check error rate (> 1% of total requests).
+	if totalRequests > 0 && (totalErrors/totalRequests) > 0.01 {
+		return fmt.Errorf("error rate %.1f%% (%.0f errors / %.0f requests) exceeds 1%% threshold",
+			(totalErrors/totalRequests)*100, totalErrors, totalRequests)
+	}
+
+	if len(sloViolations) > 0 {
+		return fmt.Errorf("SLO violations: %v", sloViolations)
+	}
+	return nil
+}
+
+// strVal extracts a string from a map[string]any, returning "" if absent.
+func strVal(m map[string]any, key string) string {
+	if v, ok := m[key]; ok {
+		if s, ok := v.(string); ok {
+			return s
+		}
+	}
+	return ""
+}
+
+// floatVal extracts a float64 from a map[string]any, returning 0 and false if absent.
+func floatVal(m map[string]any, key string) (float64, bool) {
+	if v, ok := m[key]; ok {
+		switch f := v.(type) {
+		case float64:
+			return f, true
+		case int:
+			return float64(f), true
+		}
+	}
+	return 0, false
 }
 
 // send writes a command string to the pipe, ignoring errors (jbang may exit).

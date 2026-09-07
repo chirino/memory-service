@@ -14,12 +14,14 @@ func ParticipantType(index int) string {
 	return participantTypes[index%len(participantTypes)]
 }
 
-// EntryCount returns a realistic entry count for a conversation based on a
-// probability distribution:
-//   - 60% short:  2–10 entries
-//   - 30% medium: 11–100 entries
-//   - 10% long:   101–2000 entries
-func EntryCount(r *rand.Rand) int {
+// TurnPairCount returns a realistic number of turn pairs for a conversation
+// based on a probability distribution. Each turn pair produces 2 stored entries
+// (one USER/first-turn + one AI/second-turn), so the actual entry count is
+// TurnPairCount() * 2:
+//   - 60% short:  2–10 turn pairs  → 4–20 entries
+//   - 30% medium: 11–100 turn pairs → 22–200 entries
+//   - 10% long:   101–2000 turn pairs → 202–4000 entries
+func TurnPairCount(r *rand.Rand) int {
 	p := r.Float64()
 	switch {
 	case p < 0.60:

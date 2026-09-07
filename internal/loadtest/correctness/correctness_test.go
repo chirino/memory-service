@@ -311,10 +311,10 @@ func TestEntryListPagination(t *testing.T) {
 				}
 			}
 
-			// Generator stores USER+AI pairs, so minimum seeded = entryCount * 2.
+			// EntryCount in the manifest is the actual stored entry count (turnPairs * 2).
 			// Use >= not == because benchmark flows (append-throughput) may append
 			// additional entries to these conversations after the manifest is written.
-			expected := conv.EntryCount * 2
+			expected := conv.EntryCount
 			if len(collected) < expected {
 				t.Errorf("entry count too low for conversation %s: got %d, want >= %d",
 					conv.ID, len(collected), expected)

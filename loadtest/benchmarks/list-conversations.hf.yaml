@@ -1,13 +1,17 @@
 name: list-conversations
 
-# Walks all pages of GET /v1/conversations using cursor-based pagination.
-# SLO: p99 < 300ms per page request (checked in run.sh from exported JSON)
+# Measures per-page request latency for GET /v1/conversations under load.
+# Each VU session issues one page request.  The always phase loops VUs
+# continuously so the steady-state measures sustained page-request throughput
+# and latency — not pagination correctness (that is covered by the Go
+# correctness tests in internal/loadtest/correctness/).
+# SLO: p99 < 300ms per page request.
 #
 # conversation-ids.csv has TWO columns:
 #   col 0 — conversationId
 #   col 1 — ownerID (the user who created the conversation)
-# We pick a random row to get ownerID, then list all conversations for that
-# owner so the request is authorised and returns real data.
+# We pick a random row to get ownerID, then list conversations for that owner
+# so the request is authorised and returns real data.
 
 http:
   - host: localhost
@@ -33,23 +37,3 @@ phases:
                     X-API-Key: agent-api-key-1
                     X-User-ID: ${ownerID}
                   metric: list-conversations-page
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor
-              - breakSequence:
-                  stringCondition:
-                    fromVar: afterCursor
-                    equalTo: null
-              - httpRequest:
-                  GET: /v1/conversations?mode=all&limit=20&afterCursor=${afterCursor}
-                  headers:
-                    X-API-Key: agent-api-key-1
-                    X-User-ID: ${ownerID}
-                  metric: list-conversations-page
-                  handler:
-                    body:
-                      json:
-                        query: .afterCursor
-                        toVar: afterCursor

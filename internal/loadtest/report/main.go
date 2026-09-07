@@ -60,12 +60,11 @@ type benchmarkRow struct {
 // A benchmark row passes SLO when its measured p99 is <= the threshold.
 // Rows not listed here use defaultSLOP99Ms.
 var sloThresholds = map[string]float64{
-	"append-throughput":        500,
-	"list-conversations":       300,
-	"list-entries":             300,
-	"search-conversations":     1000,
-	"list-forks":               300,
-	"sse-fan-out/sse-connection": 5000, // TTFB, 5 s cap
+	"append-throughput":          500,
+	"list-conversations":         300,
+	"list-entries":               300,
+	"search-conversations":       1000,
+	"list-forks":                 300,
 	"sse-fan-out/burst-append":   500,
 	"sse-event-delay/users-1":    500,
 	"sse-event-delay/users-10":   1000,
@@ -453,7 +452,9 @@ var knownEndpoints = []string{
 	"list-entries",
 	"search-conversations",
 	"list-forks",
-	"sse-fan-out/sse-connection",
+	// sse-fan-out/sse-connection was removed: Hyperfoil cannot hold a persistent
+	// SSE stream — the 5s timeout fires on every request, producing 100% errors.
+	// SSE delivery latency is measured by the Go ssedelay benchmark instead.
 	"sse-fan-out/burst-append",
 	// SSE end-to-end event delivery latency at each concurrency ramp level.
 	// Produced by internal/loadtest/ssedelay/.
@@ -500,7 +501,7 @@ func computeSeedInfo(seed seedManifest) seedInfo {
 
 	for _, c := range seed.Conversations {
 		ec := c.EntryCount
-		info.TotalEntries += ec * 2 // USER + AI pairs
+		info.TotalEntries += ec // manifest already stores actual entry count
 		totalEC += ec
 		counts = append(counts, ec)
 
@@ -625,7 +626,7 @@ func writeMD(root, ts, baseURL string, seed seedManifest, hasSeed bool,
 	if !benchNotRun {
 		allBenchPass := true
 		for _, r := range benchRows {
-			if r.hasData && !r.SLOPass {
+			if !r.SLOPass {
 				allBenchPass = false
 				break
 			}
@@ -673,7 +674,7 @@ func writeJSON(root, ts, baseURL string, seed seedManifest,
 
 	allPassed := true
 	for _, r := range benchRows {
-		if r.hasData && !r.SLOPass {
+		if !r.SLOPass {
 			allPassed = false
 			break
 		}
@@ -742,7 +743,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	// 5. Write report.json.
+	// 5. Write report.json — also computes allPassed.
 	if err := writeJSON(root, ts, baseURL, seed, benchRows, correctRows); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
 		os.Exit(1)
@@ -750,4 +751,24 @@ func main() {
 
 	fmt.Println("loadtest/results/report.md written")
 	fmt.Println("loadtest/results/report.json written")
+
+	// 6. Exit nonzero when any benchmark or correctness check failed so
+	//    task loadtest:all and CI pipelines detect SLO regressions.
+	allPassed := true
+	for _, r := range benchRows {
+		if !r.SLOPass {
+			allPassed = false
+			break
+		}
+	}
+	for _, r := range correctRows {
+		if !r.Passed {
+			allPassed = false
+			break
+		}
+	}
+	if !allPassed {
+		fmt.Fprintln(os.Stderr, "report: one or more benchmarks or correctness checks failed")
+		os.Exit(1)
+	}
 }
