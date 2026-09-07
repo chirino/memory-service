@@ -76,7 +76,7 @@ services:
       retries: 10
 
   qdrant:
-    image: qdrant/qdrant:v1.19.0
+    image: qdrant/qdrant:v1.19.1
     ports:
       - "6333:6333"   # HTTP/REST
       - "6334:6334"   # gRPC
@@ -105,7 +105,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.2.2
+    image: quay.io/infinispan/server:16.2.3
     ports:
       - "11222:11222"
     environment:
@@ -118,7 +118,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.1
+    image: quay.io/keycloak/keycloak:26.7.3
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -424,7 +424,7 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.7.3.19
+    image: clickhouse/clickhouse-server:26.8.2.7
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
@@ -440,7 +440,7 @@ services:
 
   langfuse-worker:
     profiles: ["langfuse"]
-    image: langfuse/langfuse-worker:3
+    image: langfuse/langfuse-worker:4
     environment:
       <<: *langfuse-common-env
     depends_on:
@@ -461,7 +461,7 @@ services:
 
   langfuse-web:
     profiles: ["langfuse"]
-    image: langfuse/langfuse:3
+    image: langfuse/langfuse:4
     environment:
       <<: *langfuse-common-env
       LANGFUSE_INIT_ORG_ID: memory-service-dev
