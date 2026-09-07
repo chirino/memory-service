@@ -20,7 +20,7 @@
   },
   "postStartCommand": "bash .devcontainer/post-start.sh",
   "features": {
-    "ghcr.io/devcontainers/features/docker-in-docker:4.0.0": {
+    "ghcr.io/devcontainers/features/docker-in-docker:4.1.0": {
       "dockerDashComposeVersion": "v2"
     },
     "ghcr.io/devcontainers/features/common-utils:2": {
