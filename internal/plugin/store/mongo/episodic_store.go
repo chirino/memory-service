@@ -20,6 +20,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
 	"go.mongodb.org/mongo-driver/v2/bson"
@@ -57,7 +58,7 @@ func init() {
 				vectors: client.Database("memory_service").Collection("memory_vectors"),
 			}
 			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
-				qdrantClient, qErr := episodicqdrant.New(cfg)
+				qdrantClient, qErr := episodicqdrant.New(cfg, tracing.ProviderFromContext(ctx))
 				if qErr != nil {
 					log.Warn("Episodic qdrant unavailable; falling back to mongo in-memory vector search", "err", qErr)
 				} else {

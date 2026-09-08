@@ -3,7 +3,9 @@ package serve
 import (
 	"context"
 	"fmt"
+	"os"
 	"strings"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
@@ -17,6 +19,7 @@ import (
 	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
 	storemetrics "github.com/chirino/memory-service/internal/plugin/store/metrics"
+	"github.com/chirino/memory-service/internal/tracing"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
@@ -30,6 +33,13 @@ import (
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/chirino/memory-service/internal/service"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/sdk/resource"
+	sdktrace "go.opentelemetry.io/otel/sdk/trace"
+	"go.opentelemetry.io/otel/trace"
+	nooptrace "go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/status"
@@ -44,6 +54,9 @@ type Server struct {
 	Running         *RunningServers
 	TokenResolver   *security.TokenResolver
 	closeManagement func(context.Context) error
+	tracerProvider  *sdktrace.TracerProvider
+	tp              trace.TracerProvider
+	inboundProp     propagation.TextMapPropagator
 }
 
 // GetTokenResolver returns the TokenResolver used by this server, or nil if not yet built.
@@ -60,10 +73,44 @@ func (s *Server) Shutdown(ctx context.Context) error {
 	if s.closeManagement != nil {
 		_ = s.closeManagement(ctx)
 	}
+	if s.tracerProvider != nil {
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = s.tracerProvider.Shutdown(shutdownCtx)
+	}
 	if s.Running != nil {
 		return s.Running.Close(ctx)
 	}
 	return nil
+}
+
+// buildTracerProvider constructs a server-scoped TracerProvider.
+// When OTEL_EXPORTER_OTLP_ENDPOINT is set, spans are exported via OTLP HTTP.
+// When it is unset, a noop provider is returned so tracing is disabled by default.
+func buildTracerProvider(ctx context.Context) (trace.TracerProvider, *sdktrace.TracerProvider, error) {
+	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		return nooptrace.NewTracerProvider(), nil, nil
+	}
+	exporter, err := otlptracehttp.New(ctx)
+	if err != nil {
+		return nil, nil, fmt.Errorf("tracing: create OTLP exporter: %w", err)
+	}
+	res, err := resource.Merge(
+		resource.Default(),
+		resource.NewWithAttributes("",
+			attribute.String("service.name", "memory-service"),
+		),
+	)
+	if err != nil {
+		return nil, nil, fmt.Errorf("tracing: create resource: %w", err)
+	}
+	sdkTP := sdktrace.NewTracerProvider(
+		sdktrace.WithBatcher(exporter),
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.NeverSample())),
+	)
+	return sdkTP, sdkTP, nil
 }
 
 func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
@@ -96,6 +143,18 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 		"vector", cfg.VectorType,
 		"embedding", cfg.EmbedType,
 	)
+
+	// Build a server-scoped TracerProvider. When OTEL_EXPORTER_OTLP_ENDPOINT is unset this
+	// returns a noop provider so the service behaves identically to before for untraced requests.
+	tp, sdkTP, err := buildTracerProvider(ctx)
+	if err != nil {
+		return nil, err
+	}
+	inboundProp := tracing.NewParticipatingPropagator(
+		propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
+	)
+	// Thread the provider into the loader context so plugin loaders can retrieve it.
+	ctx = tracing.WithProviderContext(ctx, tp)
 
 	// Initialize embedder early so vector store migrations can use the detected dimension
 	var embedder registryembed.Embedder
@@ -169,35 +228,17 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 
 	// Set up gin
 	gin.SetMode(gin.ReleaseMode)
-	router := newGinRouter()
-	trustedProxies, err := parseTrustedProxyCIDRs(cfg.TrustedProxyCIDRs)
-	if err != nil {
-		return nil, err
-	}
-	if err := router.SetTrustedProxies(trustedProxies); err != nil {
-		return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
-	}
 	rateLimiter, err := security.NewRateLimiter(cfg)
 	if err != nil {
 		return nil, fmt.Errorf("rate limit configuration error: %w", err)
 	}
-	router.Use(security.RequestIDMiddleware())
-	if cfg.ManagementAccessLog {
-		router.Use(security.OperationEventMiddleware())
-	} else {
-		router.Use(security.OperationEventMiddleware("/health", "/ready", "/metrics"))
-	}
-	router.Use(security.OperationRecoveryMiddleware())
-	router.Use(security.ErrorEnvelopeMiddleware())
-	router.Use(security.SourceRateLimitMiddleware(rateLimiter))
-	router.Use(securityHeadersMiddleware())
-	router.Use(security.MetricsMiddleware())
-	router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
-	router.Use(bodyReadTimeoutMiddleware(cfg.BodyReadTimeout, cfg.AttachmentBodyReadTimeout))
-	router.Use(maxBodySizeMiddleware(cfg.MaxBodySize))
-	router.Use(maxPageSizeMiddleware(cfg))
-	if cfg.CORSEnabled {
-		router.Use(corsMiddleware(cfg.CORSOrigins))
+	router, err := newConfiguredRouter(cfg, tp, inboundProp, routerOptions{
+		rateLimiter:    rateLimiter,
+		includePublic:  true,
+		trustedProxies: cfg.TrustedProxyCIDRs,
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	// Initialize attachment store (optional).
@@ -353,6 +394,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up gRPC server with auth interceptors.
 	grpcServer := grpc.NewServer(
 		grpc.ChainUnaryInterceptor(
+			tracing.GRPCUnaryServerInterceptor(tp, inboundProp),
 			security.GRPCRequestIDUnaryInterceptor(),
 			security.GRPCOperationUnaryInterceptor(),
 			security.GRPCSourceRateLimitUnaryInterceptor(rateLimiter),
@@ -362,6 +404,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			maxPageSizeUnaryInterceptor(cfg),
 		),
 		grpc.ChainStreamInterceptor(
+			tracing.GRPCStreamServerInterceptor(tp, inboundProp),
 			security.GRPCRequestIDStreamInterceptor(),
 			security.GRPCOperationStreamInterceptor(),
 			security.GRPCSourceRateLimitStreamInterceptor(rateLimiter),
@@ -422,6 +465,9 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	builtServer.Store = store
 	builtServer.Router = router
 	builtServer.GRPCServer = grpcServer
+	builtServer.tracerProvider = sdkTP
+	builtServer.tp = tp
+	builtServer.inboundProp = inboundProp
 	return &builtServer, nil
 }
 
@@ -468,7 +514,7 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	}
 
 	if cfg.ManagementListenerEnabled {
-		closeManagement, err := startManagementRoutes(cfg)
+		closeManagement, err := startManagementRoutes(cfg, srv.tp, srv.inboundProp)
 		if err != nil {
 			return nil, err
 		}
@@ -498,22 +544,93 @@ func StartServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	return srv, nil
 }
 
-func startManagementRoutes(cfg *config.Config) (func(context.Context) error, error) {
+type routerOptions struct {
+	rateLimiter    *security.RateLimiter
+	includePublic  bool
+	trustedProxies string
+}
+
+// newConfiguredRouter creates a Gin router and attaches the base middleware chain.
+// Both the public and management routers share this identical factory and base chain order,
+// with tracing.HTTPMiddleware at position 1. Where public and management routers differ,
+// routerOptions supplies the parameters without diverging the shared ordering.
+func newConfiguredRouter(
+	cfg *config.Config,
+	tp trace.TracerProvider,
+	inboundProp propagation.TextMapPropagator,
+	opts routerOptions,
+) (*gin.Engine, error) {
+	router := newGinRouter()
+	if opts.includePublic {
+		trustedProxies, err := parseTrustedProxyCIDRs(opts.trustedProxies)
+		if err != nil {
+			return nil, err
+		}
+		if err := router.SetTrustedProxies(trustedProxies); err != nil {
+			return nil, fmt.Errorf("failed to configure trusted proxies: %w", err)
+		}
+	} else {
+		_ = router.SetTrustedProxies(nil)
+	}
+
+	// 1. Tracing
+	router.Use(tracing.HTTPMiddleware(tp, inboundProp))
+	// 2. Request ID
+	router.Use(security.RequestIDMiddleware())
+	// 3. Operation Event
+	if opts.includePublic {
+		if cfg.ManagementAccessLog {
+			router.Use(security.OperationEventMiddleware())
+		} else {
+			router.Use(security.OperationEventMiddleware("/health", "/ready", "/metrics"))
+		}
+	} else if cfg.ManagementAccessLog {
+		router.Use(security.OperationEventMiddleware())
+	}
+	// 4. Recovery
+	router.Use(security.OperationRecoveryMiddleware())
+	// 5. Error Envelope
+	router.Use(security.ErrorEnvelopeMiddleware())
+	// 6. Source Rate Limiter (public only)
+	if opts.includePublic && opts.rateLimiter != nil {
+		router.Use(security.SourceRateLimitMiddleware(opts.rateLimiter))
+	}
+	// 7. Security Headers
+	router.Use(securityHeadersMiddleware())
+	// 8. Public-only tail middlewares
+	if opts.includePublic {
+		router.Use(security.MetricsMiddleware())
+		router.Use(security.AdminAuditMiddleware(cfg.RequireJustification))
+		router.Use(bodyReadTimeoutMiddleware(cfg.BodyReadTimeout, cfg.AttachmentBodyReadTimeout))
+		router.Use(maxBodySizeMiddleware(cfg.MaxBodySize))
+		router.Use(maxPageSizeMiddleware(cfg))
+		if cfg.CORSEnabled {
+			router.Use(corsMiddleware(cfg.CORSOrigins))
+		}
+	}
+
+	return router, nil
+}
+
+// buildManagementRouter constructs the Gin router used by the management
+// listener.  Callers must register routes after calling this function.
+// tp and inboundProp are used to mount the OTel HTTP middleware so that the
+// management router participates in upstream traces (issue #523).
+func buildManagementRouter(cfg *config.Config, tp trace.TracerProvider, inboundProp propagation.TextMapPropagator) (*gin.Engine, error) {
+	return newConfiguredRouter(cfg, tp, inboundProp, routerOptions{
+		includePublic: false,
+	})
+}
+
+func startManagementRoutes(cfg *config.Config, tp trace.TracerProvider, inboundProp propagation.TextMapPropagator) (func(context.Context) error, error) {
 	if !cfg.ManagementListenerEnabled {
 		return nil, nil
 	}
 
-	mgmtRouter := newGinRouter()
-	if err := mgmtRouter.SetTrustedProxies(nil); err != nil {
-		return nil, fmt.Errorf("failed to configure management trusted proxies: %w", err)
+	mgmtRouter, err := buildManagementRouter(cfg, tp, inboundProp)
+	if err != nil {
+		return nil, fmt.Errorf("failed to configure management router: %w", err)
 	}
-	mgmtRouter.Use(security.RequestIDMiddleware())
-	if cfg.ManagementAccessLog {
-		mgmtRouter.Use(security.OperationEventMiddleware())
-	}
-	mgmtRouter.Use(security.OperationRecoveryMiddleware())
-	mgmtRouter.Use(security.ErrorEnvelopeMiddleware())
-	mgmtRouter.Use(securityHeadersMiddleware())
 	if err := loadManagementRoutes(mgmtRouter); err != nil {
 		return nil, err
 	}

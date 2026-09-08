@@ -16,6 +16,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pgvec "github.com/pgvector/pgvector-go"
 	"gorm.io/driver/postgres"
@@ -44,7 +45,7 @@ func init() {
 			}
 			store := &postgresEpisodicStore{db: db, s: ps}
 			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
-				client, qErr := episodicqdrant.New(cfg)
+				client, qErr := episodicqdrant.New(cfg, tracing.ProviderFromContext(ctx))
 				if qErr != nil {
 					log.Warn("Episodic qdrant unavailable; falling back to local vector backend", "err", qErr)
 				} else {

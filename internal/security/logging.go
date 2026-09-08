@@ -10,6 +10,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/operationevent"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/gin-gonic/gin"
 )
 
@@ -160,6 +161,7 @@ func enrichGinOperationEvent(c *gin.Context, event *operationevent.Event) {
 	}
 	event.SetUserID(c.GetString(ContextKeyUserID))
 	event.SetClientID(c.GetString(ContextKeyClientID))
+	event.SetTraceContext(tracing.TraceContextFromContext(c.Request.Context()))
 }
 
 // AdminAuditMiddleware logs admin API calls with caller identity and target resource.

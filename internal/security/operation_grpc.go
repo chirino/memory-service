@@ -8,6 +8,7 @@ import (
 	"sync"
 
 	"github.com/chirino/memory-service/internal/operationevent"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
@@ -122,6 +123,7 @@ func finishGRPCOperation(ctx context.Context, event *operationevent.Event, err e
 	if code != codes.OK {
 		event.SetErrorCode(grpcCodeName(code))
 	}
+	event.SetTraceContext(tracing.TraceContextFromContext(ctx))
 	if err != nil {
 		event.EnrichError(err)
 	}
