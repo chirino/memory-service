@@ -9,9 +9,9 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/tracing"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pb "github.com/qdrant/go-client/qdrant"
 	"github.com/urfave/cli/v3"

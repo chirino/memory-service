@@ -13,8 +13,8 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/operationevent"
-	"github.com/chirino/memory-service/internal/tracing"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/propagation"

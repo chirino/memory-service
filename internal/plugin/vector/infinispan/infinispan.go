@@ -12,9 +12,9 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/tracing"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registryvector "github.com/chirino/memory-service/internal/registry/vector"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	"github.com/urfave/cli/v3"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"

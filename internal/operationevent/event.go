@@ -125,6 +125,51 @@ func (e *Event) Message() string {
 
 type contextKey struct{}
 
+// EventRef shares an operation event between interceptors that derive contexts.
+type EventRef struct {
+	mu    sync.RWMutex
+	event *Event
+}
+
+// NewEventRef creates an empty shared event reference.
+func NewEventRef() *EventRef { return &EventRef{} }
+
+// Set stores the event in the reference.
+func (r *EventRef) Set(event *Event) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.event = event
+	r.mu.Unlock()
+}
+
+// Get returns the event currently stored in the reference.
+func (r *EventRef) Get() *Event {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.event
+}
+
+type eventRefContextKey struct{}
+
+// WithEventRef attaches a shared event reference to a context.
+func WithEventRef(ctx context.Context, ref *EventRef) context.Context {
+	return context.WithValue(ctx, eventRefContextKey{}, ref)
+}
+
+// EventRefFromContext returns a shared event reference attached to ctx.
+func EventRefFromContext(ctx context.Context) *EventRef {
+	if ctx == nil {
+		return nil
+	}
+	ref, _ := ctx.Value(eventRefContextKey{}).(*EventRef)
+	return ref
+}
+
 // WithContext attaches an event to a context.
 func WithContext(ctx context.Context, event *Event) context.Context {
 	if ctx == nil {

@@ -98,7 +98,7 @@ type staticCarrier map[string]string
 func (c staticCarrier) Get(key string) string {
 	return c[strings.ToLower(key)]
 }
-func (c staticCarrier) Set(key, val string)  {}
+func (c staticCarrier) Set(key, val string) {}
 func (c staticCarrier) Keys() []string {
 	keys := make([]string, 0, len(c))
 	for k := range c {

@@ -8,11 +8,13 @@ import (
 
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/chirino/memory-service/internal/operationevent"
+	"github.com/chirino/memory-service/internal/security"
 	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/chirino/memory-service/internal/tracing/testutil"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -20,19 +22,75 @@ import (
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+func TestGRPCProductionInterceptorOrderSharesOperationEventWithTracing(t *testing.T) {
+	harness := testutil.NewTestHarness()
+	t.Cleanup(func() { _ = harness.Shutdown(context.Background()) })
+	downstream := testutil.NewDownstreamRecorder()
+	t.Cleanup(downstream.Close)
+	grpcHarness := testutil.NewGRPCBufConnHarness(
+		grpc.ChainUnaryInterceptor(
+			tracing.GRPCUnaryServerInterceptor(harness.Provider, harness.Propagator),
+			security.GRPCRequestIDUnaryInterceptor(),
+			security.GRPCOperationUnaryInterceptor(),
+			func(ctx context.Context, req any, _ *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (any, error) {
+				event := operationevent.FromContext(ctx)
+				require.NotNil(t, event)
+				event.SetProvider(operationevent.ErrorDetailsProvider{Name: "event-provider"})
+				return handler(ctx, req)
+			},
+		),
+	)
+	t.Cleanup(grpcHarness.Close)
+	pb.RegisterSystemServiceServer(grpcHarness.Server, &testGRPCServer{
+		downstreamURL: downstream.Server.URL,
+		harness:       harness,
+	})
+	grpcHarness.Serve()
+	conn, err := grpcHarness.Dial(context.Background())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = conn.Close() })
+
+	client := pb.NewSystemServiceClient(conn)
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"traceparent", testutil.NewSampledTraceparent(
+			"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7")))
+	_, err = client.GetHealth(ctx, &emptypb.Empty{})
+	require.NoError(t, err)
+
+	serverSpan := findServerSpan(harness.Exporter.GetSpans())
+	require.NotNil(t, serverSpan)
+	attrs := make(map[string]any)
+	for _, kv := range serverSpan.Attributes {
+		attrs[string(kv.Key)] = kv.Value.AsInterface()
+	}
+	require.Equal(t, "event-provider", attrs["memoryservice.providerName"],
+		"production interceptor order must make the security-owned event visible through EventRef")
+}
+
+func TestGRPCUnaryRequestContextReceivesTracerProvider(t *testing.T) {
+	setup := setupGRPCTest(t)
+	traceparent := testutil.NewSampledTraceparent("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7")
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("traceparent", traceparent))
+	_, err := setup.Client.GetHealth(ctx, &emptypb.Empty{})
+	require.NoError(t, err)
+	require.Equal(t, setup.Harness.Provider, setup.Server.requestProvider)
+}
+
 type testGRPCServer struct {
 	pb.UnimplementedSystemServiceServer
-	downstreamURL string
-	harness       *testutil.Harness
-	callCount     int
+	downstreamURL   string
+	harness         *testutil.Harness
+	requestProvider trace.TracerProvider
+	callCount       int
 }
 
 func (s *testGRPCServer) GetHealth(ctx context.Context, _ *emptypb.Empty) (*pb.HealthResponse, error) {
 	s.callCount++
+	s.requestProvider = tracing.ProviderFromContext(ctx)
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(
 			http.DefaultTransport,
-			otelhttp.WithTracerProvider(s.harness.Provider),
+			otelhttp.WithTracerProvider(s.harness.DecoyProvider),
 			otelhttp.WithPropagators(s.harness.Propagator),
 		),
 	}

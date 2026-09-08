@@ -18,14 +18,19 @@ import (
 	"testing"
 	"time"
 
+	"github.com/gin-gonic/gin"
+	"net/http"
+	"net/http/httptest"
+
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
-	"github.com/chirino/memory-service/internal/tracing"
-	"github.com/chirino/memory-service/internal/tracing/testutil"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/chirino/memory-service/internal/tracing"
+	"github.com/chirino/memory-service/internal/tracing/testutil"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"
 )
 
@@ -70,7 +75,7 @@ func TestAttachmentCompleteSourceURLUntracedRequestNoTraceparent(t *testing.T) {
 	cfg := &config.Config{
 		AllowPrivateSourceURLs: true,
 		AttachmentMaxSize:      10 * 1024 * 1024,
-		TempDir:               t.TempDir(),
+		TempDir:                t.TempDir(),
 	}
 
 	attachID := uuid.MustParse("00000000-0000-0000-0000-000000000001")
@@ -109,7 +114,7 @@ func TestAttachmentCompleteSourceURLTracedRequestInjectsTraceparent(t *testing.T
 	cfg := &config.Config{
 		AllowPrivateSourceURLs: true,
 		AttachmentMaxSize:      10 * 1024 * 1024,
-		TempDir:               t.TempDir(),
+		TempDir:                t.TempDir(),
 	}
 
 	traceID := "4bf92f3577b34da6a3ce929d0e0e4736"
@@ -140,11 +145,54 @@ func TestAttachmentCompleteSourceURLTracedRequestInjectsTraceparent(t *testing.T
 	require.Contains(t, outbound, traceID, "outbound traceparent must carry the caller's trace ID")
 }
 
+func TestAttachmentJobRecordsClientSpanWithRequestProvider(t *testing.T) {
+	downstream := testutil.NewDownstreamRecorder()
+	t.Cleanup(downstream.Close)
+	h := testutil.NewTestHarness()
+	t.Cleanup(func() { _ = h.Shutdown(context.Background()) })
+	cfg := &config.Config{
+		AllowPrivateSourceURLs: true,
+		AttachmentMaxSize:      10 * 1024 * 1024,
+		TempDir:                t.TempDir(),
+	}
+	const traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+	router := gin.New()
+	router.Use(tracing.HTTPMiddleware(h.Provider, h.Propagator))
+	router.GET("/attachments", func(c *gin.Context) {
+		StartSourceURLAttachmentDownload(c.Request.Context(), &minimalMemoryStore{}, &minimalAttachStore{}, cfg,
+			uuid.MustParse("00000000-0000-0000-0000-000000000003"), "user1", downstream.Server.URL, "application/octet-stream")
+		c.Status(http.StatusAccepted)
+	})
+	req := httptest.NewRequest(http.MethodGet, "/attachments", nil)
+	req.Header.Set("traceparent", traceparent)
+	router.ServeHTTP(httptest.NewRecorder(), req)
+
+	deadline := time.Now().Add(2 * time.Second)
+	var attachmentSpan bool
+	for time.Now().Before(deadline) {
+		for _, span := range h.Exporter.GetSpans() {
+			if span.SpanKind == trace.SpanKindClient && strings.Contains(span.Name, "HTTP GET") {
+				attachmentSpan = true
+				break
+			}
+		}
+		if attachmentSpan {
+			break
+		}
+		time.Sleep(10 * time.Millisecond)
+	}
+	require.True(t, attachmentSpan, "attachment client span must be exported by the server provider")
+	for _, span := range h.DecoyExporter.GetSpans() {
+		require.False(t, span.SpanKind == trace.SpanKindClient && strings.Contains(span.Name, "HTTP GET"),
+			"attachment client span must not be exported by the decoy provider")
+	}
+}
+
 // staticInternalCarrier is a read-only TextMapCarrier for synthetic header injection.
 type staticInternalCarrier map[string]string
 
 func (c staticInternalCarrier) Get(key string) string { return c[key] }
-func (c staticInternalCarrier) Set(_, _ string)        {}
+func (c staticInternalCarrier) Set(_, _ string)       {}
 func (c staticInternalCarrier) Keys() []string {
 	keys := make([]string, 0, len(c))
 	for k := range c {

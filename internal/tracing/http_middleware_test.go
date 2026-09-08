@@ -23,7 +23,7 @@ func makeTestHandler(downstreamURL string, harness *testutil.Harness) http.Handl
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(
 			http.DefaultTransport,
-			otelhttp.WithTracerProvider(harness.Provider),
+			otelhttp.WithTracerProvider(harness.DecoyProvider),
 			otelhttp.WithPropagators(harness.Propagator),
 		),
 	}
@@ -83,6 +83,28 @@ func TestHTTPInboundAbsentTraceparent(t *testing.T) {
 	lastHeader := downstream.LastHeader()
 	require.NotNil(t, lastHeader)
 	require.Empty(t, lastHeader.Get("Traceparent"), "Expected no outbound traceparent header")
+}
+
+func TestHTTPMiddlewarePropagatesTracerProviderToRequestContext(t *testing.T) {
+	harness := testutil.NewTestHarness()
+	t.Cleanup(func() { _ = harness.Shutdown(context.Background()) })
+
+	var requestProvider trace.TracerProvider
+	router := testutil.NewGinTestRouter(
+		tracing.HTTPMiddleware(harness.Provider, harness.Propagator),
+	)
+	router.GET("/attachments", func(c *gin.Context) {
+		requestProvider = tracing.ProviderFromContext(c.Request.Context())
+		c.Status(http.StatusOK)
+	})
+
+	req := httptest.NewRequest(http.MethodGet, "/attachments", nil)
+	req.Header.Set("Traceparent", testutil.NewSampledTraceparent(
+		"4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7"))
+	router.ServeHTTP(httptest.NewRecorder(), req)
+
+	require.Equal(t, harness.Provider, requestProvider,
+		"request-triggered attachment jobs must receive the server tracer provider")
 }
 
 func TestHTTPInboundInvalidGarbageTraceparent(t *testing.T) {
@@ -215,11 +237,17 @@ func TestHTTPInboundValidSampledParent(t *testing.T) {
 	require.NotEmpty(t, outboundTraceparent)
 	require.Contains(t, outboundTraceparent, traceID)
 
-	// Since otelhttp client transport created a client child span, outbound traceparent carries the client span's ID, whose parent is serverSpan
-	clientSpan := spans[0]
-	if clientSpan.SpanKind == trace.SpanKindServer {
-		clientSpan = spans[1]
+	// The client transport uses harness.DecoyProvider, so the client child span is
+	// exported to harness.DecoyExporter, not harness.Exporter.  Look for it there.
+	decoySpans := harness.DecoyExporter.GetSpans()
+	var clientSpan *tracetest.SpanStub
+	for i := range decoySpans {
+		if decoySpans[i].SpanKind == trace.SpanKindClient {
+			clientSpan = &decoySpans[i]
+			break
+		}
 	}
+	require.NotNil(t, clientSpan, "client span must be exported by the decoy provider")
 	require.Equal(t, serverSpan.SpanContext.SpanID().String(), clientSpan.Parent.SpanID().String(), "Client span's parent must be the server span")
 	require.Contains(t, outboundTraceparent, clientSpan.SpanContext.SpanID().String(), "Outbound traceparent carries client span ID")
 	require.True(t, outboundTraceparent[len(outboundTraceparent)-2:] == "01", "Outbound flags must end in 01 (sampled)")
@@ -321,6 +349,8 @@ func TestHTTPInboundHandlerError(t *testing.T) {
 }
 
 func TestHTTPInboundAuthRateLimitRejection(t *testing.T) {
+	// OTel HTTP server semconv: 4xx is a client error — span status must be
+	// left Unset.  Only 5xx sets the span status to Error.
 	testStatuses := []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusTooManyRequests}
 
 	for _, status := range testStatuses {
@@ -350,7 +380,8 @@ func TestHTTPInboundAuthRateLimitRejection(t *testing.T) {
 			require.Len(t, spans, 1)
 			span := spans[0]
 
-			require.Equal(t, codes.Error, span.Status.Code)
+			require.Equal(t, codes.Unset, span.Status.Code,
+				"4xx responses are client errors; span status must be Unset per OTel HTTP server semconv")
 		})
 	}
 }
@@ -382,7 +413,8 @@ func TestHTTPInboundUnmatchedRouteSpanName(t *testing.T) {
 	span := spans[0]
 
 	require.Equal(t, "HTTP GET", span.Name, "Unmatched route span name must be bounded (HTTP <METHOD>)")
-	require.Equal(t, codes.Error, span.Status.Code)
+	// 404 is a client error; span status must be Unset per OTel HTTP server semconv.
+	require.Equal(t, codes.Unset, span.Status.Code)
 }
 
 func TestHTTPInboundSemconvAttributes(t *testing.T) {

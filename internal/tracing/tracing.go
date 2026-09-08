@@ -115,7 +115,7 @@ func HTTPMiddleware(tp trace.TracerProvider, propagator propagation.TextMapPropa
 		}
 
 		// Mark context as participating since we received a valid remote parent
-		participatingCtx := MarkParticipating(extractedCtx)
+		participatingCtx := WithProviderContext(MarkParticipating(extractedCtx), tp)
 
 		// Branch 2: Valid but NOT sampled (traceparent flags != 01)
 		if !spanCtx.IsSampled() {
@@ -147,7 +147,8 @@ func HTTPMiddleware(tp trace.TracerProvider, propagator propagation.TextMapPropa
 			if len(c.Errors) > 0 {
 				span.RecordError(c.Errors.Last().Err)
 				span.SetStatus(codes.Error, c.Errors.Last().Error())
-			} else if status >= 400 {
+			} else if status >= 500 {
+				// OTel HTTP server semconv: 5xx → Error, 4xx → Unset (client error).
 				span.SetStatus(codes.Error, fmt.Sprintf("HTTP %d", status))
 			}
 			if event := operationevent.FromContext(c.Request.Context()); event != nil {
@@ -178,8 +179,11 @@ func GRPCUnaryServerInterceptor(tp trace.TracerProvider, propagator propagation.
 			return handler(ctx, req)
 		}
 
-		// Mark context as participating since we received a valid remote parent
-		participatingCtx := MarkParticipating(extractedCtx)
+		// Security owns the operation event; this reference lets the outer tracer
+		// observe the event created by the downstream operation interceptor.
+		ref := operationevent.NewEventRef()
+		participatingCtx := WithProviderContext(
+			operationevent.WithEventRef(MarkParticipating(extractedCtx), ref), tp)
 
 		// Branch 2: Valid but NOT sampled (traceparent flags != 01)
 		if !spanCtx.IsSampled() {
@@ -207,7 +211,9 @@ func GRPCUnaryServerInterceptor(tp trace.TracerProvider, propagator propagation.
 			} else {
 				span.SetAttributes(attribute.Int64("rpc.grpc.status_code", 0))
 			}
-			if event := operationevent.FromContext(ctx); event != nil {
+			if ref := operationevent.EventRefFromContext(ctx); ref != nil && ref.Get() != nil {
+				enrichSpanFromSnapshot(span, ref.Get().Snapshot())
+			} else if event := operationevent.FromContext(ctx); event != nil {
 				enrichSpanFromSnapshot(span, event.Snapshot())
 			}
 			span.End()
@@ -235,8 +241,11 @@ func GRPCStreamServerInterceptor(tp trace.TracerProvider, propagator propagation
 			return handler(srv, stream)
 		}
 
-		// Mark context as participating
-		participatingCtx := MarkParticipating(extractedCtx)
+		// Security owns the operation event; this reference lets the outer tracer
+		// observe the event created by the downstream operation interceptor.
+		ref := operationevent.NewEventRef()
+		participatingCtx := WithProviderContext(
+			operationevent.WithEventRef(MarkParticipating(extractedCtx), ref), tp)
 
 		// Branch 2: Valid but NOT sampled
 		if !spanCtx.IsSampled() {
@@ -264,7 +273,9 @@ func GRPCStreamServerInterceptor(tp trace.TracerProvider, propagator propagation
 			} else {
 				span.SetAttributes(attribute.Int64("rpc.grpc.status_code", 0))
 			}
-			if event := operationevent.FromContext(ctx); event != nil {
+			if ref := operationevent.EventRefFromContext(ctx); ref != nil && ref.Get() != nil {
+				enrichSpanFromSnapshot(span, ref.Get().Snapshot())
+			} else if event := operationevent.FromContext(ctx); event != nil {
 				enrichSpanFromSnapshot(span, event.Snapshot())
 			}
 			span.End()

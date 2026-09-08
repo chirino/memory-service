@@ -70,7 +70,7 @@ func TestInfinispanTracedRequestInjectsTraceparent(t *testing.T) {
 type staticStringCarrier map[string]string
 
 func (c staticStringCarrier) Get(key string) string { return c[key] }
-func (c staticStringCarrier) Set(_, _ string)        {}
+func (c staticStringCarrier) Set(_, _ string)       {}
 func (c staticStringCarrier) Keys() []string {
 	keys := make([]string, 0, len(c))
 	for k := range c {

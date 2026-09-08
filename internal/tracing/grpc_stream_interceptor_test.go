@@ -14,6 +14,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 	"go.opentelemetry.io/otel/codes"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	grpccodes "google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -25,9 +26,10 @@ import (
 // The downstream HTTP call from the handler lets tests inspect outbound propagation.
 type testEventStreamServer struct {
 	pb.UnimplementedEventStreamServiceServer
-	downstreamURL string
-	harness       *testutil.Harness
-	callCount     int
+	downstreamURL   string
+	harness         *testutil.Harness
+	requestProvider trace.TracerProvider
+	callCount       int
 }
 
 func (s *testEventStreamServer) SubscribeEvents(
@@ -36,10 +38,11 @@ func (s *testEventStreamServer) SubscribeEvents(
 ) error {
 	s.callCount++
 	ctx := stream.Context()
+	s.requestProvider = tracing.ProviderFromContext(ctx)
 	client := &http.Client{
 		Transport: otelhttp.NewTransport(
 			http.DefaultTransport,
-			otelhttp.WithTracerProvider(s.harness.Provider),
+			otelhttp.WithTracerProvider(s.harness.DecoyProvider),
 			otelhttp.WithPropagators(s.harness.Propagator),
 		),
 	}
@@ -108,6 +111,16 @@ func drainStream(stream grpc.ServerStreamingClient[pb.EventNotification]) error 
 			return err
 		}
 	}
+}
+
+func TestGRPCStreamRequestContextReceivesTracerProvider(t *testing.T) {
+	setup := setupGRPCStreamTest(t)
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs(
+		"traceparent", testutil.NewSampledTraceparent("4bf92f3577b34da6a3ce929d0e0e4736", "00f067aa0ba902b7")))
+	stream, err := setup.Client.SubscribeEvents(ctx, &pb.SubscribeEventsRequest{})
+	require.NoError(t, err)
+	require.NoError(t, drainStream(stream))
+	require.Equal(t, setup.Harness.Provider, setup.Server.requestProvider)
 }
 
 func TestGRPCStreamInboundAbsentTraceparent(t *testing.T) {

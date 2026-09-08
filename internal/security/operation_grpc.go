@@ -21,6 +21,9 @@ import (
 func GRPCOperationUnaryInterceptor() grpc.UnaryServerInterceptor {
 	return func(ctx context.Context, req any, info *grpc.UnaryServerInfo, handler grpc.UnaryHandler) (resp any, retErr error) {
 		event := operationevent.New("grpc " + info.FullMethod)
+		if ref := operationevent.EventRefFromContext(ctx); ref != nil {
+			ref.Set(event)
+		}
 		event.SetRequestID(RequestIDFromContext(ctx))
 		resources := operationResourcesFromMessage(info.FullMethod, req)
 		state := &grpcOperationState{}
@@ -54,12 +57,18 @@ func GRPCOperationUnaryInterceptor() grpc.UnaryServerInterceptor {
 func GRPCOperationStreamInterceptor() grpc.StreamServerInterceptor {
 	return func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, handler grpc.StreamHandler) (retErr error) {
 		event := operationevent.New("grpc " + info.FullMethod)
+		if ref := operationevent.EventRefFromContext(stream.Context()); ref != nil {
+			ref.Set(event)
+		}
 		event.SetRequestID(RequestIDFromContext(stream.Context()))
 		event.SetConnectionID(uuid.NewString())
 		state := &grpcOperationState{}
 		ctx := context.WithValue(stream.Context(), grpcOperationStateContextKey{}, state)
 		ctx = operationevent.WithContext(ctx, event)
 		wrapped := &operationServerStream{ServerStream: stream, ctx: ctx, event: event, fullMethod: info.FullMethod}
+		// Set trace context before EmitStart so the start record carries correlation
+		// IDs for long-lived streams — not only the terminal record.
+		event.SetTraceContext(tracing.TraceContextFromContext(ctx))
 		event.EmitStart()
 		defer func() {
 			recovered := recover()

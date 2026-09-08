@@ -20,10 +20,12 @@ import (
 
 // Harness holds test instrumentation components for verifying OpenTelemetry trace participation.
 type Harness struct {
-	Exporter   *tracetest.InMemoryExporter
-	Provider   *sdktrace.TracerProvider
-	Propagator propagation.TextMapPropagator
-	Shutdown   func(context.Context) error
+	Exporter      *tracetest.InMemoryExporter
+	Provider      *sdktrace.TracerProvider
+	DecoyExporter *tracetest.InMemoryExporter
+	DecoyProvider *sdktrace.TracerProvider
+	Propagator    propagation.TextMapPropagator
+	Shutdown      func(context.Context) error
 
 	RecordedLogs []RecordedLog
 	logsMu       sync.Mutex
@@ -39,18 +41,30 @@ type RecordedLog struct {
 // NewTestHarness creates a new shared test harness with ParentBased(NeverSample()) sampling and ParticipatingPropagator.
 func NewTestHarness() *Harness {
 	exporter := tracetest.NewInMemoryExporter()
-	tp := sdktrace.NewTracerProvider(
+	provider := sdktrace.NewTracerProvider(
 		sdktrace.WithSyncer(exporter),
+		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.NeverSample())),
+	)
+	decoyExporter := tracetest.NewInMemoryExporter()
+	decoyProvider := sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(decoyExporter),
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.NeverSample())),
 	)
 	baseProp := propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{})
 	prop := tracing.NewParticipatingPropagator(baseProp)
 
 	h := &Harness{
-		Exporter:   exporter,
-		Provider:   tp,
-		Propagator: prop,
-		Shutdown:   tp.Shutdown,
+		Exporter:      exporter,
+		Provider:      provider,
+		DecoyExporter: decoyExporter,
+		DecoyProvider: decoyProvider,
+		Propagator:    prop,
+		Shutdown: func(ctx context.Context) error {
+			if err := provider.Shutdown(ctx); err != nil {
+				return err
+			}
+			return decoyProvider.Shutdown(ctx)
+		},
 	}
 	return h
 }

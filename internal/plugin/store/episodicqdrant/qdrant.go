@@ -10,8 +10,8 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/tracing"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pb "github.com/qdrant/go-client/qdrant"
 	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"

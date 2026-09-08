@@ -83,7 +83,7 @@ func TestAttachmentSourceURLTracedRequestInjectsTraceparent(t *testing.T) {
 type staticHTTPCarrier map[string]string
 
 func (c staticHTTPCarrier) Get(key string) string { return c[key] }
-func (c staticHTTPCarrier) Set(_, _ string)        {}
+func (c staticHTTPCarrier) Set(_, _ string)       {}
 func (c staticHTTPCarrier) Keys() []string {
 	keys := make([]string, 0, len(c))
 	for k := range c {

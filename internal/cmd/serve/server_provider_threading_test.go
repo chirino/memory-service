@@ -8,8 +8,8 @@ import (
 
 	"github.com/chirino/memory-service/internal/buildcaps"
 	"github.com/chirino/memory-service/internal/config"
-	"github.com/chirino/memory-service/internal/tracing"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/stretchr/testify/require"
 )
 

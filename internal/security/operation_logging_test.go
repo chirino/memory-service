@@ -14,9 +14,11 @@ import (
 	"github.com/charmbracelet/log"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/chirino/memory-service/internal/operationevent"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"go.opentelemetry.io/otel/trace"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
@@ -365,6 +367,19 @@ func TestOperationEventMiddlewareSuppressionAndPanic(t *testing.T) {
 	}
 }
 
+func TestGRPCOperationUnaryCreatesOwnEventWithoutTracing(t *testing.T) {
+	ctx := context.Background()
+	var event *operationevent.Event
+	_, err := GRPCOperationUnaryInterceptor()(ctx, &pb.GetConversationRequest{}, &grpc.UnaryServerInfo{
+		FullMethod: "/memory.v1.ConversationsService/GetConversation",
+	}, func(ctx context.Context, _ any) (any, error) {
+		event = operationevent.FromContext(ctx)
+		return nil, nil
+	})
+	require.NoError(t, err)
+	require.NotNil(t, event, "security operation interceptor must create its own event without tracing")
+}
+
 func TestGRPCOperationUnaryLifecyclePanicAndCause(t *testing.T) {
 	ctx, _ := WithRequestID(context.Background(), "grpc-request")
 	request := &pb.GetConversationRequest{ConversationId: "conversation-1"}
@@ -622,4 +637,61 @@ func (s *operationTestServerStream) RecvMsg(value any) error {
 	proto.Merge(target, s.incoming)
 	s.incoming = nil
 	return nil
+}
+
+// TestGRPCOperationStreamStartRecordCarriesTraceContext verifies that the start
+// log record emitted by GRPCOperationStreamInterceptor carries the traceID from
+// the incoming span context.
+//
+// The stream interceptor calls event.EmitStart() before the handler returns.
+// SetTraceContext must be called before EmitStart so that long-lived streams
+// have correlation while active, not only in the terminal record.
+//
+// Mutation proof target: removing the SetTraceContext call before EmitStart in
+// GRPCOperationStreamInterceptor causes the start record to lack traceID,
+// failing the assertion below.
+func TestGRPCOperationStreamStartRecordCarriesTraceContext(t *testing.T) {
+	var output bytes.Buffer
+	log.SetOutput(&output)
+	log.SetReportTimestamp(false)
+	t.Cleanup(func() {
+		log.SetOutput(os.Stderr)
+		log.SetReportTimestamp(true)
+	})
+
+	// Build a context that simulates what GRPCStreamServerInterceptor produces:
+	// a valid, sampled span context on the context + IsParticipating marked.
+	// We use a hard-coded SpanContext so no SDK provider is needed.
+	traceID, _ := trace.TraceIDFromHex("4bf92f3577b34da6a3ce929d0e0e4736")
+	spanID, _ := trace.SpanIDFromHex("00f067aa0ba902b7")
+	sc := trace.NewSpanContext(trace.SpanContextConfig{
+		TraceID:    traceID,
+		SpanID:     spanID,
+		TraceFlags: trace.FlagsSampled,
+		Remote:     true,
+	})
+	ctx := trace.ContextWithSpanContext(context.Background(), sc)
+	ctx = tracing.MarkParticipating(ctx)
+
+	// Capture the start log line synchronously: use a channel closed by the
+	// handler so we can read output before the terminal record is written.
+	startOutput := make(chan string, 1)
+	stream := &operationTestServerStream{ctx: ctx}
+	interceptor := GRPCOperationStreamInterceptor()
+
+	err := interceptor(nil, stream, &grpc.StreamServerInfo{
+		FullMethod:     "/memory.v1.EventStreamService/SubscribeEvents",
+		IsServerStream: true,
+	}, func(_ any, serverStream grpc.ServerStream) error {
+		// Capture output immediately after EmitStart has run (before handler returns).
+		startOutput <- output.String()
+		return nil
+	})
+	require.NoError(t, err)
+	close(startOutput)
+
+	startLog := <-startOutput
+	require.NotEmpty(t, startLog, "start log must have been emitted before handler returned")
+	require.Contains(t, startLog, "traceID="+traceID.String(),
+		"start record must carry traceID so long-lived streams are correlatable while active")
 }

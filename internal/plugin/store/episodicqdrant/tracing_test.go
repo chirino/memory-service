@@ -5,9 +5,9 @@ import (
 	"testing"
 
 	"github.com/chirino/memory-service/internal/config"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/chirino/memory-service/internal/tracing/testutil"
-	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	pb "github.com/qdrant/go-client/qdrant"
 	"github.com/stretchr/testify/require"
 	nooptrace "go.opentelemetry.io/otel/trace/noop"

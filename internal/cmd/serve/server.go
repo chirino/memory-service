@@ -2,6 +2,7 @@ package serve
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -19,7 +20,6 @@ import (
 	routeknowledge "github.com/chirino/memory-service/internal/plugin/route/knowledge"
 	routesystem "github.com/chirino/memory-service/internal/plugin/route/system"
 	storemetrics "github.com/chirino/memory-service/internal/plugin/store/metrics"
-	"github.com/chirino/memory-service/internal/tracing"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
@@ -32,8 +32,9 @@ import (
 	internalresumer "github.com/chirino/memory-service/internal/resumer"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/chirino/memory-service/internal/service"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/gin-gonic/gin"
-	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/contrib/propagators/autoprop"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/sdk/resource"
@@ -69,26 +70,51 @@ func GetTokenResolver(s *Server) *security.TokenResolver {
 }
 
 // Shutdown gracefully shuts down the server.
+// Order: management listener → main listener drain → tracer provider flush.
+// Both listeners are drained before provider shutdown so that spans ending
+// during either drain are exported rather than silently dropped.
+// All three error values are joined and returned together.
 func (s *Server) Shutdown(ctx context.Context) error {
+	var mgmtErr error
 	if s.closeManagement != nil {
-		_ = s.closeManagement(ctx)
+		mgmtErr = s.closeManagement(ctx)
 	}
+	var runErr error
+	if s.Running != nil {
+		runErr = s.Running.Close(ctx)
+	}
+	var providerErr error
 	if s.tracerProvider != nil {
 		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 		defer cancel()
-		_ = s.tracerProvider.Shutdown(shutdownCtx)
+		providerErr = s.tracerProvider.Shutdown(shutdownCtx)
 	}
-	if s.Running != nil {
-		return s.Running.Close(ctx)
-	}
-	return nil
+	return errors.Join(mgmtErr, runErr, providerErr)
 }
 
 // buildTracerProvider constructs a server-scoped TracerProvider.
-// When OTEL_EXPORTER_OTLP_ENDPOINT is set, spans are exported via OTLP HTTP.
-// When it is unset, a noop provider is returned so tracing is disabled by default.
+//
+// Tracing is enabled when either OTEL_EXPORTER_OTLP_ENDPOINT or
+// OTEL_EXPORTER_OTLP_TRACES_ENDPOINT is set; when neither is set a noop
+// provider is returned so the service behaves identically to before for
+// untraced deployments.
+//
+// The resource is built from environment variables so that operators can set
+// service.name via OTEL_SERVICE_NAME or OTEL_RESOURCE_ATTRIBUTES without the
+// hardcoded value winning the merge.
+//
+// The QueryRedactingExporter wrapper is applied around the OTLP exporter to
+// strip url.full query strings (presigned S3 signatures, OAuth tokens) before
+// they leave the process.
+//
+// The participation-only sampler (ParentBased(NeverSample())) is preserved:
+// memory-service never originates a trace and must only join sampled upstream
+// traces.
 func buildTracerProvider(ctx context.Context) (trace.TracerProvider, *sdktrace.TracerProvider, error) {
 	endpoint := os.Getenv("OTEL_EXPORTER_OTLP_ENDPOINT")
+	if endpoint == "" {
+		endpoint = os.Getenv("OTEL_EXPORTER_OTLP_TRACES_ENDPOINT")
+	}
 	if endpoint == "" {
 		return nooptrace.NewTracerProvider(), nil, nil
 	}
@@ -96,21 +122,42 @@ func buildTracerProvider(ctx context.Context) (trace.TracerProvider, *sdktrace.T
 	if err != nil {
 		return nil, nil, fmt.Errorf("tracing: create OTLP exporter: %w", err)
 	}
-	res, err := resource.Merge(
-		resource.Default(),
-		resource.NewWithAttributes("",
-			attribute.String("service.name", "memory-service"),
-		),
-	)
+	res, err := resource.New(ctx, resource.WithFromEnv())
 	if err != nil {
 		return nil, nil, fmt.Errorf("tracing: create resource: %w", err)
 	}
 	sdkTP := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exporter),
+		sdktrace.WithBatcher(tracing.NewQueryRedactingExporter(exporter)),
 		sdktrace.WithResource(res),
 		sdktrace.WithSampler(sdktrace.ParentBased(sdktrace.NeverSample())),
 	)
 	return sdkTP, sdkTP, nil
+}
+
+// buildTracerProviderWithExporter constructs a TracerProvider that routes spans
+// through QueryRedactingExporter into the provided exporter using a
+// SimpleSpanProcessor (synchronous, no batching). It is used only in tests
+// that need to inspect exported spans without a live OTLP endpoint.
+// The resource is read from environment variables just as buildTracerProvider
+// does, so OTEL_SERVICE_NAME is honoured in tests.
+func buildTracerProviderWithExporter(exporter sdktrace.SpanExporter) *sdktrace.TracerProvider {
+	res, _ := resource.New(context.Background(), resource.WithFromEnv())
+	return sdktrace.NewTracerProvider(
+		sdktrace.WithSyncer(tracing.NewQueryRedactingExporter(exporter)),
+		sdktrace.WithResource(res),
+		sdktrace.WithSampler(sdktrace.AlwaysSample()),
+	)
+}
+
+// buildInboundPropagator constructs the server's inbound TextMapPropagator.
+// It reads OTEL_PROPAGATORS to select propagator formats (tracecontext, b3,
+// jaeger, etc.). When OTEL_PROPAGATORS is unset the default is tracecontext
+// and baggage, matching the previous hardcoded behaviour.
+// The result is wrapped in ParticipatingPropagator so that Inject is a no-op
+// on untraced requests — preventing phantom trace IDs from being forwarded to
+// downstream services.
+func buildInboundPropagator() propagation.TextMapPropagator {
+	return tracing.NewParticipatingPropagator(autoprop.NewTextMapPropagator())
 }
 
 func resolveAttachmentStoreName(cfg *config.Config) (string, error) {
@@ -150,9 +197,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	if err != nil {
 		return nil, err
 	}
-	inboundProp := tracing.NewParticipatingPropagator(
-		propagation.NewCompositeTextMapPropagator(propagation.TraceContext{}, propagation.Baggage{}),
-	)
+	inboundProp := buildInboundPropagator()
 	// Thread the provider into the loader context so plugin loaders can retrieve it.
 	ctx = tracing.WithProviderContext(ctx, tp)
 
