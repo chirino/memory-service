@@ -195,26 +195,47 @@ func runLevel(
 	var mu sync.Mutex
 	var allSamples []sample
 
+	// readyChs receives a signal from each subscriber once its SSE connection
+	// is established (HTTP 200 received).  Senders wait for all readyChs to
+	// fire before starting, eliminating the fixed-sleep startup race.
+	readyChs := make([]chan struct{}, level.users)
+	for i := range readyChs {
+		readyChs[i] = make(chan struct{}, 1)
+	}
+
 	// Start per-user SSE subscriber goroutines.
 	for i := 0; i < level.users; i++ {
 		userID := fmt.Sprintf("loadtest-sse-user-%d", i+1)
 		convID := convIDs[i]
 		ch := pendingChs[i]
+		ready := readyChs[i]
 
 		wg.Add(1)
-		go func(userID, convID string, pending <-chan pendingAppend) {
+		go func(userID, convID string, pending <-chan pendingAppend, ready chan<- struct{}) {
 			defer wg.Done()
-			subscriberLoop(ctx, baseURL, apiKey, userID, convID, pending, eventTimeout,
+			subscriberLoop(ctx, baseURL, apiKey, userID, convID, pending, eventTimeout, ready,
 				func(s sample) {
 					mu.Lock()
 					allSamples = append(allSamples, s)
 					mu.Unlock()
 				})
-		}(userID, convID, ch)
+		}(userID, convID, ch, ready)
 	}
 
-	// Give SSE connections time to establish before senders fire.
-	time.Sleep(300 * time.Millisecond)
+	// Wait for every SSE subscriber to signal it is connected before starting
+	// senders.  Each subscriber closes its readyCh once the HTTP 200 is received.
+	// Use a timeout so a failed connection does not hang the benchmark forever.
+	connDeadline := time.NewTimer(10 * time.Second)
+	defer connDeadline.Stop()
+	for i, rch := range readyChs {
+		select {
+		case <-rch:
+		case <-connDeadline.C:
+			fmt.Fprintf(os.Stderr, "[ssedelay] WARN: subscriber %d did not connect within 10s\n", i+1)
+		case <-ctx.Done():
+			return levelResult{label: level.label}
+		}
+	}
 
 	// Start per-user sender goroutines.
 	deadline := time.Now().Add(dur)
@@ -240,11 +261,15 @@ func runLevel(
 // subscriberLoop opens a persistent SSE connection for userID and for each
 // pending append waits for a conversation event on convID, recording the
 // latency from POST completion to event arrival.
+//
+// ready is closed once the HTTP 200 response is received, signalling the
+// caller that this subscriber is live and senders may start.
 func subscriberLoop(
 	ctx context.Context,
 	baseURL, apiKey, userID, convID string,
 	pending <-chan pendingAppend,
 	eventTimeout time.Duration,
+	ready chan<- struct{},
 	record func(sample),
 ) {
 	// No conversationIds filter — the server ignores it at the handler level
@@ -253,6 +278,7 @@ func subscriberLoop(
 	url := fmt.Sprintf("%s/v1/events", baseURL)
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
 	if err != nil {
+		close(ready)
 		return
 	}
 	req.Header.Set("Accept", "text/event-stream")
@@ -264,6 +290,7 @@ func subscriberLoop(
 	resp, err := client.Do(req)
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "[ssedelay] SSE connect error user=%s: %v\n", userID, err)
+		close(ready)
 		return
 	}
 	defer resp.Body.Close()
@@ -272,8 +299,12 @@ func subscriberLoop(
 		body, _ := io.ReadAll(resp.Body)
 		fmt.Fprintf(os.Stderr, "[ssedelay] SSE connect failed user=%s status=%d body=%s\n",
 			userID, resp.StatusCode, body)
+		close(ready)
 		return
 	}
+
+	// Signal that the HTTP connection is live — senders may now start.
+	close(ready)
 
 	// sseEnvelope matches the JSON structure written by writeSSEEvent:
 	// {"event":"created","kind":"entry","data":{"conversation":"<id>",...}}
