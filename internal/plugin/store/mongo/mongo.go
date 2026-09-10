@@ -1115,81 +1115,328 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	}, nil
 }
 
-func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilter *registrystore.MetadataKeyFilter) ([]registrystore.ConversationSummary, *string, error) {
-	// Find all groups the user has membership in
-	cursor, err := s.memberships().Find(ctx, bson.M{"user_id": userID})
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to find memberships: %w", err)
-	}
-	var mems []memberDoc
-	if err := cursor.All(ctx, &mems); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode memberships: %w", err)
-	}
+type convPipelineDoc struct {
+	ID                      string            `bson:"_id"`
+	Title                   []byte            `bson:"title"`
+	OwnerUserID             string            `bson:"owner_user_id"`
+	ClientID                string            `bson:"client_id"`
+	AgentID                 *string           `bson:"agent_id,omitempty"`
+	Metadata                map[string]any    `bson:"metadata"`
+	ConversationGroupID     string            `bson:"conversation_group_id"`
+	StartedByConversationID *string           `bson:"started_by_conversation_id,omitempty"`
+	StartedByEntryID        *string           `bson:"started_by_entry_id,omitempty"`
+	CreatedAt               time.Time         `bson:"created_at"`
+	UpdatedAt               time.Time         `bson:"updated_at"`
+	ArchivedAt              *time.Time        `bson:"archived_at,omitempty"`
+	AccessLevel             model.AccessLevel `bson:"access_level,omitempty"`
+}
 
-	accessMap := map[string]model.AccessLevel{}
-	groupIDs := make([]string, 0, len(mems))
-	for _, m := range mems {
-		groupIDs = append(groupIDs, m.ConversationGroupID)
-		accessMap[m.ConversationGroupID] = m.AccessLevel
+func (p convPipelineDoc) toConvDoc() convDoc {
+	return convDoc{
+		ID:                      p.ID,
+		Title:                   p.Title,
+		OwnerUserID:             p.OwnerUserID,
+		ClientID:                p.ClientID,
+		AgentID:                 p.AgentID,
+		Metadata:                p.Metadata,
+		ConversationGroupID:     p.ConversationGroupID,
+		StartedByConversationID: p.StartedByConversationID,
+		StartedByEntryID:        p.StartedByEntryID,
+		CreatedAt:               p.CreatedAt,
+		UpdatedAt:               p.UpdatedAt,
+		ArchivedAt:              p.ArchivedAt,
 	}
+}
 
-	if len(groupIDs) == 0 {
-		return []registrystore.ConversationSummary{}, nil, nil
+func buildMongoMetadataFilterMatch(metadataFilters []registrystore.ConversationMetadataPredicate) bson.M {
+	if len(metadataFilters) == 0 {
+		return nil
 	}
+	andClauses := make(bson.A, 0, len(metadataFilters))
+	for _, p := range metadataFilters {
+		path := "metadata." + p.Key
+		if p.Operator == registrystore.ConversationMetadataEqual {
+			andClauses = append(andClauses, bson.M{
+				path: p.Value,
+				"$expr": bson.M{
+					"$eq": bson.A{
+						bson.M{"$type": "$" + path},
+						"string",
+					},
+				},
+			})
+		} else if p.Operator == registrystore.ConversationMetadataNotEqual {
+			andClauses = append(andClauses, bson.M{
+				path: bson.M{"$ne": p.Value},
+				"$expr": bson.M{
+					"$eq": bson.A{
+						bson.M{"$type": "$" + path},
+						"string",
+					},
+				},
+			})
+		}
+	}
+	return bson.M{"$and": andClauses}
+}
 
-	filter := bson.M{
-		"conversation_group_id": bson.M{"$in": groupIDs},
+func buildConversationAggregateOptions(metadataFilters []registrystore.ConversationMetadataPredicate) *options.AggregateOptionsBuilder {
+	opts := options.Aggregate().SetAllowDiskUse(true)
+	if len(metadataFilters) > 0 {
+		opts.SetCollation(&options.Collation{Locale: "simple"})
 	}
+	return opts
+}
+
+func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Time, anchorID *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilters []registrystore.ConversationMetadataPredicate) mongo.Pipeline {
+	pipeline := mongo.Pipeline{}
+
+	// 1. Initial base match (archive, ancestry, metadata)
+	baseMatch := bson.M{}
 	switch archived {
 	case registrystore.ArchiveFilterInclude:
 		// No archive filter.
 	case registrystore.ArchiveFilterOnly:
-		filter["archived_at"] = bson.M{"$exists": true}
+		baseMatch["archived_at"] = bson.M{"$exists": true}
 	default:
-		filter["archived_at"] = bson.M{"$exists": false}
+		baseMatch["archived_at"] = bson.M{"$exists": false}
 	}
 	switch ancestry {
 	case model.ConversationAncestryChildren:
-		filter["started_by_conversation_id"] = bson.M{"$exists": true}
+		baseMatch["started_by_conversation_id"] = bson.M{"$exists": true}
 	case model.ConversationAncestryAll:
 	default:
-		filter["started_by_conversation_id"] = bson.M{"$exists": false}
+		baseMatch["started_by_conversation_id"] = bson.M{"$exists": false}
 	}
 
-	switch mode {
-	case model.ListModeRoots:
-		rootIDs, err := s.rootConversationIDs(ctx, groupIDs)
-		if err != nil {
-			return nil, nil, err
+	metaMatch := buildMongoMetadataFilterMatch(metadataFilters)
+	if metaMatch != nil {
+		if andList, ok := metaMatch["$and"].(bson.A); ok && len(andList) > 0 {
+			baseMatch["$and"] = andList
 		}
-		if len(rootIDs) == 0 {
-			return []registrystore.ConversationSummary{}, nil, nil
+	}
+
+	if len(baseMatch) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: baseMatch}})
+	}
+
+	// 2. Lookup and unwind membership for agent list
+	pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
+		"from": "conversation_memberships",
+		"let":  bson.M{"gid": "$conversation_group_id"},
+		"pipeline": mongo.Pipeline{
+			bson.D{{Key: "$match", Value: bson.M{
+				"$expr": bson.M{
+					"$and": bson.A{
+						bson.M{"$eq": bson.A{"$conversation_group_id", "$$gid"}},
+						bson.M{"$eq": bson.A{"$user_id", userID}},
+					},
+				},
+			}}},
+		},
+		"as": "user_membership",
+	}}})
+	pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$user_membership"}})
+	pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.M{"access_level": "$user_membership.access_level"}}})
+	pipeline = append(pipeline, bson.D{{Key: "$project", Value: bson.M{"user_membership": 0}}})
+
+	// 3. For mode=roots, lookup conversation_ancestry and retain documents without parent
+	if mode == model.ListModeRoots {
+		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "conversation_ancestry",
+			"localField":   "_id",
+			"foreignField": "_id",
+			"as":           "ancestry_info",
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$ancestry_info"}})
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.M{
+			"ancestry_info.parent_conversation_id": bson.M{"$exists": false},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$project", Value: bson.M{"ancestry_info": 0}}})
+	}
+
+	// 4. For mode=latest-fork, sort by (updated_at DESC, created_at DESC, _id DESC), group by conversation_group_id
+	if mode == model.ListModeLatestFork {
+		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "updated_at", Value: -1},
+			{Key: "created_at", Value: -1},
+			{Key: "_id", Value: -1},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.M{
+			"_id": "$conversation_group_id",
+			"doc": bson.M{"$first": "$$ROOT"},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$replaceRoot", Value: bson.M{"newRoot": "$doc"}}})
+	}
+
+	// 5. Cursor filter
+	if anchorCreatedAt != nil && anchorID != nil {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.M{
+			"$or": bson.A{
+				bson.M{"created_at": bson.M{"$lt": *anchorCreatedAt}},
+				bson.M{
+					"created_at": *anchorCreatedAt,
+					"_id":        bson.M{"$lt": *anchorID},
+				},
+			},
+		}}})
+	}
+
+	// 6. Final sort
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
+		{Key: "created_at", Value: -1},
+		{Key: "_id", Value: -1},
+	}}})
+
+	// 7. Limit + 1
+	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: int64(limit + 1)}})
+	return pipeline
+}
+
+func buildAdminConversationListPipeline(query registrystore.AdminConversationQuery, anchorCreatedAt *time.Time, anchorID *string) mongo.Pipeline {
+	pipeline := mongo.Pipeline{}
+
+	// 1. Initial base match
+	baseMatch := bson.M{}
+	switch query.Archived {
+	case registrystore.ArchiveFilterInclude:
+		// No archive filter.
+	case registrystore.ArchiveFilterOnly:
+		baseMatch["archived_at"] = bson.M{"$exists": true}
+	default:
+		baseMatch["archived_at"] = bson.M{"$exists": false}
+	}
+	if query.UserID != nil {
+		baseMatch["owner_user_id"] = *query.UserID
+	}
+	switch query.Ancestry {
+	case model.ConversationAncestryChildren:
+		baseMatch["started_by_conversation_id"] = bson.M{"$exists": true}
+	case model.ConversationAncestryAll:
+	default:
+		baseMatch["started_by_conversation_id"] = bson.M{"$exists": false}
+	}
+	if query.ArchivedAfter != nil {
+		if existing, ok := baseMatch["archived_at"]; ok {
+			if m, ok := existing.(bson.M); ok {
+				m["$gte"] = *query.ArchivedAfter
+			}
+		} else {
+			baseMatch["archived_at"] = bson.M{"$gte": *query.ArchivedAfter}
 		}
-		filter["_id"] = bson.M{"$in": rootIDs}
-	case model.ListModeLatestFork:
-		return s.listConversationsLatestFork(ctx, filter, accessMap, afterCursor, limit, metadataFilter)
+	}
+	if query.ArchivedBefore != nil {
+		if existing, ok := baseMatch["archived_at"]; ok {
+			if m, ok := existing.(bson.M); ok {
+				m["$lt"] = *query.ArchivedBefore
+			}
+		} else {
+			baseMatch["archived_at"] = bson.M{"$lt": *query.ArchivedBefore}
+		}
 	}
 
-	if metadataFilter != nil {
-		applyMetadataStringFilter(filter, metadataFilter)
+	metaMatch := buildMongoMetadataFilterMatch(query.MetadataFilters)
+	if metaMatch != nil {
+		if andList, ok := metaMatch["$and"].(bson.A); ok && len(andList) > 0 {
+			baseMatch["$and"] = andList
+		}
 	}
 
+	if len(baseMatch) > 0 {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: baseMatch}})
+	}
+
+	// 2. For mode=roots, lookup conversation_ancestry and retain documents without parent
+	if query.Mode == model.ListModeRoots {
+		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
+			"from":         "conversation_ancestry",
+			"localField":   "_id",
+			"foreignField": "_id",
+			"as":           "ancestry_info",
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$ancestry_info"}})
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.M{
+			"ancestry_info.parent_conversation_id": bson.M{"$exists": false},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$project", Value: bson.M{"ancestry_info": 0}}})
+	}
+
+	// 3. For mode=latest-fork, sort by (updated_at DESC, created_at DESC, _id DESC), group by conversation_group_id
+	if query.Mode == model.ListModeLatestFork {
+		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
+			{Key: "updated_at", Value: -1},
+			{Key: "created_at", Value: -1},
+			{Key: "_id", Value: -1},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$group", Value: bson.M{
+			"_id": "$conversation_group_id",
+			"doc": bson.M{"$first": "$$ROOT"},
+		}}})
+		pipeline = append(pipeline, bson.D{{Key: "$replaceRoot", Value: bson.M{"newRoot": "$doc"}}})
+	}
+
+	// 4. Cursor filter
+	if anchorCreatedAt != nil && anchorID != nil {
+		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.M{
+			"$or": bson.A{
+				bson.M{"created_at": bson.M{"$lt": *anchorCreatedAt}},
+				bson.M{
+					"created_at": *anchorCreatedAt,
+					"_id":        bson.M{"$lt": *anchorID},
+				},
+			},
+		}}})
+	}
+
+	// 5. Final sort
+	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
+		{Key: "created_at", Value: -1},
+		{Key: "_id", Value: -1},
+	}}})
+
+	// 6. Limit + 1
+	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: int64(query.Limit + 1)}})
+	return pipeline
+}
+
+func (s *MongoStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilters []registrystore.ConversationMetadataPredicate) ([]registrystore.ConversationSummary, *string, error) {
+	if err := registrystore.ValidateConversationMetadataPredicates(metadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
+	}
+
+	var anchorCreatedAt *time.Time
+	var anchorID *string
 	if afterCursor != nil {
+		var member memberDoc
 		var cursorDoc convDoc
-		err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc)
-		if err == nil {
-			filter["created_at"] = bson.M{"$lt": cursorDoc.CreatedAt}
+		if err := s.conversations().FindOne(ctx, bson.M{"_id": *afterCursor}).Decode(&cursorDoc); err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *afterCursor)}
+			}
+			return nil, nil, fmt.Errorf("failed to lookup cursor conversation: %w", err)
 		}
+		if err := s.memberships().FindOne(ctx, bson.M{"conversation_group_id": cursorDoc.ConversationGroupID, "user_id": userID}).Decode(&member); err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *afterCursor)}
+			}
+			return nil, nil, fmt.Errorf("failed to lookup cursor membership: %w", err)
+		}
+		anchorCreatedAt = &cursorDoc.CreatedAt
+		anchorID = &cursorDoc.ID
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(int64(limit + 1))
-	cur, err := s.conversations().Find(ctx, filter, opts)
+	pipeline := buildPublicConversationListPipeline(userID, anchorCreatedAt, anchorID, limit, mode, ancestry, archived, metadataFilters)
+	opts := buildConversationAggregateOptions(metadataFilters)
+
+	cur, err := s.conversations().Aggregate(ctx, pipeline, opts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list conversations: %w", err)
+		return nil, nil, fmt.Errorf("failed to aggregate conversations: %w", err)
 	}
-	var docs []convDoc
+	defer cur.Close(ctx)
+
+	var docs []convPipelineDoc
 	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode conversations: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode conversation pipeline docs: %w", err)
 	}
 
 	hasMore := len(docs) > limit
@@ -1199,8 +1446,7 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 
 	summaries := make([]registrystore.ConversationSummary, len(docs))
 	for i, d := range docs {
-		al := accessMap[d.ConversationGroupID]
-		summary, err := s.conversationSummaryFromDoc(ctx, d, al)
+		summary, err := s.conversationSummaryFromDoc(ctx, d.toConvDoc(), d.AccessLevel)
 		if err != nil {
 			return nil, nil, err
 		}
@@ -1213,19 +1459,6 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 		nextCursor = &c
 	}
 	return summaries, nextCursor, nil
-}
-
-func applyMetadataStringFilter(filter bson.M, metadataFilter *registrystore.MetadataKeyFilter) {
-	path := "metadata." + metadataFilter.Key
-	// Keep the equality predicate for the wildcard index, then reject MongoDB's
-	// array-element equality matches by requiring the stored value itself to be a string.
-	filter[path] = metadataFilter.Value
-	filter["$expr"] = bson.M{
-		"$eq": bson.A{
-			bson.M{"$type": "$" + path},
-			"string",
-		},
-	}
 }
 
 func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, conversationID string, afterCursor *string, limit int) ([]registrystore.ConversationSummary, *string, error) {
@@ -1285,86 +1518,6 @@ func (s *MongoStore) ListChildConversations(ctx context.Context, userID string, 
 		}
 		summaries[i] = summary
 	}
-	var nextCursor *string
-	if hasMore && len(summaries) > 0 {
-		c := string(summaries[len(summaries)-1].ID)
-		nextCursor = &c
-	}
-	return summaries, nextCursor, nil
-}
-
-// listConversationsLatestFork returns only the most recently updated conversation per group.
-func (s *MongoStore) listConversationsLatestFork(ctx context.Context, baseFilter bson.M, accessMap map[string]model.AccessLevel, afterCursor *string, limit int, metadataFilter *registrystore.MetadataKeyFilter) ([]registrystore.ConversationSummary, *string, error) {
-	// Apply metadata filter in the query so MongoDB narrows the set before we dedup by group.
-	// This keeps cursor semantics correct: the representative for each group that passes the
-	// filter is the most-recently-updated conversation that also matches — not the most-recently-
-	// updated in the group regardless of the filter.
-	if metadataFilter != nil {
-		applyMetadataStringFilter(baseFilter, metadataFilter)
-	}
-
-	// Load all candidates, then keep only the one with max updated_at per group.
-	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: -1}, {Key: "_id", Value: -1}})
-	cur, err := s.conversations().Find(ctx, baseFilter, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to list conversations (latest-fork): %w", err)
-	}
-	var docs []convDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode conversations: %w", err)
-	}
-
-	// Keep only the most recently updated per group.
-	seen := map[string]bool{}
-	var filtered []convDoc
-	for _, d := range docs {
-		if seen[d.ConversationGroupID] {
-			continue
-		}
-		seen[d.ConversationGroupID] = true
-		filtered = append(filtered, d)
-	}
-
-	// Sort by created_at DESC to keep newest conversations first.
-	for i := 0; i < len(filtered); i++ {
-		for j := i + 1; j < len(filtered); j++ {
-			if filtered[j].CreatedAt.After(filtered[i].CreatedAt) ||
-				(filtered[j].CreatedAt.Equal(filtered[i].CreatedAt) && filtered[j].ID > filtered[i].ID) {
-				filtered[i], filtered[j] = filtered[j], filtered[i]
-			}
-		}
-	}
-
-	// Apply cursor-based pagination.
-	start := 0
-	if afterCursor != nil {
-		for i, d := range filtered {
-			if d.ID == *afterCursor {
-				start = i + 1
-				break
-			}
-		}
-	}
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	filtered = filtered[start:]
-
-	hasMore := len(filtered) > limit
-	if hasMore {
-		filtered = filtered[:limit]
-	}
-
-	summaries := make([]registrystore.ConversationSummary, len(filtered))
-	for i, d := range filtered {
-		al := accessMap[d.ConversationGroupID]
-		summary, err := s.conversationSummaryFromDoc(ctx, d, al)
-		if err != nil {
-			return nil, nil, err
-		}
-		summaries[i] = summary
-	}
-
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
 		c := string(summaries[len(summaries)-1].ID)
@@ -3010,78 +3163,36 @@ func (s *MongoStore) SearchEntries(ctx context.Context, userID string, query str
 // --- Admin ---
 
 func (s *MongoStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	filter := bson.M{}
-
-	switch query.Archived {
-	case registrystore.ArchiveFilterInclude:
-		// No archive filter.
-	case registrystore.ArchiveFilterOnly:
-		filter["archived_at"] = bson.M{"$exists": true}
-	default:
-		filter["archived_at"] = bson.M{"$exists": false}
-	}
-	if query.UserID != nil {
-		filter["owner_user_id"] = *query.UserID
-	}
-	switch query.Ancestry {
-	case model.ConversationAncestryChildren:
-		filter["started_by_conversation_id"] = bson.M{"$exists": true}
-	case model.ConversationAncestryAll:
-	default:
-		filter["started_by_conversation_id"] = bson.M{"$exists": false}
-	}
-	if query.ArchivedAfter != nil {
-		if existing, ok := filter["archived_at"]; ok {
-			if m, ok := existing.(bson.M); ok {
-				m["$gte"] = *query.ArchivedAfter
-			}
-		} else {
-			filter["archived_at"] = bson.M{"$gte": *query.ArchivedAfter}
-		}
-	}
-	if query.ArchivedBefore != nil {
-		if existing, ok := filter["archived_at"]; ok {
-			if m, ok := existing.(bson.M); ok {
-				m["$lt"] = *query.ArchivedBefore
-			}
-		} else {
-			filter["archived_at"] = bson.M{"$lt": *query.ArchivedBefore}
-		}
-	}
-	if query.MetadataFilter != nil {
-		applyMetadataStringFilter(filter, query.MetadataFilter)
+	if err := registrystore.ValidateConversationMetadataPredicates(query.MetadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
 	}
 
-	switch query.Mode {
-	case model.ListModeRoots:
-		rootIDs, err := s.rootConversationIDs(ctx, nil)
-		if err != nil {
-			return nil, nil, err
-		}
-		if len(rootIDs) == 0 {
-			return []registrystore.ConversationSummary{}, nil, nil
-		}
-		filter["_id"] = bson.M{"$in": rootIDs}
-	case model.ListModeLatestFork:
-		return s.adminListConversationsLatestFork(ctx, filter, query)
-	}
-
+	var anchorCreatedAt *time.Time
+	var anchorID *string
 	if query.AfterCursor != nil {
 		var cursorDoc convDoc
-		err := s.conversations().FindOne(ctx, bson.M{"_id": *query.AfterCursor}).Decode(&cursorDoc)
-		if err == nil {
-			filter["created_at"] = bson.M{"$lt": cursorDoc.CreatedAt}
+		if err := s.conversations().FindOne(ctx, bson.M{"_id": *query.AfterCursor}).Decode(&cursorDoc); err != nil {
+			if errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *query.AfterCursor)}
+			}
+			return nil, nil, fmt.Errorf("failed to lookup cursor conversation: %w", err)
 		}
+		anchorCreatedAt = &cursorDoc.CreatedAt
+		anchorID = &cursorDoc.ID
 	}
 
-	opts := options.Find().SetSort(bson.D{{Key: "created_at", Value: -1}}).SetLimit(int64(query.Limit + 1))
-	cur, err := s.conversations().Find(ctx, filter, opts)
+	pipeline := buildAdminConversationListPipeline(query, anchorCreatedAt, anchorID)
+	opts := buildConversationAggregateOptions(query.MetadataFilters)
+
+	cur, err := s.conversations().Aggregate(ctx, pipeline, opts)
 	if err != nil {
-		return nil, nil, fmt.Errorf("failed to admin list conversations: %w", err)
+		return nil, nil, fmt.Errorf("failed to aggregate admin conversations: %w", err)
 	}
+	defer cur.Close(ctx)
+
 	var docs []convDoc
 	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode conversations: %w", err)
+		return nil, nil, fmt.Errorf("failed to decode admin conversations: %w", err)
 	}
 
 	hasMore := len(docs) > query.Limit
@@ -3140,70 +3251,6 @@ func (s *MongoStore) AdminListChildConversations(ctx context.Context, conversati
 		}
 		summaries[i] = summary
 	}
-	var nextCursor *string
-	if hasMore && len(summaries) > 0 {
-		c := string(summaries[len(summaries)-1].ID)
-		nextCursor = &c
-	}
-	return summaries, nextCursor, nil
-}
-
-func (s *MongoStore) adminListConversationsLatestFork(ctx context.Context, baseFilter bson.M, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
-	opts := options.Find().SetSort(bson.D{{Key: "updated_at", Value: -1}, {Key: "created_at", Value: -1}, {Key: "_id", Value: -1}})
-	cur, err := s.conversations().Find(ctx, baseFilter, opts)
-	if err != nil {
-		return nil, nil, fmt.Errorf("failed to admin list conversations (latest-fork): %w", err)
-	}
-	var docs []convDoc
-	if err := cur.All(ctx, &docs); err != nil {
-		return nil, nil, fmt.Errorf("failed to decode conversations: %w", err)
-	}
-
-	seen := map[string]bool{}
-	var filtered []convDoc
-	for _, d := range docs {
-		if seen[d.ConversationGroupID] {
-			continue
-		}
-		seen[d.ConversationGroupID] = true
-		filtered = append(filtered, d)
-	}
-
-	sort.Slice(filtered, func(i, j int) bool {
-		if !filtered[i].CreatedAt.Equal(filtered[j].CreatedAt) {
-			return filtered[i].CreatedAt.After(filtered[j].CreatedAt)
-		}
-		return filtered[i].ID > filtered[j].ID
-	})
-
-	start := 0
-	if query.AfterCursor != nil {
-		for i, d := range filtered {
-			if d.ID == *query.AfterCursor {
-				start = i + 1
-				break
-			}
-		}
-	}
-	if start > len(filtered) {
-		start = len(filtered)
-	}
-	filtered = filtered[start:]
-
-	hasMore := len(filtered) > query.Limit
-	if hasMore {
-		filtered = filtered[:query.Limit]
-	}
-
-	summaries := make([]registrystore.ConversationSummary, len(filtered))
-	for i, d := range filtered {
-		summary, err := s.conversationSummaryFromDoc(ctx, d, model.AccessLevelOwner)
-		if err != nil {
-			return nil, nil, err
-		}
-		summaries[i] = summary
-	}
-
 	var nextCursor *string
 	if hasMore && len(summaries) > 0 {
 		c := string(summaries[len(summaries)-1].ID)

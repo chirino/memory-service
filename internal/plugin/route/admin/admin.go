@@ -252,12 +252,12 @@ func adminListConversations(c *gin.Context, store registrystore.MemoryStore) {
 			query.ArchivedBefore = &t
 		}
 	}
-	metadataFilter, err := registrystore.ParseMetadataFilterQuery(c.Request.URL.RawQuery)
+	metadataFilters, err := registrystore.ParseMetadataFilterQuery(c.Request.URL.RawQuery)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	query.MetadataFilter = metadataFilter
+	query.MetadataFilters = metadataFilters
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 		summaries, cursor, err := store.AdminListConversations(ctx, query)

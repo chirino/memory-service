@@ -545,13 +545,18 @@ type CapabilitiesAuth struct {
 
 // CapabilitiesFeatures defines model for CapabilitiesFeatures.
 type CapabilitiesFeatures struct {
-	CorsEnabled               bool `json:"cors_enabled"`
-	FulltextSearchEnabled     bool `json:"fulltext_search_enabled"`
-	ManagementListenerEnabled bool `json:"management_listener_enabled"`
-	OutboxEnabled             bool `json:"outbox_enabled"`
-	PrivateSourceUrlsEnabled  bool `json:"private_source_urls_enabled"`
-	S3DirectDownloadEnabled   bool `json:"s3_direct_download_enabled"`
-	SemanticSearchEnabled     bool `json:"semantic_search_enabled"`
+	// ConversationMetadataFilterVersion Version of the repeatable conversation metadata filter contract.
+	ConversationMetadataFilterVersion *int `json:"conversation_metadata_filter_version,omitempty"`
+	CorsEnabled                       bool `json:"cors_enabled"`
+	FulltextSearchEnabled             bool `json:"fulltext_search_enabled"`
+	ManagementListenerEnabled         bool `json:"management_listener_enabled"`
+
+	// MaxConversationMetadataFilters Maximum predicates accepted by one conversation list request.
+	MaxConversationMetadataFilters *int `json:"max_conversation_metadata_filters,omitempty"`
+	OutboxEnabled                  bool `json:"outbox_enabled"`
+	PrivateSourceUrlsEnabled       bool `json:"private_source_urls_enabled"`
+	S3DirectDownloadEnabled        bool `json:"s3_direct_download_enabled"`
+	SemanticSearchEnabled          bool `json:"semantic_search_enabled"`
 }
 
 // CapabilitiesResponse defines model for CapabilitiesResponse.
@@ -1335,8 +1340,13 @@ type ListConversationsParams struct {
 	// Archived Controls whether archived conversations are excluded, included, or returned exclusively.
 	Archived *ListConversationsParamsArchived `form:"archived,omitempty" json:"archived,omitempty"`
 
-	// Metadata Filter conversations by a metadata key-value pair using the form `metadata[key]=value`. Only one metadata filter is accepted per request. The key may only contain alphanumeric characters, underscores, and hyphens (dots are rejected). The comparison is an exact string match — numeric or boolean metadata values do not match a string query value. Example: `metadata[status]=waiting`.
-	Metadata *map[string]string `json:"metadata,omitempty"`
+	// Metadata Metadata filter expressions. The service combines multiple expressions with AND.
+	// A request may contain at most five expressions.
+	//
+	// Operators:
+	//   =   equal
+	//   !=  not equal
+	Metadata *[]string `form:"metadata,omitempty" json:"metadata,omitempty"`
 }
 
 // ListConversationsParamsMode defines parameters for ListConversations.
@@ -3879,7 +3889,7 @@ func NewListConversationsRequest(server string, params *ListConversationsParams)
 
 		if params.Metadata != nil {
 
-			if queryFrag, err := runtime.StyleParamWithOptions("deepObject", true, "metadata", *params.Metadata, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "object", Format: ""}); err != nil {
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "metadata", *params.Metadata, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "array", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {

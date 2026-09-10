@@ -323,8 +323,62 @@ Feature: Conversation metadata write, read, and filter (REST)
     When I call GET "/v1/conversations?metadata[status]=waiting&metadata[status]=running"
     Then the response status should be 400
 
-  Scenario: Filter with bare metadata parameter returns 400
-    When I call GET "/v1/conversations?metadata=value"
+  Scenario: Filter with repeated metadata expressions uses AND semantics
+    Given I create a conversation with request:
+    """
+    {
+      "title": "Waiting Worker 1",
+      "metadata": {
+        "status": "waiting",
+        "agent-id": "worker-1"
+      }
+    }
+    """
+    And the response status should be 201
+    And set "matchId" to the json response field "id"
+    And I create a conversation with request:
+    """
+    {
+      "title": "Waiting Worker 2",
+      "metadata": {
+        "status": "waiting",
+        "agent-id": "worker-2"
+      }
+    }
+    """
+    And the response status should be 201
+    When I call GET "/v1/conversations?mode=all&metadata=status=waiting&metadata=agent-id!=worker-2"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${matchId}"
+
+  Scenario: Filter with duplicate keys on metadata expressions uses AND
+    Given I create a conversation with request:
+    """
+    {
+      "title": "Status Running",
+      "metadata": {
+        "status": "running"
+      }
+    }
+    """
+    And the response status should be 201
+    And set "runningId" to the json response field "id"
+    When I call GET "/v1/conversations?mode=all&metadata=status=running&metadata=status!=waiting"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${runningId}"
+
+  Scenario: Filter with six metadata expressions returns 400
+    When I call GET "/v1/conversations?metadata=a=1&metadata=b=2&metadata=c=3&metadata=d=4&metadata=e=5&metadata=f=6"
+    Then the response status should be 400
+
+  Scenario: Mixing repeated metadata filter and legacy metadata[key] returns 400
+    When I call GET "/v1/conversations?metadata=status=waiting&metadata[agent]=worker"
+    Then the response status should be 400
+
+  Scenario: Filter with bare metadata parameter without equals or operator returns 400
+    When I call GET "/v1/conversations?metadata=status"
     Then the response status should be 400
 
   Scenario: Filter with empty metadata key returns 400

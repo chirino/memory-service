@@ -300,8 +300,45 @@ Feature: Admin conversation metadata — summaries, PATCH, and filter (REST)
     When I call GET "/v1/admin/conversations?metadata[status]=waiting&metadata[status]=running"
     Then the response status should be 400
 
-  Scenario: Admin list filter with bare metadata parameter returns 400
-    When I call GET "/v1/admin/conversations?metadata=value"
+  Scenario: Admin list filter with repeated metadata expressions uses AND semantics
+    Given I am authenticated as user "bob"
+    And I create a conversation with request:
+    """
+    {
+      "title": "Admin Waiting Worker 1",
+      "metadata": {
+        "status": "waiting",
+        "agent-id": "worker-1"
+      }
+    }
+    """
+    And the response status should be 201
+    And set "matchAdminId" to the json response field "id"
+    And I create a conversation with request:
+    """
+    {
+      "title": "Admin Waiting Worker 2",
+      "metadata": {
+        "status": "waiting",
+        "agent-id": "worker-2"
+      }
+    }
+    """
+    And the response status should be 201
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?userId=bob&mode=all&metadata=status=waiting&metadata=agent-id!=worker-2"
+    Then the response status should be 200
+    And the response should contain 1 conversation
+    And the response body "data[0].id" should be "${matchAdminId}"
+
+  Scenario: Admin list filter with six metadata expressions returns 400
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?metadata=a=1&metadata=b=2&metadata=c=3&metadata=d=4&metadata=e=5&metadata=f=6"
+    Then the response status should be 400
+
+  Scenario: Admin list mixing repeated metadata filter and legacy metadata[key] returns 400
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations?metadata=status=waiting&metadata[agent]=worker"
     Then the response status should be 400
 
   Scenario: Admin list filter with empty metadata key returns 400

@@ -175,6 +175,18 @@ message CreateConversationRequest {
   optional bytes forked_at_entry_id = 6; // UUID as 16-byte big-endian
 }
 
+enum ConversationMetadataComparison {
+  CONVERSATION_METADATA_COMPARISON_UNSPECIFIED = 0;
+  CONVERSATION_METADATA_COMPARISON_EQUAL = 1;
+  CONVERSATION_METADATA_COMPARISON_NOT_EQUAL = 2;
+}
+
+message ConversationMetadataFilter {
+  string key = 1;
+  ConversationMetadataComparison comparison = 2;
+  string value = 3;
+}
+
 message ListConversationsRequest {
   // Controls which conversations are returned from each fork tree.
   // See ConversationListMode for details on each mode.
@@ -184,11 +196,11 @@ message ListConversationsRequest {
   PageRequest page = 3;
   ConversationAncestryFilter ancestry = 4;
   ArchiveFilter archived = 5;
-  // Optional metadata key-value filter. Only one metadata filter is accepted per request.
-  // The key may only contain alphanumeric characters, underscores, and hyphens (dots are rejected).
-  // The comparison is an exact string match — numeric or boolean metadata values do not match a string query value.
-  optional string metadata_filter_key = 6;
-  optional string metadata_filter_value = 7;
+  // Optional deprecated metadata key-value filter.
+  optional string metadata_filter_key = 6 [deprecated = true];
+  optional string metadata_filter_value = 7 [deprecated = true];
+  // At most five predicates. The service combines them with AND.
+  repeated ConversationMetadataFilter metadata_filters = 8;
 }
 
 message ListConversationsResponse {
@@ -411,11 +423,11 @@ message AdminListConversationsRequest {
   optional google.protobuf.Timestamp archived_before = 9;
   // Optional: admin/auditor justification, logged for admin access.
   optional string justification = 10;
-  // Optional metadata key-value filter. Only one metadata filter is accepted per request.
-  // The key may only contain alphanumeric characters, underscores, and hyphens (dots are rejected).
-  // The comparison is an exact string match — numeric or boolean metadata values do not match a string query value.
-  optional string metadata_filter_key = 11;
-  optional string metadata_filter_value = 12;
+  // Optional deprecated metadata key-value filter.
+  optional string metadata_filter_key = 11 [deprecated = true];
+  optional string metadata_filter_value = 12 [deprecated = true];
+  // At most five predicates. The service combines them with AND.
+  repeated ConversationMetadataFilter metadata_filters = 13;
 }
 
 message AdminListConversationsResponse {
@@ -1060,6 +1072,8 @@ message CapabilitiesFeatures {
   bool management_listener_enabled = 5;
   bool private_source_urls_enabled = 6;
   bool s3_direct_download_enabled = 7;
+  uint32 conversation_metadata_filter_version = 8;
+  uint32 max_conversation_metadata_filters = 9;
 }
 
 message CapabilitiesAuth {

@@ -36,7 +36,11 @@ func TestFeaturesAuthFixturesSQLite(t *testing.T) {
 	featureFiles := []string{
 		filepath.Join("testdata", "features", "admin-memories-rest.feature"),
 		filepath.Join("testdata", "features", "capabilities-rest.feature"),
+		filepath.Join("testdata", "features", "conversation-metadata-rest.feature"),
+		filepath.Join("testdata", "features", "admin-conversation-metadata-rest.feature"),
 		filepath.Join("testdata", "features", "multi-agent-memory-rest.feature"),
+		filepath.Join("testdata", "features-grpc", "capabilities-grpc.feature"),
+		filepath.Join("testdata", "features-grpc", "metadata-and-conversation-patch-grpc.feature"),
 		filepath.Join("testdata", "features-grpc", "admin-memories-grpc.feature"),
 	}
 	runBDDFeaturesWithScenarioSetupAndTags(t, "auth-fixtures-sqlite", featureFiles, "", "", &cfg, nil, nil, newSQLiteScenarioSetup(t, cfg), bddScenarioConcurrency(), sqliteTagFilter())

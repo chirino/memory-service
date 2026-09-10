@@ -1424,11 +1424,15 @@ export type AdminListConversationsData = {
      */
     limit?: number;
     /**
-     * Filter conversations by a metadata key-value pair using the form `metadata[key]=value`. Only one metadata filter is accepted per request. The key may only contain alphanumeric characters, underscores, and hyphens (dots are rejected). The comparison is an exact string match — numeric or boolean metadata values do not match a string query value. Example: `metadata[status]=waiting`.
+     * Metadata filter expressions. The service combines multiple expressions with AND.
+     * A request may contain at most five expressions.
+     *
+     * Operators:
+     * =   equal
+     * !=  not equal
+     *
      */
-    metadata?: {
-      [key: string]: string;
-    };
+    metadata?: Array<string>;
     /**
      * Reason for this admin action (for audit log).
      */

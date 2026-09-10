@@ -93,12 +93,12 @@ curl "http://localhost:8080/v1/admin/conversations?archived=include" \
 curl "http://localhost:8080/v1/admin/conversations?archived=only" \
   -H "Authorization: Bearer <admin-token>"
 
-# Filter by an exact string metadata value
-curl --globoff "http://localhost:8080/v1/admin/conversations?metadata[status]=waiting" \
+# Filter by repeatable metadata predicates (combined with AND, up to 5)
+curl "http://localhost:8080/v1/admin/conversations?metadata=status=waiting&metadata=env!=prod" \
   -H "Authorization: Bearer <admin-token>"
 ```
 
-Only one metadata filter is accepted per request. Metadata filter keys may contain alphanumeric characters, underscores, and hyphens; dots are rejected. Matching is exact and string-only, so numeric and boolean metadata values do not match the query value.
+A request accepts at most five metadata filter expressions. Supported operators are `=` and `!=`. Metadata filter keys may contain alphanumeric characters, underscores, and hyphens (`[A-Za-z0-9_-]`); dots are rejected. Matching is exact and string-only, so missing, null, numeric, boolean, array, and object metadata values do not match either operator.
 
 Similarly, entries, memberships, forks, attachments, episodic memories, and semantic search all have admin counterparts that bypass ownership checks. Admin conversation payloads expose the `metadata` map and an `archived` boolean so clients can inspect conversation state without depending on storage timestamps.
 

@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	"github.com/chirino/memory-service/internal/config"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/runtimeversion"
 )
 
@@ -26,13 +27,15 @@ type TechSummary struct {
 }
 
 type FeatureSummary struct {
-	OutboxEnabled             bool `json:"outbox_enabled"`
-	SemanticSearchEnabled     bool `json:"semantic_search_enabled"`
-	FulltextSearchEnabled     bool `json:"fulltext_search_enabled"`
-	CorsEnabled               bool `json:"cors_enabled"`
-	ManagementListenerEnabled bool `json:"management_listener_enabled"`
-	PrivateSourceURLsEnabled  bool `json:"private_source_urls_enabled"`
-	S3DirectDownloadEnabled   bool `json:"s3_direct_download_enabled"`
+	OutboxEnabled                     bool   `json:"outbox_enabled"`
+	SemanticSearchEnabled             bool   `json:"semantic_search_enabled"`
+	FulltextSearchEnabled             bool   `json:"fulltext_search_enabled"`
+	CorsEnabled                       bool   `json:"cors_enabled"`
+	ManagementListenerEnabled         bool   `json:"management_listener_enabled"`
+	PrivateSourceURLsEnabled          bool   `json:"private_source_urls_enabled"`
+	S3DirectDownloadEnabled           bool   `json:"s3_direct_download_enabled"`
+	ConversationMetadataFilterVersion uint32 `json:"conversation_metadata_filter_version,omitempty"`
+	MaxConversationMetadataFilters    uint32 `json:"max_conversation_metadata_filters,omitempty"`
 }
 
 type AuthSummary struct {
@@ -74,13 +77,15 @@ func buildSummary(cfg *config.Config, info *debug.BuildInfo, ok bool) Summary {
 			Embedder:    normalizedEmbedder(cfg),
 		},
 		Features: FeatureSummary{
-			OutboxEnabled:             cfg.OutboxEnabled,
-			SemanticSearchEnabled:     cfg.SearchSemanticEnabled && vector != "none",
-			FulltextSearchEnabled:     cfg.SearchFulltextEnabled,
-			CorsEnabled:               cfg.CORSEnabled,
-			ManagementListenerEnabled: cfg.ManagementListenerEnabled,
-			PrivateSourceURLsEnabled:  cfg.AllowPrivateSourceURLs,
-			S3DirectDownloadEnabled:   cfg.S3DirectDownload,
+			OutboxEnabled:                     cfg.OutboxEnabled,
+			SemanticSearchEnabled:             cfg.SearchSemanticEnabled && vector != "none",
+			FulltextSearchEnabled:             cfg.SearchFulltextEnabled,
+			CorsEnabled:                       cfg.CORSEnabled,
+			ManagementListenerEnabled:         cfg.ManagementListenerEnabled,
+			PrivateSourceURLsEnabled:          cfg.AllowPrivateSourceURLs,
+			S3DirectDownloadEnabled:           cfg.S3DirectDownload,
+			ConversationMetadataFilterVersion: 1,
+			MaxConversationMetadataFilters:    uint32(registrystore.MaxConversationMetadataPredicates),
 		},
 		Auth: AuthSummary{
 			OIDCEnabled:                strings.TrimSpace(cfg.OIDCIssuer) != "",

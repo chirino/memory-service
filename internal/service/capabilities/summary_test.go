@@ -47,6 +47,9 @@ func TestBuildSummaryMapsConfiguredCapabilities(t *testing.T) {
 	if !summary.Features.OutboxEnabled || !summary.Features.SemanticSearchEnabled || !summary.Features.FulltextSearchEnabled {
 		t.Fatalf("unexpected features summary: %+v", summary.Features)
 	}
+	if summary.Features.ConversationMetadataFilterVersion != 1 || summary.Features.MaxConversationMetadataFilters != 5 {
+		t.Fatalf("unexpected metadata filter capabilities: %+v", summary.Features)
+	}
 	if !summary.Auth.OIDCEnabled || !summary.Auth.APIKeyEnabled || !summary.Auth.AdminJustificationRequired || !summary.Auth.UserIDAssertionEnabled {
 		t.Fatalf("unexpected auth summary: %+v", summary.Auth)
 	}

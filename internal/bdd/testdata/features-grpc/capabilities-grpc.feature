@@ -15,6 +15,8 @@ Feature: Client capabilities gRPC API
     And the gRPC response field "tech.store" should not be null
     And the gRPC response field "tech.eventBus" should not be null
     And the gRPC response field "features.outboxEnabled" should not be null
+    And the gRPC response field "features.conversationMetadataFilterVersion" should be 1
+    And the gRPC response field "features.maxConversationMetadataFilters" should be 5
     And the gRPC response field "auth.apiKeyEnabled" should not be null
     And the gRPC response field "auth.userIdAssertionEnabled" should not be null
     And the gRPC response field "security.encryptionEnabled" should not be null

@@ -74,6 +74,14 @@ export type CapabilitiesFeatures = {
   management_listener_enabled: boolean;
   private_source_urls_enabled: boolean;
   s3_direct_download_enabled: boolean;
+  /**
+   * Version of the repeatable conversation metadata filter contract.
+   */
+  conversation_metadata_filter_version?: number;
+  /**
+   * Maximum predicates accepted by one conversation list request.
+   */
+  max_conversation_metadata_filters?: number;
 };
 
 export type CapabilitiesAuth = {
@@ -929,11 +937,15 @@ export type ListConversationsData = {
      */
     archived?: "exclude" | "include" | "only";
     /**
-     * Filter conversations by a metadata key-value pair using the form `metadata[key]=value`. Only one metadata filter is accepted per request. The key may only contain alphanumeric characters, underscores, and hyphens (dots are rejected). The comparison is an exact string match — numeric or boolean metadata values do not match a string query value. Example: `metadata[status]=waiting`.
+     * Metadata filter expressions. The service combines multiple expressions with AND.
+     * A request may contain at most five expressions.
+     *
+     * Operators:
+     * =   equal
+     * !=  not equal
+     *
      */
-    metadata?: {
-      [key: string]: string;
-    };
+    metadata?: Array<string>;
   };
   url: "/v1/conversations";
 };

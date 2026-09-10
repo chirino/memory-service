@@ -150,9 +150,7 @@ export class ConversationsService {
       limit?: number;
       query?: string;
       archived?: "exclude" | "include" | "only";
-      metadata?: {
-        [key: string]: string;
-      };
+      metadata?: Array<string>;
     },
     options?: Options<never, ThrowOnError>,
   ) {
