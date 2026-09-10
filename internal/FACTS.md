@@ -176,7 +176,7 @@
 
 **Latest-fork query structure**: PostgreSQL, SQLite, and MongoDB public `ListConversations` apply archive, ancestry, and metadata filters to the base query BEFORE mode-specific collapse. `mode=latest-fork` uses `ROW_NUMBER() OVER (PARTITION BY conversation_group_id ORDER BY updated_at DESC, created_at DESC, id DESC)` in a ranked subquery (or MongoDB aggregation `$sort` + `$group`), then filters `group_rank=1` and applies `afterCursor` to the collapsed result. This ensures metadata filters see all group members before selecting the latest matching representative.
 
-**MongoDB conversation-list memory use**: MongoDB agent and admin conversation listing uses aggregation pipelines with `allowDiskUse` enabled, performing membership authorization and latest-fork deduplication in MongoDB so Go memory remains `O(limit)`.
+**MongoDB conversation-list memory use**: MongoDB agent and admin conversation listing uses aggregation pipelines with `allowDiskUse` enabled, performing membership authorization and latest-fork deduplication in MongoDB so Go memory remains `O(limit)`. The agent pipeline starts from `conversation_memberships`, matches `user_id` through the `(user_id, conversation_group_id)` index, and joins only the caller's conversation groups; do not move authorization behind a global conversation scan.
 
 **Conversation-list cursor tie behavior**: PostgreSQL, SQLite, and MongoDB agent/admin conversation lists standardize on `(created_at DESC, id DESC)` with keyset cursor comparison `(created_at < anchor.created_at OR (created_at = anchor.created_at AND id < anchor.id))` preserving the conversation ID wire cursor format.
 

@@ -115,12 +115,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 				Options: options.Index().SetName("conversations_metadata_wildcard"),
 			},
 		},
-		"conversation_memberships": {
-			{
-				Keys:    bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "user_id", Value: 1}},
-				Options: options.Index().SetUnique(true),
-			},
-		},
+		"conversation_memberships": conversationMembershipIndexes(),
 		"conversation_ancestry": {
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "parent_conversation_id", Value: 1}, {Key: "_id", Value: 1}}},
@@ -296,6 +291,19 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 
 	log.Info("MongoDB schema migration complete")
 	return nil
+}
+
+func conversationMembershipIndexes() []mongo.IndexModel {
+	return []mongo.IndexModel{
+		{
+			Keys:    bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "user_id", Value: 1}},
+			Options: options.Index().SetUnique(true),
+		},
+		{
+			Keys:    bson.D{{Key: "user_id", Value: 1}, {Key: "conversation_group_id", Value: 1}},
+			Options: options.Index().SetName("conversation_memberships_user_group"),
+		},
+	}
 }
 
 func mongoRequireCurrentSchemaOrEmpty(ctx context.Context, db *mongo.Database) error {
@@ -1189,9 +1197,9 @@ func buildConversationAggregateOptions(metadataFilters []registrystore.Conversat
 }
 
 func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Time, anchorID *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilters []registrystore.ConversationMetadataPredicate) mongo.Pipeline {
-	pipeline := mongo.Pipeline{}
-
-	// 1. Initial base match (archive, ancestry, metadata)
+	// Build the conversation-side filter before joining from the authenticated
+	// user's memberships. This keeps the authorization work proportional to the
+	// groups the caller can access instead of all conversations in the service.
 	baseMatch := bson.M{}
 	switch archived {
 	case registrystore.ArchiveFilterInclude:
@@ -1216,31 +1224,30 @@ func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Ti
 		}
 	}
 
-	if len(baseMatch) > 0 {
-		pipeline = append(pipeline, bson.D{{Key: "$match", Value: baseMatch}})
+	pipeline := mongo.Pipeline{
+		bson.D{{Key: "$match", Value: bson.M{"user_id": userID}}},
 	}
 
-	// 2. Lookup and unwind membership for agent list
+	// 1. Join the conversations in each authorized group and apply conversation
+	// filters inside that bounded lookup.
 	pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
-		"from": "conversation_memberships",
-		"let":  bson.M{"gid": "$conversation_group_id"},
+		"from":         "conversations",
+		"localField":   "conversation_group_id",
+		"foreignField": "conversation_group_id",
 		"pipeline": mongo.Pipeline{
-			bson.D{{Key: "$match", Value: bson.M{
-				"$expr": bson.M{
-					"$and": bson.A{
-						bson.M{"$eq": bson.A{"$conversation_group_id", "$$gid"}},
-						bson.M{"$eq": bson.A{"$user_id", userID}},
-					},
-				},
-			}}},
+			bson.D{{Key: "$match", Value: baseMatch}},
 		},
-		"as": "user_membership",
+		"as": "conversation",
 	}}})
-	pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$user_membership"}})
-	pipeline = append(pipeline, bson.D{{Key: "$addFields", Value: bson.M{"access_level": "$user_membership.access_level"}}})
-	pipeline = append(pipeline, bson.D{{Key: "$project", Value: bson.M{"user_membership": 0}}})
+	pipeline = append(pipeline, bson.D{{Key: "$unwind", Value: "$conversation"}})
+	pipeline = append(pipeline, bson.D{{Key: "$replaceRoot", Value: bson.M{
+		"newRoot": bson.M{"$mergeObjects": bson.A{
+			"$conversation",
+			bson.M{"access_level": "$access_level"},
+		}},
+	}}})
 
-	// 3. For mode=roots, lookup conversation_ancestry and retain documents without parent
+	// 2. For mode=roots, lookup conversation_ancestry and retain documents without parent
 	if mode == model.ListModeRoots {
 		pipeline = append(pipeline, bson.D{{Key: "$lookup", Value: bson.M{
 			"from":         "conversation_ancestry",
@@ -1255,7 +1262,7 @@ func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Ti
 		pipeline = append(pipeline, bson.D{{Key: "$project", Value: bson.M{"ancestry_info": 0}}})
 	}
 
-	// 4. For mode=latest-fork, sort by (updated_at DESC, created_at DESC, _id DESC), group by conversation_group_id
+	// 3. For mode=latest-fork, sort by (updated_at DESC, created_at DESC, _id DESC), group by conversation_group_id
 	if mode == model.ListModeLatestFork {
 		pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
 			{Key: "updated_at", Value: -1},
@@ -1269,7 +1276,7 @@ func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Ti
 		pipeline = append(pipeline, bson.D{{Key: "$replaceRoot", Value: bson.M{"newRoot": "$doc"}}})
 	}
 
-	// 5. Cursor filter
+	// 4. Cursor filter
 	if anchorCreatedAt != nil && anchorID != nil {
 		pipeline = append(pipeline, bson.D{{Key: "$match", Value: bson.M{
 			"$or": bson.A{
@@ -1282,13 +1289,13 @@ func buildPublicConversationListPipeline(userID string, anchorCreatedAt *time.Ti
 		}}})
 	}
 
-	// 6. Final sort
+	// 5. Final sort
 	pipeline = append(pipeline, bson.D{{Key: "$sort", Value: bson.D{
 		{Key: "created_at", Value: -1},
 		{Key: "_id", Value: -1},
 	}}})
 
-	// 7. Limit + 1
+	// 6. Limit + 1
 	pipeline = append(pipeline, bson.D{{Key: "$limit", Value: int64(limit + 1)}})
 	return pipeline
 }
@@ -1428,7 +1435,7 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 	pipeline := buildPublicConversationListPipeline(userID, anchorCreatedAt, anchorID, limit, mode, ancestry, archived, metadataFilters)
 	opts := buildConversationAggregateOptions(metadataFilters)
 
-	cur, err := s.conversations().Aggregate(ctx, pipeline, opts)
+	cur, err := s.memberships().Aggregate(ctx, pipeline, opts)
 	if err != nil {
 		return nil, nil, fmt.Errorf("failed to aggregate conversations: %w", err)
 	}

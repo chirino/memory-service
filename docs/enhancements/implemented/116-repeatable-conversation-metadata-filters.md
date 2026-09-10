@@ -257,17 +257,17 @@ Each equality predicate combines the current direct field equality with an `$exp
 
 The metadata wildcard index can support direct equality conditions. Negative conditions are usually less selective, and the `$expr` type check prevents an index-only result. Documentation must not claim that not-equal filters have the same index behavior as equality filters.
 
-No MongoDB index migration is required. Membership lookup uses the existing unique `(conversation_group_id, user_id)` index, roots lookup uses the ancestry collection's `_id` index, and metadata equality can use the existing wildcard index. Operators must still expect negative predicates and representative sorting to examine more records.
+MongoDB adds a non-unique `(user_id, conversation_group_id)` membership index so an agent list starts with the authenticated user's groups. The existing unique `(conversation_group_id, user_id)` index still enforces membership uniqueness. Roots lookup uses the ancestry collection's `_id` index, and metadata equality can use the existing wildcard index. Operators must still expect negative predicates and representative sorting to examine more records.
 
-The current public list preloads every membership for the user, and the public and admin `latest-fork` helpers load every filtered conversation candidate into Go. That violates the page-memory requirement even if only conversation decoding is fixed. Replace the MongoDB agent and admin conversation-list query paths with aggregation pipelines. The public pipeline uses the existing unique `(conversation_group_id, user_id)` membership index in a `$lookup`, unwinds the one matching membership, and carries its access level into the result. The admin pipeline omits this authorization stage.
+The current public list preloads every membership for the user, and the public and admin `latest-fork` helpers load every filtered conversation candidate into Go. That violates the page-memory requirement even if only conversation decoding is fixed. Replace the MongoDB agent and admin conversation-list query paths with aggregation pipelines. The public pipeline starts from `conversation_memberships`, uses the `(user_id, conversation_group_id)` index to select only the authenticated user's groups, looks up matching conversations, and carries the membership access level into each result. The admin pipeline starts from conversations because it has no membership restriction.
 
 The pipelines perform these stages as applicable:
 
-1. `$match` archive, async-parent ancestry, admin, and metadata conditions.
-2. For agent lists, `$lookup` and `$unwind` the authenticated user's membership.
+1. For agent lists, match the authenticated user's memberships before joining conversations. Admin lists match archive, async-parent ancestry, admin, and metadata conditions on the conversation collection.
+2. For agent lists, `$lookup` conversations in those groups, apply archive, async-parent ancestry, and metadata conditions inside the join, then merge the membership access level into each conversation result.
 3. For `mode=roots`, `$lookup` the conversation ancestry document by conversation ID and retain documents without a fork parent.
 4. For `mode=latest-fork`, `$sort` by `(updated_at DESC, created_at DESC, _id DESC)`, then `$group` by `conversation_group_id` and retain the first document.
-5. Restore the conversation document as the aggregation root while retaining the agent access level when applicable.
+5. Restore the selected conversation document as the aggregation root after representative selection.
 6. Apply the standardized result order and cursor predicate described below.
 7. `$limit` to `limit + 1`.
 
@@ -294,7 +294,7 @@ No datastore may post-filter metadata predicates in Go. PostgreSQL and SQLite ke
 
 ### Compatibility
 
-This enhancement does not change persisted data, datastore schemas, or metadata values. It needs no migration.
+This enhancement does not change persisted documents or metadata values. MongoDB startup creates the new membership index idempotently on existing data, so the change needs no schema-version bump or data migration.
 
 The OpenAPI REST representation changes, and generated Go and TypeScript clients expose a list of expression strings instead of a string map. The server-side legacy REST path gives existing clients a transition period even though it is no longer advertised in OpenAPI. The gRPC change is additive on the wire, and the old field numbers remain available and deprecated.
 
@@ -408,7 +408,7 @@ Scenario: Admin gRPC rejects more than five metadata predicates
 
 Unit tests for `internal/registry/store` cover expression parsing, transport-independent validation, the five-predicate boundary, duplicate-key preservation, legacy REST and gRPC conversion, mixed-form rejection, and cursor-anchor validation where applicable.
 
-Store tests run the same equality, not-equal, type, duplicate-key, same-timestamp pagination, invalid-cursor, and `latest-fork` cases against PostgreSQL, SQLite, and MongoDB. MongoDB tests also create more candidates and memberships than the page limit and confirm that the aggregation returns at most `limit + 1` result documents to Go. A pipeline-construction test verifies that metadata `$match` and membership authorization precede representative selection, the final `$limit` is `limit + 1`, and aggregation enables disk use.
+Store tests run the same equality, not-equal, type, duplicate-key, same-timestamp pagination, invalid-cursor, and `latest-fork` cases against PostgreSQL, SQLite, and MongoDB. MongoDB tests also create more candidates and memberships than the page limit and confirm that the aggregation returns at most `limit + 1` result documents to Go. A pipeline-construction test verifies that the public pipeline starts with a user membership match backed by a `user_id`-leading index, conversation metadata filtering occurs in the join before representative selection, the final `$limit` is `limit + 1`, and aggregation enables disk use.
 
 Capability tests verify the REST and gRPC values and document that missing or zero values mean unsupported. Regeneration checks the Go OpenAPI server and client types, Go protobuf types, both TypeScript clients, and Python protobuf stubs. Java compile checks the Quarkus and Spring REST and protobuf client modules against the updated contracts.
 
@@ -424,6 +424,7 @@ Capability tests verify the REST and gRPC values and document that missing or ze
 - [x] Apply all predicates in PostgreSQL before fork selection and pagination.
 - [x] Apply all predicates in SQLite before fork selection and pagination.
 - [x] Apply all predicates in MongoDB with `$and` and string type guards.
+- [x] Add a MongoDB membership index led by `user_id` for agent conversation listing.
 - [x] Move MongoDB agent/admin conversation listing, membership authorization, roots selection, latest-fork collapse, sorting, and limiting into aggregation pipelines with disk use enabled.
 - [x] Standardize agent and admin conversation-list ordering and cursor predicates on `(created_at DESC, id DESC)` in all stores.
 - [x] Regenerate Go, TypeScript, and Python contract artifacts.

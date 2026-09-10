@@ -16,6 +16,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.mongodb.org/mongo-driver/v2/bson"
+	mongodriver "go.mongodb.org/mongo-driver/v2/mongo"
 	"go.mongodb.org/mongo-driver/v2/mongo/options"
 )
 
@@ -46,6 +47,7 @@ func TestMongoMetadataFilterLatestMatchingFork(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, public, 1)
 	assert.Equal(t, root.ID, public[0].ID)
+	assert.Equal(t, model.AccessLevelOwner, public[0].AccessLevel)
 
 	admin, _, err := store.AdminListConversations(ctx, registrystore.AdminConversationQuery{
 		Mode: model.ListModeLatestFork, Ancestry: model.ConversationAncestryRoots,
@@ -342,25 +344,35 @@ func TestMongoMetadataFilterPipelineStructure(t *testing.T) {
 	require.NotNil(t, actualOpts.Collation)
 	assert.Equal(t, "simple", actualOpts.Collation.Locale)
 
-	// Check stage ordering, exact sort keys, and presence in public pipeline
-	var matchIdx, lookupIdx, groupIdx, sortIdx, limitIdx int = -1, -1, -1, -1, -1
+	// The public pipeline must start from the authenticated user's memberships.
+	// Starting from conversations makes each request examine unrelated tenants'
+	// conversations before authorization can discard them.
+	require.NotEmpty(t, publicPipeline)
+	firstStage := publicPipeline[0]
+	require.Len(t, firstStage, 1)
+	assert.Equal(t, "$match", firstStage[0].Key)
+	assert.Equal(t, bson.M{"user_id": "user1"}, firstStage[0].Value)
+
+	// Check stage ordering, exact sort keys, and presence in public pipeline.
+	var lookupIdx, groupIdx, sortIdx, limitIdx int = -1, -1, -1, -1
 	var finalSortDoc bson.D
 	for i, stage := range publicPipeline {
 		for _, elem := range stage {
 			switch elem.Key {
-			case "$match":
-				if matchIdx == -1 {
-					matchIdx = i
-					// Check that metadata is inside this initial match as explicit $and
-					m, ok := elem.Value.(bson.M)
+			case "$lookup":
+				lookup, ok := elem.Value.(bson.M)
+				if ok && lookup["from"] == "conversations" && lookupIdx == -1 {
+					lookupIdx = i
+					lookupPipeline, ok := lookup["pipeline"].(mongodriver.Pipeline)
 					require.True(t, ok)
-					andClauses, ok := m["$and"].(bson.A)
+					require.Len(t, lookupPipeline, 1)
+					require.Len(t, lookupPipeline[0], 1)
+					assert.Equal(t, "$match", lookupPipeline[0][0].Key)
+					conversationMatch, ok := lookupPipeline[0][0].Value.(bson.M)
+					require.True(t, ok)
+					andClauses, ok := conversationMatch["$and"].(bson.A)
 					require.True(t, ok)
 					assert.Len(t, andClauses, 2)
-				}
-			case "$lookup":
-				if lookupIdx == -1 {
-					lookupIdx = i
 				}
 			case "$group":
 				if groupIdx == -1 {
@@ -378,8 +390,7 @@ func TestMongoMetadataFilterPipelineStructure(t *testing.T) {
 		}
 	}
 
-	assert.NotEqual(t, -1, matchIdx, "initial $match should be present")
-	assert.NotEqual(t, -1, lookupIdx, "membership $lookup should be present for public list")
+	assert.NotEqual(t, -1, lookupIdx, "conversation $lookup should be present for public list")
 	assert.NotEqual(t, -1, groupIdx, "latest-fork $group should be present")
 	assert.NotEqual(t, -1, sortIdx, "final $sort should be present")
 	assert.NotEqual(t, -1, limitIdx, "final $limit should be present")
@@ -388,11 +399,19 @@ func TestMongoMetadataFilterPipelineStructure(t *testing.T) {
 	expectedSort := bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}
 	assert.Equal(t, expectedSort, finalSortDoc)
 
-	// metadata $match precedes public membership $lookup and latest-fork $group
-	assert.True(t, matchIdx < lookupIdx, "match must precede lookup")
-	assert.True(t, lookupIdx < groupIdx, "lookup must precede group")
+	// Membership restriction precedes the conversation join and representative selection.
+	assert.True(t, lookupIdx < groupIdx, "conversation lookup must precede group")
 	// final stable sort precedes final $limit
 	assert.True(t, sortIdx < limitIdx, "sort must precede limit")
+
+	// The migration supplies an index whose prefix supports the initial user match.
+	foundUserMembershipIndex := false
+	for _, index := range conversationMembershipIndexes() {
+		if assert.ObjectsAreEqual(index.Keys, bson.D{{Key: "user_id", Value: 1}, {Key: "conversation_group_id", Value: 1}}) {
+			foundUserMembershipIndex = true
+		}
+	}
+	assert.True(t, foundUserMembershipIndex, "membership indexes must support lookup by user_id")
 
 	// Admin pipeline test (should not contain membership lookup)
 	adminQuery := registrystore.AdminConversationQuery{
