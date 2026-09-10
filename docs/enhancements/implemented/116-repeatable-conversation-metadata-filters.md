@@ -4,7 +4,7 @@ status: implemented
 
 # Enhancement 116: Repeatable conversation metadata filters
 
-> **Status**: Implemented.
+> **Status**: Implemented. The hand-written Quarkus, Spring, Python, and TypeScript convenience clients now expose the REST metadata filter parameter. Site documentation covers REST, gRPC, admin, capabilities, and the max-five rule.
 
 ## Summary
 
@@ -433,6 +433,13 @@ Capability tests verify the REST and gRPC values and document that missing or ze
 - [x] Update agent and admin conversation documentation with equality, not-equal, repeated-filter, limit, compatibility, and rollout examples.
 - [x] Update `internal/FACTS.md` and this enhancement as implementation details become final.
 - [x] Run the verification commands below.
+- [x] Add `metadata` overload to Quarkus `MemoryServiceProxy` and fix `UnixSocketRestClientFactory`/`UnixSocketHttpClient` to serialize collections as repeated query parameters.
+- [x] Add `metadata` overload to Spring `MemoryServiceProxy`.
+- [x] Add `metadata: list[str] | None` to Python `MemoryServiceProxy.list_conversations`.
+- [x] Add `metadata?: string[] | null` to TypeScript `createMemoryServiceProxy().listConversations`; update `compactQuery` to use `URLSearchParams.append` for array values.
+- [x] Add gRPC typed `metadata_filters` examples with capability-detection guidance to Quarkus and Spring gRPC client docs.
+- [x] Add Java REST convenience-client examples to Quarkus and Spring REST client docs.
+- [x] Add Python and TypeScript convenience-client examples to their respective docs pages.
 
 ## Files to Modify
 
@@ -456,8 +463,15 @@ Capability tests verify the REST and gRPC values and document that missing or ze
 | Generated TypeScript clients | `frontends/chat-frontend/src/client/`, `frontends/developer/src/api/generated/` |
 | Generated Python protobuf | `python/langchain/memory_service_langchain/grpc/memory/v1/memory_service_pb2.py` |
 | User documentation | `site/src/pages/docs/concepts/conversations.md`, `site/src/pages/docs/concepts/admin-apis.mdx` |
-| Repository knowledge | `internal/FACTS.md` |
-| Enhancement status | `docs/enhancements/116-repeatable-conversation-metadata-filters.md` |
+| Quarkus convenience client | `java/quarkus/memory-service-extension/runtime/src/main/java/io/github/chirino/memory/runtime/MemoryServiceProxy.java`, `UnixSocketHttpClient.java`, `UnixSocketRestClientFactory.java` |
+| Quarkus client test | `java/quarkus/memory-service-extension/runtime/src/test/java/io/github/chirino/memory/runtime/UnixSocketMetadataQueryTest.java` |
+| Spring convenience client | `java/spring/memory-service-rest-spring/src/main/java/io/github/chirino/memoryservice/client/MemoryServiceProxy.java` |
+| Python convenience client | `python/langchain/memory_service_langchain/proxy.py` |
+| Python client test | `python/langchain/tests/test_proxy_metadata.py` |
+| TypeScript convenience client | `typescript/vercelai/src/index.ts` |
+| Client documentation | `site/src/pages/docs/quarkus/grpc-client.mdx`, `site/src/pages/docs/quarkus/rest-client.mdx`, `site/src/pages/docs/spring/grpc-client.mdx`, `site/src/pages/docs/spring/rest-client.mdx`, `site/src/pages/docs/python-langchain/conversation-history.mdx`, `site/src/pages/docs/typescript-vecelai/conversation-history.mdx` |
+| Repository knowledge | `internal/FACTS.md`, `AGENTS.md` |
+| Enhancement status | `docs/enhancements/implemented/116-repeatable-conversation-metadata-filters.md` |
 
 Java REST and protobuf sources are generated under Maven `target` directories and are not committed. The Quarkus and Spring REST and protobuf modules compile the updated contracts during verification.
 

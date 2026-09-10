@@ -69,6 +69,25 @@ curl -NsSfX POST http://localhost:9090/chat/52b0f67a-6d8a-4d35-a2e5-8abf0e7f1c22
 
 </TestScenario>
 
+## Filtering conversations by metadata
+
+`listConversations` accepts a `metadata` array of filter expressions. The service combines them with `AND` and supports at most five predicates.
+
+```typescript
+import { createMemoryServiceProxy } from "@chirino/memory-service-vercelai";
+
+const proxy = createMemoryServiceProxy(config);
+
+const res1 = await proxy.listConversations({ metadata: ["status=waiting"] });
+
+const res2 = await proxy.listConversations({
+  metadata: ["status=waiting", "agent-id!=worker-2"],
+});
+const { conversations } = await res2.json();
+```
+
+Operators are `=` (equal) and `!=` (not equal). Matching is exact and case-sensitive against scalar string values. Missing keys, `null`, numbers, booleans, arrays, and objects do not match either operator. Filter keys may contain only ASCII letters, digits, underscores, and hyphens.
+
 ## Completed Checkpoint
 
 **Completed code**: [typescript/examples/vecelai/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/typescript/examples/vecelai/doc-checkpoints/03-with-history)

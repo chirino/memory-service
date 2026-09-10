@@ -81,9 +81,21 @@ public class ConversationsResource {
 ```java
 import io.github.chirino.memory.client.model.Channel;
 import jakarta.ws.rs.core.Response;
+import java.util.List;
 
 // List conversations
 Response response = proxy.listConversations(mode, after, limit, query);
+
+// Filter conversations by metadata (up to 5 predicates, combined with AND)
+Response filtered = proxy.listConversations(
+    "all",          // mode
+    null,           // ancestry
+    null,           // afterCursor
+    20,             // limit
+    null,           // query
+    "exclude",      // archived
+    List.of("status=waiting", "agent-id!=worker-2")  // metadata filters
+);
 
 // Get a conversation
 Response response = proxy.getConversation(conversationId);

@@ -152,6 +152,21 @@ curl -sSfX GET http://localhost:9090/v1/conversations \
 
 </TestScenario>
 
+## Filtering conversations by metadata
+
+`MemoryServiceProxy.list_conversations` accepts a `metadata` keyword argument with a list of filter expressions. The service combines them with `AND` and supports at most five predicates.
+
+```python
+response = await proxy.list_conversations(metadata=["status=waiting"])
+
+response = await proxy.list_conversations(
+    metadata=["status=waiting", "agent-id!=worker-2"]
+)
+conversations = response.json().get("conversations", [])
+```
+
+Operators are `=` (equal) and `!=` (not equal). Matching is exact and case-sensitive against scalar string values. Missing keys, `null`, numbers, booleans, arrays, and objects do not match either operator. Filter keys may contain only ASCII letters, digits, underscores, and hyphens.
+
 ## Completed Checkpoint
 
 **Completed code**: View the full implementation at [python/examples/langchain/doc-checkpoints/03-with-history](https://github.com/chirino/memory-service/tree/main/python/examples/langchain/doc-checkpoints/03-with-history)

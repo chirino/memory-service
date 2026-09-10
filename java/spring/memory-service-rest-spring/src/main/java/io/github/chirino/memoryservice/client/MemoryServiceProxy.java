@@ -16,6 +16,7 @@ import java.io.PipedInputStream;
 import java.io.PipedOutputStream;
 import java.io.UncheckedIOException;
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import org.slf4j.Logger;
@@ -149,15 +150,25 @@ public class MemoryServiceProxy {
 
     public ResponseEntity<?> listConversations(
             String mode, String afterCursor, Integer limit, String query) {
-        return listConversations(mode, afterCursor, limit, query, "exclude");
+        return listConversations(mode, afterCursor, limit, query, "exclude", null);
     }
 
     public ResponseEntity<?> listConversations(
             String mode, String afterCursor, Integer limit, String query, String archived) {
+        return listConversations(mode, afterCursor, limit, query, archived, null);
+    }
+
+    public ResponseEntity<?> listConversations(
+            String mode,
+            String afterCursor,
+            Integer limit,
+            String query,
+            String archived,
+            List<String> metadata) {
         return execute(
                 api ->
                         api.listConversationsWithHttpInfo(
-                                mode, "all", afterCursor, limit, query, archived, null),
+                                mode, "all", afterCursor, limit, query, archived, metadata),
                 HttpStatus.OK);
     }
 

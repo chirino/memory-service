@@ -85,7 +85,7 @@ public class MemoryServiceProxy {
 
     public Response listConversations(
             String mode, String ancestry, String afterCursor, Integer limit, String query) {
-        return listConversations(mode, ancestry, afterCursor, limit, query, "exclude");
+        return listConversations(mode, ancestry, afterCursor, limit, query, "exclude", null);
     }
 
     public Response listConversations(
@@ -95,11 +95,28 @@ public class MemoryServiceProxy {
             Integer limit,
             String query,
             String archived) {
+        return listConversations(mode, ancestry, afterCursor, limit, query, archived, null);
+    }
+
+    public Response listConversations(
+            String mode,
+            String ancestry,
+            String afterCursor,
+            Integer limit,
+            String query,
+            String archived,
+            List<String> metadata) {
         return execute(
                 () ->
                         conversationsApi()
                                 .listConversations(
-                                        mode, ancestry, afterCursor, limit, query, archived, null),
+                                        mode,
+                                        ancestry,
+                                        afterCursor,
+                                        limit,
+                                        query,
+                                        archived,
+                                        metadata),
                 OK,
                 "Error listing conversations");
     }

@@ -121,6 +121,61 @@ for (ConversationSummary conv : response.getConversationsList()) {
 }
 ```
 
+### Filtering by metadata
+
+The gRPC API accepts typed `ConversationMetadataFilter` predicates. Because old servers silently ignore `metadata_filters`, check capabilities before sending them.
+
+Inject a `SystemService` stub alongside the conversations stub:
+
+```java
+import io.github.chirino.memory.grpc.v1.*;
+import io.quarkus.grpc.GrpcClient;
+
+@GrpcClient("conversations")
+SystemServiceGrpc.SystemServiceBlockingStub systemClient;
+```
+
+Then check capabilities and build the request:
+
+```java
+import com.google.protobuf.Empty;
+import io.github.chirino.memory.grpc.v1.*;
+import java.util.List;
+
+CapabilitiesResponse caps = systemClient.getCapabilities(Empty.getDefaultInstance());
+CapabilitiesFeatures features = caps.getFeatures();
+int filterVersion = features.getConversationMetadataFilterVersion();
+int maxFilters = features.getMaxConversationMetadataFilters();
+
+List<ConversationMetadataFilter> predicates = List.of(
+    ConversationMetadataFilter.newBuilder()
+        .setKey("status")
+        .setComparison(ConversationMetadataComparison.CONVERSATION_METADATA_COMPARISON_EQUAL)
+        .setValue("waiting")
+        .build(),
+    ConversationMetadataFilter.newBuilder()
+        .setKey("agent-id")
+        .setComparison(ConversationMetadataComparison.CONVERSATION_METADATA_COMPARISON_NOT_EQUAL)
+        .setValue("worker-2")
+        .build()
+);
+
+ListConversationsRequest.Builder req = ListConversationsRequest.newBuilder()
+    .setPage(PageRequest.newBuilder().setPageSize(20).build());
+if (filterVersion >= 1 && maxFilters >= predicates.size()) {
+    req.addAllMetadataFilters(predicates);
+} else if (predicates.size() == 1
+        && predicates.get(0).getComparison()
+            == ConversationMetadataComparison.CONVERSATION_METADATA_COMPARISON_EQUAL) {
+    req.setMetadataFilterKey(predicates.get(0).getKey());
+    req.setMetadataFilterValue(predicates.get(0).getValue());
+}
+
+ListConversationsResponse response = conversationsClient.listConversations(req.build());
+```
+
+The capability fields `conversation_metadata_filter_version` and `max_conversation_metadata_filters` decode to `0` on servers that predate repeatable filters. Do not send `metadata_filters` unless you have observed version >= 1 and a max large enough for your predicate count from the same server deployment.
+
 ### Get Conversation
 
 ```java
