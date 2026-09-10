@@ -75,7 +75,7 @@ log "CSV generation complete."
 # Step 2: Define flows to run
 # ---------------------------------------------------------------------------
 
-FLOWS="append-throughput list-conversations list-entries search-conversations list-forks sse-fan-out"
+FLOWS="append-throughput list-conversations list-entries search-conversations list-forks"
 
 # SSE end-to-end event delivery latency benchmark (Go-native, not Hyperfoil).
 # Runs after the Hyperfoil flows so SSE connections don't interfere with

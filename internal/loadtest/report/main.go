@@ -60,15 +60,14 @@ type benchmarkRow struct {
 // A benchmark row passes SLO when its measured p99 is <= the threshold.
 // Rows not listed here use defaultSLOP99Ms.
 var sloThresholds = map[string]float64{
-	"append-throughput":          500,
-	"list-conversations":         300,
-	"list-entries":               300,
-	"search-conversations":       1000,
-	"list-forks":                 300,
-	"sse-fan-out/burst-append":   500,
-	"sse-event-delay/users-1":    500,
-	"sse-event-delay/users-10":   1000,
-	"sse-event-delay/users-50":   2000,
+	"append-throughput":        500,
+	"list-conversations":       300,
+	"list-entries":             300,
+	"search-conversations":     1000,
+	"list-forks":               300,
+	"sse-event-delay/users-1":  500,
+	"sse-event-delay/users-10": 1000,
+	"sse-event-delay/users-50": 2000,
 }
 
 const defaultSLOP99Ms = 1000
@@ -210,11 +209,10 @@ var mergedMetricBenchmarks = map[string]bool{
 // (field: statistics[].summary.percentileResponseTime + requestCount),
 // as well as the older flat format (fields: throughput, p50, p99).
 //
-// For benchmarks that use multiple named metrics across phases (e.g. sse-fan-out
-// which uses metric "sse-connection" in openConnections and "burst-append" in
-// appendBurst), each distinct metric name is emitted as a separate row named
-// "<benchmark>/<metric>".  Benchmarks listed in mergedMetricBenchmarks are
-// always collapsed into a single row regardless of metric count.
+// For benchmarks that use multiple named metrics across phases, each distinct
+// metric name is emitted as a separate row named "<benchmark>/<metric>".
+// Benchmarks listed in mergedMetricBenchmarks are always collapsed into a
+// single row regardless of metric count.
 // Single-metric benchmarks continue to be reported under the bare benchmark name.
 func loadHyperfoilResults(root string) []benchmarkRow {
 	resultsDir := filepath.Join(root, "loadtest", "results")
@@ -288,8 +286,7 @@ func loadHyperfoilResults(root string) []benchmarkRow {
 		//
 		// Group statistics entries by their "metric" field.  If all entries share
 		// the same (or empty) metric the result is a single row; if there are
-		// multiple distinct metrics (e.g. sse-fan-out) each gets its own row
-		// named "<benchmark>/<metric>".
+		// multiple distinct metrics each gets its own row named "<benchmark>/<metric>".
 		if statsArr, ok := raw["statistics"].([]any); ok && len(statsArr) > 0 {
 			// Collect per-metric accumulators.
 			type metricAcc struct {
@@ -440,22 +437,21 @@ func loadCorrectnessReport(root string) (correctnessReport, bool) {
 // ---- report generation ------------------------------------------------------
 
 // knownEndpoints is the canonical ordered list of benchmark endpoints shown in
-// the report table, including SSE (Sub-Task 6). Entries absent from the loaded
-// hyperfoil results appear as "-" rows.
+// the report table. Entries absent from the loaded hyperfoil results appear as
+// "-" rows.
 //
-// The sse-fan-out benchmark produces two distinct phases with separate metrics
-// (sse-connection for TTFB, burst-append for fan-out append latency), so it is
-// listed here as two separate rows.
+// SSE coverage is handled entirely by the Go ssedelay benchmark:
+//   - append throughput under SSE load: ssedelay users-50 (50 senders + 50 subscribers open)
+//   - end-to-end event delivery latency: ssedelay users-1/10/50
+// sse-fan-out.hf.yaml was removed because it permanently wrote entries to the
+// seeded Postgres conversations on every benchmark run (disk-fill risk) and
+// provided no coverage not already in ssedelay or append-throughput.
 var knownEndpoints = []string{
 	"append-throughput",
 	"list-conversations",
 	"list-entries",
 	"search-conversations",
 	"list-forks",
-	// sse-fan-out/sse-connection was removed: Hyperfoil cannot hold a persistent
-	// SSE stream — the 5s timeout fires on every request, producing 100% errors.
-	// SSE delivery latency is measured by the Go ssedelay benchmark instead.
-	"sse-fan-out/burst-append",
 	// SSE end-to-end event delivery latency at each concurrency ramp level.
 	// Produced by internal/loadtest/ssedelay/.
 	"sse-event-delay/users-1",

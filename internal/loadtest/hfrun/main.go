@@ -180,12 +180,11 @@ func checkStats(raw map[string]any, benchmarkName string) error {
 
 	// sloThresholds mirrors the values in report/main.go.
 	sloThresholds := map[string]float64{
-		"append-throughput":        500,
-		"list-conversations":       300,
-		"list-entries":             300,
-		"search-conversations":     1000,
-		"list-forks":               300,
-		"sse-fan-out/burst-append": 500,
+		"append-throughput":    500,
+		"list-conversations":   300,
+		"list-entries":         300,
+		"search-conversations": 1000,
+		"list-forks":           300,
 	}
 	defaultSLO := 1000.0
 
