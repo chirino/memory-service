@@ -105,6 +105,7 @@ A request accepts at most five metadata filter expressions. Supported operators 
 The admin gRPC API accepts the same typed `ConversationMetadataFilter` predicates as the agent API. The same capability check is required before sending `metadata_filters` — see the [Quarkus gRPC client](/docs/quarkus/grpc-client/#filtering-by-metadata) or [Spring gRPC client](/docs/spring/grpc-client/#filtering-by-metadata) for the capability check pattern. Once the version guard passes, build the admin request with equality and not-equal predicates:
 
 ```java
+import java.util.List;
 import io.github.chirino.memory.grpc.v1.*;
 
 AdminListConversationsRequest request = AdminListConversationsRequest.newBuilder()
