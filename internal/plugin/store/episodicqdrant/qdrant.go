@@ -11,8 +11,13 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pb "github.com/qdrant/go-client/qdrant"
+	"go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
+	nooptrace "go.opentelemetry.io/otel/trace/noop"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
@@ -26,12 +31,16 @@ type Client struct {
 	collectionName string
 }
 
-// New creates a Qdrant-backed episodic vector client.
-func New(cfg *config.Config) (*Client, error) {
+// New creates a Qdrant-backed episodic vector client using the given TracerProvider.
+// Pass nil to fall back to a noop provider.
+func New(cfg *config.Config, tp trace.TracerProvider) (*Client, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("qdrant episodic: missing config")
 	}
-	conn, err := grpc.NewClient(cfg.QdrantAddress(), dialOptions(cfg)...)
+	if tp == nil {
+		tp = nooptrace.NewTracerProvider()
+	}
+	conn, err := grpc.NewClient(cfg.QdrantAddress(), dialOptions(cfg, tp)...)
 	if err != nil {
 		return nil, fmt.Errorf("qdrant episodic: connect: %w", err)
 	}
@@ -40,6 +49,16 @@ func New(cfg *config.Config) (*Client, error) {
 		conn:           conn,
 		collectionName: effectiveCollectionName(cfg),
 	}, nil
+}
+
+// NewEpisodicQdrantClientForTest constructs a Client using an already-dialed
+// *grpc.ClientConn.  Only for use in tests.
+func NewEpisodicQdrantClientForTest(conn *grpc.ClientConn, collectionName string) *Client {
+	return &Client{
+		points:         pb.NewPointsClient(conn),
+		conn:           conn,
+		collectionName: collectionName,
+	}
 }
 
 // Close closes the underlying gRPC connection.
@@ -604,8 +623,8 @@ func toFloat(v interface{}) (float64, bool) {
 	}
 }
 
-func dialOptions(cfg *config.Config) []grpc.DialOption {
-	opts := make([]grpc.DialOption, 0, 2)
+func dialOptions(cfg *config.Config, tp trace.TracerProvider) []grpc.DialOption {
+	opts := make([]grpc.DialOption, 0, 4)
 	if cfg.QdrantUseTLS {
 		opts = append(opts, grpc.WithTransportCredentials(credentials.NewTLS(nil)))
 	} else {
@@ -617,6 +636,11 @@ func dialOptions(cfg *config.Config) []grpc.DialOption {
 			requireTLS: cfg.QdrantUseTLS,
 		}))
 	}
+	// TraceContext only — no Baggage to a third party.
+	opts = append(opts, grpc.WithStatsHandler(otelgrpc.NewClientHandler(
+		otelgrpc.WithTracerProvider(tp),
+		otelgrpc.WithPropagators(tracing.NewParticipatingPropagator(propagation.TraceContext{})),
+	)))
 	return opts
 }
 

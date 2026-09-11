@@ -47,6 +47,8 @@ const (
 type Snapshot struct {
 	Phase                 string              `json:"phase,omitempty"`
 	RequestID             string              `json:"requestID,omitempty"`
+	TraceID               string              `json:"traceID,omitempty"`
+	SpanID                string              `json:"spanID,omitempty"`
 	Status                any                 `json:"status,omitempty"`
 	Duration              time.Duration       `json:"duration,omitempty"`
 	Result                Result              `json:"result,omitempty"`
@@ -123,6 +125,51 @@ func (e *Event) Message() string {
 
 type contextKey struct{}
 
+// EventRef shares an operation event between interceptors that derive contexts.
+type EventRef struct {
+	mu    sync.RWMutex
+	event *Event
+}
+
+// NewEventRef creates an empty shared event reference.
+func NewEventRef() *EventRef { return &EventRef{} }
+
+// Set stores the event in the reference.
+func (r *EventRef) Set(event *Event) {
+	if r == nil {
+		return
+	}
+	r.mu.Lock()
+	r.event = event
+	r.mu.Unlock()
+}
+
+// Get returns the event currently stored in the reference.
+func (r *EventRef) Get() *Event {
+	if r == nil {
+		return nil
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	return r.event
+}
+
+type eventRefContextKey struct{}
+
+// WithEventRef attaches a shared event reference to a context.
+func WithEventRef(ctx context.Context, ref *EventRef) context.Context {
+	return context.WithValue(ctx, eventRefContextKey{}, ref)
+}
+
+// EventRefFromContext returns a shared event reference attached to ctx.
+func EventRefFromContext(ctx context.Context) *EventRef {
+	if ctx == nil {
+		return nil
+	}
+	ref, _ := ctx.Value(eventRefContextKey{}).(*EventRef)
+	return ref
+}
+
 // WithContext attaches an event to a context.
 func WithContext(ctx context.Context, event *Event) context.Context {
 	if ctx == nil {
@@ -165,6 +212,15 @@ func cloneSnapshot(source Snapshot) Snapshot {
 }
 
 func (e *Event) SetRequestID(value string) { e.setString(&e.fields.RequestID, value, maxFieldLength) }
+func (e *Event) SetTraceContext(traceID, spanID string) {
+	if e == nil {
+		return
+	}
+	e.mu.Lock()
+	e.fields.TraceID = sanitize(traceID, maxFieldLength)
+	e.fields.SpanID = sanitize(spanID, maxFieldLength)
+	e.mu.Unlock()
+}
 func (e *Event) SetReason(value string)    { e.setString(&e.fields.Reason, value, maxFieldLength) }
 func (e *Event) SetErrorCode(value string) { e.setString(&e.fields.ErrorCode, value, maxFieldLength) }
 func (e *Event) SetErrorType(value string) { e.setString(&e.fields.ErrorType, value, maxFieldLength) }
@@ -341,6 +397,8 @@ func snapshotLogArgs(s Snapshot) []any {
 	}
 	add("phase", s.Phase, s.Phase != "")
 	add("requestID", s.RequestID, s.RequestID != "")
+	add("traceID", s.TraceID, s.TraceID != "")
+	add("spanID", s.SpanID, s.SpanID != "")
 	add("status", s.Status, s.Status != nil)
 	add("duration", s.Duration, s.Duration != 0)
 	add("result", s.Result, s.Result != "")

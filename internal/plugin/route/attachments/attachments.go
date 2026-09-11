@@ -27,8 +27,12 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/chirino/memory-service/internal/tempfiles"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
+	"go.opentelemetry.io/otel/propagation"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // HandleUpload exposes attachment upload/create for wrapper-native adapters.
@@ -580,7 +584,7 @@ func verifyDownloadToken(token string, secrets [][]byte, now time.Time) (string,
 	return payloadParts[0], true
 }
 
-func completeSourceURLAttachment(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) error {
+func completeSourceURLAttachment(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string, tp trace.TracerProvider) error {
 	if err := validateSourceURL(sourceURL, cfg.AllowPrivateSourceURLs); err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
 		return err
@@ -591,9 +595,15 @@ func completeSourceURLAttachment(ctx context.Context, store registrystore.Memory
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, userID, err)
 		return err
 	}
+	// TraceContext only — no Baggage to a third party.
+	participatingProp := tracing.NewParticipatingPropagator(propagation.TraceContext{})
 	client := &http.Client{
-		Timeout:   3 * time.Minute,
-		Transport: newSourceURLTransport(cfg.AllowPrivateSourceURLs),
+		Timeout: 3 * time.Minute,
+		Transport: otelhttp.NewTransport(
+			newSourceURLTransport(cfg.AllowPrivateSourceURLs),
+			otelhttp.WithTracerProvider(tp),
+			otelhttp.WithPropagators(participatingProp),
+		),
 		CheckRedirect: func(req *http.Request, via []*http.Request) error {
 			if len(via) >= 10 {
 				return fmt.Errorf("too many redirects")
@@ -689,12 +699,17 @@ func StartSourceURLAttachmentDownload(parentCtx context.Context, store registrys
 	if parent := operationevent.FromContext(parentCtx); parent != nil {
 		event.SetRequestID(parent.Snapshot().RequestID)
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	tp := tracing.ProviderFromContextOrNoop(parentCtx)
+	// context.WithoutCancel preserves the participation marker and provider from
+	// parentCtx while detaching from the request cancellation signal, so the
+	// async goroutine runs to completion independent of the HTTP request lifetime.
+	baseCtx := context.WithoutCancel(parentCtx)
+	ctx, cancel := context.WithTimeout(baseCtx, 5*time.Minute)
 	ctx = operationevent.WithContext(ctx, event)
 	go func() {
 		defer cancel()
 		runSourceURLAttachmentOperation(ctx, event, func(ctx context.Context) error {
-			return completeSourceURLAttachment(ctx, store, attachStore, cfg, attachmentID, userID, sourceURL, contentType)
+			return completeSourceURLAttachment(ctx, store, attachStore, cfg, attachmentID, userID, sourceURL, contentType, tp)
 		})
 	}()
 }
