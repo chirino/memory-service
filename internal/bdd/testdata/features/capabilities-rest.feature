@@ -18,6 +18,8 @@ Feature: Client capabilities REST API
     And the response body field "features.outbox_enabled" should not be null
     And the response body field "features.semantic_search_enabled" should not be null
     And the response body field "features.fulltext_search_enabled" should not be null
+    And the response body field "features.conversation_metadata_filter_version" should be "1"
+    And the response body field "features.max_conversation_metadata_filters" should be "5"
     And the response body field "auth.oidc_enabled" should not be null
     And the response body field "auth.api_key_enabled" should not be null
     And the response body field "auth.user_id_assertion_enabled" should not be null

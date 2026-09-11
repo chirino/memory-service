@@ -2,6 +2,7 @@ package store
 
 import (
 	"net/url"
+	"regexp"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -102,192 +103,270 @@ func TestDecodeMetadataPatch_MalformedValue(t *testing.T) {
 }
 
 func TestMetadataFilterFromOptionalPair_BothNil(t *testing.T) {
-	filter, err := MetadataFilterFromOptionalPair(nil, nil)
+	filters, err := MetadataFilterFromOptionalPair(nil, nil)
 	require.NoError(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
 func TestMetadataFilterFromOptionalPair_KeyOnly(t *testing.T) {
 	key := "status"
-	filter, err := MetadataFilterFromOptionalPair(&key, nil)
+	filters, err := MetadataFilterFromOptionalPair(&key, nil)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "value is required")
 }
 
 func TestMetadataFilterFromOptionalPair_ValueOnly(t *testing.T) {
 	value := "waiting"
-	filter, err := MetadataFilterFromOptionalPair(nil, &value)
+	filters, err := MetadataFilterFromOptionalPair(nil, &value)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "key is required")
 }
 
 func TestMetadataFilterFromOptionalPair_EmptyKey(t *testing.T) {
 	key := ""
 	value := "waiting"
-	filter, err := MetadataFilterFromOptionalPair(&key, &value)
+	filters, err := MetadataFilterFromOptionalPair(&key, &value)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "invalid")
 }
 
 func TestMetadataFilterFromOptionalPair_InvalidKey(t *testing.T) {
 	key := "bad key!"
 	value := "waiting"
-	filter, err := MetadataFilterFromOptionalPair(&key, &value)
+	filters, err := MetadataFilterFromOptionalPair(&key, &value)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "invalid")
 }
 
 func TestMetadataFilterFromOptionalPair_ValidPair(t *testing.T) {
 	key := "status"
 	value := "waiting"
-	filter, err := MetadataFilterFromOptionalPair(&key, &value)
+	filters, err := MetadataFilterFromOptionalPair(&key, &value)
 	require.NoError(t, err)
-	require.NotNil(t, filter)
-	assert.Equal(t, "status", filter.Key)
-	assert.Equal(t, "waiting", filter.Value)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "status", filters[0].Key)
+	assert.Equal(t, ConversationMetadataEqual, filters[0].Operator)
+	assert.Equal(t, "waiting", filters[0].Value)
 }
 
 func TestMetadataFilterFromOptionalPair_EmptyValue(t *testing.T) {
 	key := "status"
 	value := ""
-	filter, err := MetadataFilterFromOptionalPair(&key, &value)
+	filters, err := MetadataFilterFromOptionalPair(&key, &value)
 	require.NoError(t, err)
-	require.NotNil(t, filter)
-	assert.Equal(t, "status", filter.Key)
-	assert.Equal(t, "", filter.Value)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "status", filters[0].Key)
+	assert.Equal(t, ConversationMetadataEqual, filters[0].Operator)
+	assert.Equal(t, "", filters[0].Value)
+}
+
+func TestParseMetadataFilterQuery_RepeatedNewFilters(t *testing.T) {
+	rawQuery := "metadata=status=waiting&metadata=agent-id!=worker-1&metadata=tag==special&metadata=empty=&metadata=bang!=a!b=c"
+	filters, err := ParseMetadataFilterQuery(rawQuery)
+	require.NoError(t, err)
+	require.Len(t, filters, 5)
+
+	assert.Equal(t, ConversationMetadataPredicate{Key: "status", Operator: ConversationMetadataEqual, Value: "waiting"}, filters[0])
+	assert.Equal(t, ConversationMetadataPredicate{Key: "agent-id", Operator: ConversationMetadataNotEqual, Value: "worker-1"}, filters[1])
+	assert.Equal(t, ConversationMetadataPredicate{Key: "tag", Operator: ConversationMetadataEqual, Value: "=special"}, filters[2])
+	assert.Equal(t, ConversationMetadataPredicate{Key: "empty", Operator: ConversationMetadataEqual, Value: ""}, filters[3])
+	assert.Equal(t, ConversationMetadataPredicate{Key: "bang", Operator: ConversationMetadataNotEqual, Value: "a!b=c"}, filters[4])
+}
+
+func TestParseMetadataFilterQuery_MaxSixRejection(t *testing.T) {
+	rawQuery := "metadata=a=1&metadata=b=2&metadata=c=3&metadata=d=4&metadata=e=5&metadata=f=6"
+	filters, err := ParseMetadataFilterQuery(rawQuery)
+	assert.Error(t, err)
+	assert.Nil(t, filters)
+	assert.Contains(t, err.Error(), "at most 5")
+}
+
+func TestParseMetadataFilterQuery_MixedLegacyAndNewRejection(t *testing.T) {
+	rawQuery := "metadata=status=waiting&metadata[agent]=worker"
+	filters, err := ParseMetadataFilterQuery(rawQuery)
+	assert.Error(t, err)
+	assert.Nil(t, filters)
+	assert.Contains(t, err.Error(), "cannot mix")
+}
+
+func TestParseMetadataFilterQuery_MalformedExpression(t *testing.T) {
+	_, err := ParseMetadataFilterQuery("metadata=status!waiting")
+	assert.Error(t, err)
+
+	_, err = ParseMetadataFilterQuery("metadata=status")
+	assert.Error(t, err)
+
+	_, err = ParseMetadataFilterQuery("metadata==waiting")
+	assert.Error(t, err)
+}
+
+func TestParseMetadataFilterQuery_PercentEncoding(t *testing.T) {
+	rawQuery := "metadata=tag=a%2Bb"
+	filters, err := ParseMetadataFilterQuery(rawQuery)
+	require.NoError(t, err)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "a+b", filters[0].Value)
+
+	rawQuerySpace := "metadata=tag=a+b"
+	filtersSpace, err := ParseMetadataFilterQuery(rawQuerySpace)
+	require.NoError(t, err)
+	require.Len(t, filtersSpace, 1)
+	assert.Equal(t, "a b", filtersSpace[0].Value)
+}
+
+func TestOpenAPIRegexValidation(t *testing.T) {
+	pattern := `^[A-Za-z0-9_-]+(?:!=|=)[\s\S]*$`
+	matched, err := regexp.MatchString(pattern, "a=x")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "a=")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "a!=x")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "a!=")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "key_1-2=foo!=bar=baz")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "key=hello\nworld")
+	require.NoError(t, err)
+	assert.True(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "invalid key=x")
+	require.NoError(t, err)
+	assert.False(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "=x")
+	require.NoError(t, err)
+	assert.False(t, matched)
+
+	matched, err = regexp.MatchString(pattern, "key!x")
+	require.NoError(t, err)
+	assert.False(t, matched)
 }
 
 func TestParseMetadataFilterQuery_NoFilter(t *testing.T) {
 	values := url.Values{}
 	values.Set("mode", "all")
 	values.Set("limit", "20")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	require.NoError(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
-func TestParseMetadataFilterQuery_ValidFilter(t *testing.T) {
+func TestParseMetadataFilterQuery_ValidLegacyFilter(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[status]", "waiting")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	require.NoError(t, err)
-	require.NotNil(t, filter)
-	assert.Equal(t, "status", filter.Key)
-	assert.Equal(t, "waiting", filter.Value)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "status", filters[0].Key)
+	assert.Equal(t, ConversationMetadataEqual, filters[0].Operator)
+	assert.Equal(t, "waiting", filters[0].Value)
 }
 
-func TestParseMetadataFilterQuery_EmptyValue(t *testing.T) {
+func TestParseMetadataFilterQuery_LegacyEmptyValue(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[status]", "")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	require.NoError(t, err)
-	require.NotNil(t, filter)
-	assert.Equal(t, "status", filter.Key)
-	assert.Equal(t, "", filter.Value)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "status", filters[0].Key)
+	assert.Equal(t, ConversationMetadataEqual, filters[0].Operator)
+	assert.Equal(t, "", filters[0].Value)
 }
 
-func TestParseMetadataFilterQuery_MultipleKeys(t *testing.T) {
+func TestParseMetadataFilterQuery_MultipleLegacyKeys(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[status]", "waiting")
 	values.Set("metadata[priority]", "high")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "exactly one key")
 }
 
-func TestParseMetadataFilterQuery_RepeatedValue(t *testing.T) {
+func TestParseMetadataFilterQuery_RepeatedLegacyValue(t *testing.T) {
 	values := url.Values{}
 	values.Add("metadata[status]", "waiting")
 	values.Add("metadata[status]", "running")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "exactly one value")
 }
 
-func TestParseMetadataFilterQuery_InvalidKey(t *testing.T) {
+func TestParseMetadataFilterQuery_InvalidLegacyKey(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[bad key!]", "value")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 	assert.Contains(t, err.Error(), "invalid")
 }
 
-func TestParseMetadataFilterQuery_EmptyKey(t *testing.T) {
+func TestParseMetadataFilterQuery_EmptyLegacyKey(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[]", "value")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
-}
-
-func TestParseMetadataFilterQuery_BareMetadata(t *testing.T) {
-	values := url.Values{}
-	values.Set("metadata", "value")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
-	assert.Error(t, err)
-	assert.Nil(t, filter)
-	assert.Contains(t, err.Error(), "invalid metadata filter parameter")
+	assert.Nil(t, filters)
 }
 
 func TestParseMetadataFilterQuery_MalformedBracket(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadata[missing-close", "value")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
 func TestParseMetadataFilterQuery_MalformedMetadataPrefix(t *testing.T) {
 	values := url.Values{}
 	values.Set("metadataFoo", "bar")
 	values.Set("mode", "all")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
+	filters, err := ParseMetadataFilterQuery(values.Encode())
 	assert.Error(t, err)
-	assert.Nil(t, filter)
-}
-
-func TestParseMetadataFilterQuery_MixedValidAndMalformed(t *testing.T) {
-	values := url.Values{}
-	values.Set("metadata[status]", "waiting")
-	values.Set("metadataFoo", "bar")
-	values.Set("mode", "all")
-	filter, err := ParseMetadataFilterQuery(values.Encode())
-	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
 func TestParseMetadataFilterQuery_MissingEquals(t *testing.T) {
 	const rawQuery = "metadata[status]"
-	filter, err := ParseMetadataFilterQuery(rawQuery)
+	filters, err := ParseMetadataFilterQuery(rawQuery)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
 func TestParseMetadataFilterQuery_ExplicitEmptyValue(t *testing.T) {
 	const rawQuery = "metadata[status]="
-	filter, err := ParseMetadataFilterQuery(rawQuery)
+	filters, err := ParseMetadataFilterQuery(rawQuery)
 	require.NoError(t, err)
-	require.NotNil(t, filter)
-	assert.Equal(t, "status", filter.Key)
-	assert.Empty(t, filter.Value)
+	require.Len(t, filters, 1)
+	assert.Equal(t, "status", filters[0].Key)
+	assert.Empty(t, filters[0].Value)
 }
 
 func TestParseMetadataFilterQuery_EncodedMissingEquals(t *testing.T) {
 	const rawQuery = "metadata%5Bstatus%5D"
-	filter, err := ParseMetadataFilterQuery(rawQuery)
+	filters, err := ParseMetadataFilterQuery(rawQuery)
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }
 
 func TestParseMetadataFilterQuery_MalformedEncodedValue(t *testing.T) {
-	filter, err := ParseMetadataFilterQuery("metadata%5Bstatus%5D=%ZZ")
+	filters, err := ParseMetadataFilterQuery("metadata%5Bstatus%5D=%ZZ")
 	assert.Error(t, err)
-	assert.Nil(t, filter)
+	assert.Nil(t, filters)
 }

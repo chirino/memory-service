@@ -176,15 +176,15 @@ func ParseArchiveFilter(raw string) (ArchiveFilter, error) {
 
 // AdminConversationQuery holds parameters for admin conversation listing.
 type AdminConversationQuery struct {
-	Mode           model.ConversationListMode
-	Ancestry       model.ConversationAncestryFilter
-	UserID         *string
-	Archived       ArchiveFilter
-	ArchivedAfter  *time.Time
-	ArchivedBefore *time.Time
-	MetadataFilter *MetadataKeyFilter
-	AfterCursor    *string
-	Limit          int
+	Mode            model.ConversationListMode
+	Ancestry        model.ConversationAncestryFilter
+	UserID          *string
+	Archived        ArchiveFilter
+	ArchivedAfter   *time.Time
+	ArchivedBefore  *time.Time
+	MetadataFilters []ConversationMetadataPredicate
+	AfterCursor     *string
+	Limit           int
 }
 
 // EntryListQuery holds all parameters for user and admin entry listing.
@@ -307,11 +307,19 @@ type OwnershipTransferDto struct {
 	CreatedAt           time.Time `json:"createdAt"`
 }
 
-// MetadataKeyFilter is a server-side filter that matches conversations whose
-// metadata map contains exactly the given key with the given string value.
-type MetadataKeyFilter struct {
-	Key   string
-	Value string
+const MaxConversationMetadataPredicates = 5
+
+type ConversationMetadataOperator string
+
+const (
+	ConversationMetadataEqual    ConversationMetadataOperator = "="
+	ConversationMetadataNotEqual ConversationMetadataOperator = "!="
+)
+
+type ConversationMetadataPredicate struct {
+	Key      string
+	Operator ConversationMetadataOperator
+	Value    string
 }
 
 // IsValidMetadataKey returns true if key contains only safe characters for use as
@@ -343,7 +351,7 @@ type MemoryStore interface {
 	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.
 	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
-	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived ArchiveFilter, metadataFilter *MetadataKeyFilter) ([]ConversationSummary, *string, error)
+	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived ArchiveFilter, metadataFilters []ConversationMetadataPredicate) ([]ConversationSummary, *string, error)
 	GetConversation(ctx context.Context, userID string, conversationID string) (*ConversationDetail, error)
 	UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadataPatch MetadataPatch) (*ConversationDetail, error)
 	ArchiveConversation(ctx context.Context, userID string, conversationID string) error

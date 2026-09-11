@@ -506,7 +506,10 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 	}, nil
 }
 
-func (s *PostgresStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilter *registrystore.MetadataKeyFilter) ([]registrystore.ConversationSummary, *string, error) {
+func (s *PostgresStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilters []registrystore.ConversationMetadataPredicate) ([]registrystore.ConversationSummary, *string, error) {
+	if err := registrystore.ValidateConversationMetadataPredicates(metadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
+	}
 	requestedLimit := limit
 	queryStr := ""
 	if query != nil {
@@ -533,6 +536,31 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 
+	var anchorCreatedAt *time.Time
+	var anchorID *string
+	if afterCursor != nil {
+		type cursorRow struct {
+			ID        string    `gorm:"column:id"`
+			CreatedAt time.Time `gorm:"column:created_at"`
+		}
+		var cr cursorRow
+		err := s.dbFor(ctx).
+			Table("conversations c").
+			Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
+			Where("c.id = ?", *afterCursor).
+			Select("c.id, c.created_at").
+			Limit(1).
+			Find(&cr).Error
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to lookup cursor anchor: %w", err)
+		}
+		if cr.ID == "" {
+			return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *afterCursor)}
+		}
+		anchorCreatedAt = &cr.CreatedAt
+		anchorID = &cr.ID
+	}
+
 	base := s.dbFor(ctx).
 		Table("conversations c").
 		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
@@ -555,15 +583,20 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		base = base.Where("c.started_by_conversation_id IS NULL")
 	}
 
-	if metadataFilter != nil {
-		filterJSON, err := json.Marshal(map[string]string{metadataFilter.Key: metadataFilter.Value})
+	for _, p := range metadataFilters {
+		filterJSON, err := json.Marshal(map[string]string{p.Key: p.Value})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal metadata filter: %w", err)
 		}
-		base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND c.metadata @> ?::jsonb", metadataFilter.Key, string(filterJSON))
+		if p.Operator == registrystore.ConversationMetadataEqual {
+			base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND c.metadata @> ?::jsonb", p.Key, string(filterJSON))
+		} else if p.Operator == registrystore.ConversationMetadataNotEqual {
+			base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND NOT (c.metadata @> ?::jsonb)", p.Key, string(filterJSON))
+		}
 	}
 
 	createdAtColumn := "c.created_at"
+	idColumn := "c.id"
 	var tx *gorm.DB
 	switch mode {
 	case model.ListModeRoots:
@@ -577,12 +610,13 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 		createdAtColumn = "ranked.created_at"
+		idColumn = "ranked.id"
 	default:
 		tx = base.Select(selectColumns)
 	}
 
-	if afterCursor != nil {
-		tx = tx.Where(createdAtColumn+" < (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
+	if anchorCreatedAt != nil && anchorID != nil {
+		tx = tx.Where(fmt.Sprintf("(%s < ? OR (%s = ? AND %s < ?))", createdAtColumn, createdAtColumn, idColumn), *anchorCreatedAt, *anchorCreatedAt, *anchorID)
 	}
 
 	queryLimit := requestedLimit + 1
@@ -596,7 +630,7 @@ func (s *PostgresStore) ListConversations(ctx context.Context, userID string, qu
 		}
 	}
 
-	tx = tx.Order(createdAtColumn + " DESC").Limit(queryLimit)
+	tx = tx.Order(fmt.Sprintf("%s DESC, %s DESC", createdAtColumn, idColumn)).Limit(queryLimit)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
@@ -2413,6 +2447,9 @@ func (s *PostgresStore) SearchEntries(ctx context.Context, userID string, query 
 // --- Admin ---
 
 func (s *PostgresStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
+	if err := registrystore.ValidateConversationMetadataPredicates(query.MetadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
+	}
 	const selectColumns = conversationSelectColumns + ", 'owner' as access_level"
 
 	type row struct {
@@ -2458,15 +2495,44 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 	default:
 		base = base.Where("c.started_by_conversation_id IS NULL")
 	}
-	if query.MetadataFilter != nil {
-		filterJSON, err := json.Marshal(map[string]string{query.MetadataFilter.Key: query.MetadataFilter.Value})
+	var anchorCreatedAt *time.Time
+	var anchorID *string
+	if query.AfterCursor != nil {
+		type cursorRow struct {
+			ID        string    `gorm:"column:id"`
+			CreatedAt time.Time `gorm:"column:created_at"`
+		}
+		var cr cursorRow
+		err := s.dbFor(ctx).
+			Table("conversations c").
+			Where("c.id = ?", *query.AfterCursor).
+			Select("c.id, c.created_at").
+			Limit(1).
+			Find(&cr).Error
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to lookup cursor anchor: %w", err)
+		}
+		if cr.ID == "" {
+			return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *query.AfterCursor)}
+		}
+		anchorCreatedAt = &cr.CreatedAt
+		anchorID = &cr.ID
+	}
+
+	for _, p := range query.MetadataFilters {
+		filterJSON, err := json.Marshal(map[string]string{p.Key: p.Value})
 		if err != nil {
 			return nil, nil, fmt.Errorf("failed to marshal metadata filter: %w", err)
 		}
-		base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND c.metadata @> ?::jsonb", query.MetadataFilter.Key, string(filterJSON))
+		if p.Operator == registrystore.ConversationMetadataEqual {
+			base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND c.metadata @> ?::jsonb", p.Key, string(filterJSON))
+		} else if p.Operator == registrystore.ConversationMetadataNotEqual {
+			base = base.Where("jsonb_typeof(c.metadata -> ?) = 'string' AND NOT (c.metadata @> ?::jsonb)", p.Key, string(filterJSON))
+		}
 	}
 
 	createdAtColumn := "c.created_at"
+	idColumn := "c.id"
 	var tx *gorm.DB
 	switch query.Mode {
 	case model.ListModeRoots:
@@ -2480,14 +2546,15 @@ func (s *PostgresStore) AdminListConversations(ctx context.Context, query regist
 			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 		createdAtColumn = "ranked.created_at"
+		idColumn = "ranked.id"
 	default:
 		tx = base.Select(selectColumns)
 	}
 
-	if query.AfterCursor != nil {
-		tx = tx.Where(createdAtColumn+" < (SELECT created_at FROM conversations WHERE id = ?)", *query.AfterCursor)
+	if anchorCreatedAt != nil && anchorID != nil {
+		tx = tx.Where(fmt.Sprintf("(%s < ? OR (%s = ? AND %s < ?))", createdAtColumn, createdAtColumn, idColumn), *anchorCreatedAt, *anchorCreatedAt, *anchorID)
 	}
-	tx = tx.Order(createdAtColumn + " DESC").Limit(query.Limit + 1)
+	tx = tx.Order(fmt.Sprintf("%s DESC, %s DESC", createdAtColumn, idColumn)).Limit(query.Limit + 1)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {

@@ -94,18 +94,39 @@ The REST client provides several API classes:
 
 ```java
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import io.github.chirino.memoryservice.client.model.ListConversations200Response;
 import reactor.core.publisher.Mono;
 
-Mono<ConversationsResponse> response = conversationsApi.listConversations(
-    null, // mode
-    null, // after (cursor)
-    20,   // limit
-    null  // query
+Mono<ListConversations200Response> response = conversationsApi.listConversations(
+    null,    // mode
+    "all",   // ancestry
+    null,    // afterCursor
+    20,      // limit
+    null,    // query
+    "exclude", // archived
+    null     // metadata
 );
 
 response.block().getData().forEach(conversation -> {
     System.out.println(conversation.getId());
 });
+```
+
+Or use `MemoryServiceProxy` to filter by metadata (up to 5 predicates, combined with AND):
+
+```java
+import io.github.chirino.memoryservice.client.MemoryServiceProxy;
+import java.util.List;
+import org.springframework.http.ResponseEntity;
+
+ResponseEntity<?> filtered = proxy.listConversations(
+    "all",       // mode
+    null,        // afterCursor
+    20,          // limit
+    null,        // query
+    "exclude",   // archived
+    List.of("status=waiting", "agent-id!=worker-2")  // metadata filters
+);
 ```
 
 ### Get Conversation

@@ -135,12 +135,19 @@ export function memoryServiceConfigFromEnv(
 }
 
 function compactQuery(
-  params: Record<string, string | number | null | undefined>,
+  params: Record<string, string | number | string[] | null | undefined>,
 ): string {
   const qp = new URLSearchParams();
   for (const [key, value] of Object.entries(params)) {
-    if (value === undefined || value === null || value === "") continue;
-    qp.set(key, String(value));
+    if (value === undefined || value === null) continue;
+    if (Array.isArray(value)) {
+      for (const item of value) {
+        qp.append(key, item);
+      }
+    } else {
+      if (value === "") continue;
+      qp.set(key, String(value));
+    }
   }
   const text = qp.toString();
   return text ? `?${text}` : "";
@@ -258,6 +265,7 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
       limit?: number | null;
       query?: string | null;
       archived?: string | null;
+      metadata?: string[] | null;
     }): Promise<Response> {
       const qs = compactQuery(query);
       return memoryServiceRequest("GET", `/v1/conversations${qs}`, options);

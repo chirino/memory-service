@@ -137,18 +137,26 @@ paths:
         - name: metadata
           in: query
           required: false
-          style: deepObject
+          description: |
+            Metadata filter expressions. The service combines multiple expressions with AND.
+            A request may contain at most five expressions.
+
+            Operators:
+              =   equal
+              !=  not equal
+          style: form
           explode: true
-          description: >-
-            Filter conversations by a metadata key-value pair using the form `metadata[key]=value`.
-            Only one metadata filter is accepted per request. The key may only contain alphanumeric
-            characters, underscores, and hyphens (dots are rejected). The comparison is an exact
-            string match — numeric or boolean metadata values do not match a string query value.
-            Example: `metadata[status]=waiting`.
           schema:
-            type: object
-            additionalProperties:
+            type: array
+            maxItems: 5
+            items:
               type: string
+              pattern: '^[A-Za-z0-9_-]+(?:!=|=)[\s\S]*$'
+          examples:
+            multipleFilters:
+              value:
+                - status=waiting
+                - agent-id=worker-1
       responses:
         '200':
           description: A list of conversations.
@@ -1902,6 +1910,14 @@ components:
           type: boolean
         s3_direct_download_enabled:
           type: boolean
+        conversation_metadata_filter_version:
+          type: integer
+          minimum: 1
+          description: Version of the repeatable conversation metadata filter contract.
+        max_conversation_metadata_filters:
+          type: integer
+          minimum: 1
+          description: Maximum predicates accepted by one conversation list request.
     CapabilitiesAuth:
       type: object
       required: [oidc_enabled, api_key_enabled, admin_justification_required, user_id_assertion_enabled]

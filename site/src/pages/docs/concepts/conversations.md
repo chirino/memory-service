@@ -97,19 +97,24 @@ Updating the title or metadata requires **writer** access or higher. Archiving o
 
 ### Filtering Conversations by Metadata
 
-Use `metadata[<key>]=<value>` query parameters to filter the list to conversations whose metadata contains a specific key-value pair. Only one metadata filter is accepted per request, and the comparison is an exact string match — numeric or boolean metadata values do not match a string query value.
+Use repeated `metadata=<key><op><value>` query parameters to filter the list of conversations. The service combines multiple expressions with `AND`. A request may contain at most five expressions.
+
+Supported operators:
+
+- `=` (equals exact string value)
+- `!=` (not equal to string value, requires the string field to exist)
 
 ```bash
 # List only conversations where metadata.status equals "waiting"
-curl --globoff "http://localhost:8080/v1/conversations?metadata[status]=waiting" \
+curl "http://localhost:8080/v1/conversations?metadata=status=waiting" \
   -H "Authorization: Bearer <token>"
 
-# Combine with mode and other filters
-curl --globoff "http://localhost:8080/v1/conversations?mode=all&metadata[status]=running" \
+# Combine equality and not-equal filters
+curl "http://localhost:8080/v1/conversations?mode=all&metadata=status=waiting&metadata=agent-id!=worker-2" \
   -H "Authorization: Bearer <token>"
 ```
 
-The filter key may only contain alphanumeric characters, underscores, and hyphens. Dots are rejected. Invalid keys return `400 Bad Request`.
+The filter key may contain only alphanumeric characters, underscores, and hyphens (`[A-Za-z0-9_-]`). Dots are rejected. Matching is exact, binary, and case-sensitive against scalar strings; missing keys, `null`, numbers, booleans, arrays, and objects do not match either operator. The legacy single-filter `metadata[key]=value` parameter is supported for backward compatibility during rollout.
 
 ### Archiving a Conversation
 

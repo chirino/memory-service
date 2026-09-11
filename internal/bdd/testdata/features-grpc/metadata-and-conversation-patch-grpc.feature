@@ -114,6 +114,85 @@ Feature: Metadata filter and conversation patch via gRPC
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
 
+  Scenario: ListConversations with repeated metadata_filters using EQUAL and NOT_EQUAL
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Waiting Worker 1"
+    metadata {
+      fields {
+        key: "status"
+        value { string_value: "waiting" }
+      }
+      fields {
+        key: "agent-id"
+        value { string_value: "worker-1" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "matchGrpcId" to the gRPC response field "id"
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Waiting Worker 2"
+    metadata {
+      fields {
+        key: "status"
+        value { string_value: "waiting" }
+      }
+      fields {
+        key: "agent-id"
+        value { string_value: "worker-2" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "ConversationsService/ListConversations" with body:
+    """
+    mode: ALL
+    metadata_filters {
+      key: "status"
+      comparison: CONVERSATION_METADATA_COMPARISON_EQUAL
+      value: "waiting"
+    }
+    metadata_filters {
+      key: "agent-id"
+      comparison: CONVERSATION_METADATA_COMPARISON_NOT_EQUAL
+      value: "worker-2"
+    }
+    page { page_size: 20 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversations" should have size 1
+    And the gRPC response field "conversations[0].id" should be "${matchGrpcId}"
+
+  Scenario: ListConversations rejects more than five metadata filters via gRPC
+    When I send gRPC request "ConversationsService/ListConversations" with body:
+    """
+    metadata_filters { key: "a" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "1" }
+    metadata_filters { key: "b" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "2" }
+    metadata_filters { key: "c" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "3" }
+    metadata_filters { key: "d" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "4" }
+    metadata_filters { key: "e" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "5" }
+    metadata_filters { key: "f" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "6" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: ListConversations rejects mixing legacy and repeated metadata filters via gRPC
+    When I send gRPC request "ConversationsService/ListConversations" with body:
+    """
+    metadata_filter_key: "status"
+    metadata_filter_value: "waiting"
+    metadata_filters { key: "agent" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "worker" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: ListConversations rejects unspecified comparison in metadata filter via gRPC
+    When I send gRPC request "ConversationsService/ListConversations" with body:
+    """
+    metadata_filters { key: "status" comparison: CONVERSATION_METADATA_COMPARISON_UNSPECIFIED value: "waiting" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
   Scenario: ListConversations filters by empty string value via gRPC
     When I send gRPC request "ConversationsService/CreateConversation" with body:
     """
@@ -654,6 +733,91 @@ Feature: Metadata filter and conversation patch via gRPC
     metadata_filter_key: "key.nested"
     metadata_filter_value: "val"
     page { page_size: 20 }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin list with repeated metadata_filters using EQUAL and NOT_EQUAL
+    Given I am authenticated as user "bob"
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Admin Filter Match"
+    metadata {
+      fields {
+        key: "status"
+        value { string_value: "active" }
+      }
+      fields {
+        key: "tier"
+        value { string_value: "gold" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    And set "adminMatchGrpcId" to the gRPC response field "id"
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    title: "Admin Filter Non-Match"
+    metadata {
+      fields {
+        key: "status"
+        value { string_value: "active" }
+      }
+      fields {
+        key: "tier"
+        value { string_value: "silver" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListConversations" with body:
+    """
+    owner_user_id: "bob"
+    mode: ALL
+    metadata_filters {
+      key: "status"
+      comparison: CONVERSATION_METADATA_COMPARISON_EQUAL
+      value: "active"
+    }
+    metadata_filters {
+      key: "tier"
+      comparison: CONVERSATION_METADATA_COMPARISON_NOT_EQUAL
+      value: "silver"
+    }
+    page { page_size: 20 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "conversations" should have size 1
+    And the gRPC response field "conversations[0].id" should be "${adminMatchGrpcId}"
+
+  Scenario: Admin list rejects more than five metadata filters via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListConversations" with body:
+    """
+    metadata_filters { key: "a" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "1" }
+    metadata_filters { key: "b" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "2" }
+    metadata_filters { key: "c" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "3" }
+    metadata_filters { key: "d" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "4" }
+    metadata_filters { key: "e" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "5" }
+    metadata_filters { key: "f" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "6" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin list rejects mixing legacy and repeated metadata filters via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListConversations" with body:
+    """
+    metadata_filter_key: "status"
+    metadata_filter_value: "waiting"
+    metadata_filters { key: "tier" comparison: CONVERSATION_METADATA_COMPARISON_EQUAL value: "gold" }
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: Admin list rejects unspecified comparison in metadata filter via gRPC
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminConversationsService/ListConversations" with body:
+    """
+    metadata_filters { key: "status" comparison: CONVERSATION_METADATA_COMPARISON_UNSPECIFIED value: "waiting" }
     """
     Then the gRPC response should have status "INVALID_ARGUMENT"
 

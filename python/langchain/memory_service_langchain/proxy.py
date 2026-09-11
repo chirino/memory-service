@@ -119,19 +119,23 @@ class MemoryServiceProxy:
         limit: int | None = None,
         query: str | None = None,
         archived: str | None = None,
+        metadata: list[str] | None = None,
     ) -> httpx.Response:
+        params: dict[str, Any] = self._compact_params(
+            {
+                "mode": mode,
+                "afterCursor": after_cursor,
+                "limit": limit,
+                "query": query,
+                "archived": archived,
+            }
+        )
+        if metadata:
+            params["metadata"] = metadata
         return await self._request(
             "GET",
             "/v1/conversations",
-            params=self._compact_params(
-                {
-                    "mode": mode,
-                    "afterCursor": after_cursor,
-                    "limit": limit,
-                    "query": query,
-                    "archived": archived,
-                }
-            ),
+            params=params,
         )
 
     async def get_conversation(self, conversation_id: str) -> httpx.Response:

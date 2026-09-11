@@ -14,6 +14,7 @@ import java.lang.reflect.Method;
 import java.lang.reflect.Proxy;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
@@ -137,7 +138,8 @@ final class UnixSocketRestClientFactory {
                                         "afterCursor", args[2],
                                         "limit", args[3],
                                         "query", args[4],
-                                        "archived", args[5]),
+                                        "archived", args[5],
+                                        "metadata", args[6]),
                                 null,
                                 method);
                 case "syncConversationContext" ->
@@ -267,6 +269,9 @@ final class UnixSocketRestClientFactory {
             for (int i = 0; i + 1 < keyValues.length; i += 2) {
                 Object value = keyValues[i + 1];
                 if (value == null) {
+                    continue;
+                }
+                if (value instanceof Collection<?> c && c.isEmpty()) {
                     continue;
                 }
                 query.put(

@@ -381,13 +381,15 @@ func mapCapabilitiesSummary(summary servicecapabilities.Summary) *pb.Capabilitie
 			Embedder:    summary.Tech.Embedder,
 		},
 		Features: &pb.CapabilitiesFeatures{
-			OutboxEnabled:             summary.Features.OutboxEnabled,
-			SemanticSearchEnabled:     summary.Features.SemanticSearchEnabled,
-			FulltextSearchEnabled:     summary.Features.FulltextSearchEnabled,
-			CorsEnabled:               summary.Features.CorsEnabled,
-			ManagementListenerEnabled: summary.Features.ManagementListenerEnabled,
-			PrivateSourceUrlsEnabled:  summary.Features.PrivateSourceURLsEnabled,
-			S3DirectDownloadEnabled:   summary.Features.S3DirectDownloadEnabled,
+			OutboxEnabled:                     summary.Features.OutboxEnabled,
+			SemanticSearchEnabled:             summary.Features.SemanticSearchEnabled,
+			FulltextSearchEnabled:             summary.Features.FulltextSearchEnabled,
+			CorsEnabled:                       summary.Features.CorsEnabled,
+			ManagementListenerEnabled:         summary.Features.ManagementListenerEnabled,
+			PrivateSourceUrlsEnabled:          summary.Features.PrivateSourceURLsEnabled,
+			S3DirectDownloadEnabled:           summary.Features.S3DirectDownloadEnabled,
+			ConversationMetadataFilterVersion: summary.Features.ConversationMetadataFilterVersion,
+			MaxConversationMetadataFilters:    summary.Features.MaxConversationMetadataFilters,
 		},
 		Auth: &pb.CapabilitiesAuth{
 			OidcEnabled:                summary.Auth.OIDCEnabled,
@@ -470,7 +472,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 		query = &q
 	}
 
-	metadataFilter, err := registrystore.MetadataFilterFromOptionalPair(req.MetadataFilterKey, req.MetadataFilterValue)
+	metadataFilters, err := parseGRPCMetadataFilters(req.MetadataFilterKey, req.MetadataFilterValue, req.GetMetadataFilters())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
@@ -481,7 +483,7 @@ func (s *ConversationsServer) ListConversations(ctx context.Context, req *pb.Lis
 			cursor    *string
 		}
 		out, err := withMemoryRead(ctx, s.Store, func(txCtx context.Context) (result, error) {
-			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode, ancestry, archived, metadataFilter)
+			summaries, cursor, err := s.Store.ListConversations(txCtx, userID, query, afterCursor, limit, mode, ancestry, archived, metadataFilters)
 			return result{summaries: summaries, cursor: cursor}, err
 		})
 		return out.summaries, out.cursor, err
@@ -1377,21 +1379,21 @@ func (s *AdminConversationsServer) ListConversations(ctx context.Context, req *p
 		archivedBefore = &t
 	}
 
-	metadataFilter, err := registrystore.MetadataFilterFromOptionalPair(req.MetadataFilterKey, req.MetadataFilterValue)
+	metadataFilters, err := parseGRPCMetadataFilters(req.MetadataFilterKey, req.MetadataFilterValue, req.GetMetadataFilters())
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
 
 	query := registrystore.AdminConversationQuery{
-		Mode:           mode,
-		Ancestry:       ancestry,
-		UserID:         userID,
-		Archived:       archived,
-		ArchivedAfter:  archivedAfter,
-		ArchivedBefore: archivedBefore,
-		MetadataFilter: metadataFilter,
-		AfterCursor:    afterCursor,
-		Limit:          limit,
+		Mode:            mode,
+		Ancestry:        ancestry,
+		UserID:          userID,
+		Archived:        archived,
+		ArchivedAfter:   archivedAfter,
+		ArchivedBefore:  archivedBefore,
+		MetadataFilters: metadataFilters,
+		AfterCursor:     afterCursor,
+		Limit:           limit,
 	}
 
 	summaries, cursor, err := func() ([]registrystore.ConversationSummary, *string, error) {
@@ -5999,6 +6001,51 @@ func parseGRPCDisposition(raw string) (string, error) {
 		return "", fmt.Errorf("disposition must be 'inline' or 'attachment'")
 	}
 	return disposition, nil
+}
+
+func parseGRPCMetadataFilters(legacyKey, legacyValue *string, filters []*pb.ConversationMetadataFilter) ([]registrystore.ConversationMetadataPredicate, error) {
+	hasLegacy := legacyKey != nil || legacyValue != nil
+	hasNew := len(filters) > 0
+
+	if hasLegacy && hasNew {
+		return nil, fmt.Errorf("cannot mix metadata_filters with legacy metadata_filter_key/value")
+	}
+
+	if hasLegacy {
+		return registrystore.MetadataFilterFromOptionalPair(legacyKey, legacyValue)
+	}
+
+	if hasNew {
+		if len(filters) > registrystore.MaxConversationMetadataPredicates {
+			return nil, fmt.Errorf("at most %d metadata filters are allowed", registrystore.MaxConversationMetadataPredicates)
+		}
+		predicates := make([]registrystore.ConversationMetadataPredicate, 0, len(filters))
+		for i, f := range filters {
+			if f == nil {
+				return nil, fmt.Errorf("metadata filter at index %d cannot be nil", i)
+			}
+			if !registrystore.IsValidMetadataKey(f.GetKey()) {
+				return nil, fmt.Errorf("invalid metadata filter key at index %d", i)
+			}
+			var op registrystore.ConversationMetadataOperator
+			switch f.GetComparison() {
+			case pb.ConversationMetadataComparison_CONVERSATION_METADATA_COMPARISON_EQUAL:
+				op = registrystore.ConversationMetadataEqual
+			case pb.ConversationMetadataComparison_CONVERSATION_METADATA_COMPARISON_NOT_EQUAL:
+				op = registrystore.ConversationMetadataNotEqual
+			default:
+				return nil, fmt.Errorf("unspecified or unknown metadata filter comparison at index %d", i)
+			}
+			predicates = append(predicates, registrystore.ConversationMetadataPredicate{
+				Key:      f.GetKey(),
+				Operator: op,
+				Value:    f.GetValue(),
+			})
+		}
+		return predicates, nil
+	}
+
+	return nil, nil
 }
 
 func parseGRPCExpiresIn(raw string, cfg *config.Config) (time.Duration, error) {

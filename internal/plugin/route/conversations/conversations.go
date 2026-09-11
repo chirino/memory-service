@@ -70,14 +70,14 @@ func listConversations(c *gin.Context, store registrystore.MemoryStore) {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
-	metadataFilter, err := registrystore.ParseMetadataFilterQuery(c.Request.URL.RawQuery)
+	metadataFilters, err := registrystore.ParseMetadataFilterQuery(c.Request.URL.RawQuery)
 	if err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 		return
 	}
 
 	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
-		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry, archived, metadataFilter)
+		summaries, cursor, err := store.ListConversations(ctx, userID, query, afterCursor, limit, mode, ancestry, archived, metadataFilters)
 		if err != nil {
 			return err
 		}

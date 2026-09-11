@@ -468,7 +468,10 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 	}, nil
 }
 
-func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilter *registrystore.MetadataKeyFilter) ([]registrystore.ConversationSummary, *string, error) {
+func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived registrystore.ArchiveFilter, metadataFilters []registrystore.ConversationMetadataPredicate) ([]registrystore.ConversationSummary, *string, error) {
+	if err := registrystore.ValidateConversationMetadataPredicates(metadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
+	}
 	requestedLimit := limit
 	queryStr := ""
 	if query != nil {
@@ -493,6 +496,31 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 
+	var anchorCreatedAt *time.Time
+	var anchorID *string
+	if afterCursor != nil {
+		type cursorRow struct {
+			ID        string    `gorm:"column:id"`
+			CreatedAt time.Time `gorm:"column:created_at"`
+		}
+		var cr cursorRow
+		err := s.dbFor(ctx).
+			Table("conversations c").
+			Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
+			Where("c.id = ?", *afterCursor).
+			Select("c.id, c.created_at").
+			Limit(1).
+			Find(&cr).Error
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to lookup cursor anchor: %w", err)
+		}
+		if cr.ID == "" {
+			return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *afterCursor)}
+		}
+		anchorCreatedAt = &cr.CreatedAt
+		anchorID = &cr.ID
+	}
+
 	base := s.dbFor(ctx).
 		Table("conversations c").
 		Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
@@ -515,12 +543,17 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		base = base.Where("c.started_by_conversation_id IS NULL")
 	}
 
-	if metadataFilter != nil {
-		path := "$." + metadataFilter.Key
-		base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) = ?", path, path, metadataFilter.Value)
+	for _, p := range metadataFilters {
+		path := "$." + p.Key
+		if p.Operator == registrystore.ConversationMetadataEqual {
+			base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) COLLATE BINARY = ?", path, path, p.Value)
+		} else if p.Operator == registrystore.ConversationMetadataNotEqual {
+			base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) COLLATE BINARY <> ?", path, path, p.Value)
+		}
 	}
 
 	createdAtColumn := "c.created_at"
+	idColumn := "c.id"
 	var tx *gorm.DB
 	switch mode {
 	case model.ListModeRoots:
@@ -534,12 +567,13 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 		createdAtColumn = "ranked.created_at"
+		idColumn = "ranked.id"
 	default:
 		tx = base.Select(selectColumns)
 	}
 
-	if afterCursor != nil {
-		tx = tx.Where(createdAtColumn+" < (SELECT created_at FROM conversations WHERE id = ?)", *afterCursor)
+	if anchorCreatedAt != nil && anchorID != nil {
+		tx = tx.Where(fmt.Sprintf("(%s < ? OR (%s = ? AND %s < ?))", createdAtColumn, createdAtColumn, idColumn), *anchorCreatedAt, *anchorCreatedAt, *anchorID)
 	}
 
 	queryLimit := requestedLimit + 1
@@ -553,7 +587,7 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		}
 	}
 
-	tx = tx.Order(createdAtColumn + " DESC").Limit(queryLimit)
+	tx = tx.Order(fmt.Sprintf("%s DESC, %s DESC", createdAtColumn, idColumn)).Limit(queryLimit)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
@@ -2316,6 +2350,9 @@ func (s *SQLiteStore) SearchEntries(ctx context.Context, userID string, query st
 // --- Admin ---
 
 func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registrystore.AdminConversationQuery) ([]registrystore.ConversationSummary, *string, error) {
+	if err := registrystore.ValidateConversationMetadataPredicates(query.MetadataFilters); err != nil {
+		return nil, nil, &registrystore.BadRequestError{Message: err.Error()}
+	}
 	const selectColumns = conversationSelectColumns + ", 'owner' as access_level"
 
 	type row struct {
@@ -2361,12 +2398,41 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 	default:
 		base = base.Where("c.started_by_conversation_id IS NULL")
 	}
-	if query.MetadataFilter != nil {
-		path := "$." + query.MetadataFilter.Key
-		base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) = ?", path, path, query.MetadataFilter.Value)
+	var anchorCreatedAt *time.Time
+	var anchorID *string
+	if query.AfterCursor != nil {
+		type cursorRow struct {
+			ID        string    `gorm:"column:id"`
+			CreatedAt time.Time `gorm:"column:created_at"`
+		}
+		var cr cursorRow
+		err := s.dbFor(ctx).
+			Table("conversations c").
+			Where("c.id = ?", *query.AfterCursor).
+			Select("c.id, c.created_at").
+			Limit(1).
+			Find(&cr).Error
+		if err != nil {
+			return nil, nil, fmt.Errorf("failed to lookup cursor anchor: %w", err)
+		}
+		if cr.ID == "" {
+			return nil, nil, &registrystore.BadRequestError{Message: fmt.Sprintf("invalid afterCursor %q", *query.AfterCursor)}
+		}
+		anchorCreatedAt = &cr.CreatedAt
+		anchorID = &cr.ID
+	}
+
+	for _, p := range query.MetadataFilters {
+		path := "$." + p.Key
+		if p.Operator == registrystore.ConversationMetadataEqual {
+			base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) COLLATE BINARY = ?", path, path, p.Value)
+		} else if p.Operator == registrystore.ConversationMetadataNotEqual {
+			base = base.Where("json_type(c.metadata, ?) = 'text' AND json_extract(c.metadata, ?) COLLATE BINARY <> ?", path, path, p.Value)
+		}
 	}
 
 	createdAtColumn := "c.created_at"
+	idColumn := "c.id"
 	var tx *gorm.DB
 	switch query.Mode {
 	case model.ListModeRoots:
@@ -2380,14 +2446,15 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
 			Where("group_rank = 1")
 		createdAtColumn = "ranked.created_at"
+		idColumn = "ranked.id"
 	default:
 		tx = base.Select(selectColumns)
 	}
 
-	if query.AfterCursor != nil {
-		tx = tx.Where(createdAtColumn+" < (SELECT created_at FROM conversations WHERE id = ?)", *query.AfterCursor)
+	if anchorCreatedAt != nil && anchorID != nil {
+		tx = tx.Where(fmt.Sprintf("(%s < ? OR (%s = ? AND %s < ?))", createdAtColumn, createdAtColumn, idColumn), *anchorCreatedAt, *anchorCreatedAt, *anchorID)
 	}
-	tx = tx.Order(createdAtColumn + " DESC").Limit(query.Limit + 1)
+	tx = tx.Order(fmt.Sprintf("%s DESC, %s DESC", createdAtColumn, idColumn)).Limit(query.Limit + 1)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {

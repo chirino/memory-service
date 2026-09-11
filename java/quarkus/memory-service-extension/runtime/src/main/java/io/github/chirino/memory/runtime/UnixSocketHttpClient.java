@@ -12,6 +12,7 @@ import java.net.UnixDomainSocketAddress;
 import java.nio.channels.Channels;
 import java.nio.channels.SocketChannel;
 import java.nio.charset.StandardCharsets;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
@@ -129,7 +130,7 @@ public final class UnixSocketHttpClient {
         }
     }
 
-    private static String appendQuery(String path, Map<String, ?> queryParams) {
+    static String appendQuery(String path, Map<String, ?> queryParams) {
         if (queryParams == null || queryParams.isEmpty()) {
             return path;
         }
@@ -139,7 +140,16 @@ public final class UnixSocketHttpClient {
             if (value == null) {
                 continue;
             }
-            joiner.add(urlEncode(entry.getKey()) + "=" + urlEncode(String.valueOf(value)));
+            if (value instanceof Collection<?> collection) {
+                for (Object item : collection) {
+                    if (item != null) {
+                        joiner.add(
+                                urlEncode(entry.getKey()) + "=" + urlEncode(String.valueOf(item)));
+                    }
+                }
+            } else {
+                joiner.add(urlEncode(entry.getKey()) + "=" + urlEncode(String.valueOf(value)));
+            }
         }
         String query = joiner.toString();
         if (query.isEmpty()) {
