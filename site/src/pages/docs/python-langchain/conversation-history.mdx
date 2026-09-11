@@ -162,7 +162,7 @@ response = await proxy.list_conversations(metadata=["status=waiting"])
 response = await proxy.list_conversations(
     metadata=["status=waiting", "agent-id!=worker-2"]
 )
-conversations = response.json().get("conversations", [])
+conversations = response.json().get("data", [])
 ```
 
 Operators are `=` (equal) and `!=` (not equal). Matching is exact and case-sensitive against scalar string values. Missing keys, `null`, numbers, booleans, arrays, and objects do not match either operator. Filter keys may contain only ASCII letters, digits, underscores, and hyphens.

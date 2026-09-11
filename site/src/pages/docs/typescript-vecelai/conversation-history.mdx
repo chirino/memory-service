@@ -83,7 +83,7 @@ const res1 = await proxy.listConversations({ metadata: ["status=waiting"] });
 const res2 = await proxy.listConversations({
   metadata: ["status=waiting", "agent-id!=worker-2"],
 });
-const { conversations } = await res2.json();
+const { data: conversations } = await res2.json();
 ```
 
 Operators are `=` (equal) and `!=` (not equal). Matching is exact and case-sensitive against scalar string values. Missing keys, `null`, numbers, booleans, arrays, and objects do not match either operator. Filter keys may contain only ASCII letters, digits, underscores, and hyphens.
