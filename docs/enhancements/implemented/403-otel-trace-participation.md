@@ -101,6 +101,6 @@ automatically by the OTel SDK.
 
 ## Non-Goals
 
-Auth logic, business logic, database schema, the S3/Vault/Redis/Infinispan cache plugins,
+Auth logic, business logic, database schema, the S3/Vault/AWS KMS/Redis/Infinispan cache and encryption plugins, the Prometheus stats HTTP client,
 `internal/cmd/process/turntraces`, and `internal/cmd/mcp` are out of scope and unchanged.
 The `turntraces` processor is a separate analytical trace feature and remains independent.
