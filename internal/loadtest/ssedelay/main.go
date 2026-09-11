@@ -303,9 +303,6 @@ func subscriberLoop(
 		return
 	}
 
-	// Signal that the HTTP connection is live — senders may now start.
-	close(ready)
-
 	// sseEnvelope matches the JSON structure written by writeSSEEvent:
 	// {"event":"created","kind":"entry","data":{"conversation":"<id>",...}}
 	type sseEnvelope struct {
@@ -315,10 +312,20 @@ func subscriberLoop(
 		} `json:"data"`
 	}
 
-	// eventCh receives events that have a conversation field in their payload.
+	// Start the scanner goroutine BEFORE signalling ready so it is already
+	// calling bufio.Scanner.Scan() by the time the first sender fires.
+	// If we close(ready) first, the sender can POST and the server can
+	// dispatch the SSE event before the scanner has called Read() even once,
+	// causing the event to be lost at the select{default:} drop branch.
 	eventCh := make(chan sseEnvelope, 256)
+	scannerReady := make(chan struct{})
 	go func() {
 		scanner := bufio.NewScanner(resp.Body)
+		// Signal that the scanner is running and blocking on Scan() before
+		// the first line arrives.  We do this by closing scannerReady inside
+		// the goroutine, just before entering the read loop.  The goroutine
+		// is scheduled and reaches this point before the first Scan() blocks.
+		close(scannerReady)
 		for scanner.Scan() {
 			line := scanner.Text()
 			if !strings.HasPrefix(line, "data: ") {
@@ -339,6 +346,13 @@ func subscriberLoop(
 		}
 		close(eventCh)
 	}()
+
+	// Wait for the scanner goroutine to reach its read loop, then signal the
+	// caller that this subscriber is ready to receive events.
+	<-scannerReady
+
+	// Signal that the HTTP connection is live — senders may now start.
+	close(ready)
 
 	for {
 		select {
