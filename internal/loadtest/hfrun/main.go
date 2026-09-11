@@ -243,10 +243,17 @@ func checkStats(raw map[string]any, benchmarkName string) error {
 		}
 	}
 
+	// A benchmark that recorded zero requests has not measured anything useful.
+	if totalRequests == 0 {
+		return fmt.Errorf("no requests recorded — benchmark may have failed to start or connect")
+	}
+
 	// Check error rate (> 1% of total requests).
-	if totalRequests > 0 && (totalErrors/totalRequests) > 0.01 {
+	failureCount := totalErrors
+	failureRatio := failureCount / totalRequests
+	if failureRatio > 0.01 {
 		return fmt.Errorf("error rate %.1f%% (%.0f errors / %.0f requests) exceeds 1%% threshold",
-			(totalErrors/totalRequests)*100, totalErrors, totalRequests)
+			failureRatio*100, failureCount, totalRequests)
 	}
 
 	if len(sloViolations) > 0 {
