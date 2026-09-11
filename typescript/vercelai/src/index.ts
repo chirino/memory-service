@@ -141,7 +141,6 @@ function compactQuery(
   for (const [key, value] of Object.entries(params)) {
     if (value === undefined || value === null) continue;
     if (Array.isArray(value)) {
-      // Repeated params: each element becomes a separate key=value pair
       for (const item of value) {
         qp.append(key, item);
       }

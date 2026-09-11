@@ -187,6 +187,9 @@ if (filterVersion >= 1 && maxFilters >= predicates.size()) {
             == ConversationMetadataComparison.CONVERSATION_METADATA_COMPARISON_EQUAL) {
     req.setMetadataFilterKey(predicates.get(0).getKey());
     req.setMetadataFilterValue(predicates.get(0).getValue());
+} else {
+    throw new IllegalStateException(
+        "server does not support repeatable metadata filters; upgrade the server or simplify the request to a single equality predicate");
 }
 
 ListConversationsResponse response = conversations.listConversations(req.build());

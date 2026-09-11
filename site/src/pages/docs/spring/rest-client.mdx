@@ -94,6 +94,7 @@ The REST client provides several API classes:
 
 ```java
 import io.github.chirino.memoryservice.client.api.ConversationsApi;
+import io.github.chirino.memoryservice.client.model.ListConversations200Response;
 import reactor.core.publisher.Mono;
 
 Mono<ListConversations200Response> response = conversationsApi.listConversations(
@@ -106,7 +107,7 @@ Mono<ListConversations200Response> response = conversationsApi.listConversations
     null     // metadata
 );
 
-response.block().getConversations().forEach(conversation -> {
+response.block().getData().forEach(conversation -> {
     System.out.println(conversation.getId());
 });
 ```

@@ -84,7 +84,7 @@ import jakarta.ws.rs.core.Response;
 import java.util.List;
 
 // List conversations
-Response response = proxy.listConversations(mode, after, limit, query);
+Response response = proxy.listConversations(mode, ancestry, afterCursor, limit, query);
 
 // Filter conversations by metadata (up to 5 predicates, combined with AND)
 Response filtered = proxy.listConversations(
@@ -208,9 +208,12 @@ public class MyService {
 
         return api.listConversations(
             "latest-fork",  // mode
-            null,           // after cursor
+            null,           // ancestry
+            null,           // afterCursor
             20,             // limit
-            null            // query
+            null,           // query
+            "exclude",      // archived
+            null            // metadata
         );
     }
 
@@ -284,10 +287,11 @@ public class ConversationsResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response listConversations(
             @QueryParam("mode") String mode,
-            @QueryParam("after") String after,
+            @QueryParam("ancestry") String ancestry,
+            @QueryParam("afterCursor") String afterCursor,
             @QueryParam("limit") Integer limit,
             @QueryParam("query") String query) {
-        return proxy.listConversations(mode, after, limit, query);
+        return proxy.listConversations(mode, ancestry, afterCursor, limit, query);
     }
 
     @GET

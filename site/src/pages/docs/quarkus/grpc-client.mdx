@@ -125,7 +125,7 @@ for (ConversationSummary conv : response.getConversationsList()) {
 
 The gRPC API accepts typed `ConversationMetadataFilter` predicates. Because old servers silently ignore `metadata_filters`, check capabilities before sending them.
 
-Inject a `SystemService` stub alongside the conversations stub:
+Inject a `SystemService` stub. The `"conversations"` client name reuses the same channel configuration as the conversations stub:
 
 ```java
 import io.github.chirino.memory.grpc.v1.*;
@@ -169,6 +169,9 @@ if (filterVersion >= 1 && maxFilters >= predicates.size()) {
             == ConversationMetadataComparison.CONVERSATION_METADATA_COMPARISON_EQUAL) {
     req.setMetadataFilterKey(predicates.get(0).getKey());
     req.setMetadataFilterValue(predicates.get(0).getValue());
+} else {
+    throw new IllegalStateException(
+        "server does not support repeatable metadata filters; upgrade the server or simplify the request to a single equality predicate");
 }
 
 ListConversationsResponse response = conversationsClient.listConversations(req.build());

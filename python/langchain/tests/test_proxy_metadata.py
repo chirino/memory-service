@@ -4,14 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import unittest
-import urllib.parse
 from unittest.mock import patch
 
 import httpx
-
-
-def _parse_qs(url: str) -> dict[str, list[str]]:
-    return urllib.parse.parse_qs(urllib.parse.urlparse(url).query)
 
 
 class TestProxyMetadataEncoding(unittest.TestCase):
@@ -48,8 +43,10 @@ class TestProxyMetadataEncoding(unittest.TestCase):
             )
 
         self.assertEqual(len(captured), 1)
-        params = _parse_qs(str(captured[0].url))
-        self.assertEqual(params.get("metadata"), ["status=waiting", "agent-id=worker-1"])
+        self.assertEqual(
+            captured[0].url.params.get_list("metadata"),
+            ["status=waiting", "agent-id=worker-1"],
+        )
 
 
 if __name__ == "__main__":
