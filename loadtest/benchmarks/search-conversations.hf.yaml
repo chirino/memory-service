@@ -13,9 +13,10 @@ name: search-conversations
 # vector+fulltext search is CPU/IO-bound and slow under concurrent load on a
 # single-node dev machine).
 #
-# Uses always (fixed VU count) rather than constantRate so session count
-# stays bounded — constantRate accumulates sessions when requests are slow,
+# Uses always (fixed VU count) with 5 VUs rather than constantRate so session
+# count stays bounded — constantRate accumulates sessions when requests are slow,
 # exhausting the connection pool and inflating latency artificially.
+# Postgres CPU rapidly on a single-node dev machine.
 #
 # deep-search.csv has THREE columns:
 #   col 0 — ownerID (placeholder, equals col 1)
@@ -32,7 +33,7 @@ http:
 phases:
   - searchLoad:
       always:
-        users: 10
+        users: 5
         duration: 60s
         scenario:
           - searchAndPage:
