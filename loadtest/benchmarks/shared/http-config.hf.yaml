@@ -1,0 +1,8 @@
+name: http-config
+http:
+  host: localhost
+  port: 8082
+  sharedConnections: 50
+  requestTimeout: 30s
+  headers:
+    X-API-Key: agent-api-key-1

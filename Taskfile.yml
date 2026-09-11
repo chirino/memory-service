@@ -612,3 +612,56 @@ tasks:
       - |
         echo ""
         echo "SNAPSHOT published to Maven Central"
+
+  loadtest:seed:
+    desc: |
+      Seed the running memory service with load-test data.
+      Requires task dev:memory-service to be running on port 8082.
+      Accepts extra flags via -- e.g.: task loadtest:seed -- --total-conversations=50
+    cmds:
+      - go run ./internal/loadtest/generator/ {{.CLI_ARGS}}
+
+  loadtest:bench:
+    desc: |
+      Run all Hyperfoil benchmark flows against the seeded memory service.
+      Requires task dev:memory-service running on port 8082 and task loadtest:seed completed.
+      Requires jbang on PATH: https://www.jbang.dev/download/
+    cmds:
+      - sh loadtest/benchmarks/run.sh
+
+  loadtest:bench:sse-delay:
+    desc: |
+      Run the SSE event-delivery latency benchmark (Go-native).
+      Measures append→event latency at 1, 10, and 50 concurrent users.
+      Each user has one sender connection and one SSE subscriber; 2 admin
+      subscribers simulate cognition-style all-events consumers.
+      Requires task dev:memory-service running on port 8082.
+    vars:
+      TIMESTAMP:
+        sh: date +%Y%m%dT%H%M%S
+    cmds:
+      - >
+        go run ./internal/loadtest/ssedelay/
+        --base-url=http://localhost:8082
+        --api-key=agent-api-key-1
+        --admin-api-key=admin-api-key-1
+        --duration=30
+        --out=loadtest/results/sse-event-delay-{{.TIMESTAMP}}.json
+
+  loadtest:correctness:
+    desc: Run pagination correctness tests against a seeded memory service.
+    cmds:
+      - go test ./internal/loadtest/correctness/ -v -timeout 30m -count=1
+
+  loadtest:report:
+    desc: Aggregate loadtest results into report.md and report.json.
+    cmds:
+      - go run ./internal/loadtest/report/
+
+  loadtest:all:
+    desc: "Run the full load-test pipeline: seed -> bench -> correctness -> report."
+    cmds:
+      - task: loadtest:seed
+      - task: loadtest:bench
+      - task: loadtest:correctness
+      - task: loadtest:report

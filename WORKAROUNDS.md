@@ -31,6 +31,11 @@
 - Impact: The inline `conversationPatch` on `AppendEntries`/`SyncAgentEntry` is **not** truly atomic on MongoDB — the entry write and the subsequent conversation patch (title/metadata/archive) are separate operations. A failure between them will leave the database in a partially-updated state. For validated `archived=false` appends, Mongo inserts while still archived and then unarchives; a crash between those operations leaves the new entry stored under an archived conversation, and an exact retry completes the unarchive. Postgres and SQLite are genuinely atomic (GORM transactions). Mongo outbox appends are also best-effort (see the `Mongo outbox staging rule` in `internal/FACTS.md`).
 - Proper fix: Upgrade `MongoStore.InWriteTx` to use `mongo.Client.StartSession` + `session.WithTransaction`, threading the session context through all write operations. Then verify that all collections used in a single transaction are within the same replica set shard to avoid cross-shard transaction limitations.
 
+## Load test index batching paced to avoid Postgres WAL spike
+
+- **What:** `indexEntries()` in `internal/loadtest/generator/seeder.go` sleeps 50ms between each batch of `POST /v1/conversations/index` requests.
+- **Why:** Seeding 2000+ conversations generates 200k+ index writes with up to 5000-char entry text content. Without pacing, the WAL write rate outpaces Postgres checkpoint flushes on a local dev instance, causing `PANIC: could not write to file "pg_wal/xlogtemp.*": No space left on device` and crashing Postgres into recovery mode. The 50ms sleep lets Postgres checkpoint between bursts and prevents the spike.
+- **Proper fix:** Run the large-scale seed against a Postgres instance with tuned WAL settings (`max_wal_size`, `wal_buffers`, `shared_buffers`) as noted in issue #598. A compose override for load testing would remove the need for this pacing entirely.
 ## MongoDB sequenced batch conflict cleanup
 
 - What: `MongoStore.AppendEntries` deletes entries that the same batch inserted before a later insert reports a duplicate sequence. The REST and gRPC retry paths also delete cross-reference attachment records created by the failed attempt.
