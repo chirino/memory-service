@@ -1,5 +1,5 @@
 # Build developer frontend
-FROM node:26-alpine@sha256:e88a35be04478413b7c71c455cd9865de9b9360e1f43456be5951032d7ac1a66 AS frontend-builder
+FROM node:26-alpine@sha256:2d984a15c9b54fd0aeb608b8e0d0d83529eb34d2966db27a1fb4f1edc3d298a3 AS frontend-builder
 WORKDIR /build
 COPY frontends/developer/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontends/developer/ ./
 RUN npm run build
 
 # Build Go binary
-FROM registry.access.redhat.com/ubi9/go-toolset:9.8@sha256:b471d69d4bf8a0aeac420f0e38777b1e38a59f7e805cba3e1c03d0066a1961af AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:9.8@sha256:5e68f09a652ac6627a83c57655e42e24575efb278b54336039c9308607fc6b21 AS builder
 USER 0
 WORKDIR /src
 ENV GOTOOLCHAIN=auto
@@ -19,7 +19,7 @@ ARG VERSION=""
 RUN CGO_ENABLED=1 go build -buildvcs=false -tags "${GO_BUILD_TAGS}" -ldflags "-X main.Version=${VERSION}" -o /memory-service .
 
 # Runtime image
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:463cae32c6f6f5594b11a5c22de275016bd8545ce58a6373388e8b24f13fc15c
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
 RUN microdnf install -y --nodocs \
     curl-minimal \
     sqlite-libs \
