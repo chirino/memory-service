@@ -543,7 +543,11 @@ func adminGetEntries(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": result.Data, "afterCursor": result.AfterCursor, "beforeCursor": result.BeforeCursor})
+		data := make([]map[string]any, 0, len(result.Data))
+		for i := range result.Data {
+			data = append(data, eventstream.AdminEntryResource(&result.Data[i]))
+		}
+		c.JSON(http.StatusOK, gin.H{"data": data, "afterCursor": result.AfterCursor, "beforeCursor": result.BeforeCursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -562,7 +566,7 @@ func adminGetEntry(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, entry)
+		c.JSON(http.StatusOK, eventstream.AdminEntryResource(entry))
 		return nil
 	}); err != nil {
 		handleError(c, err)
@@ -653,6 +657,7 @@ type adminChildConversationSummaryResponse struct {
 	Title                   string            `json:"title"`
 	OwnerUserID             string            `json:"ownerUserId"`
 	ClientID                string            `json:"clientId,omitempty"`
+	ConversationGroupID     uuid.UUID         `json:"conversationGroupId"`
 	AgentID                 *string           `json:"agentId,omitempty"`
 	CreatedAt               time.Time         `json:"createdAt"`
 	UpdatedAt               time.Time         `json:"updatedAt"`
@@ -670,6 +675,7 @@ func toAdminChildConversationSummaries(items []registrystore.ConversationSummary
 			Title:                   item.Title,
 			OwnerUserID:             item.OwnerUserID,
 			ClientID:                item.ClientID,
+			ConversationGroupID:     item.ConversationGroupID,
 			AgentID:                 item.AgentID,
 			CreatedAt:               item.CreatedAt,
 			UpdatedAt:               item.UpdatedAt,
@@ -687,6 +693,7 @@ type adminConversationSummaryResponse struct {
 	Title                   string                 `json:"title"`
 	OwnerUserID             string                 `json:"ownerUserId"`
 	ClientID                string                 `json:"clientId,omitempty"`
+	ConversationGroupID     uuid.UUID              `json:"conversationGroupId"`
 	AgentID                 *string                `json:"agentId,omitempty"`
 	Metadata                map[string]interface{} `json:"metadata,omitempty"`
 	CreatedAt               time.Time              `json:"createdAt"`
@@ -705,6 +712,7 @@ func toAdminConversationSummaries(items []registrystore.ConversationSummary) []a
 			Title:                   item.Title,
 			OwnerUserID:             item.OwnerUserID,
 			ClientID:                item.ClientID,
+			ConversationGroupID:     item.ConversationGroupID,
 			AgentID:                 item.AgentID,
 			Metadata:                item.Metadata,
 			CreatedAt:               item.CreatedAt,
@@ -723,6 +731,7 @@ type adminConversationResponse struct {
 	Title                   string                 `json:"title"`
 	OwnerUserID             string                 `json:"ownerUserId"`
 	ClientID                string                 `json:"clientId,omitempty"`
+	ConversationGroupID     uuid.UUID              `json:"conversationGroupId"`
 	AgentID                 *string                `json:"agentId,omitempty"`
 	Metadata                map[string]interface{} `json:"metadata"`
 	CreatedAt               time.Time              `json:"createdAt"`
@@ -742,6 +751,7 @@ func toAdminConversationResponse(conv *registrystore.ConversationDetail) adminCo
 		Title:                   conv.Title,
 		OwnerUserID:             conv.OwnerUserID,
 		ClientID:                conv.ClientID,
+		ConversationGroupID:     conv.ConversationGroupID,
 		AgentID:                 conv.AgentID,
 		Metadata:                conv.Metadata,
 		CreatedAt:               conv.CreatedAt,
@@ -797,7 +807,28 @@ func adminSearchConversations(c *gin.Context, store registrystore.MemoryStore) {
 		if err != nil {
 			return err
 		}
-		c.JSON(http.StatusOK, gin.H{"data": results.Data, "afterCursor": results.AfterCursor})
+		data := make([]map[string]any, 0, len(results.Data))
+		for i := range results.Data {
+			item := map[string]any{
+				"entryId":        results.Data[i].EntryID,
+				"conversationId": results.Data[i].ConversationID,
+				"score":          results.Data[i].Score,
+			}
+			if results.Data[i].ConversationTitle != nil {
+				item["conversationTitle"] = *results.Data[i].ConversationTitle
+			}
+			if results.Data[i].Kind != "" {
+				item["kind"] = results.Data[i].Kind
+			}
+			if results.Data[i].Highlights != nil {
+				item["highlights"] = *results.Data[i].Highlights
+			}
+			if results.Data[i].Entry != nil {
+				item["entry"] = eventstream.AdminEntryResource(results.Data[i].Entry)
+			}
+			data = append(data, item)
+		}
+		c.JSON(http.StatusOK, gin.H{"data": data, "afterCursor": results.AfterCursor})
 		return nil
 	}); err != nil {
 		handleError(c, err)

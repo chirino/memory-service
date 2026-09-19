@@ -886,15 +886,22 @@ func (e *sqliteEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.U
 
 // ExpireMemories archives memories whose TTL has elapsed.
 func (e *sqliteEpisodicStore) ExpireMemories(ctx context.Context) (int64, error) {
+	changes, err := e.ExpireMemoriesWithChanges(ctx)
+	return int64(len(changes)), err
+}
+
+func (e *sqliteEpisodicStore) ExpireMemoriesWithChanges(ctx context.Context) ([]registryepisodic.MemoryLifecycleChange, error) {
 	deletedReason := int16(2)
 	now := time.Now().UTC()
-	result := e.writeDBFor(ctx, "sqlite episodic store expire memories").Exec(`
+	var changes []registryepisodic.MemoryLifecycleChange
+	result := e.writeDBFor(ctx, "sqlite episodic store expire memories").Raw(`
 		UPDATE memories
 		SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
-		WHERE expires_at <= ? AND archived_at IS NULL`,
+		WHERE expires_at <= ? AND archived_at IS NULL
+		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`,
 		now, deletedReason, now,
-	)
-	return result.RowsAffected, result.Error
+	).Scan(&changes)
+	return changes, result.Error
 }
 
 // HardDeleteEvictableUpdates hard-deletes rows with deleted_reason=0 (superseded by update)
@@ -914,7 +921,13 @@ func (e *sqliteEpisodicStore) HardDeleteEvictableUpdates(ctx context.Context, li
 // TombstoneDeletedMemories clears encrypted data from rows with deleted_reason IN (1,2)
 // that have been re-indexed (indexed_at IS NOT NULL). Returns the number tombstoned.
 func (e *sqliteEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit int) (int64, error) {
-	result := e.writeDBFor(ctx, "sqlite episodic store tombstone deleted memories").Exec(`
+	changes, err := e.TombstoneDeletedMemoriesWithChanges(ctx, limit)
+	return int64(len(changes)), err
+}
+
+func (e *sqliteEpisodicStore) TombstoneDeletedMemoriesWithChanges(ctx context.Context, limit int) ([]registryepisodic.MemoryLifecycleChange, error) {
+	var changes []registryepisodic.MemoryLifecycleChange
+	result := e.writeDBFor(ctx, "sqlite episodic store tombstone deleted memories").Raw(`
 		UPDATE memories
 		SET value_encrypted = NULL,
 		    policy_attributes = '{}',
@@ -925,22 +938,30 @@ func (e *sqliteEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limi
 			WHERE deleted_reason IN (1, 2) AND indexed_at IS NOT NULL AND value_encrypted IS NOT NULL
 			ORDER BY archived_at ASC
 			LIMIT ?
-		)`, limit)
-	return result.RowsAffected, result.Error
+		)
+		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`, limit).Scan(&changes)
+	return changes, result.Error
 }
 
 // HardDeleteExpiredTombstones hard-deletes tombstone rows older than olderThan.
 // Returns the number deleted.
 func (e *sqliteEpisodicStore) HardDeleteExpiredTombstones(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
-	result := e.writeDBFor(ctx, "sqlite episodic store hard delete expired tombstones").Exec(`
+	changes, err := e.HardDeleteExpiredTombstonesWithChanges(ctx, olderThan, limit)
+	return int64(len(changes)), err
+}
+
+func (e *sqliteEpisodicStore) HardDeleteExpiredTombstonesWithChanges(ctx context.Context, olderThan time.Time, limit int) ([]registryepisodic.MemoryLifecycleChange, error) {
+	var changes []registryepisodic.MemoryLifecycleChange
+	result := e.writeDBFor(ctx, "sqlite episodic store hard delete expired tombstones").Raw(`
 		DELETE FROM memories
 		WHERE id IN (
 			SELECT id FROM memories
 			WHERE deleted_reason IN (1, 2) AND value_encrypted IS NULL AND archived_at <= ?
 			ORDER BY archived_at ASC
 			LIMIT ?
-		)`, olderThan, limit)
-	return result.RowsAffected, result.Error
+		)
+		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`, olderThan, limit).Scan(&changes)
+	return changes, result.Error
 }
 
 // ListMemoryEvents returns a paginated, time-ordered stream of memory lifecycle events.
@@ -1155,6 +1176,10 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 
 // AdminGetMemoryByID retrieves any memory by UUID.
 func (e *sqliteEpisodicStore) AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
+	return e.adminGetMemoryByID(ctx, memoryID)
+}
+
+func (e *sqliteEpisodicStore) adminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
 	var row memoryRow
 	result := e.dbFor(ctx).Where("id = ?", memoryID).Limit(1).Find(&row)
 	if result.Error != nil {
@@ -1184,6 +1209,10 @@ func (e *sqliteEpisodicStore) AdminCountPendingIndexing(ctx context.Context) (in
 
 // AdminListMemories retrieves latest memory rows across users without policy injection.
 func (e *sqliteEpisodicStore) AdminListMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
+	return e.AdminListEventSnapshotMemories(ctx, query)
+}
+
+func (e *sqliteEpisodicStore) AdminListEventSnapshotMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
 	limit := query.Limit
 	if limit <= 0 {
 		limit = 50

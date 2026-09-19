@@ -54,6 +54,33 @@ func TestRedisBusPublishesRecoveryInvalidateAfterPublishFailure(t *testing.T) {
 	require.Equal(t, "pubsub recovery", redisEventReason(invalidate))
 }
 
+func TestRedisWirePreservesDurableMetadata(t *testing.T) {
+	t.Parallel()
+	occurred := time.Unix(123, 456).UTC()
+	event := registryeventbus.Event{Event: "created", Kind: "entry", OutboxCursor: "mongo:cursor", OccurredAt: &occurred}
+	roundTrip := fromWire(toWire(event))
+	require.Equal(t, event.OutboxCursor, roundTrip.OutboxCursor)
+	require.Equal(t, event.OccurredAt, roundTrip.OccurredAt)
+}
+
+func TestRedisBusPreservesDurableMetadataAcrossNodes(t *testing.T) {
+	ctx := testRedisBusContext(t)
+	opts, err := redis.ParseURL(testredis.StartRedis(t))
+	require.NoError(t, err)
+	busA := mustLoadRedisBus(t, ctx, opts)
+	defer busA.Close()
+	busB := mustLoadRedisBus(t, ctx, opts)
+	defer busB.Close()
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, err := busB.Subscribe(subCtx, "")
+	require.NoError(t, err)
+	occurred := time.Unix(123, 456).UTC()
+	require.NoError(t, busA.PublishDurable(ctx, registryeventbus.Event{Event: "created", Kind: "entry", Broadcast: true, OutboxCursor: "mongo:cursor", OccurredAt: &occurred}))
+	received := waitForRedisEvent(t, events, 10*time.Second, func(event registryeventbus.Event) bool { return event.OutboxCursor == "mongo:cursor" })
+	require.Equal(t, occurred, received.OccurredAt.UTC())
+}
+
 func TestRedisBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.T) {
 	ctx := testRedisBusContext(t)
 	redisURL := testredis.StartRedis(t)

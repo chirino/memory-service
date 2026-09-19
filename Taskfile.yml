@@ -325,6 +325,80 @@ tasks:
       - docker compose stop turn-traces-processor >/dev/null 2>&1 || true
       - air -root . -c deploy/dev/air.toml -tmp_dir /tmp/memory-service-turn-traces -build.log ./build-errors-turn-traces.log -build.kill_delay 5s
 
+  dev:clickhouse-processor:
+    desc: Run the ClickHouse analytics processor against the local stack.
+    env:
+      MEMORY_SERVICE_GRPC_ENDPOINT: '{{.MEMORY_SERVICE_GRPC_ENDPOINT | default "localhost:8082"}}'
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: clickhouse_processor
+      MEMORY_SERVICE_API_KEY: clickhouse-processor-key
+      MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC: "true"
+      MEMORY_SERVICE_PROCESS_AFTER_CURSOR: start
+      MEMORY_SERVICE_CLICKHOUSE_ADDRESS: '{{.MEMORY_SERVICE_CLICKHOUSE_ADDRESS | default "localhost:9002"}}'
+      MEMORY_SERVICE_CLICKHOUSE_PROTOCOL: native
+      MEMORY_SERVICE_CLICKHOUSE_DATABASE: memory_service
+      MEMORY_SERVICE_CLICKHOUSE_USERNAME: memory_service_analytics
+      MEMORY_SERVICE_CLICKHOUSE_PASSWORD_FILE: ./deploy/clickhouse/analytics-password
+      MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE: "true"
+      MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE: metadata
+    cmds:
+      - docker compose up -d postgres redis clickhouse memory-service
+      - docker compose stop clickhouse-processor >/dev/null 2>&1 || true
+      - go run . process clickhouse
+
+  test:clickhouse:compose-smoke:
+    desc: Write a Compose source conversation and wait for its ClickHouse export.
+    env:
+      COMPOSE_FILE: compose.yaml:deploy/clickhouse/compose-smoke.yaml
+      MEMORY_SERVICE_ATTACHMENTS_KIND: db
+      MEMORY_SERVICE_CACHE_KIND: none
+      MEMORY_SERVICE_VECTOR_KIND: none
+      MEMORY_SERVICE_EMBEDDING_KIND: none
+      POSTGRES_HOST_PORT: "55432"
+    cmds:
+      - docker compose up -d --wait postgres clickhouse
+      - docker compose up -d --build --wait --no-deps memory-service
+      - docker compose up -d --wait --no-deps clickhouse-processor
+      - |
+        before=$(docker compose exec -T clickhouse clickhouse-client --user memory_service_analytics --password memory-service-analytics --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'")
+        curl -fsS -X POST http://localhost:8082/v1/conversations \
+          -H 'Content-Type: application/json' \
+          -H 'X-API-Key: agent-api-key-1' \
+          -H 'X-User-ID: analytics-smoke' \
+          --data '{"title":"ClickHouse Compose smoke"}' >/dev/null
+        attempts=0
+        while [ "$attempts" -lt 60 ]; do
+          after=$(docker compose exec -T clickhouse clickhouse-client --user memory_service_analytics --password memory-service-analytics --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'")
+          if [ "$after" -gt "$before" ]; then
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 1
+        done
+        echo "ClickHouse Compose export did not appear within 60 seconds" >&2
+        exit 1
+
+  test:clickhouse:kind-smoke:
+    desc: Write a local kind source conversation and wait for its ClickHouse export.
+    cmds:
+      - |
+        before=$(kubectl exec -n memory-service clickhouse-0 -- clickhouse-client --user memory_service_analytics --password memory-service-analytics --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'")
+        curl -fsS -X POST http://memory-service.127.0.0.1.nip.io:8080/v1/conversations \
+          -H 'Content-Type: application/json' \
+          -H 'X-API-Key: analytics-smoke-key' \
+          -H 'X-User-ID: analytics-smoke' \
+          --data '{"title":"ClickHouse kind smoke"}' >/dev/null
+        attempts=0
+        while [ "$attempts" -lt 60 ]; do
+          after=$(kubectl exec -n memory-service clickhouse-0 -- clickhouse-client --user memory_service_analytics --password memory-service-analytics --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'")
+          if [ "$after" -gt "$before" ]; then
+            exit 0
+          fi
+          attempts=$((attempts + 1))
+          sleep 1
+        done
+        echo "ClickHouse kind export did not appear within 60 seconds" >&2
+        exit 1
+
   dev:memory-service-pgvector:
     desc: Run the memory-service app in dev mode with pgvector (for knowledge clustering).
     env:
@@ -425,8 +499,8 @@ tasks:
       - |
         kubectl create secret generic memory-service \
           --namespace memory-service \
-          --from-literal=MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY="${MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY:-${OPENAI_API_KEY}}" \
-          --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY}" \
+          --from-literal=MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY="${MEMORY_SERVICE_EMBEDDING_OPENAI_API_KEY:-${OPENAI_API_KEY:-none}}" \
+          --from-literal=OPENAI_API_KEY="${OPENAI_API_KEY:-none}" \
           --from-literal=OPENAI_BASE_URL="${OPENAI_BASE_URL:-https://api.openai.com}" \
           --dry-run=client -o yaml | kubectl apply -f -
 
@@ -457,6 +531,7 @@ tasks:
     cmds:
       - kind load docker-image ghcr.io/chirino/memory-service:latest --name {{.KIND_CLUSTER_NAME}}
       - kubectl rollout restart deployment/memory-service -n memory-service 2>/dev/null || true
+      - kubectl rollout restart deployment/clickhouse-processor -n memory-service 2>/dev/null || true
 
   kind:load:chat-quarkus:
     deps:
@@ -469,48 +544,130 @@ tasks:
     deps:
       - kind:load:memory-service
       - kind:load:chat-quarkus
+    cmds:
+      - |
+        source_hash=$(
+          find .dockerignore Dockerfile go.mod go.sum main.go internal contracts \
+            frontends/developer frontends/chat-frontend java deploy/episodic-policies \
+            -type f \
+            ! -path '*/node_modules/*' \
+            ! -path '*/target/*' \
+            ! -path '*/__pycache__/*' \
+            ! -path '*/.venv/*' \
+            ! -name '*.log' ! -name '*.key' ! -name '*.pem' \
+            | LC_ALL=C sort \
+            | while IFS= read -r file; do cksum "$file"; done \
+            | cksum | awk '{print $1 "-" $2}'
+        )
+        kubectl create configmap memory-service-kind-images \
+          --namespace kube-system \
+          --from-literal=sourceHash="$source_hash" \
+          --dry-run=client -o yaml | kubectl apply -f -
 
-  kind:rm:
-    desc: Delete the kind cluster
+  kind:down:
+    desc: Destroy the kind cluster
     silent: true
     cmds:
-      - kind delete cluster --name {{.KIND_CLUSTER_NAME}} 2>/dev/null || true
+      - |
+        if kind get clusters 2>/dev/null | grep -q '^{{.KIND_CLUSTER_NAME}}$'; then
+          kind delete cluster --name {{.KIND_CLUSTER_NAME}}
+        else
+          echo "Kind cluster {{.KIND_CLUSTER_NAME}} does not exist; nothing to destroy."
+        fi
 
   kind:reset:
-    desc: Delete and recreate the kind cluster, then deploy
+    desc: Destroy and recreate the kind cluster, then set it up
     cmds:
-      - task: kind:rm
-      - task: kind:init
+      - task: kind:down
+      - task: kind:up
 
-  kind:init:
-    desc: "Deploy to kind: demo + gateway + hostNetwork"
+  kind:up:
+    desc: Create and set up the kind cluster, reusing completed setup when possible
     silent: true
     cmds:
       - |
         if ! kind get clusters 2>/dev/null | grep -q '^{{.KIND_CLUSTER_NAME}}$'; then
           kind create cluster --name {{.KIND_CLUSTER_NAME}} --config deploy/kind-config.yaml
-          kubectl cluster-info --context kind-{{.KIND_CLUSTER_NAME}}
+        else
+          echo "Kind cluster {{.KIND_CLUSTER_NAME}} already exists; skipping cluster creation."
         fi
+        kubectl config use-context kind-{{.KIND_CLUSTER_NAME}} >/dev/null
+        kubectl cluster-info --context kind-{{.KIND_CLUSTER_NAME}}
       - |
-        if ! kubectl get deployment envoy-gateway -n envoy-gateway-system 2>/dev/null; then
+        envoy_image=$(kubectl get deployment envoy-gateway -n envoy-gateway-system -o jsonpath='{.spec.template.spec.containers[0].image}' 2>/dev/null || true)
+        case "$envoy_image" in
+        *:{{.ENVOY_GATEWAY_VERSION}})
+          echo "Envoy Gateway {{.ENVOY_GATEWAY_VERSION}} is already installed; skipping installation."
+          ;;
+        *)
           kubectl apply --server-side --force-conflicts -f https://github.com/envoyproxy/gateway/releases/download/{{.ENVOY_GATEWAY_VERSION}}/install.yaml
-          kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
-          kubectl apply -f deploy/kustomize/components/gateway-envoy/gatewayclass.yaml
-        fi
+          ;;
+        esac
+      - kubectl wait --timeout=5m -n envoy-gateway-system deployment/envoy-gateway --for=condition=Available
+      - kubectl apply -f deploy/kustomize/components/gateway-envoy/gatewayclass.yaml
       - kubectl apply -f deploy/kustomize/envs/kind/base/envoyproxy.yaml
-      - task: kind:load
+      - |
+        node="{{.KIND_CLUSTER_NAME}}-control-plane"
+        source_hash=$(
+          find .dockerignore Dockerfile go.mod go.sum main.go internal contracts \
+            frontends/developer frontends/chat-frontend java deploy/episodic-policies \
+            -type f \
+            ! -path '*/node_modules/*' \
+            ! -path '*/target/*' \
+            ! -path '*/__pycache__/*' \
+            ! -path '*/.venv/*' \
+            ! -name '*.log' ! -name '*.key' ! -name '*.pem' \
+            | LC_ALL=C sort \
+            | while IFS= read -r file; do cksum "$file"; done \
+            | cksum | awk '{print $1 "-" $2}'
+        )
+        loaded_hash=$(kubectl get configmap memory-service-kind-images -n kube-system -o jsonpath='{.data.sourceHash}' 2>/dev/null || true)
+        missing_images=""
+        for image in \
+          ghcr.io/chirino/memory-service:latest \
+          ghcr.io/chirino/memory-service-chat-quarkus:latest
+        do
+          if ! docker exec "$node" crictl images --quiet "$image" 2>/dev/null | grep -q .; then
+            missing_images="yes"
+            break
+          fi
+        done
+        if [ -n "$missing_images" ] || [ "$loaded_hash" != "$source_hash" ]; then
+          task kind:load KIND_CLUSTER_NAME={{.KIND_CLUSTER_NAME}}
+        else
+          echo "Application images match the current workspace; skipping image builds."
+        fi
       - task: kind:deploy
+      - |
+        if kubectl get deployment/memory-service -n memory-service >/dev/null 2>&1; then
+          kubectl rollout status deployment/memory-service -n memory-service --timeout=5m
+        fi
+        if kubectl get deployment/clickhouse-processor -n memory-service >/dev/null 2>&1 \
+          && ! kubectl wait deployment/clickhouse-processor -n memory-service --for=condition=Available --timeout=5s >/dev/null 2>&1; then
+          echo "ClickHouse processor started before Memory Service was ready; restarting it."
+          kubectl rollout restart deployment/clickhouse-processor -n memory-service
+        fi
       - |
         echo ""
         echo "Waiting for all pods to be ready..."
         timeout=300
         elapsed=0
         while [ $elapsed -lt $timeout ]; do
-          not_ready=$(kubectl get pods -A --no-headers 2>/dev/null | grep -v 'Running\|Completed\|Succeeded' || true)
+          not_ready=$(kubectl get pods -A -o json | jq -r '
+            .items[]
+            | select(.status.phase != "Succeeded")
+            | select(
+                .metadata.deletionTimestamp != null
+                or .status.phase != "Running"
+                or ([.status.conditions[]? | select(.type == "Ready" and .status == "True")] | length) == 0
+              )
+            | [.metadata.namespace, .metadata.name, (.status.phase // "Unknown")]
+            | @tsv
+          ')
           if [ -z "$not_ready" ]; then
-            total=$(kubectl get pods -A --no-headers 2>/dev/null | grep -c 'Running' || echo "0")
-            echo "All $total pod(s) across all namespaces are running!"
-            break
+            total=$(kubectl get pods -A -o json | jq '[.items[] | select(.status.phase != "Succeeded")] | length')
+            echo "All $total active pod(s) across all namespaces are ready!"
+            exit 0
           fi
           echo "--- Pods not yet ready (${elapsed}s elapsed) ---"
           echo "$not_ready"
@@ -519,14 +676,15 @@ tasks:
           elapsed=$((elapsed + 5))
         done
         if [ $elapsed -ge $timeout ]; then
-          echo "WARNING: Timed out waiting for pods after ${timeout}s. Current status:"
+          echo "Timed out waiting for pods after ${timeout}s. Current status:" >&2
           kubectl get pods -A
+          exit 1
         fi
       - |
         echo ""
         echo "Overlay: {{.OVERLAY}}"
         echo "Waiting for Gateway to be programmed..."
-        kubectl wait -n memory-service gateway/memory-service-gateway --for=condition=Programmed --timeout=2m 2>/dev/null || true
+        kubectl wait -n memory-service gateway/memory-service-gateway --for=condition=Programmed --timeout=2m
       - task: kind:urls
 
   kind:urls:
@@ -536,11 +694,11 @@ tasks:
       - |
         echo ""
         echo "Services available at:"
-        echo "  Chat:           http://chat.127.0.0.1.nip.io               (bob/bob or alice/alice)"
-        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io           (admin/admin)"
-        echo "  Grafana:        http://grafana.127.0.0.1.nip.io/grafana/   (admin/admin)"
-        echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io/prometheus/"
-        echo "  MinIO Console:  http://minio.127.0.0.1.nip.io              (minioadmin/minioadmin)"
+        echo "  Chat:           http://chat.127.0.0.1.nip.io:8080               (bob/bob or alice/alice)"
+        echo "  Keycloak:       http://keycloak.127.0.0.1.nip.io:8080           (admin/admin)"
+        echo "  Grafana:        http://grafana.127.0.0.1.nip.io:8080/grafana/   (admin/admin)"
+        echo "  Prometheus:     http://prometheus.127.0.0.1.nip.io:8080/prometheus/"
+        echo "  MinIO Console:  http://minio.127.0.0.1.nip.io:8080              (minioadmin/minioadmin)"
 
   release:java:bundle:
     desc: Build a signed Maven Central bundle for validation (without publishing)

@@ -542,6 +542,7 @@ message AdminConversationSummary {
   string client_id = 11;
   optional string agent_id = 12;
   google.protobuf.Struct metadata = 13;
+  bytes conversation_group_id = 14;
 }
 
 message AdminChildConversationSummary {
@@ -557,6 +558,7 @@ message AdminChildConversationSummary {
   string started_by_conversation_id = 10;
   string client_id = 11;
   optional string agent_id = 12;
+  bytes conversation_group_id = 13;
 }
 
 message AdminConversation {
@@ -576,6 +578,7 @@ message AdminConversation {
   bytes forked_at_entry_id = 14;
   string forked_at_conversation_id = 15;
   bool has_response_in_progress = 16;
+  bytes conversation_group_id = 17;
 }
 
 message Entry {
@@ -1087,6 +1090,87 @@ message AdminListMemoriesResponse {
   optional string after_cursor = 2;
 }
 
+enum AnalyticsResourceKind {
+  reserved 3;
+  reserved "ANALYTICS_RESOURCE_KIND_LINEAGE";
+  ANALYTICS_RESOURCE_KIND_UNSPECIFIED = 0;
+  ANALYTICS_RESOURCE_KIND_CONVERSATION = 1;
+  ANALYTICS_RESOURCE_KIND_ENTRY = 2;
+  ANALYTICS_RESOURCE_KIND_MEMORY = 4;
+}
+
+message AnalyticsResourceReference {
+  reserved 3;
+  reserved "related_id";
+  AnalyticsResourceKind kind = 1;
+  // Conversation ID for conversations; UUID text for entries and memories.
+  string id = 2;
+}
+
+message AnalyticsConversationRecord {
+  string id = 1;
+  string conversation_group_id = 2;
+  string owner_user_id = 3;
+  string client_id = 4;
+  optional string agent_id = 5;
+  google.protobuf.Timestamp created_at = 6;
+  google.protobuf.Timestamp updated_at = 7;
+  optional google.protobuf.Timestamp archived_at = 8;
+  optional string title = 9;
+  google.protobuf.Struct metadata = 10;
+  // Direct fork metadata carried by full admin event resources.
+  optional string forked_at_conversation_id = 11;
+  optional string forked_at_entry_id = 12;
+  optional string started_by_conversation_id = 13;
+  optional string started_by_entry_id = 14;
+}
+
+message AnalyticsEntryRecord {
+  string id = 1;
+  string conversation_id = 2;
+  string conversation_group_id = 3;
+  optional string user_id = 4;
+  optional string client_id = 5;
+  optional string agent_id = 6;
+  Channel channel = 7;
+  string content_type = 8;
+  google.protobuf.Timestamp created_at = 9;
+  optional google.protobuf.Value content = 10;
+  optional int64 epoch = 11;
+  optional uint32 seq = 12;
+  optional string indexed_content = 13;
+  optional google.protobuf.Timestamp indexed_at = 14;
+}
+
+message AnalyticsMemoryRecord {
+  string id = 1;
+  repeated string namespace = 2;
+  string key = 3;
+  string memory_kind = 4;
+  int64 revision = 5;
+  google.protobuf.Timestamp created_at = 6;
+  optional google.protobuf.Timestamp expires_at = 7;
+  optional google.protobuf.Timestamp archived_at = 8;
+  optional google.protobuf.Struct value = 9;
+  optional google.protobuf.Struct attributes = 10;
+  optional MemoryUsage usage = 11;
+  // Stable, non-reversible source token for namespace+key. The processor
+  // applies its deployment HMAC before storing this value.
+  bytes logical_id_source = 12;
+}
+
+message AnalyticsRecord {
+  reserved 5;
+  reserved "lineage";
+  AnalyticsResourceReference reference = 1;
+  bool snapshot_available = 2;
+  oneof record {
+    AnalyticsConversationRecord conversation = 3;
+    AnalyticsEntryRecord entry = 4;
+    AnalyticsMemoryRecord memory = 6;
+  }
+}
+
 message AdminSearchMemoriesResponse {
   repeated AdminMemoryItem items = 1;
 }
@@ -1464,6 +1548,9 @@ service EventStreamService {
 service AdminCheckpointService {
   rpc GetCheckpoint(GetCheckpointRequest) returns (AdminCheckpoint);
   rpc PutCheckpoint(PutCheckpointRequest) returns (AdminCheckpoint);
+  rpc AcquireLease(AcquireCheckpointLeaseRequest) returns (AdminCheckpointLease);
+  rpc RenewLease(RenewCheckpointLeaseRequest) returns (AdminCheckpointLease);
+  rpc ReleaseLease(ReleaseCheckpointLeaseRequest) returns (google.protobuf.Empty);
 }
 
 message GetCheckpointRequest {
@@ -1474,6 +1561,8 @@ message PutCheckpointRequest {
   string client_id = 1;
   string content_type = 2;
   google.protobuf.Value value = 3;
+  optional string expected_revision = 4;
+  optional string lease_token = 5;
 }
 
 message AdminCheckpoint {
@@ -1481,6 +1570,32 @@ message AdminCheckpoint {
   string content_type = 2;
   google.protobuf.Value value = 3;
   google.protobuf.Timestamp updated_at = 4;
+  // Opaque compare-and-swap revision. Callers must not parse this value.
+  string revision = 5;
+}
+
+message AcquireCheckpointLeaseRequest {
+  string client_id = 1;
+  uint32 ttl_seconds = 2;
+}
+
+message RenewCheckpointLeaseRequest {
+  string client_id = 1;
+  string lease_token = 2;
+  uint32 ttl_seconds = 3;
+}
+
+message ReleaseCheckpointLeaseRequest {
+  string client_id = 1;
+  string lease_token = 2;
+}
+
+message AdminCheckpointLease {
+  string client_id = 1;
+  // Opaque bearer token. The service stores only its SHA-256 digest.
+  string lease_token = 2;
+  uint64 generation = 3;
+  google.protobuf.Timestamp expires_at = 4;
 }
 
 message SubscribeEventsRequest {
@@ -1502,6 +1617,9 @@ message SubscribeEventsRequest {
   repeated string entry_content_types = 8;
   // Optional: entry role filter for entry events. Empty means any.
   repeated string entry_roles = 9;
+  // Optional initial stream state. "current" emits full current resource
+  // snapshots before replay/live delivery. Admin scope and detail="full" are required.
+  optional string initial_state = 10;
 }
 
 message EventNotification {
@@ -1513,4 +1631,9 @@ message EventNotification {
   bytes data = 3;
   // Durable replay cursor when available.
   optional string cursor = 4;
+  // Source occurrence time. Durable replay and live outbox delivery preserve
+  // the same committed timestamp.
+  optional google.protobuf.Timestamp occurred_at = 5;
+  // Stable lifecycle change retained when data contains a full resource.
+  optional string change = 6;
 }

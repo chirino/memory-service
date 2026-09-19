@@ -475,10 +475,10 @@ Feature: Admin REST API
     Then the response status should be 200
 
   # Serial today only because this feature shares the serial admin runner; this scenario reads one scenario-local conversation by ID and appears parallel-safe.
-  Scenario: Admin conversation response does not contain conversationGroupId
+  Scenario: Admin conversation response contains conversationGroupId
     When I call GET "/v1/admin/conversations/${bobConversationId}"
     Then the response status should be 200
-    And the response body should not contain "conversationGroupId"
+    And the response body field "conversationGroupId" should not be null
 
   # Serial today only because this feature shares the serial admin runner; this scenario reads memberships for one scenario-local conversation and appears parallel-safe.
   Scenario: Admin membership response contains conversationId

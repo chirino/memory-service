@@ -7,6 +7,9 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/operationevent"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 )
 
 // EpisodicTTLService runs background passes on a configurable interval:
@@ -17,15 +20,19 @@ import (
 //  4. Tombstone cleanup — hard-deletes tombstones older than tombstoneRetention.
 type EpisodicTTLService struct {
 	store              registryepisodic.EpisodicStore
+	memoryStore        registrystore.MemoryStore
+	eventBus           registryeventbus.EventBus
 	interval           time.Duration
 	evictionBatch      int
 	tombstoneRetention time.Duration
 }
 
 // NewEpisodicTTLService creates a new EpisodicTTLService.
-func NewEpisodicTTLService(store registryepisodic.EpisodicStore, interval time.Duration, evictionBatch int, tombstoneRetention time.Duration) *EpisodicTTLService {
+func NewEpisodicTTLService(store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, interval time.Duration, evictionBatch int, tombstoneRetention time.Duration) *EpisodicTTLService {
 	return &EpisodicTTLService{
 		store:              store,
+		memoryStore:        memoryStore,
+		eventBus:           eventBus,
 		interval:           interval,
 		evictionBatch:      evictionBatch,
 		tombstoneRetention: tombstoneRetention,
@@ -73,11 +80,21 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 	defer recoverJobPanic(event, func() { failures++ })
 	// Pass 1: expire memories whose TTL has elapsed.
 	var (
-		n   int64
-		err error
+		n      int64
+		err    error
+		events []registryeventbus.Event
 	)
 	err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-		n, err = s.store.ExpireMemories(writeCtx)
+		if lifecycle, ok := s.store.(registryepisodic.BackgroundMemoryLifecycleStore); ok {
+			var changes []registryepisodic.MemoryLifecycleChange
+			changes, err = lifecycle.ExpireMemoriesWithChanges(writeCtx)
+			n = int64(len(changes))
+			if err == nil {
+				events, err = s.appendMemoryLifecycleEvents(writeCtx, changes, "updated", "expired")
+			}
+		} else {
+			n, err = s.store.ExpireMemories(writeCtx)
+		}
 		return err
 	})
 	if err != nil {
@@ -90,6 +107,7 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		failures++
 	} else if n > 0 {
 		recordWork(n)
+		s.publishMemoryLifecycleEvents(ctx, events)
 	}
 
 	// Pass 2A: hard-delete superseded update rows once vector cleanup is confirmed.
@@ -111,7 +129,17 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 
 	// Pass 2B: tombstone delete/expired rows once vector cleanup is confirmed.
 	err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-		n, err = s.store.TombstoneDeletedMemories(writeCtx, s.evictionBatch)
+		events = nil
+		if lifecycle, ok := s.store.(registryepisodic.BackgroundMemoryLifecycleStore); ok {
+			var changes []registryepisodic.MemoryLifecycleChange
+			changes, err = lifecycle.TombstoneDeletedMemoriesWithChanges(writeCtx, s.evictionBatch)
+			n = int64(len(changes))
+			if err == nil {
+				events, err = s.appendMemoryLifecycleEvents(writeCtx, changes, "deleted", "evicted")
+			}
+		} else {
+			n, err = s.store.TombstoneDeletedMemories(writeCtx, s.evictionBatch)
+		}
 		return err
 	})
 	if err != nil {
@@ -124,13 +152,24 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 		failures++
 	} else if n > 0 {
 		recordWork(n)
+		s.publishMemoryLifecycleEvents(ctx, events)
 	}
 
 	// Pass 3: hard-delete tombstones older than the retention period.
 	if s.tombstoneRetention > 0 {
 		olderThan := time.Now().Add(-s.tombstoneRetention)
 		err = s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-			n, err = s.store.HardDeleteExpiredTombstones(writeCtx, olderThan, s.evictionBatch)
+			events = nil
+			if lifecycle, ok := s.store.(registryepisodic.BackgroundMemoryLifecycleStore); ok {
+				var changes []registryepisodic.MemoryLifecycleChange
+				changes, err = lifecycle.HardDeleteExpiredTombstonesWithChanges(writeCtx, olderThan, s.evictionBatch)
+				n = int64(len(changes))
+				if err == nil {
+					events, err = s.appendMemoryLifecycleEvents(writeCtx, changes, "deleted", "hard_deleted")
+				}
+			} else {
+				n, err = s.store.HardDeleteExpiredTombstones(writeCtx, olderThan, s.evictionBatch)
+			}
 			return err
 		})
 		if err != nil {
@@ -143,6 +182,37 @@ func (s *EpisodicTTLService) runOnce(ctx context.Context) {
 			failures++
 		} else if n > 0 {
 			recordWork(n)
+			s.publishMemoryLifecycleEvents(ctx, events)
 		}
+	}
+}
+
+func (s *EpisodicTTLService) appendMemoryLifecycleEvents(ctx context.Context, changes []registryepisodic.MemoryLifecycleChange, action, change string) ([]registryeventbus.Event, error) {
+	events := make([]registryeventbus.Event, 0, len(changes))
+	for _, changed := range changes {
+		events = append(events, eventstream.MemoryChangedEvent(action, change, &registryepisodic.MemoryItem{
+			ID: changed.ID, MemoryKind: changed.MemoryKind, Revision: changed.Revision,
+			CreatedAt: changed.CreatedAt, ExpiresAt: changed.ExpiresAt, ArchivedAt: changed.ArchivedAt,
+		}))
+	}
+	if s.memoryStore == nil {
+		return events, nil
+	}
+	appended, used, err := eventstream.AppendOutboxEvents(ctx, s.memoryStore, events...)
+	if err != nil {
+		return nil, err
+	}
+	if used {
+		return appended, nil
+	}
+	return events, nil
+}
+
+func (s *EpisodicTTLService) publishMemoryLifecycleEvents(ctx context.Context, events []registryeventbus.Event) {
+	if len(events) == 0 || s.memoryStore == nil || s.eventBus == nil {
+		return
+	}
+	if err := eventstream.PublishEvents(ctx, s.memoryStore, s.eventBus, events...); err != nil {
+		log.Warn("publish episodic maintenance event failed", "err", err)
 	}
 }

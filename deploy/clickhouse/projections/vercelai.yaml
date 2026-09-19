@@ -1,0 +1,20 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: vercelai_v1
+spec:
+  resource: entry
+  selector:
+    contentType: vercelai
+  columns:
+    message_count: {type: uint64, nullable: false}
+    content:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "message_count": count(input.content),
+      "content": {"items": input.content},
+    }

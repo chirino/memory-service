@@ -281,12 +281,42 @@ type ClientCheckpoint struct {
 	ClientID    string          `json:"clientId"`
 	ContentType string          `json:"contentType"`
 	Value       json.RawMessage `json:"value"`
+	Revision    string          `json:"revision"`
 	UpdatedAt   time.Time       `json:"updatedAt"`
 }
 
 type AdminCheckpointStore interface {
 	AdminGetCheckpoint(ctx context.Context, clientID string) (*ClientCheckpoint, error)
 	AdminPutCheckpoint(ctx context.Context, checkpoint ClientCheckpoint) (*ClientCheckpoint, error)
+}
+
+// CheckpointCASWrite adds optimistic concurrency and lease ownership to a
+// checkpoint update. ExpectedRevision and LeaseToken are opaque to callers.
+type CheckpointCASWrite struct {
+	Checkpoint       ClientCheckpoint
+	ExpectedRevision string
+	LeaseToken       string
+}
+
+// ClientCheckpointLease is the renewable ownership grant for one checkpoint.
+// Token is returned only when a lease is acquired and is never persisted in
+// plaintext by a store.
+type ClientCheckpointLease struct {
+	ClientID   string
+	Token      string
+	Generation uint64
+	ExpiresAt  time.Time
+}
+
+// AdminCheckpointLeaseStore is the optional checkpoint extension used by
+// single-owner processors. Legacy AdminPutCheckpoint calls remain
+// last-write-wins while no unexpired lease exists.
+type AdminCheckpointLeaseStore interface {
+	AdminCheckpointStore
+	AdminPutCheckpointCAS(ctx context.Context, write CheckpointCASWrite) (*ClientCheckpoint, error)
+	AdminAcquireCheckpointLease(ctx context.Context, clientID, token string, ttl time.Duration) (*ClientCheckpointLease, error)
+	AdminRenewCheckpointLease(ctx context.Context, clientID, token string, ttl time.Duration) (*ClientCheckpointLease, error)
+	AdminReleaseCheckpointLease(ctx context.Context, clientID, token string) error
 }
 
 type DeletedConversationGroup struct {

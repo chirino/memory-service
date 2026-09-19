@@ -16,3 +16,5 @@ components:
   - ../../components/monitoring/prometheus
   - ../../components/monitoring/grafana
   - ../../components/demo/chat
+  - ../../components/analytics/clickhouse
+  - ../../components/processor/clickhouse

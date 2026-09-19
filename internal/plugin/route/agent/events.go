@@ -152,7 +152,7 @@ func (t *sseSessionTracker) handleSessionEvent(event registryeventbus.Event) {
 
 // writeSSEEvent marshals an event and writes it as an SSE data line.
 func writeSSEEvent(c *gin.Context, event registryeventbus.Event) {
-	data, _ := json.Marshal(event)
+	data, _ := eventstream.MarshalDeliveryJSON(event)
 	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 	c.Writer.Flush()
 	if security.EventBusDeliveredTotal != nil {
@@ -503,6 +503,7 @@ func replaySSEEvents(c *gin.Context, store registrystore.MemoryStore, userID str
 				Kind:         replayEvent.Kind,
 				Data:         json.RawMessage(replayEvent.Data),
 				OutboxCursor: replayEvent.Cursor,
+				OccurredAt:   sseTimePtr(replayEvent.CreatedAt),
 			}
 			if event.OutboxCursor != "" {
 				*lastCursor = event.OutboxCursor
@@ -582,6 +583,7 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 	if !ok {
 		return event, true
 	}
+	event.Change = eventstream.EventChange(event.Data)
 
 	switch event.Kind {
 	case "conversation":
@@ -591,13 +593,9 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 		}
 		conv, err := readConversationDetail(ctx, store, userID, conversationID)
 		if err != nil {
-			return event, false
-		}
-		raw, err := json.Marshal(conv)
-		if err != nil {
 			return event, true
 		}
-		event.Data = json.RawMessage(raw)
+		event.Data = eventstream.AgentConversationResource(conv)
 		return event, true
 	case "entry":
 		conversationID, ok := decodeConversationIDField(data, "conversation")
@@ -611,13 +609,9 @@ func enrichUserEvent(ctx context.Context, store registrystore.MemoryStore, userI
 		channel := channelFromEventData(data)
 		entry, err := readEntryDetail(ctx, store, userID, clientID, conversationID, entryID, channel)
 		if err != nil {
-			return event, false
-		}
-		raw, err := json.Marshal(entry)
-		if err != nil {
 			return event, true
 		}
-		event.Data = json.RawMessage(raw)
+		event.Data = eventstream.AgentEntryResource(entry)
 		return event, true
 	default:
 		return event, true
@@ -796,3 +790,5 @@ func decodeUserListField(data map[string]any, field string) ([]string, bool) {
 		return nil, false
 	}
 }
+
+func sseTimePtr(value time.Time) *time.Time { return &value }

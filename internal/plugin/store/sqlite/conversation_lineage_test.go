@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/json"
 	"path/filepath"
+	"sync/atomic"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -14,6 +15,7 @@ import (
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm"
 )
 
 func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
@@ -67,6 +69,19 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 		_, err := store.CreateConversationWithID(txCtx, "user1", "client1", "parent-fork", "Parent fork", nil, nil, &parent.ID, &parentEntries[0].ID)
 		return err
 	}))
+	require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {
+		snapshotPage, _, err := concrete.AdminListEventSnapshotConversations(txCtx, nil, 100)
+		require.NoError(t, err)
+		for i := range snapshotPage {
+			if snapshotPage[i].ID == "parent-fork" {
+				require.Equal(t, &parent.ID, snapshotPage[i].ForkedAtConversationID)
+				require.Equal(t, &parentEntries[0].ID, snapshotPage[i].ForkedAtEntryID)
+				return nil
+			}
+		}
+		t.Fatal("parent-fork missing from current-state conversation page")
+		return nil
+	}))
 
 	var child *registrystore.ConversationDetail
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
@@ -97,6 +112,7 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 
 	closeHandle()
 	store = loadStore()
+	concrete = store.(*SQLiteStore)
 	var fork *registrystore.ConversationDetail
 	require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {
 		var err error
@@ -105,6 +121,29 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 	}))
 	require.Equal(t, &parent.ID, fork.StartedByConversationID)
 	require.Equal(t, &parentEntries[0].ID, fork.StartedByEntryID)
+
+	var snapshotQueries atomic.Int64
+	const snapshotQueryCounter = "test:event_snapshot_query_count"
+	require.NoError(t, concrete.db.Callback().Query().Before("gorm:query").Register(snapshotQueryCounter, func(*gorm.DB) {
+		snapshotQueries.Add(1)
+	}))
+	t.Cleanup(func() { _ = concrete.db.Callback().Query().Remove(snapshotQueryCounter) })
+	require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {
+		snapshotPage, _, err := concrete.AdminListEventSnapshotConversations(txCtx, nil, 100)
+		require.NoError(t, err)
+		byID := make(map[string]registrystore.ConversationSummary, len(snapshotPage))
+		for _, summary := range snapshotPage {
+			byID[summary.ID] = summary
+		}
+		require.Equal(t, &parent.ID, byID["parent-fork"].ForkedAtConversationID)
+		require.Equal(t, &parentEntries[0].ID, byID["parent-fork"].ForkedAtEntryID)
+		require.Equal(t, &child.ID, byID["child-fork"].ForkedAtConversationID)
+		require.Equal(t, &childEntries[0].ID, byID["child-fork"].ForkedAtEntryID)
+		require.Equal(t, &parent.ID, byID["child-fork"].StartedByConversationID)
+		require.Equal(t, &parentEntries[0].ID, byID["child-fork"].StartedByEntryID)
+		return nil
+	}))
+	require.LessOrEqual(t, snapshotQueries.Load(), int64(3), "snapshot lineage hydration must use a bounded number of page queries")
 
 	var children []registrystore.ConversationSummary
 	require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {

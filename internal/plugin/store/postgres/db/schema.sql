@@ -279,8 +279,17 @@ CREATE TABLE IF NOT EXISTS admin_checkpoints (
     client_id   TEXT PRIMARY KEY,
     content_type TEXT NOT NULL,
     value       BYTEA NOT NULL,
+	 revision     BIGINT NOT NULL DEFAULT 1,
+	 lease_token_hash BYTEA,
+	 lease_generation BIGINT NOT NULL DEFAULT 0,
+	 lease_expires_at TIMESTAMPTZ,
     updated_at  TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
+
+ALTER TABLE admin_checkpoints ADD COLUMN IF NOT EXISTS revision BIGINT NOT NULL DEFAULT 1;
+ALTER TABLE admin_checkpoints ADD COLUMN IF NOT EXISTS lease_token_hash BYTEA;
+ALTER TABLE admin_checkpoints ADD COLUMN IF NOT EXISTS lease_generation BIGINT NOT NULL DEFAULT 0;
+ALTER TABLE admin_checkpoints ADD COLUMN IF NOT EXISTS lease_expires_at TIMESTAMPTZ;
 
 ------------------------------------------------------------
 -- Event outbox

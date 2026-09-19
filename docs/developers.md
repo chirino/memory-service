@@ -136,7 +136,7 @@ curl -sSfX GET "http://localhost:8082/v1/admin/stats/store-latency-p95" \
 
 ## Testing in Kubernetes
 
-Requirments:
+Requirements:
 
 * kind
 * task
@@ -144,7 +144,13 @@ Requirments:
 To create a new kind cluster running the memory-service and the chat-quarkus demo, run:
 
 ```bash
-task kind:reset
+task kind:up
 ```
+
+`kind:up` reuses an existing cluster and skips setup that is already current. It
+rebuilds the local application images when the workspace content changes. Use
+`task kind:reset` to destroy and recreate the cluster, or `task kind:down` to destroy it.
+Rerun `task kind:up` after source changes, or use `task kind:load` to force an image
+rebuild and reload without reapplying the rest of the stack.
 
 Run `task --list` to see all available targets that you can use to manage the kind deployment.

@@ -1,0 +1,73 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Analytics export
+description: Understand how Memory Service exports current state and lifecycle data to analytics providers.
+---
+
+Memory Service can export durable lifecycle events and current-state records to an analytics database. The processor runs outside the request path, so an analytics outage does not delay application writes.
+
+ClickHouse is the supported analytics provider. The processor reads the admin durable event stream, fetches bounded source records, writes batches to ClickHouse, and saves its safe cursor through `AdminCheckpointService`.
+
+## Choose what to export
+
+The payload mode controls which source data crosses into the analytics system.
+
+| Mode        | Data written                                                                            | Use it for                                                             |
+| ----------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
+| `metadata`  | Source identifiers, timestamps, lifecycle fields, routing fields, and selected metadata | Operational dashboards that do not need entry content or memory values |
+| `projected` | Metadata plus fields released by immutable projection manifests                         | Domain analytics with an explicit schema and data boundary             |
+| `full`      | Decrypted source snapshots                                                              | Controlled environments that require the complete source record        |
+
+The repository deployments use `metadata` by default. Use `projected` when analysts need approved fields from an entry `contentType` or a memory `kind`. Full mode requires `--allow-decrypted-content` because Memory Service field encryption does not extend to ClickHouse.
+
+## Understand the exported data
+
+The processor creates generic tables for conversations, lineage, entries, memories, and lifecycle events. A projection adds a deployment-owned table for one exact entry `contentType` or memory `kind`.
+
+Generic resources use these canonical views:
+
+- `conversations_current`, `entries_current`, and similar resource views return the latest logical non-deleted row.
+- `resources_all` returns the latest logical generic row, including a deletion tombstone when one is current.
+
+Projection tables provide both `<name>_current` and `<name>_all` views. Physical tables retain versioned rows until retention or a hard-delete purge removes them. Queries for application dashboards should normally use a canonical view.
+
+Projection names and column names map directly to SQL identifiers. A projection named `support_ticket_v1` creates these relations:
+
+- `support_ticket_v1`, the physical table
+- `support_ticket_v1_all`, the latest logical row including tombstones
+- `support_ticket_v1_current`, the current non-deleted row
+
+## Follow the analytics workflow
+
+<div class="grid grid-cols-1 md:grid-cols-2 gap-4 not-prose mt-6">
+  <a href="clickhouse/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Start ClickHouse export</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+      Start the processor and verify the first exported record.
+    </p>
+  </a>
+  <a href="projections/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Create projections</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Map approved entry or memory fields to typed tables.</p>
+  </a>
+  <a href="querying/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Query analytics data</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+      Query generic tables, lifecycle events, Variant values, and nested JSON.
+    </p>
+  </a>
+  <a href="clickhouse/configuration/" class="card p-4 hover:border-primary-500 transition-colors">
+    <h3 class="font-semibold text-gray-900 dark:text-white">Configure the processor</h3>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+      Look up processor flags, environment variables, defaults, and constraints.
+    </p>
+  </a>
+</div>
+
+## Keep the trust boundary explicit
+
+ClickHouse is a separate persistence boundary. Configure its storage, replicas, backups, caches, temporary files, and disaster-recovery copies to meet the same deletion and encryption requirements as Memory Service.
+
+The processor stores Memory Service source identifiers in ClickHouse so analytics results can link back to authoritative records through the Memory Service API. Grant ClickHouse access accordingly. Payload modes and projection manifests control which source fields accompany those identifiers.
+
+Continue with the [ClickHouse quickstart](/docs/analytics/clickhouse/).

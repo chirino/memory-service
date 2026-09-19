@@ -9,27 +9,60 @@ import (
 )
 
 func countScheduledScenarios(scenarios []ScenarioData, filter string) (int, error) {
+	selected, err := scheduledScenarioData(scenarios, filter)
+	return len(selected), err
+}
+
+func scheduledScenarioData(scenarios []ScenarioData, filter string) ([]ScenarioData, error) {
 	filter = strings.TrimSpace(filter)
 	if filter == "" {
-		return len(scenarios), nil
+		return scenarios, nil
 	}
 
 	expr, err := parseTagFilter(filter)
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
 
-	count := 0
+	selected := make([]ScenarioData, 0, len(scenarios))
 	for _, scenario := range scenarios {
 		tagSet := make(map[string]struct{}, len(deriveTags(scenario)))
 		for _, tag := range deriveTags(scenario) {
 			tagSet[strings.TrimPrefix(tag, "@")] = struct{}{}
 		}
 		if expr.eval(tagSet) {
-			count++
+			selected = append(selected, scenario)
 		}
 	}
-	return count, nil
+	return selected, nil
+}
+
+func hasScheduledClickHouseScenario(scenarios []ScenarioData, filter string) (bool, error) {
+	filter = strings.TrimSpace(filter)
+	var expr tagExpr
+	var err error
+	if filter != "" {
+		expr, err = parseTagFilter(filter)
+		if err != nil {
+			return false, err
+		}
+	}
+	for _, scenario := range scenarios {
+		if !hasSQLCommands(scenario) {
+			continue
+		}
+		if expr == nil {
+			return true, nil
+		}
+		tagSet := make(map[string]struct{}, len(deriveTags(scenario)))
+		for _, tag := range deriveTags(scenario) {
+			tagSet[strings.TrimPrefix(tag, "@")] = struct{}{}
+		}
+		if expr.eval(tagSet) {
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 type tagExpr interface {

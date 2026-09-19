@@ -20,6 +20,32 @@ type metricsStore struct {
 	inner store.MemoryStore
 }
 
+func (m *metricsStore) eventSnapshotStore() (store.EventSnapshotStore, error) {
+	inner, ok := m.inner.(store.EventSnapshotStore)
+	if !ok {
+		return nil, store.ErrEventSnapshotUnsupported
+	}
+	return inner, nil
+}
+
+func (m *metricsStore) AdminListEventSnapshotConversations(ctx context.Context, after *store.EventSnapshotConversationCursor, limit int) ([]store.ConversationSummary, *store.EventSnapshotConversationCursor, error) {
+	defer observe("admin_list_analytics_conversations", time.Now())
+	inner, err := m.eventSnapshotStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	return inner.AdminListEventSnapshotConversations(ctx, after, limit)
+}
+
+func (m *metricsStore) AdminListEventSnapshotEntries(ctx context.Context, after *store.EventSnapshotEntryCursor, limit int) ([]model.Entry, *store.EventSnapshotEntryCursor, error) {
+	defer observe("admin_list_analytics_entries", time.Now())
+	inner, err := m.eventSnapshotStore()
+	if err != nil {
+		return nil, nil, err
+	}
+	return inner.AdminListEventSnapshotEntries(ctx, after, limit)
+}
+
 func observe(op string, start time.Time) {
 	security.StoreLatency.WithLabelValues(op).Observe(time.Since(start).Seconds())
 }
@@ -351,6 +377,42 @@ func (m *metricsStore) AdminPutCheckpoint(ctx context.Context, checkpoint store.
 	return checkpoints.AdminPutCheckpoint(ctx, checkpoint)
 }
 
+func (m *metricsStore) AdminPutCheckpointCAS(ctx context.Context, write store.CheckpointCASWrite) (*store.ClientCheckpoint, error) {
+	checkpoints, ok := m.inner.(store.AdminCheckpointLeaseStore)
+	if !ok {
+		return nil, &store.ValidationError{Field: "checkpoint", Message: "checkpoint leases unavailable"}
+	}
+	defer observe("admin_put_checkpoint_cas", time.Now())
+	return checkpoints.AdminPutCheckpointCAS(ctx, write)
+}
+
+func (m *metricsStore) AdminAcquireCheckpointLease(ctx context.Context, clientID, token string, ttl time.Duration) (*store.ClientCheckpointLease, error) {
+	checkpoints, ok := m.inner.(store.AdminCheckpointLeaseStore)
+	if !ok {
+		return nil, &store.ValidationError{Field: "checkpoint", Message: "checkpoint leases unavailable"}
+	}
+	defer observe("admin_acquire_checkpoint_lease", time.Now())
+	return checkpoints.AdminAcquireCheckpointLease(ctx, clientID, token, ttl)
+}
+
+func (m *metricsStore) AdminRenewCheckpointLease(ctx context.Context, clientID, token string, ttl time.Duration) (*store.ClientCheckpointLease, error) {
+	checkpoints, ok := m.inner.(store.AdminCheckpointLeaseStore)
+	if !ok {
+		return nil, &store.ValidationError{Field: "checkpoint", Message: "checkpoint leases unavailable"}
+	}
+	defer observe("admin_renew_checkpoint_lease", time.Now())
+	return checkpoints.AdminRenewCheckpointLease(ctx, clientID, token, ttl)
+}
+
+func (m *metricsStore) AdminReleaseCheckpointLease(ctx context.Context, clientID, token string) error {
+	checkpoints, ok := m.inner.(store.AdminCheckpointLeaseStore)
+	if !ok {
+		return &store.ValidationError{Field: "checkpoint", Message: "checkpoint leases unavailable"}
+	}
+	defer observe("admin_release_checkpoint_lease", time.Now())
+	return checkpoints.AdminReleaseCheckpointLease(ctx, clientID, token)
+}
+
 func (m *metricsStore) AdminGetAttachmentByStorageKey(ctx context.Context, storageKey string) (*store.AdminAttachment, error) {
 	defer observe("admin_get_attachment_by_storage_key", time.Now())
 	return m.inner.AdminGetAttachmentByStorageKey(ctx, storageKey)
@@ -383,6 +445,15 @@ func (m *metricsStore) EvictOutboxEventsBefore(ctx context.Context, before time.
 	return outbox.EvictOutboxEventsBefore(ctx, before, limit)
 }
 
+func (m *metricsStore) CurrentOutboxCursor(ctx context.Context) (string, error) {
+	highWater, ok := m.inner.(store.OutboxHighWaterStore)
+	if !ok {
+		return "", nil
+	}
+	defer observe("current_outbox_cursor", time.Now())
+	return highWater.CurrentOutboxCursor(ctx)
+}
+
 func (m *metricsStore) OutboxEnabled() bool {
 	provider, ok := m.inner.(store.OutboxEnabledProvider)
 	return ok && provider.OutboxEnabled()
@@ -413,6 +484,7 @@ func (m *metricsStore) AdminStatsSummary(ctx context.Context) (*store.AdminStats
 }
 
 var _ store.EventOutboxStore = (*metricsStore)(nil)
+var _ store.OutboxHighWaterStore = (*metricsStore)(nil)
 var _ store.OutboxEnabledProvider = (*metricsStore)(nil)
 var _ store.AdminStatsSummaryProvider = (*metricsStore)(nil)
 var _ store.AdminCheckpointStore = (*metricsStore)(nil)

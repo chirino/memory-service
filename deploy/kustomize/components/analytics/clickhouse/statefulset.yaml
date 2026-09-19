@@ -1,0 +1,45 @@
+apiVersion: apps/v1
+kind: StatefulSet
+metadata:
+  name: clickhouse
+spec:
+  serviceName: clickhouse
+  replicas: 1
+  selector:
+    matchLabels:
+      app: clickhouse
+  template:
+    metadata:
+      labels:
+        app: clickhouse
+    spec:
+      automountServiceAccountToken: false
+      containers:
+        - name: clickhouse
+          image: clickhouse/clickhouse-server:26.8.2.7
+          ports:
+            - {name: native, containerPort: 9000}
+            - {name: http, containerPort: 8123}
+          env:
+            - {name: CLICKHOUSE_DB, value: default}
+            - {name: CLICKHOUSE_USER, value: clickhouse}
+            - {name: CLICKHOUSE_PASSWORD, value: clickhouse}
+            - {name: CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT, value: "1"}
+          volumeMounts:
+            - {name: data, mountPath: /var/lib/clickhouse}
+            - {name: init, mountPath: /docker-entrypoint-initdb.d/20-memory-service-analytics.sql, subPath: init.sql, readOnly: true}
+          readinessProbe:
+            httpGet: {path: /ping, port: http}
+            periodSeconds: 5
+          livenessProbe:
+            httpGet: {path: /ping, port: http}
+            initialDelaySeconds: 30
+            periodSeconds: 10
+          resources:
+            requests: {cpu: 250m, memory: 512Mi}
+            limits: {cpu: "2", memory: 2Gi}
+      volumes:
+        - name: data
+          persistentVolumeClaim: {claimName: clickhouse-data}
+        - name: init
+          configMap: {name: clickhouse-init}

@@ -3544,6 +3544,9 @@ var EventStreamService_ServiceDesc = grpc.ServiceDesc{
 const (
 	AdminCheckpointService_GetCheckpoint_FullMethodName = "/memory.v1.AdminCheckpointService/GetCheckpoint"
 	AdminCheckpointService_PutCheckpoint_FullMethodName = "/memory.v1.AdminCheckpointService/PutCheckpoint"
+	AdminCheckpointService_AcquireLease_FullMethodName  = "/memory.v1.AdminCheckpointService/AcquireLease"
+	AdminCheckpointService_RenewLease_FullMethodName    = "/memory.v1.AdminCheckpointService/RenewLease"
+	AdminCheckpointService_ReleaseLease_FullMethodName  = "/memory.v1.AdminCheckpointService/ReleaseLease"
 )
 
 // AdminCheckpointServiceClient is the client API for AdminCheckpointService service.
@@ -3552,6 +3555,9 @@ const (
 type AdminCheckpointServiceClient interface {
 	GetCheckpoint(ctx context.Context, in *GetCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error)
 	PutCheckpoint(ctx context.Context, in *PutCheckpointRequest, opts ...grpc.CallOption) (*AdminCheckpoint, error)
+	AcquireLease(ctx context.Context, in *AcquireCheckpointLeaseRequest, opts ...grpc.CallOption) (*AdminCheckpointLease, error)
+	RenewLease(ctx context.Context, in *RenewCheckpointLeaseRequest, opts ...grpc.CallOption) (*AdminCheckpointLease, error)
+	ReleaseLease(ctx context.Context, in *ReleaseCheckpointLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error)
 }
 
 type adminCheckpointServiceClient struct {
@@ -3582,12 +3588,45 @@ func (c *adminCheckpointServiceClient) PutCheckpoint(ctx context.Context, in *Pu
 	return out, nil
 }
 
+func (c *adminCheckpointServiceClient) AcquireLease(ctx context.Context, in *AcquireCheckpointLeaseRequest, opts ...grpc.CallOption) (*AdminCheckpointLease, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminCheckpointLease)
+	err := c.cc.Invoke(ctx, AdminCheckpointService_AcquireLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminCheckpointServiceClient) RenewLease(ctx context.Context, in *RenewCheckpointLeaseRequest, opts ...grpc.CallOption) (*AdminCheckpointLease, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(AdminCheckpointLease)
+	err := c.cc.Invoke(ctx, AdminCheckpointService_RenewLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func (c *adminCheckpointServiceClient) ReleaseLease(ctx context.Context, in *ReleaseCheckpointLeaseRequest, opts ...grpc.CallOption) (*emptypb.Empty, error) {
+	cOpts := append([]grpc.CallOption{grpc.StaticMethod()}, opts...)
+	out := new(emptypb.Empty)
+	err := c.cc.Invoke(ctx, AdminCheckpointService_ReleaseLease_FullMethodName, in, out, cOpts...)
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
 // AdminCheckpointServiceServer is the server API for AdminCheckpointService service.
 // All implementations must embed UnimplementedAdminCheckpointServiceServer
 // for forward compatibility.
 type AdminCheckpointServiceServer interface {
 	GetCheckpoint(context.Context, *GetCheckpointRequest) (*AdminCheckpoint, error)
 	PutCheckpoint(context.Context, *PutCheckpointRequest) (*AdminCheckpoint, error)
+	AcquireLease(context.Context, *AcquireCheckpointLeaseRequest) (*AdminCheckpointLease, error)
+	RenewLease(context.Context, *RenewCheckpointLeaseRequest) (*AdminCheckpointLease, error)
+	ReleaseLease(context.Context, *ReleaseCheckpointLeaseRequest) (*emptypb.Empty, error)
 	mustEmbedUnimplementedAdminCheckpointServiceServer()
 }
 
@@ -3603,6 +3642,15 @@ func (UnimplementedAdminCheckpointServiceServer) GetCheckpoint(context.Context, 
 }
 func (UnimplementedAdminCheckpointServiceServer) PutCheckpoint(context.Context, *PutCheckpointRequest) (*AdminCheckpoint, error) {
 	return nil, status.Error(codes.Unimplemented, "method PutCheckpoint not implemented")
+}
+func (UnimplementedAdminCheckpointServiceServer) AcquireLease(context.Context, *AcquireCheckpointLeaseRequest) (*AdminCheckpointLease, error) {
+	return nil, status.Error(codes.Unimplemented, "method AcquireLease not implemented")
+}
+func (UnimplementedAdminCheckpointServiceServer) RenewLease(context.Context, *RenewCheckpointLeaseRequest) (*AdminCheckpointLease, error) {
+	return nil, status.Error(codes.Unimplemented, "method RenewLease not implemented")
+}
+func (UnimplementedAdminCheckpointServiceServer) ReleaseLease(context.Context, *ReleaseCheckpointLeaseRequest) (*emptypb.Empty, error) {
+	return nil, status.Error(codes.Unimplemented, "method ReleaseLease not implemented")
 }
 func (UnimplementedAdminCheckpointServiceServer) mustEmbedUnimplementedAdminCheckpointServiceServer() {
 }
@@ -3662,6 +3710,60 @@ func _AdminCheckpointService_PutCheckpoint_Handler(srv interface{}, ctx context.
 	return interceptor(ctx, in, info, handler)
 }
 
+func _AdminCheckpointService_AcquireLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(AcquireCheckpointLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminCheckpointServiceServer).AcquireLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminCheckpointService_AcquireLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminCheckpointServiceServer).AcquireLease(ctx, req.(*AcquireCheckpointLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminCheckpointService_RenewLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(RenewCheckpointLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminCheckpointServiceServer).RenewLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminCheckpointService_RenewLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminCheckpointServiceServer).RenewLease(ctx, req.(*RenewCheckpointLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
+func _AdminCheckpointService_ReleaseLease_Handler(srv interface{}, ctx context.Context, dec func(interface{}) error, interceptor grpc.UnaryServerInterceptor) (interface{}, error) {
+	in := new(ReleaseCheckpointLeaseRequest)
+	if err := dec(in); err != nil {
+		return nil, err
+	}
+	if interceptor == nil {
+		return srv.(AdminCheckpointServiceServer).ReleaseLease(ctx, in)
+	}
+	info := &grpc.UnaryServerInfo{
+		Server:     srv,
+		FullMethod: AdminCheckpointService_ReleaseLease_FullMethodName,
+	}
+	handler := func(ctx context.Context, req interface{}) (interface{}, error) {
+		return srv.(AdminCheckpointServiceServer).ReleaseLease(ctx, req.(*ReleaseCheckpointLeaseRequest))
+	}
+	return interceptor(ctx, in, info, handler)
+}
+
 // AdminCheckpointService_ServiceDesc is the grpc.ServiceDesc for AdminCheckpointService service.
 // It's only intended for direct use with grpc.RegisterService,
 // and not to be introspected or modified (even as a copy)
@@ -3676,6 +3778,18 @@ var AdminCheckpointService_ServiceDesc = grpc.ServiceDesc{
 		{
 			MethodName: "PutCheckpoint",
 			Handler:    _AdminCheckpointService_PutCheckpoint_Handler,
+		},
+		{
+			MethodName: "AcquireLease",
+			Handler:    _AdminCheckpointService_AcquireLease_Handler,
+		},
+		{
+			MethodName: "RenewLease",
+			Handler:    _AdminCheckpointService_RenewLease_Handler,
+		},
+		{
+			MethodName: "ReleaseLease",
+			Handler:    _AdminCheckpointService_ReleaseLease_Handler,
 		},
 	},
 	Streams:  []grpc.StreamDesc{},

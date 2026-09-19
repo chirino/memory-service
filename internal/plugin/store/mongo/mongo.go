@@ -47,6 +47,11 @@ func init() {
 			if err := client.Ping(ctx, nil); err != nil {
 				return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 			}
+			if cfg.OutboxEnabled {
+				if err := requireMongoTransactionTopology(ctx, client); err != nil {
+					return nil, err
+				}
+			}
 
 			dbName := "memory_service"
 			store := &MongoStore{
@@ -157,6 +162,8 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 		"outbox_events": {
 			{Keys: bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "kind", Value: 1}, {Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
+			{Keys: bson.D{{Key: "event_seq", Value: 1}}, Options: options.Index().SetUnique(true).SetSparse(true).SetName("outbox_event_seq")},
+			{Keys: bson.D{{Key: "resume_token", Value: 1}}, Options: options.Index().SetSparse(true).SetName("outbox_resume_token")},
 		},
 		"tasks": {
 			{Keys: bson.D{{Key: "retry_at", Value: 1}, {Key: "created_at", Value: 1}}},
@@ -388,13 +395,14 @@ func mongoCleanupOrphanConversationAncestry(ctx context.Context, db *mongo.Datab
 
 // MongoStore implements MemoryStore using MongoDB.
 type MongoStore struct {
-	client                      *mongo.Client
-	db                          *mongo.Database
-	cfg                         *config.Config
-	enc                         *dataencryption.Service
-	entriesCache                registrycache.MemoryEntriesCache
-	maxBSONDocumentSizeOverride int
-	metadataPatchBeforeUpdate   func() // test-only synchronization hook; nil in production
+	client                       *mongo.Client
+	db                           *mongo.Database
+	cfg                          *config.Config
+	enc                          *dataencryption.Service
+	entriesCache                 registrycache.MemoryEntriesCache
+	maxBSONDocumentSizeOverride  int
+	metadataPatchBeforeUpdate    func()                    // test-only synchronization hook; nil in production
+	materializeBeforeTransaction func(bson.ObjectID) error // test-only fault-injection hook; nil in production
 }
 
 func (s *MongoStore) OutboxEnabled() bool {
@@ -406,7 +414,21 @@ func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) erro
 }
 
 func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
-	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
+	if !s.OutboxEnabled() {
+		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
+	}
+	if session := mongo.SessionFromContext(ctx); session != nil && session.TransactionRunning() {
+		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
+	}
+	session, err := s.client.StartSession()
+	if err != nil {
+		return fmt.Errorf("start MongoDB write transaction: %w", err)
+	}
+	defer session.EndSession(ctx)
+	_, err = session.WithTransaction(ctx, func(txCtx context.Context) (any, error) {
+		return nil, fn(txscope.WithIntent(txCtx, txscope.IntentWrite))
+	})
+	return err
 }
 
 // ForceImport is a no-op variable that can be referenced to ensure this package's init() runs.

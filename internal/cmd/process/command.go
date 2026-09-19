@@ -1,6 +1,7 @@
 package process
 
 import (
+	clickhouseprocessor "github.com/chirino/memory-service/internal/cmd/process/clickhouse"
 	"github.com/chirino/memory-service/internal/cmd/process/turntraces"
 	"github.com/urfave/cli/v3"
 )
@@ -11,6 +12,7 @@ func Command() *cli.Command {
 		Name:  "process",
 		Usage: "Run checkpointed Memory Service event processors",
 		Commands: []*cli.Command{
+			clickhouseprocessor.Command(),
 			turntraces.Command(),
 		},
 	}

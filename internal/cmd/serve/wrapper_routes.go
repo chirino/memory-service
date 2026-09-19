@@ -404,13 +404,13 @@ func (p *proxyAPIServer) DeleteConversationResponse(c *gin.Context, conversation
 	routeconversations.HandleCancelResponse(c, p.store, p.resumer, p.resumerEnabled)
 }
 func (p *proxyAPIServer) UpdateMemory(c *gin.Context, params generatedapi.UpdateMemoryParams) {
-	routememories.HandleUpdateMemory(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
+	routememories.HandleUpdateMemory(c, p.episodicStore, p.store, p.eventBus, p.episodicPolicy, p.cfg, params)
 }
 func (p *proxyAPIServer) GetMemory(c *gin.Context, params generatedapi.GetMemoryParams) {
 	routememories.HandleGetMemory(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
 }
 func (p *proxyAPIServer) PutMemory(c *gin.Context) {
-	routememories.HandlePutMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
+	routememories.HandlePutMemory(c, p.episodicStore, p.store, p.eventBus, p.episodicPolicy, p.cfg)
 }
 func (p *proxyAPIServer) ListMemoryEvents(c *gin.Context, params generatedapi.ListMemoryEventsParams) {
 	routememories.HandleListMemoryEvents(c, p.episodicStore, p.episodicPolicy, p.cfg, params)
@@ -447,7 +447,7 @@ func (p *proxyAPIServer) AdminSubscribeEvents(c *gin.Context, _ generatedapi.Adm
 		c.JSON(http.StatusForbidden, gin.H{"error": "admin or auditor role required"})
 		return
 	}
-	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
+	routeadmin.HandleAdminSSEEvents(c, p.store, p.episodicStore, p.eventBus, p.cfg)
 }
 
 type proxyAdminServer struct {
@@ -517,7 +517,7 @@ func (p *proxyAdminServer) AdminSubscribeEvents(c *gin.Context, _ generatedadmin
 	if !p.authorize(c, security.PermissionAdminEventsRead) {
 		return
 	}
-	routeadmin.HandleAdminSSEEvents(c, p.store, p.eventBus, p.cfg)
+	routeadmin.HandleAdminSSEEvents(c, p.store, p.episodicStore, p.eventBus, p.cfg)
 }
 func (p *proxyAdminServer) AdminGetCheckpoint(c *gin.Context, clientID string) {
 	setDecodedPathParam(c, "clientId", clientID)
@@ -597,13 +597,13 @@ func (p *proxyAdminServer) AdminPutMemory(c *gin.Context, _ generatedadmin.Admin
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
-	routememories.HandleAdminPutMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
+	routememories.HandleAdminPutMemory(c, p.episodicStore, p.store, p.eventBus, p.episodicPolicy, p.cfg)
 }
 func (p *proxyAdminServer) AdminUpdateMemory(c *gin.Context, _ generatedadmin.AdminUpdateMemoryParams) {
 	if !p.authorize(c, security.PermissionAdminMemoriesWrite) {
 		return
 	}
-	routememories.HandleAdminUpdateMemory(c, p.episodicStore, p.episodicPolicy, p.cfg)
+	routememories.HandleAdminUpdateMemory(c, p.episodicStore, p.store, p.eventBus, p.episodicPolicy, p.cfg)
 }
 func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, id openapi_types.UUID) {
 	setDecodedPathParam(c, "id", id.String())
@@ -611,7 +611,7 @@ func (p *proxyAdminServer) AdminDeleteMemory(c *gin.Context, id openapi_types.UU
 		return
 	}
 	setOperationMemoryID(c, id.String())
-	routememories.HandleAdminDeleteMemory(c, p.episodicStore)
+	routememories.HandleAdminDeleteMemory(c, p.episodicStore, p.store, p.eventBus)
 }
 func (p *proxyAdminServer) AdminGetEntry(c *gin.Context, id openapi_types.UUID, _ generatedadmin.AdminGetEntryParams) {
 	setDecodedPathParam(c, "id", id.String())

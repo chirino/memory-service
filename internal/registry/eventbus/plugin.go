@@ -5,6 +5,7 @@ import (
 	"context"
 	"fmt"
 	"sync"
+	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/google/uuid"
@@ -12,24 +13,28 @@ import (
 )
 
 // Event represents a notification published through the event bus.
-// The JSON envelope sent to SSE clients contains Event, Kind, and Data.
+// The JSON envelope sent to SSE clients contains Event, Kind, Data, and the
+// optional durable cursor, occurrence time, and lifecycle change.
 // ConversationGroupID, UserIDs, Broadcast, and AdminOnly are routing metadata
 // and are not serialized to public SSE clients.
 type Event struct {
-	Event               string    `json:"event"`            // action: created, updated, deleted, phase, evicted, invalidate, shutdown
-	Kind                string    `json:"kind"`             // resource type: conversation, entry, response, membership, stream
-	Data                any       `json:"data"`             // kind-specific payload
-	OutboxCursor        string    `json:"cursor,omitempty"` // durable replay cursor when available
-	ConversationGroupID uuid.UUID `json:"-"`                // used for access control filtering, not serialized
-	UserIDs             []string  `json:"-"`                // explicit user delivery targets
-	Broadcast           bool      `json:"-"`                // deliver to all user/admin subscribers
-	AdminOnly           bool      `json:"-"`                // deliver only to admin/all subscribers
-	Internal            bool      `json:"-"`                // internal control events (e.g. resync.required), never forwarded to clients
+	Event               string     `json:"event"`                // action: created, updated, deleted, phase, evicted, invalidate, shutdown
+	Kind                string     `json:"kind"`                 // resource type: conversation, entry, response, membership, stream
+	Data                any        `json:"data"`                 // kind-specific payload
+	Change              string     `json:"change,omitempty"`     // stable lifecycle change retained when data contains a full resource
+	OutboxCursor        string     `json:"cursor,omitempty"`     // durable replay cursor when available
+	OccurredAt          *time.Time `json:"occurredAt,omitempty"` // source commit time for durable events
+	ConversationGroupID uuid.UUID  `json:"-"`                    // used for access control filtering, not serialized
+	UserIDs             []string   `json:"-"`                    // explicit user delivery targets
+	Broadcast           bool       `json:"-"`                    // deliver to all user/admin subscribers
+	AdminOnly           bool       `json:"-"`                    // deliver only to admin/all subscribers
+	Internal            bool       `json:"-"`                    // internal control events (e.g. resync.required), never forwarded to clients
 }
 
 // EventBus is the interface for publishing and subscribing to events.
 type EventBus interface {
-	// Publish sends an event to all subscribers across all nodes.
+	// Publish sends an event to all subscribers across all nodes. Implementations
+	// must return promptly when ctx is cancelled and must not publish afterward.
 	Publish(ctx context.Context, event Event) error
 
 	// Subscribe returns a channel that receives events for the given user.
@@ -40,6 +45,12 @@ type EventBus interface {
 
 	// Close shuts down the event bus and releases resources.
 	Close() error
+}
+
+// DurablePublisher acknowledges only after the cross-node transport accepts
+// the event. Durable relays use it before advancing their publication watermark.
+type DurablePublisher interface {
+	PublishDurable(ctx context.Context, event Event) error
 }
 
 // Loader creates an EventBus from the current context/config.

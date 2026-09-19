@@ -72,6 +72,21 @@ func (f EntryEventFilter) Matches(ctx context.Context, event registryeventbus.Ev
 	return true, nil
 }
 
+// MatchesEntry applies this filter to an already loaded entry.
+func (f EntryEventFilter) MatchesEntry(entry model.Entry) bool {
+	metadata := EntryMetadataFromEntry(entry)
+	if !setContains(f.channels, metadata.Channel, true) {
+		return false
+	}
+	if len(f.contentTypes) > 0 && !setContains(f.contentTypes, metadata.ContentType, false) {
+		return false
+	}
+	if len(f.roles) > 0 && (metadata.Role == "" || !setContains(f.roles, metadata.Role, true)) {
+		return false
+	}
+	return true
+}
+
 type EntryEventMetadata struct {
 	ConversationID string
 	EntryID        uuid.UUID

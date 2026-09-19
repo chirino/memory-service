@@ -1,4 +1,4 @@
-import type { Entry } from "@/api/generated/types.gen";
+import type { AdminEntry as Entry } from "@/api/generated/types.gen";
 
 /**
  * Returns all context-channel entries from `allEntries[0..lastGroupEntry]`

@@ -1,0 +1,150 @@
+{
+  "conversations": [
+    {
+      "id": "11111111-1111-4111-8111-111111111111",
+      "title": "Travel planning",
+      "createdAgo": "21d",
+      "entries": [
+        {
+          "id": "11111111-1111-4111-8111-111111111101",
+          "createdAgo": "21d",
+          "contentType": "history",
+          "content": [{"role": "USER", "text": "Help me plan a weekend in Montreal."}]
+        },
+        {
+          "id": "11111111-1111-4111-8111-111111111102",
+          "createdAgo": "20d23h59m",
+          "contentType": "history",
+          "content": [{"role": "AI", "text": "Start with Old Montreal and the Jean-Talon Market."}]
+        },
+        {
+          "id": "11111111-1111-4111-8111-111111111103",
+          "createdAgo": "20d23h55m",
+          "contentType": "history/lc4j",
+          "content": [{
+            "role": "AI",
+            "text": "I can also compare train times.",
+            "events": [
+              {"eventType": "BeforeToolExecution", "toolName": "railSearch", "input": {"from": "New York", "to": "Montreal"}},
+              {"eventType": "ToolExecuted", "toolName": "railSearch", "output": {"trains": 3}},
+              {"eventType": "PartialResponse", "chunk": "The morning train is the least expensive."}
+            ],
+            "attachments": [{"attachmentId": "aaaaaaaa-1111-4111-8111-111111111111", "contentType": "application/pdf", "name": "train-options.pdf"}]
+          }]
+        },
+        {
+          "id": "11111111-1111-4111-8111-111111111104",
+          "createdAgo": "20d23h50m",
+          "contentType": "LC4J",
+          "content": [{"type": "AiMessage", "text": "The morning train is the least expensive."}]
+        }
+      ]
+    },
+    {
+      "id": "22222222-2222-4222-8222-222222222222",
+      "title": "Support triage",
+      "createdAgo": "8d",
+      "entries": [
+        {
+          "id": "22222222-2222-4222-8222-222222222201",
+          "createdAgo": "8d",
+          "contentType": "history",
+          "content": [{"role": "USER", "text": "Which orders are delayed?"}]
+        },
+        {
+          "id": "22222222-2222-4222-8222-222222222202",
+          "createdAgo": "7d23h58m",
+          "contentType": "history/vercelai",
+          "content": [{
+            "role": "AI",
+            "text": "Order 1042 is delayed by one day.",
+            "events": [
+              {"eventType": "BeforeToolExecution", "toolName": "orderStatus", "input": {"orderId": "1042"}},
+              {"eventType": "ToolExecuted", "toolName": "orderStatus", "output": {"delayDays": 1}},
+              {"eventType": "ChatCompleted", "finishReason": "stop"}
+            ]
+          }]
+        },
+        {
+          "id": "22222222-2222-4222-8222-222222222203",
+          "createdAgo": "7d23h52m",
+          "contentType": "vercelai",
+          "content": [{"role": "assistant", "content": [{"type": "text", "text": "I notified the customer."}]}]
+        }
+      ]
+    },
+    {
+      "id": "33333333-3333-4333-8333-333333333333",
+      "title": "Recent research",
+      "createdAgo": "6h",
+      "entries": [
+        {
+          "id": "33333333-3333-4333-8333-333333333301",
+          "createdAgo": "6h",
+          "contentType": "history",
+          "content": [{"role": "USER", "text": "Summarize the latest research notes."}]
+        },
+        {
+          "id": "33333333-3333-4333-8333-333333333302",
+          "createdAgo": "5h59m",
+          "contentType": "SpringAI",
+          "content": [
+            {"role": "system", "text": "Answer from the supplied research."},
+            {"role": "user", "text": "Summarize the latest research notes."},
+            {"role": "assistant", "text": "Three sources agree on the main result."}
+          ]
+        },
+        {
+          "id": "33333333-3333-4333-8333-333333333303",
+          "createdAgo": "5h55m",
+          "contentType": "LangGraph/checkpoint",
+          "content": [{
+            "checkpoint_id": "checkpoint-research-1",
+            "checkpoint_ns": "research",
+            "parent_checkpoint_id": null,
+            "checkpoint": {"channel_values": {"summary": "Three sources agree on the main result."}},
+            "metadata": {"step": 1, "source": "fixture"}
+          }]
+        }
+      ]
+    },
+    {
+      "id": "44444444-4444-4444-8444-444444444444",
+      "title": "Archived draft",
+      "createdAgo": "2d",
+      "archived": true,
+      "entries": []
+    }
+  ],
+  "memories": [
+    {
+      "id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+      "logicalMemoryId": "profile-favorite-city",
+      "kind": "default/v1",
+      "createdAgo": "14d",
+      "attributes": {"namespace": "profile", "sub": "traveler-42"},
+      "value": {"favoriteCity": "Montreal", "reason": "food and walkability"}
+    },
+    {
+      "id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+      "logicalMemoryId": "preference-response-style",
+      "kind": "cognition/v1",
+      "createdAgo": "4d",
+      "attributes": {
+        "namespace": "preferences",
+        "sub": "customer-17",
+        "memoryKind": "communication-preference",
+        "runtimeId": "cognition-demo",
+        "runtimeVersion": "1",
+        "confidence": "high"
+      },
+      "value": {"responseStyle": "concise", "includeLinks": true}
+    }
+  ],
+  "deletedResources": [
+    {"id": "55555555-5555-4555-8555-555555555555", "kind": "entry", "occurredAgo": "3h"}
+  ],
+  "projectionFailures": [
+    {"eventId": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee", "projectionName": "history_lc4j_v1", "errorCode": "type_mismatch", "attemptCount": 1, "lastSeenAgo": "2h"}
+  ]
+}

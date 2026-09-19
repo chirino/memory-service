@@ -169,6 +169,10 @@ CREATE TABLE IF NOT EXISTS admin_checkpoints (
     client_id TEXT PRIMARY KEY,
     content_type TEXT NOT NULL,
     value BLOB NOT NULL,
+	 revision INTEGER NOT NULL DEFAULT 1,
+	 lease_token_hash BLOB,
+	 lease_generation INTEGER NOT NULL DEFAULT 0,
+	 lease_expires_at DATETIME,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
 );
 

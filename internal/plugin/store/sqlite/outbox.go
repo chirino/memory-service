@@ -135,4 +135,16 @@ func (s *SQLiteStore) EvictOutboxEventsBefore(ctx context.Context, before time.T
 	return result.RowsAffected, nil
 }
 
+func (s *SQLiteStore) CurrentOutboxCursor(ctx context.Context) (string, error) {
+	var seq int64
+	if err := s.dbFor(ctx).Model(&sqliteOutboxRow{}).Select("COALESCE(MAX(seq), 0)").Scan(&seq).Error; err != nil {
+		return "", fmt.Errorf("load outbox high-water cursor: %w", err)
+	}
+	if seq == 0 {
+		return "start", nil
+	}
+	return formatSQLiteOutboxCursor(seq), nil
+}
+
 var _ registrystore.EventOutboxStore = (*SQLiteStore)(nil)
+var _ registrystore.OutboxHighWaterStore = (*SQLiteStore)(nil)

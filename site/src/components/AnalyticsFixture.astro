@@ -1,0 +1,52 @@
+---
+import { Code } from "astro:components";
+
+interface Props {
+  fixture: {
+    conversations?: Array<{ entries?: unknown[] }>;
+    memories?: unknown[];
+    projectionFailures?: unknown[];
+  };
+}
+
+const { fixture } = Astro.props;
+const conversations = fixture.conversations ?? [];
+const entries = conversations.reduce((count, conversation) => count + (conversation.entries?.length ?? 0), 0);
+const memories = fixture.memories ?? [];
+const summary = `${conversations.length} conversations, ${entries} entries, and ${memories.length} memories`;
+---
+
+<div class="analytics-fixture">
+  <p>
+    The documentation tests load a synthetic fixture with {summary}. Relative times are resolved when the test starts.
+  </p>
+  <details>
+    <summary>View fixture data</summary>
+    <div class="fixture-data">
+      <Code code={JSON.stringify(fixture, null, 2)} lang="json" />
+    </div>
+  </details>
+</div>
+
+<style>
+  .analytics-fixture {
+    margin: 1rem 0 1.5rem;
+  }
+
+  .analytics-fixture summary {
+    cursor: pointer;
+    font-weight: 600;
+  }
+
+  .fixture-data {
+    max-height: 28rem;
+    margin-top: 0.75rem;
+    overflow: auto;
+    border: 1px solid var(--sl-color-gray-5);
+    border-radius: 0.5rem;
+  }
+
+  .fixture-data :global(pre) {
+    margin: 0;
+  }
+</style>

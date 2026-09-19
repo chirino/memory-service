@@ -1,5 +1,12 @@
 name: memory-service
 
+secrets:
+  clickhouse_analytics_password:
+    file: ./deploy/clickhouse/analytics-password
+
+volumes:
+  clickhouse-data:
+
 # ============================================================================
 # Langfuse Observability Stack (Optional - use --profile langfuse to enable)
 # ============================================================================
@@ -57,7 +64,7 @@ services:
       - -c
       - max_wal_senders=8
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
@@ -179,7 +186,7 @@ services:
       MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
 
       # ── Cache ──────────────────────────────────────────────────
-      MEMORY_SERVICE_CACHE_KIND: redis
+      MEMORY_SERVICE_CACHE_KIND: ${MEMORY_SERVICE_CACHE_KIND:-redis}
       MEMORY_SERVICE_REDIS_HOSTS: redis://redis:6379
 
       # ── Event outbox ──────────────────────────────────────────
@@ -192,13 +199,15 @@ services:
       MEMORY_SERVICE_OIDC_USER_ID_CLAIM: /preferred_username
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
       MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
-      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor,developer_frontend
+      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: admin,turn_traces_processor,cognition_processor,developer_frontend,clickhouse_processor
       MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
       MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
+      MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS: agent
       # Browser-visible local developer-console credential. Never use this key in production.
       MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND: developer-frontend-api-key
       MEMORY_SERVICE_API_KEYS_TURN_TRACES_PROCESSOR: turn-traces-processor-key
       MEMORY_SERVICE_API_KEYS_COGNITION_PROCESSOR: cognition-processor-key-123
+      MEMORY_SERVICE_API_KEYS_CLICKHOUSE_PROCESSOR: clickhouse-processor-key
       # ── CORS ───────────────────────────────────────────────────
       MEMORY_SERVICE_HOST: 0.0.0.0
       MEMORY_SERVICE_TLS: "false"
@@ -227,7 +236,7 @@ services:
       MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
 
       # ── Attachments ────────────────────────────────────────────
-      MEMORY_SERVICE_ATTACHMENTS_KIND: s3
+      MEMORY_SERVICE_ATTACHMENTS_KIND: ${MEMORY_SERVICE_ATTACHMENTS_KIND:-s3}
       MEMORY_SERVICE_ATTACHMENTS_S3_BUCKET: memory-service-attachments
       MEMORY_SERVICE_ATTACHMENTS_S3_USE_PATH_STYLE: "true" # needed for minio
       AWS_ENDPOINT_URL: http://minio:9000
@@ -308,7 +317,7 @@ services:
         condition: service_healthy
 
   minio:
-    image: minio/minio:latest
+    image: quay.io/minio/minio:latest
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -326,7 +335,7 @@ services:
       start_period: 10s
 
   minio-init:
-    image: minio/mc:latest
+    image: quay.io/minio/mc:latest
     entrypoint: >
       /bin/sh -c "
       until mc alias set minio http://minio:9000 minioadmin minioadmin; do
@@ -423,20 +432,59 @@ services:
   # ============================================================================
 
   clickhouse:
-    profiles: ["langfuse"]
     image: clickhouse/clickhouse-server:26.8.2.7
+    ports:
+      - "9002:9000"
+      - "8123:8123"
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
       CLICKHOUSE_PASSWORD: clickhouse
-    tmpfs:
-      - /var/lib/clickhouse
-      - /var/log/clickhouse-server
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    volumes:
+      - clickhouse-data:/var/lib/clickhouse
+      - ./deploy/clickhouse/init.sql:/docker-entrypoint-initdb.d/20-memory-service-analytics.sql:ro
     healthcheck:
       test: ["CMD-SHELL", "clickhouse-client --user clickhouse --password clickhouse --query 'SELECT 1'"]
       interval: 10s
       timeout: 5s
       retries: 10
+
+  clickhouse-processor:
+    image: ghcr.io/chirino/memory-service:latest
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/memory-service"]
+    command: ["process", "clickhouse"]
+    environment:
+      MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: clickhouse_processor
+      MEMORY_SERVICE_API_KEY: clickhouse-processor-key
+      MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC: "true"
+      MEMORY_SERVICE_PROCESS_AFTER_CURSOR: start
+      MEMORY_SERVICE_CLICKHOUSE_ADDRESS: clickhouse:9000
+      MEMORY_SERVICE_CLICKHOUSE_PROTOCOL: native
+      MEMORY_SERVICE_CLICKHOUSE_DATABASE: memory_service
+      MEMORY_SERVICE_CLICKHOUSE_USERNAME: memory_service_analytics
+      MEMORY_SERVICE_CLICKHOUSE_PASSWORD_FILE: /run/secrets/clickhouse_analytics_password
+      MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE: "true"
+      MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE: projected
+      MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH: /etc/memory-service/clickhouse/projections
+    secrets:
+      - clickhouse_analytics_password
+    depends_on:
+      memory-service:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "curl -fsS http://127.0.0.1:8081/readyz >/dev/null"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    restart: unless-stopped
 
   langfuse-worker:
     profiles: ["langfuse"]

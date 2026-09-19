@@ -5,7 +5,7 @@ import { useAdminConversation, useAdminConversationEntries } from "@/hooks/useAd
 import { formatRelativeTime } from "@/lib/utils";
 import { getErrorMessage } from "@/lib/errors";
 import { EntryCard } from "@/components/conversations/EntryCard";
-import type { Entry } from "@/api/client";
+import type { AdminEntry as Entry } from "@/api/client";
 
 interface ConversationDetailInlineProps {
   conversationId: string;

@@ -52,28 +52,48 @@ func init() {
 				_ = client.Disconnect(ctx)
 				return nil, err
 			}
-			s := &mongoEpisodicStore{
-				col:     client.Database("memory_service").Collection("memories"),
-				usage:   client.Database("memory_service").Collection("memory_usage_stats"),
-				vectors: client.Database("memory_service").Collection("memory_vectors"),
-			}
-			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
-				qdrantClient, qErr := episodicqdrant.New(cfg, tracing.ProviderFromContext(ctx), tracing.OutboundPropagatorFromContext(ctx))
-				if qErr != nil {
-					log.Warn("Episodic qdrant unavailable; falling back to mongo in-memory vector search", "err", qErr)
-				} else {
-					s.qdrant = qdrantClient
-				}
-			}
-			if !cfg.EncryptionDBDisabled {
-				s.enc = dataencryption.FromContext(ctx)
-			}
-			return s, nil
+			return newMongoEpisodicStore(ctx, client), nil
 		},
 	})
 }
 
+func newMongoEpisodicStore(ctx context.Context, client *mongo.Client) *mongoEpisodicStore {
+	cfg := config.FromContext(ctx)
+	db := client.Database("memory_service")
+	s := &mongoEpisodicStore{
+		col:     db.Collection("memories"),
+		usage:   db.Collection("memory_usage_stats"),
+		vectors: db.Collection("memory_vectors"),
+	}
+	if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
+		qdrantClient, qErr := episodicqdrant.New(cfg, tracing.ProviderFromContext(ctx), tracing.OutboundPropagatorFromContext(ctx))
+		if qErr != nil {
+			log.Warn("Episodic qdrant unavailable; falling back to mongo in-memory vector search", "err", qErr)
+		} else {
+			s.qdrant = qdrantClient
+		}
+	}
+	if !cfg.EncryptionDBDisabled {
+		s.enc = dataencryption.FromContext(ctx)
+	}
+	return s
+}
+
+// NewEpisodicStore creates the episodic store on the primary store's client.
+// MongoDB sessions are client-bound, so memory writes and their outbox rows
+// must use collections created by the same client.
+func (s *MongoStore) NewEpisodicStore(ctx context.Context) (registryepisodic.EpisodicStore, error) {
+	if err := requireEpisodicTransactionTopology(ctx, s.client); err != nil {
+		return nil, err
+	}
+	return newMongoEpisodicStore(ctx, s.client), nil
+}
+
 func requireEpisodicTransactionTopology(ctx context.Context, client *mongo.Client) error {
+	return requireMongoTransactionTopology(ctx, client)
+}
+
+func requireMongoTransactionTopology(ctx context.Context, client *mongo.Client) error {
 	var hello struct {
 		SetName string `bson:"setName"`
 		Msg     string `bson:"msg"`
@@ -81,12 +101,16 @@ func requireEpisodicTransactionTopology(ctx context.Context, client *mongo.Clien
 	if err := client.Database("admin").RunCommand(ctx, bson.D{{Key: "hello", Value: 1}}).Decode(&hello); err != nil {
 		return fmt.Errorf("episodic mongo: inspect topology: %w", err)
 	}
-	return validateEpisodicTransactionTopology(hello.SetName, hello.Msg)
+	return validateMongoTransactionTopology(hello.SetName, hello.Msg)
 }
 
 func validateEpisodicTransactionTopology(setName, msg string) error {
+	return validateMongoTransactionTopology(setName, msg)
+}
+
+func validateMongoTransactionTopology(setName, msg string) error {
 	if setName == "" && msg != "isdbgrid" {
-		return fmt.Errorf("episodic mongo requires a replica set or mongos because memory writes use transactions; standalone MongoDB is unsupported")
+		return fmt.Errorf("MongoDB requires a replica set or mongos because durable writes use transactions; standalone MongoDB is unsupported")
 	}
 	return nil
 }
@@ -994,21 +1018,39 @@ func (s *mongoEpisodicStore) GetMemoriesByIDs(ctx context.Context, ids []uuid.UU
 
 // ExpireMemories archives memories whose TTL has elapsed.
 func (s *mongoEpisodicStore) ExpireMemories(ctx context.Context) (int64, error) {
+	changes, err := s.ExpireMemoriesWithChanges(ctx)
+	return int64(len(changes)), err
+}
+
+func (s *mongoEpisodicStore) ExpireMemoriesWithChanges(ctx context.Context) ([]registryepisodic.MemoryLifecycleChange, error) {
 	now := time.Now()
 	deletedReason2 := int32(2)
 	filter := bson.M{
 		"expires_at":  bson.M{"$lte": now},
 		"archived_at": bson.M{"$exists": false},
 	}
+	changes, ids, err := s.findMemoryLifecycleChanges(ctx, filter, 0)
+	if err != nil || len(ids) == 0 {
+		return changes, err
+	}
+	filter = bson.M{"_id": bson.M{"$in": ids}, "expires_at": bson.M{"$lte": now}, "archived_at": bson.M{"$exists": false}}
 	result, err := s.col.UpdateMany(ctx, filter, bson.M{
 		"$set":   bson.M{"archived_at": now, "deleted_reason": deletedReason2},
 		"$inc":   bson.M{"revision": int64(1)},
 		"$unset": bson.M{"indexed_at": ""},
 	})
 	if err != nil {
-		return 0, err
+		return nil, err
 	}
-	return result.ModifiedCount, nil
+	if result.ModifiedCount != int64(len(changes)) {
+		return nil, fmt.Errorf("expire memories changed %d of %d selected rows", result.ModifiedCount, len(changes))
+	}
+	for i := range changes {
+		changes[i].Revision++
+		archivedAt := now.UTC()
+		changes[i].ArchivedAt = &archivedAt
+	}
+	return changes, nil
 }
 
 // HardDeleteEvictableUpdates hard-deletes rows with deleted_reason=0 (superseded by update)
@@ -1054,36 +1096,22 @@ func (s *mongoEpisodicStore) HardDeleteEvictableUpdates(ctx context.Context, lim
 // TombstoneDeletedMemories clears encrypted data from rows with deleted_reason IN (1,2)
 // that have been re-indexed (indexed_at exists). Returns the number tombstoned.
 func (s *mongoEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit int) (int64, error) {
+	changes, err := s.TombstoneDeletedMemoriesWithChanges(ctx, limit)
+	return int64(len(changes)), err
+}
+
+func (s *mongoEpisodicStore) TombstoneDeletedMemoriesWithChanges(ctx context.Context, limit int) ([]registryepisodic.MemoryLifecycleChange, error) {
 	filter := bson.M{
 		"deleted_reason":  bson.M{"$in": bson.A{int32(1), int32(2)}},
 		"indexed_at":      bson.M{"$exists": true},
 		"value_encrypted": bson.M{"$exists": true},
 	}
-	opts := options.Find().
-		SetSort(bson.D{{Key: "archived_at", Value: 1}}).
-		SetLimit(int64(limit)).
-		SetProjection(bson.M{"_id": 1})
-
-	cursor, err := s.col.Find(ctx, filter, opts)
+	changes, ids, err := s.findMemoryLifecycleChanges(ctx, filter, limit)
 	if err != nil {
-		return 0, fmt.Errorf("find tombstone candidates: %w", err)
-	}
-	defer cursor.Close(ctx)
-
-	var ids []string
-	for cursor.Next(ctx) {
-		var doc struct {
-			ID string `bson:"_id"`
-		}
-		if err := cursor.Decode(&doc); err == nil {
-			ids = append(ids, doc.ID)
-		}
-	}
-	if err := cursor.Err(); err != nil {
-		return 0, err
+		return nil, fmt.Errorf("find tombstone candidates: %w", err)
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	result, err := s.col.UpdateMany(ctx,
 		bson.M{"_id": bson.M{"$in": ids}},
@@ -1093,50 +1121,76 @@ func (s *mongoEpisodicStore) TombstoneDeletedMemories(ctx context.Context, limit
 		},
 	)
 	if err != nil {
-		return 0, fmt.Errorf("tombstone deleted memories: %w", err)
+		return nil, fmt.Errorf("tombstone deleted memories: %w", err)
 	}
-	return result.ModifiedCount, nil
+	if result.ModifiedCount != int64(len(changes)) {
+		return nil, fmt.Errorf("tombstone memories changed %d of %d selected rows", result.ModifiedCount, len(changes))
+	}
+	for i := range changes {
+		changes[i].Revision++
+	}
+	return changes, nil
 }
 
 // HardDeleteExpiredTombstones hard-deletes tombstone rows older than olderThan.
 // Returns the number deleted.
 func (s *mongoEpisodicStore) HardDeleteExpiredTombstones(ctx context.Context, olderThan time.Time, limit int) (int64, error) {
+	changes, err := s.HardDeleteExpiredTombstonesWithChanges(ctx, olderThan, limit)
+	return int64(len(changes)), err
+}
+
+func (s *mongoEpisodicStore) HardDeleteExpiredTombstonesWithChanges(ctx context.Context, olderThan time.Time, limit int) ([]registryepisodic.MemoryLifecycleChange, error) {
 	filter := bson.M{
 		"deleted_reason":  bson.M{"$in": bson.A{int32(1), int32(2)}},
 		"value_encrypted": bson.M{"$exists": false},
 		"archived_at":     bson.M{"$lte": olderThan},
 	}
-	opts := options.Find().
-		SetSort(bson.D{{Key: "archived_at", Value: 1}}).
-		SetLimit(int64(limit)).
-		SetProjection(bson.M{"_id": 1})
-
-	cursor, err := s.col.Find(ctx, filter, opts)
+	changes, ids, err := s.findMemoryLifecycleChanges(ctx, filter, limit)
 	if err != nil {
-		return 0, fmt.Errorf("find expired tombstones: %w", err)
-	}
-	defer cursor.Close(ctx)
-
-	var ids []string
-	for cursor.Next(ctx) {
-		var doc struct {
-			ID string `bson:"_id"`
-		}
-		if err := cursor.Decode(&doc); err == nil {
-			ids = append(ids, doc.ID)
-		}
-	}
-	if err := cursor.Err(); err != nil {
-		return 0, err
+		return nil, fmt.Errorf("find expired tombstones: %w", err)
 	}
 	if len(ids) == 0 {
-		return 0, nil
+		return nil, nil
 	}
 	result, err := s.col.DeleteMany(ctx, bson.M{"_id": bson.M{"$in": ids}})
 	if err != nil {
-		return 0, fmt.Errorf("hard-delete expired tombstones: %w", err)
+		return nil, fmt.Errorf("hard-delete expired tombstones: %w", err)
 	}
-	return result.DeletedCount, nil
+	if result.DeletedCount != int64(len(changes)) {
+		return nil, fmt.Errorf("hard-delete memories changed %d of %d selected rows", result.DeletedCount, len(changes))
+	}
+	return changes, nil
+}
+
+func (s *mongoEpisodicStore) findMemoryLifecycleChanges(ctx context.Context, filter bson.M, limit int) ([]registryepisodic.MemoryLifecycleChange, []string, error) {
+	opts := options.Find().SetSort(bson.D{{Key: "archived_at", Value: 1}}).
+		SetProjection(bson.M{"_id": 1, "memory_kind": 1, "revision": 1, "created_at": 1, "expires_at": 1, "archived_at": 1})
+	if limit > 0 {
+		opts.SetLimit(int64(limit))
+	}
+	cursor, err := s.col.Find(ctx, filter, opts)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cursor.Close(ctx)
+	var changes []registryepisodic.MemoryLifecycleChange
+	var ids []string
+	for cursor.Next(ctx) {
+		var doc memoryDoc
+		if err := cursor.Decode(&doc); err != nil {
+			return nil, nil, err
+		}
+		id, err := uuid.Parse(doc.ID)
+		if err != nil {
+			return nil, nil, err
+		}
+		ids = append(ids, doc.ID)
+		changes = append(changes, registryepisodic.MemoryLifecycleChange{
+			ID: id, MemoryKind: doc.MemoryKind, Revision: doc.Revision, CreatedAt: doc.CreatedAt,
+			ExpiresAt: doc.ExpiresAt, ArchivedAt: doc.ArchivedAt,
+		})
+	}
+	return changes, ids, cursor.Err()
 }
 
 // ListMemoryEvents returns a paginated, time-ordered stream of memory lifecycle events.
@@ -1438,6 +1492,10 @@ func (s *mongoEpisodicStore) ListMemoryEvents(ctx context.Context, req registrye
 
 // AdminGetMemoryByID retrieves any memory (active or archived) by UUID.
 func (s *mongoEpisodicStore) AdminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
+	return s.adminGetMemoryByID(ctx, memoryID)
+}
+
+func (s *mongoEpisodicStore) adminGetMemoryByID(ctx context.Context, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
 	var doc memoryDoc
 	if err := s.col.FindOne(ctx, bson.M{"_id": memoryID.String()}).Decode(&doc); err != nil {
 		if errors.Is(err, mongo.ErrNoDocuments) {
@@ -1462,6 +1520,10 @@ func (s *mongoEpisodicStore) AdminCountPendingIndexing(ctx context.Context) (int
 
 // AdminListMemories retrieves latest memory rows across users without policy injection.
 func (s *mongoEpisodicStore) AdminListMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
+	return s.AdminListEventSnapshotMemories(ctx, query)
+}
+
+func (s *mongoEpisodicStore) AdminListEventSnapshotMemories(ctx context.Context, query registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
 	limit := query.Limit
 	if limit <= 0 {
 		limit = 50

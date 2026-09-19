@@ -68,6 +68,12 @@ runtime into a temp directory. Those features are handed to `godog` with
 `Concurrency: siteScenarioConcurrency()`, which defaults to `runtime.NumCPU()`
 and can be lowered with `SITE_TEST_SCENARIO_CONCURRENCY`.
 
+`<SqlTest>` blocks generate `@clickhouse` scenarios. The runner starts a pinned disposable
+ClickHouse, loads the page's shared JSON fixture through the production ClickHouse sink,
+and checks each query's result columns and minimum row count. Fixture timestamps use
+relative `*Ago` values so time-window queries do not expire. A filtered run bootstraps
+Java and Python artifacts only when a selected scenario needs them.
+
 Before running scenarios, `TestSiteDocs` installs Java checkpoint dependencies into
 the local Maven repo (`:memory-service-extension-deployment` and
 `:memory-service-spring-boot-starter`). This avoids parallel checkpoint builds

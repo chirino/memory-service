@@ -1,0 +1,197 @@
+---
+layout: ../../../../layouts/DocsLayout.astro
+title: ClickHouse processor configuration
+description: Reference for ClickHouse analytics processor flags, environment variables, defaults, and constraints.
+---
+
+import ConfigToggle from "../../../../components/ConfigToggle.astro";
+import Cfg from "../../../../components/Cfg.astro";
+
+The `memory-service process clickhouse` command accepts CLI flags or environment variables. Use the toggle to switch between formats. CLI flags take precedence when both forms configure the same setting.
+
+<ConfigToggle />
+
+> **Tip:** Your format preference is saved across visits.
+
+This page covers the analytics processor. See [Service configuration](/docs/configuration/) for the Memory Service server.
+
+## Memory Service connection
+
+| Setting                                                                          | Default  | Description                                          |
+| -------------------------------------------------------------------------------- | -------- | ---------------------------------------------------- |
+| <Cfg p="--endpoint" e="MEMORY_SERVICE_GRPC_ENDPOINT" />                          | Required | Memory Service gRPC endpoint.                        |
+| <Cfg p="--client-id" e="MEMORY_SERVICE_PROCESS_CLIENT_ID" />                     | Required | Authenticated processor client and checkpoint owner. |
+| <Cfg p="--api-key" e="MEMORY_SERVICE_API_KEY" />                                 | None     | API key for the processor client.                    |
+| <Cfg p="--bearer-token" e="MEMORY_SERVICE_BEARER_TOKEN" />                       | None     | Bearer token used instead of an API key.             |
+| <Cfg p="--grpc-tls" e="MEMORY_SERVICE_PROCESS_GRPC_TLS" />                       | `false`  | Enable TLS for the Memory Service gRPC connection.   |
+| <Cfg p="--grpc-ca-file" e="MEMORY_SERVICE_PROCESS_GRPC_CA_FILE" />               | None     | PEM CA bundle for the gRPC server.                   |
+| <Cfg p="--allow-insecure-grpc" e="MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC" /> | `false`  | Permit plaintext gRPC for development.               |
+
+The client must have the Memory Service `admin` role. A second processor with the same client ID cannot acquire the checkpoint lease.
+
+## Export behavior
+
+| Setting                                                                                 | Default   | Description                                                                   |
+| --------------------------------------------------------------------------------------- | --------- | ----------------------------------------------------------------------------- |
+| <Cfg p="--exporter-id" e="MEMORY_SERVICE_CLICKHOUSE_EXPORTER_ID" />                     | Client ID | Stable namespace stored with every exported row.                              |
+| <Cfg p="--disable" e="MEMORY_SERVICE_CLICKHOUSE_DISABLE" />                             | None      | Resource or feature selectors to omit from the export.                        |
+| <Cfg p="--tail-only-development" e="MEMORY_SERVICE_CLICKHOUSE_TAIL_ONLY_DEVELOPMENT" /> | `false`   | Skip backfill and begin at the current durable tail. Readiness remains false. |
+
+The exporter ID separates independent analytics datasets that share ClickHouse tables. It participates in row keys, deterministic event IDs, purges, projection registration, and metrics. It defaults to the processor client ID. Keep it stable for the lifetime of a dataset; changing it starts a separate ClickHouse row namespace.
+
+All resource kinds and features are enabled by default. Repeat `--disable` for multiple CLI
+selectors. Separate multiple `MEMORY_SERVICE_CLICKHOUSE_DISABLE` selectors with commas.
+
+| Selector form      | Effect                                                              |
+| ------------------ | ------------------------------------------------------------------- |
+| `RESOURCE`         | Disable every output for `conversations`, `entries`, or `memories`. |
+| `RESOURCE:FEATURE` | Disable one feature for one resource.                               |
+| `*:FEATURE`        | Disable the feature for every resource that supports it.            |
+
+The supported feature selectors are:
+
+| Feature            | Valid resources                        | Effect                                                                      |
+| ------------------ | -------------------------------------- | --------------------------------------------------------------------------- |
+| `lifecycle_events` | `conversations`, `entries`, `memories` | Do not write matching rows to `lifecycle_events`.                           |
+| `lineage`          | `conversations`                        | Do not backfill `conversation_lineage`.                                     |
+| `projections`      | `entries`, `memories`                  | Do not create or populate configured projections for the selected resource. |
+
+For example, this setting keeps current-state rows but omits all lifecycle events:
+
+```bash
+MEMORY_SERVICE_CLICKHOUSE_DISABLE=*:lifecycle_events
+```
+
+The processor rejects unknown resources, unknown features, and unsupported combinations such
+as `entries:lineage`. A bare resource selector also disables all features for that resource.
+The common processor schema remains present, so tables for disabled outputs can remain empty.
+Rows written before an output was disabled remain until a purge or TTL removes them.
+
+Disabling an output can reuse the current checkpoint. Enabling lifecycle, lineage, or a full
+resource after events were skipped requires a checkpoint and ClickHouse data reset or a new
+exporter ID. To enable projections again, set a new projection replay ID so the processor scans
+current entries and memories.
+
+Managed and record-only purge modes continue to consume hard-delete notifications for disabled
+resources. These notifications remove rows written before the output was disabled without
+writing new lifecycle or current-state rows. Conversation hard deletes also remove dependent
+entry analytics. External purge mode subscribes only to enabled resources. At least one
+resource kind must remain enabled.
+
+Tail-only mode deliberately omits retained history and current-state backfill. Use it only for disposable development data when exporting new events is sufficient. Readiness remains false so monitoring continues to report the durability gap.
+
+## Checkpoints
+
+| Setting                                                                          | Default | Description                                     |
+| -------------------------------------------------------------------------------- | ------- | ----------------------------------------------- |
+| <Cfg p="--after-cursor" e="MEMORY_SERVICE_PROCESS_AFTER_CURSOR" />               | `start` | Initial event cursor when no checkpoint exists. |
+| <Cfg p="--checkpoint-interval" e="MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL" /> | `1s`    | Maximum delay between safe checkpoint saves.    |
+| <Cfg p="--lease-ttl" e="MEMORY_SERVICE_PROCESS_LEASE_TTL" />                     | `30s`   | Exclusive checkpoint lease duration.            |
+
+## ClickHouse connection
+
+| Setting                                                                              | Default          | Description                                                                              |
+| ------------------------------------------------------------------------------------ | ---------------- | ---------------------------------------------------------------------------------------- |
+| <Cfg p="--clickhouse-address" e="MEMORY_SERVICE_CLICKHOUSE_ADDRESS" />               | Required         | Repeatable `host:port` endpoint.                                                         |
+| <Cfg p="--clickhouse-protocol" e="MEMORY_SERVICE_CLICKHOUSE_PROTOCOL" />             | `native`         | `native` or `http`.                                                                      |
+| <Cfg p="--clickhouse-database" e="MEMORY_SERVICE_CLICKHOUSE_DATABASE" />             | `memory_service` | Database that contains processor-owned relations.                                        |
+| <Cfg p="--clickhouse-username" e="MEMORY_SERVICE_CLICKHOUSE_USERNAME" />             | Required         | ClickHouse user.                                                                         |
+| <Cfg p="environment only" e="MEMORY_SERVICE_CLICKHOUSE_PASSWORD" />                  | None             | ClickHouse password supplied directly through the environment.                           |
+| <Cfg p="--clickhouse-password-file" e="MEMORY_SERVICE_CLICKHOUSE_PASSWORD_FILE" />   | None             | File that contains the ClickHouse password.                                              |
+| <Cfg p="--clickhouse-tls" e="MEMORY_SERVICE_CLICKHOUSE_TLS" />                       | `false`          | Enable TLS for ClickHouse.                                                               |
+| <Cfg p="--clickhouse-ca-file" e="MEMORY_SERVICE_CLICKHOUSE_CA_FILE" />               | None             | PEM CA bundle for ClickHouse.                                                            |
+| <Cfg p="--allow-insecure-clickhouse" e="MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE" /> | `false`          | Permit a non-loopback plaintext connection for development.                              |
+| <Cfg p="--schema-mode" e="MEMORY_SERVICE_CLICKHOUSE_SCHEMA_MODE" />                  | `manage`         | `manage` creates expected objects. `validate` rejects schema drift without applying DDL. |
+
+Native TCP commonly uses port `9000` or TLS port `9440`. HTTP commonly uses port `8123` or HTTPS port `8443`. The repository's Docker Compose stack maps the ClickHouse native port to `localhost:9002` because MinIO uses host port `9000`. Containers in that stack continue to use `clickhouse:9000`.
+
+Configure either the direct password or the password file. The processor rejects configurations that set both.
+
+## Payload and metadata
+
+| Setting                                                                                     | Default    | Description                                           |
+| ------------------------------------------------------------------------------------------- | ---------- | ----------------------------------------------------- |
+| <Cfg p="--payload-mode" e="MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE" />                       | `metadata` | `metadata`, `projected`, or `full`.                   |
+| <Cfg p="--allow-decrypted-content" e="MEMORY_SERVICE_CLICKHOUSE_ALLOW_DECRYPTED_CONTENT" /> | `false`    | Required for `full` mode.                             |
+| <Cfg p="--metadata-key" e="MEMORY_SERVICE_CLICKHOUSE_METADATA_KEY" />                       | None       | Repeatable allowlist entry for conversation metadata. |
+
+`--metadata-key` selects the exact top-level conversation metadata keys that the processor writes to ClickHouse. The admin event stream still sends the complete conversation resource to the processor. Unlisted metadata is discarded before the processor creates ClickHouse rows. This setting does not select entry content or memory values.
+
+The processor stores Memory Service source identifiers directly so an analytics result contains the identifiers needed to retrieve the original resource through the Memory Service API. Treat ClickHouse readers as trusted to see those identifiers. Payload mode and metadata allowlists still control whether content and user-defined metadata cross the analytics boundary.
+
+## Projections
+
+| Setting                                                                                         | Default            | Description                                                                                       |
+| ----------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
+| <Cfg p="--projection-path" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH" />                     | None               | Projection YAML file or directory. Repeat the CLI flag or use comma-separated environment values. |
+| <Cfg p="--projection-failure-policy" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY" /> | `continue-generic` | `continue-generic` records the failure. `stop` stops processing.                                  |
+| <Cfg p="--projection-replay-id" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID" />           | None               | New identifier that requests an explicit entry and memory rescan.                                 |
+
+Projection paths are valid only in `projected` or `full` mode. A path can identify one YAML file or a directory. For a directory, the processor reads the `*.yaml` and `*.yml` files directly inside it; it does not scan subdirectories. YAML documents with another `kind` are ignored, and at least one `kind: AnalyticsProjection` resource must be found across all configured paths.
+
+Repeat `--projection-path` to load multiple paths from the CLI. For `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH`, separate multiple paths with commas. See [Create analytics projections](/docs/analytics/projections/) for the manifest format.
+
+## Batching and retries
+
+| Setting                                                                       | Default    | Constraint                                                |
+| ----------------------------------------------------------------------------- | ---------- | --------------------------------------------------------- |
+| <Cfg p="--batch-events" e="MEMORY_SERVICE_CLICKHOUSE_BATCH_EVENTS" />         | `10000`    | `1` through `100000`                                      |
+| <Cfg p="--batch-rows" e="MEMORY_SERVICE_CLICKHOUSE_BATCH_ROWS" />             | `100000`   | `1` through `1000000`                                     |
+| <Cfg p="--batch-bytes" e="MEMORY_SERVICE_CLICKHOUSE_BATCH_BYTES" />           | `8388608`  | 1 KiB through 256 MiB                                     |
+| <Cfg p="--max-record-bytes" e="MEMORY_SERVICE_CLICKHOUSE_MAX_RECORD_BYTES" /> | `50331648` | Maximum encoded size of one record; 1 KiB through 256 MiB |
+| <Cfg p="--batch-delay" e="MEMORY_SERVICE_CLICKHOUSE_BATCH_DELAY" />           | `1s`       | Maximum time before a non-empty batch flushes.            |
+| <Cfg p="--retry-min" e="MEMORY_SERVICE_CLICKHOUSE_RETRY_MIN" />               | `1s`       | At least `100ms`.                                         |
+| <Cfg p="--retry-max" e="MEMORY_SERVICE_CLICKHOUSE_RETRY_MAX" />               | `30s`      | Must be greater than or equal to `retry-min`.             |
+
+`batch-bytes` is the aggregate flush target. A single encoded record may exceed that target up to `max-record-bytes`, in which case the processor writes it as a one-record batch.
+
+The checkpoint advances only after ClickHouse acknowledges every table write in the frozen batch. If the process stops after writing only part of a batch, replay writes the source events again. Stable event and resource keys keep canonical query results logically idempotent.
+
+## Retention and deletion
+
+| Setting                                                                                               | Default   | Description                              |
+| ----------------------------------------------------------------------------------------------------- | --------- | ---------------------------------------- |
+| <Cfg p="--retention-mode" e="MEMORY_SERVICE_CLICKHOUSE_RETENTION_MODE" />                             | `managed` | `managed` or `external`.                 |
+| <Cfg p="--purge-mode" e="MEMORY_SERVICE_CLICKHOUSE_PURGE_MODE" />                                     | `managed` | `managed`, `record-only`, or `external`. |
+| <Cfg p="--lifecycle-retention" e="MEMORY_SERVICE_CLICKHOUSE_LIFECYCLE_RETENTION" />                   | `0`       | Retention for lifecycle events.          |
+| <Cfg p="--tombstone-retention" e="MEMORY_SERVICE_CLICKHOUSE_TOMBSTONE_RETENTION" />                   | `0`       | Retention for deletion tombstones.       |
+| <Cfg p="--generic-payload-retention" e="MEMORY_SERVICE_CLICKHOUSE_GENERIC_PAYLOAD_RETENTION" />       | `0`       | Retention for active generic rows.       |
+| <Cfg p="--projection-retention" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_RETENTION" />                 | `0`       | Retention for active projection rows.    |
+| <Cfg p="--projection-failure-retention" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_RETENTION" /> | `0`       | Retention for projection failure rows.   |
+
+In `managed` retention mode, the processor owns table TTL expressions and coordinates the
+database-wide policy through `retention_policy`. A zero duration leaves that table class
+without a TTL. When tombstone retention is positive, generic active-row retention must also
+be positive and cannot exceed tombstone retention. Projection retention follows the same rule
+when projections are configured.
+
+In `external` retention mode, the processor does not register a retention owner, validate TTL
+expressions, or change TTL DDL. Configure all retention durations as `0`; the processor rejects
+nonzero durations in this mode. Existing TTL expressions remain unchanged. Your ClickHouse
+administration must replace or remove them and retain deletion tombstones for at least as long
+as older active rows.
+
+Purge modes handle hard-delete events differently:
+
+| Mode          | Behavior                                                                                                                   |
+| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
+| `managed`     | Write `purge_queue`, resolve `purge_subjects`, and wait for ClickHouse deletion mutations before advancing the checkpoint. |
+| `record-only` | Write a pending `purge_queue` request and leave deletion to an external worker.                                            |
+| `external`    | Do not write purge requests or execute deletion mutations. The operator owns hard-delete discovery and removal.            |
+
+External purge must remove matching generic, typed, lifecycle, projection, projection-failure,
+and deletion-fence rows. Remove each deletion fence only after its dependent rows.
+Switching from `record-only` or `external` back to `managed` requires a reset or a new exporter
+ID because the event checkpoint may have passed unprocessed hard deletes.
+
+`deletion_fences` remain active in every purge mode. The built-in current-state views depend on
+them to prevent an older active row from becoming visible after a tombstone expires. The common
+schema also retains empty purge and retention tables so schema validation stays consistent.
+
+## Health
+
+| Setting                                                                | Default | Description                                         |
+| ---------------------------------------------------------------------- | ------- | --------------------------------------------------- |
+| <Cfg p="--health-address" e="MEMORY_SERVICE_PROCESS_HEALTH_ADDRESS" /> | `:8081` | Listener for `/healthz`, `/readyz`, and `/metrics`. |
+
+For runtime behavior and failure recovery, see [Operate the ClickHouse processor](/docs/analytics/clickhouse/operations/).

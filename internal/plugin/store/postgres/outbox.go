@@ -145,4 +145,16 @@ func (s *PostgresStore) EvictOutboxEventsBefore(ctx context.Context, before time
 	return result.RowsAffected, nil
 }
 
+func (s *PostgresStore) CurrentOutboxCursor(ctx context.Context) (string, error) {
+	var seq int64
+	if err := s.dbFor(ctx).Model(&postgresOutboxRow{}).Select("COALESCE(MAX(event_seq), 0)").Scan(&seq).Error; err != nil {
+		return "", fmt.Errorf("load outbox high-water cursor: %w", err)
+	}
+	if seq == 0 {
+		return "start", nil
+	}
+	return formatPostgresOutboxCursor(seq), nil
+}
+
 var _ registrystore.EventOutboxStore = (*PostgresStore)(nil)
+var _ registrystore.OutboxHighWaterStore = (*PostgresStore)(nil)

@@ -1,0 +1,45 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: history_v1
+spec:
+  resource: entry
+  selector:
+    contentType: history
+  columns:
+    role: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+    event_count: {type: uint64, nullable: false}
+    event_types: {type: string_array, nullable: false}
+    tool_names: {type: string_array, nullable: false}
+    attachment_count: {type: uint64, nullable: false}
+    attachment_content_types: {type: string_array, nullable: false}
+  projectionRego: |
+    package memoryservice.analytics
+    item := input.content[0]
+    events := object.get(item, "events", [])
+    attachments := object.get(item, "attachments", [])
+    event_types := [event_type |
+      some event in events
+      event_type := object.get(event, "eventType", "")
+      event_type != ""
+    ]
+    tool_names := [tool_name |
+      some event in events
+      tool_name := object.get(event, "toolName", "")
+      tool_name != ""
+    ]
+    attachment_content_types := [content_type |
+      some attachment in attachments
+      content_type := object.get(attachment, "contentType", "")
+      content_type != ""
+    ]
+    output := {
+      "role": object.get(item, "role", null),
+      "text": object.get(item, "text", null),
+      "event_count": count(events),
+      "event_types": event_types,
+      "tool_names": tool_names,
+      "attachment_count": count(attachments),
+      "attachment_content_types": attachment_content_types,
+    }

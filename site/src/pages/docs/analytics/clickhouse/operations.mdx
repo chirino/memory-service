@@ -1,0 +1,108 @@
+---
+layout: ../../../../layouts/DocsLayout.astro
+title: Operate the ClickHouse processor
+description: Monitor, retain, recover, and purge Memory Service analytics data in ClickHouse.
+---
+
+The processor exposes health and metrics on port `8081` by default:
+
+- `/healthz` reports process liveness.
+- `/readyz` succeeds after the processor owns the checkpoint lease and subscribes to the durable event stream.
+- `/metrics` exposes Prometheus metrics for batches, retries, checkpoints, and failures.
+
+## Check processor health
+
+With Docker Compose, inspect the service and its logs:
+
+```bash
+docker compose ps clickhouse-processor
+docker compose logs -f clickhouse-processor
+```
+
+With Kubernetes, inspect the deployment:
+
+```bash
+kubectl get deployment,pods -n memory-service -l app=clickhouse-processor
+kubectl logs -n memory-service deployment/clickhouse-processor
+```
+
+Keep the Kubernetes deployment at one replica with the `Recreate` strategy. Processors that share a client ID compete for one exclusive checkpoint lease.
+
+## Understand startup and recovery
+
+For a new checkpoint, the processor captures the durable live high-water cursor. It then scans conversations, lineage, entries, and memories. After the scan, it replays events after the captured cursor and moves to live delivery.
+
+The checkpoint stores the current phase and page token after each acknowledged page. A restart resumes the saved scan or catch-up cursor. If the saved cursor falls outside outbox retention, the processor stops instead of skipping events.
+
+Keep outbox retention longer than the longest expected ClickHouse outage plus the initial scan duration.
+
+## Manage schemas
+
+`--schema-mode=manage` creates the expected schema and applies processor-owned TTL changes. `--schema-mode=validate` compares the database with the expected schema and exits on drift without applying DDL. In external retention mode, neither schema mode validates or changes TTL expressions.
+
+The processor rejects:
+
+- a newer or incompatible schema version
+- a changed projection manifest under an existing name
+- an unregistered relation that uses a requested projection table or view name
+- a live exporter with conflicting database-wide retention values
+
+Schema V1 is the first supported release schema. Reset databases made by unreleased pre-V1 drafts.
+
+## Retain analytics data
+
+Analytics retention is independent from source retention. Configure lifecycle, tombstone, generic payload, projection, and projection-failure retention separately.
+
+Payload-free deletion fences prevent an older row from becoming current after ClickHouse removes a tombstone. Apply equivalent deletion policies to replicas, backups, object storage, caches, and disaster-recovery copies.
+
+In managed retention mode, all live exporters that share a ClickHouse database must use the same database-wide retention settings. The processor renews retention ownership with its checkpoint lease and stops writes if it loses ownership. Set retention mode to `external` when your ClickHouse administration owns TTL expressions.
+
+## Process hard deletes
+
+In managed purge mode, a source hard delete adds a payload-free request to `purge_queue` before the processor advances its checkpoint. The purge worker removes dependent lifecycle, generic, projection, and failure rows. It waits for ClickHouse mutations and records a `complete` queue version.
+
+Record-only mode leaves the request in `pending` state for an external worker. External mode does not write a request. In either mode, your deletion process must cover every table that can contain data for the source resource. See [ClickHouse processor configuration](/docs/analytics/clickhouse/configuration/#retention-and-deletion) for the ownership contract.
+
+Inspect incomplete purges:
+
+```sql
+SELECT
+  purge_id,
+  resource_kind,
+  status,
+  status_code,
+  requested_at
+FROM memory_service.purge_queue FINAL
+WHERE status != 'complete'
+ORDER BY requested_at;
+```
+
+ClickHouse table writes and the source checkpoint do not share a transaction. A failure can therefore leave part of a batch visible until retry or replay writes the remaining rows. Canonical views use stable event or resource keys and the latest ingest version, so repeated delivery produces one logical result.
+
+## Replay projections
+
+Adding a projection does not automatically scan all historical resources. Set a new replay ID to request a bounded entry and memory rescan:
+
+```bash
+memory-service process clickhouse \
+  --endpoint memory-service:8080 \
+  --client-id primary-analytics \
+  --api-key "$MEMORY_SERVICE_ANALYTICS_API_KEY" \
+  --clickhouse-address clickhouse.example:9440 \
+  --clickhouse-tls \
+  --clickhouse-username memory_service_analytics \
+  --clickhouse-password-file /run/secrets/clickhouse-password \
+  --payload-mode projected \
+  --projection-path /etc/memory-service/projections/support-ticket.yaml \
+  --projection-replay-id support-ticket-v1-backfill
+```
+
+Reuse of the same replay ID does not request another scan. Change the ID after you correct a projection or source-data problem.
+
+## Diagnose projection failures
+
+The default `continue-generic` failure policy records payload-free diagnostics in `projection_failures` and continues the generic export. Query failures by projection and error code, then compare the source shape with the manifest's Rego output and declared columns.
+
+Use `--projection-failure-policy=stop` when a projection failure must halt processing.
+
+See [Query analytics data](/docs/analytics/querying/) for diagnostic queries and [ClickHouse processor configuration](/docs/analytics/clickhouse/configuration/) for every setting.

@@ -5,7 +5,7 @@ kind: Component
 # and keycloak realm config for local development.
 #
 # Note: EnvoyProxy is in envoy-gateway-system namespace and is applied
-# separately by the kind:init task. The GatewayClass parametersRef patch
+# separately by the kind:up task. The GatewayClass parametersRef patch
 # is in each Kind overlay (not here) because kustomize Component patches
 # cannot target resources from sibling components.
 resources:
@@ -24,14 +24,22 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - KEYCLOAK_FRONTEND_URL=http://keycloak.127.0.0.1.nip.io
-      - OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+      - KEYCLOAK_FRONTEND_URL=http://keycloak.127.0.0.1.nip.io:8080
+      - OIDC_TOKEN_ISSUER=http://keycloak.127.0.0.1.nip.io:8080/realms/memory-service
       # Tokens are issued with the external nip.io URL as the issuer claim
-      - MEMORY_SERVICE_OIDC_ISSUER=http://keycloak.127.0.0.1.nip.io/realms/memory-service
+      - MEMORY_SERVICE_OIDC_ISSUER=http://keycloak.127.0.0.1.nip.io:8080/realms/memory-service
+      - MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES=memory-service
       - MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS=memory-service-client,frontend,developer-frontend
       # Discover OIDC config via the internal cluster address (issuer URL is not reachable in-cluster)
       - MEMORY_SERVICE_OIDC_DISCOVERY_URL=http://keycloak:8080/realms/memory-service
-      - MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT=http://minio-api.127.0.0.1.nip.io
+      - MEMORY_SERVICE_ATTACHMENTS_S3_EXTERNAL_ENDPOINT=http://minio-api.127.0.0.1.nip.io:8080
+      - MEMORY_SERVICE_ENCRYPTION_KIND=dek
+
+secretGenerator:
+  - name: memory-service-secret
+    behavior: merge
+    literals:
+      - MEMORY_SERVICE_ENCRYPTION_DEK_KEY=0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
 
 patches:
   # Link GatewayClass to the Kind-specific EnvoyProxy (hostNetwork + ClusterIP)
@@ -103,6 +111,28 @@ patches:
       kind: Deployment
       name: memory-service
     patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: ghcr.io/chirino/memory-service:latest
+      - op: add
+        path: /spec/template/spec/containers/0/imagePullPolicy
+        value: IfNotPresent
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: MEMORY_SERVICE_API_KEYS_ANALYTICS_SMOKE, value: analytics-smoke-key}
+      - op: add
+        path: /spec/template/spec/containers/0/env/-
+        value: {name: MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS, value: analytics_smoke}
+  - target:
+      kind: Deployment
+      name: clickhouse-processor
+    patch: |
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: ghcr.io/chirino/memory-service:latest
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent
@@ -110,6 +140,12 @@ patches:
       kind: Deployment
       name: chat-quarkus
     patch: |
+      - op: replace
+        path: /spec/replicas
+        value: 1
+      - op: replace
+        path: /spec/template/spec/containers/0/image
+        value: ghcr.io/chirino/memory-service-chat-quarkus:latest
       - op: add
         path: /spec/template/spec/containers/0/imagePullPolicy
         value: IfNotPresent

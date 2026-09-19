@@ -89,6 +89,25 @@ func TestSQLiteEpisodicStoreUsesConfiguredPageLimit(t *testing.T) {
 
 }
 
+func TestSQLiteEventSnapshotMemoryScanReturnsFullPayload(t *testing.T) {
+	t.Parallel()
+	store, ctx := newSQLiteEpisodicStore(t)
+	require.NoError(t, store.InWriteTx(ctx, func(writeCtx context.Context) error {
+		_, err := store.PutMemory(writeCtx, registryepisodic.PutMemoryRequest{Namespace: []string{"users", "alice"}, Key: "profile", Value: map[string]interface{}{"secret": "value"}, PolicyAttributes: map[string]interface{}{"private": "attribute"}, MemoryKind: "default/v1"})
+		return err
+	}))
+	snapshots := store.(registryepisodic.EventSnapshotStore)
+	require.NoError(t, store.InReadTx(ctx, func(readCtx context.Context) error {
+		full, err := snapshots.AdminListEventSnapshotMemories(readCtx, registryepisodic.AdminMemoryQuery{Archived: registryepisodic.ArchiveFilterInclude, Limit: 10})
+		require.NoError(t, err)
+		require.Len(t, full.Items, 1)
+		require.Equal(t, []string{"users", "alice"}, full.Items[0].Namespace)
+		require.Equal(t, "value", full.Items[0].Value["secret"])
+		require.Equal(t, "attribute", full.Items[0].Attributes["private"])
+		return nil
+	}))
+}
+
 func TestSQLiteEpisodicStoreCRUDUsageSearchAndEvents(t *testing.T) {
 	t.Parallel()
 

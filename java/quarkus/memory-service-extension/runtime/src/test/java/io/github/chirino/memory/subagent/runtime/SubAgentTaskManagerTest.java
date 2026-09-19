@@ -3,11 +3,13 @@ package io.github.chirino.memory.subagent.runtime;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import io.github.chirino.memory.client.model.Conversation;
 import io.github.chirino.memory.history.runtime.AttachmentDescriptor;
 import io.github.chirino.memory.history.runtime.ConversationStore;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
@@ -20,6 +22,7 @@ import org.junit.jupiter.api.Test;
 class SubAgentTaskManagerTest {
 
     private static final String PARENT_ID = "00000000-0000-0000-0000-000000000001";
+    private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
     @Test
     void requiresModeWhenContinuingExistingConversation() {
@@ -510,13 +513,7 @@ class SubAgentTaskManagerTest {
             conversations.computeIfAbsent(
                     conversationId,
                     ignored ->
-                            new Conversation()
-                                    .id(conversationId)
-                                    .agentId(agentId)
-                                    .startedByConversationId(
-                                            startedByConversationId == null
-                                                    ? null
-                                                    : startedByConversationId));
+                            conversationResource(conversationId, agentId, startedByConversationId));
         }
 
         @Override
@@ -536,6 +533,15 @@ class SubAgentTaskManagerTest {
         @Override
         public Conversation getConversation(String conversationId, String bearerToken) {
             return conversations.get(conversationId);
+        }
+
+        private static Conversation conversationResource(
+                String conversationId, String agentId, String startedByConversationId) {
+            Map<String, Object> resource = new HashMap<>();
+            resource.put("id", conversationId);
+            resource.put("agentId", agentId);
+            resource.put("startedByConversationId", startedByConversationId);
+            return OBJECT_MAPPER.convertValue(resource, Conversation.class);
         }
     }
 

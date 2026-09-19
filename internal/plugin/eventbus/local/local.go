@@ -59,7 +59,10 @@ func New(bufferSize int) *Bus {
 
 // Publish fans out an event to matching local subscribers.
 // If a subscriber's buffer is full, its channel is closed (slow-consumer eviction).
-func (b *Bus) Publish(_ context.Context, event registryeventbus.Event) error {
+func (b *Bus) Publish(ctx context.Context, event registryeventbus.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	b.mu.RLock()
 	if b.closed {
 		b.mu.RUnlock()

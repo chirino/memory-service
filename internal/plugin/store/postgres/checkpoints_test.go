@@ -4,11 +4,14 @@ package postgres
 
 import (
 	"context"
+	"encoding/base64"
 	"testing"
+	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/dataencryption"
 	_ "github.com/chirino/memory-service/internal/plugin/encrypt/dek"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 )
@@ -29,6 +32,27 @@ func TestCheckpointValueEncryptionBindsClientID(t *testing.T) {
 
 	_, err = store.decryptCheckpointValue("client-b", ciphertext)
 	require.Error(t, err)
+}
+
+func TestCheckpointLeaseTokenCanAuthorizeCASWrite(t *testing.T) {
+	store, ctx := setupPostgresOutboxStore(t)
+	initial, err := store.AdminPutCheckpoint(ctx, registrystore.ClientCheckpoint{
+		ClientID: "exporter", ContentType: "application/json", Value: []byte(`{"cursor":"one"}`),
+	})
+	require.NoError(t, err)
+
+	token := base64.RawURLEncoding.EncodeToString(make([]byte, 32))
+	_, err = store.AdminAcquireCheckpointLease(ctx, "exporter", token, 30*time.Second)
+	require.NoError(t, err)
+	updated, err := store.AdminPutCheckpointCAS(ctx, registrystore.CheckpointCASWrite{
+		Checkpoint: registrystore.ClientCheckpoint{
+			ClientID: "exporter", ContentType: "application/json", Value: []byte(`{"cursor":"two"}`),
+		},
+		ExpectedRevision: initial.Revision,
+		LeaseToken:       token,
+	})
+	require.NoError(t, err)
+	require.NotEqual(t, initial.Revision, updated.Revision)
 }
 
 func TestMemoryValueEncryptionBindsMemoryID(t *testing.T) {
