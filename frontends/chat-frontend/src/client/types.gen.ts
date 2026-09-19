@@ -102,35 +102,45 @@ export type CapabilitiesSecurity = {
  */
 export type AccessLevel = "owner" | "manager" | "writer" | "reader";
 
-export type ConversationSummary = {
-  /**
-   * Unique identifier for the conversation.
-   */
-  id?: string;
+/**
+ * Fields supplied by an agent application when creating a conversation.
+ */
+export type ConversationInput = {
   title?: string;
-  ownerUserId?: string;
-  createdAt?: string;
-  updatedAt?: string;
-  lastMessagePreview?: string;
-  accessLevel?: AccessLevel;
   /**
-   * Parent conversation that started this logical conversation tree. Fork branches inherit this value.
+   * Optional logical agent associated with this conversation.
    */
-  startedByConversationId?: string;
-  /**
-   * Parent entry that started this logical conversation tree. Fork branches inherit this value.
-   */
-  startedByEntryId?: string;
-  /**
-   * Synthetic archive flag derived from the internal archived timestamp.
-   */
-  archived?: boolean;
+  agentId?: string;
   /**
    * Arbitrary key-value metadata stored on the conversation.
    */
   metadata?: {
     [key: string]: unknown;
   };
+};
+
+export type ConversationSummary = ConversationInput & {
+  /**
+   * Unique identifier for the conversation.
+   */
+  readonly id?: string;
+  readonly ownerUserId?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
+  readonly lastMessagePreview?: string;
+  readonly accessLevel?: AccessLevel;
+  /**
+   * Parent conversation that started this logical conversation tree. Fork branches inherit this value.
+   */
+  readonly startedByConversationId?: string;
+  /**
+   * Parent entry that started this logical conversation tree. Fork branches inherit this value.
+   */
+  readonly startedByEntryId?: string;
+  /**
+   * Synthetic archive flag derived from the internal archived timestamp.
+   */
+  readonly archived?: boolean;
 };
 
 export type ChildConversationSummary = {
@@ -160,40 +170,32 @@ export type ChildConversationSummary = {
 
 export type Conversation = ConversationSummary & {
   /**
-   * Optional logical agent associated with this conversation.
-   */
-  agentId?: string;
-  /**
    * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
-  forkedAtEntryId?: string;
+  readonly forkedAtEntryId?: string;
   /**
    * Conversation ID from which this conversation was forked.
    */
-  forkedAtConversationId?: string;
+  readonly forkedAtConversationId?: string;
   /**
    * Parent conversation that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByConversationId?: string;
+  readonly startedByConversationId?: string;
   /**
    * Parent entry that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByEntryId?: string;
+  readonly startedByEntryId?: string;
+  /**
+   * True while the service is recording a resumable response for this conversation.
+   */
+  readonly hasResponseInProgress?: boolean;
 };
 
-export type CreateConversationRequest = {
+export type CreateConversationRequest = ConversationInput & {
   /**
    * Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
    */
   id?: string;
-  title?: string;
-  /**
-   * Optional logical agent to associate with the new conversation.
-   */
-  agentId?: string;
-  metadata?: {
-    [key: string]: unknown;
-  };
 };
 
 export type UpdateConversationRequest = {
@@ -580,6 +582,10 @@ export type Entry = {
    * For agent entries, this is the user the agent is responding to.
    */
   userId?: string;
+  /**
+   * Logical agent associated with the entry.
+   */
+  agentId?: string;
   channel: Channel;
   /**
    * Logical context epoch this entry belongs to.
@@ -628,6 +634,11 @@ export type Entry = {
    */
   seq?: number;
   createdAt: string;
+  /**
+   * Searchable text supplied by the application for this history entry.
+   */
+  indexedContent?: string;
+  indexedAt?: string;
 };
 
 export type CreateEntryRequest = {
@@ -879,6 +890,10 @@ export type CreateOwnershipTransferRequest = {
    */
   newOwnerUserId: string;
 };
+
+export type ConversationSummaryWritable = ConversationInput;
+
+export type ConversationWritable = ConversationSummaryWritable;
 
 export type GetCapabilitiesData = {
   body?: never;
@@ -2346,9 +2361,13 @@ export type AdminSubscribeEventsData = {
      */
     after?: string;
     /**
-     * Event payload detail level.
+     * With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
      */
     detail?: "summary" | "full";
+    /**
+     * With `current`, emits a snapshot phase containing the current full resources, then replays changes committed after the snapshot boundary and continues live. Requires `detail=full`, an enabled outbox, and no `after` cursor.
+     */
+    initial_state?: "none" | "current";
     /**
      * Comma-separated entry channels to deliver for entry events. Defaults to history.
      */

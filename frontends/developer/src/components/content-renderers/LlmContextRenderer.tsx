@@ -1,4 +1,4 @@
-import type { Entry } from "@/api/generated/types.gen";
+import type { AdminEntry as Entry } from "@/api/generated/types.gen";
 import { CopyButton } from "@/components/ui/copy-button";
 import { getLlmContextEntries } from "./LlmContext";
 import { JsonHighlight, formatJson } from "./JsonHighlight";

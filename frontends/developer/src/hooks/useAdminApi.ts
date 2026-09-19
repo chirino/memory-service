@@ -12,9 +12,9 @@ import {
   adminSearchConversations,
   adminSearchMemories,
   type AdminConversation,
+  type AdminEntry,
   type AdminMemoryItem,
   type AdminSearchMemoriesData,
-  type Entry,
 } from "@/api/client";
 
 // Conversations
@@ -211,7 +211,7 @@ export function useAdminSearchMemories(params: {
 }
 
 // Re-export types with aliases for backward compatibility
-export type { AdminConversation, Entry as AdminConversationEntry };
+export type { AdminConversation, AdminEntry as AdminConversationEntry };
 export type AdminMemory = AdminMemoryItem;
 
 // Made with Bob

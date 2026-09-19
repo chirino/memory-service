@@ -4,7 +4,7 @@ status: implemented
 
 # Enhancement 090: Event Outbox for Reliable Delivery
 
-> **Status**: Implemented, with Mongo transactional replay guarantees deferred to [091](091-mongo-outbox-transactions.md) and tracked in [TODO.md](../../TODO.md).
+> **Status**: Implemented, including Mongo transactional replay completed by [091](implemented/091-mongo-outbox-transactions.md).
 >
 > **Current Contract Note**: Archive event semantics now follow [implemented/094-archive-operations.md](implemented/094-archive-operations.md). Conversation and memory archive operations emit `updated`; `deleted` is reserved for hard-delete or close semantics.
 >

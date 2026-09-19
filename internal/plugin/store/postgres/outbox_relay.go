@@ -32,10 +32,11 @@ const (
 )
 
 type relayOutboxRecord struct {
-	TxSeq int64
-	Event string
-	Kind  string
-	Data  json.RawMessage
+	TxSeq     int64
+	Event     string
+	Kind      string
+	Data      json.RawMessage
+	CreatedAt time.Time
 }
 
 type materializedOutboxRecord struct {
@@ -405,6 +406,12 @@ func decodeOutboxInsert(rel *pglogrepl.RelationMessage, insert *pglogrepl.Insert
 			record.Kind = string(col.Data)
 		case "data":
 			record.Data = append(record.Data[:0], col.Data...)
+		case "created_at":
+			var err error
+			record.CreatedAt, err = parseRelayTimestamp(string(col.Data))
+			if err != nil {
+				return relayOutboxRecord{}, false, fmt.Errorf("parse created_at %q: %w", string(col.Data), err)
+			}
 		}
 	}
 	if record.TxSeq == 0 || record.Event == "" || record.Kind == "" || len(record.Data) == 0 {
@@ -445,23 +452,36 @@ func (r *postgresOutboxRelay) materializeAndPublishBatch(ctx context.Context, la
 		if err != nil {
 			return lastEventSeq, err
 		}
+		bus := durablePostgresRelayBus{EventBus: r.bus}
 		switch {
 		case len(event.UserIDs) > 0:
-			if err := eventing.PublishToUsers(ctx, r.bus, event.UserIDs, event); err != nil {
+			if err := eventing.PublishToUsers(ctx, bus, event.UserIDs, event); err != nil {
 				return lastEventSeq, err
 			}
 		case event.ConversationGroupID != uuid.Nil:
-			if err := eventing.PublishToGroup(ctx, r.store, r.bus, event.ConversationGroupID, event); err != nil {
+			if err := eventing.PublishToGroup(ctx, r.store, bus, event.ConversationGroupID, event); err != nil {
 				return lastEventSeq, err
 			}
 		default:
-			if err := r.bus.Publish(ctx, event); err != nil {
+			if err := bus.Publish(ctx, event); err != nil {
 				return lastEventSeq, err
 			}
 		}
 	}
 
 	return nextEventSeq, nil
+}
+
+// durablePostgresRelayBus routes every relay branch through the transport's
+// acknowledged publication path when one is available. Local-only buses keep
+// their existing synchronous Publish behavior.
+type durablePostgresRelayBus struct{ registryeventbus.EventBus }
+
+func (b durablePostgresRelayBus) Publish(ctx context.Context, event registryeventbus.Event) error {
+	if durable, ok := b.EventBus.(registryeventbus.DurablePublisher); ok {
+		return durable.PublishDurable(ctx, event)
+	}
+	return b.EventBus.Publish(ctx, event)
 }
 
 func (r *postgresOutboxRelay) materializeEventSeqBatch(ctx context.Context, lastEventSeq int64, pending []relayOutboxRecord) ([]materializedOutboxRecord, error) {
@@ -524,6 +544,7 @@ func relayEvent(record relayOutboxRecord, eventSeq int64) (registryeventbus.Even
 		Kind:         record.Kind,
 		Data:         payload,
 		OutboxCursor: formatPostgresOutboxCursor(eventSeq),
+		OccurredAt:   timePtr(record.CreatedAt.UTC()),
 	}
 
 	if groupID, ok := uuidFromPayload(payload["conversation_group"]); ok {
@@ -543,6 +564,17 @@ func relayEvent(record relayOutboxRecord, eventSeq int64) (registryeventbus.Even
 
 	return event, nil
 }
+
+func parseRelayTimestamp(value string) (time.Time, error) {
+	for _, layout := range []string{time.RFC3339Nano, "2006-01-02 15:04:05.999999999Z07:00", "2006-01-02 15:04:05.999999999-07"} {
+		if parsed, err := time.Parse(layout, value); err == nil {
+			return parsed, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("unsupported PostgreSQL timestamp")
+}
+
+func timePtr(value time.Time) *time.Time { return &value }
 
 func uuidFromPayload(value any) (uuid.UUID, bool) {
 	raw, ok := stringFromPayload(value)

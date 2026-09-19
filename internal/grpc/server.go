@@ -2,6 +2,7 @@ package grpc
 
 import (
 	"context"
+	"crypto/rand"
 	"encoding/base64"
 	"encoding/binary"
 	"encoding/json"
@@ -236,6 +237,22 @@ func appendOutboxOrUseEvents(ctx context.Context, store registrystore.MemoryStor
 		return appended, nil
 	}
 	return events, nil
+}
+
+func appendGRPCMemoryEvents(ctx context.Context, store registrystore.MemoryStore, events ...registryeventbus.Event) ([]registryeventbus.Event, error) {
+	if store == nil {
+		return events, nil
+	}
+	return appendOutboxOrUseEvents(ctx, store, events)
+}
+
+func publishGRPCMemoryEvents(ctx context.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, events []registryeventbus.Event) {
+	if store == nil || bus == nil || len(events) == 0 {
+		return
+	}
+	if err := eventstream.PublishEvents(ctx, store, bus, events...); err != nil {
+		log.Warn("failed to publish memory event", "err", err)
+	}
 }
 
 func publishGRPCEvents(ctx context.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus, events []registryeventbus.Event, label string) {
@@ -920,14 +937,15 @@ func conversationToProto(conv *registrystore.ConversationDetail) *pb.Conversatio
 
 func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminConversationSummary {
 	item := &pb.AdminConversationSummary{
-		Id:          string(cs.ID),
-		Title:       cs.Title,
-		OwnerUserId: cs.OwnerUserID,
-		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-		AccessLevel: mapAccessLevel(cs.AccessLevel),
-		Archived:    cs.ArchivedAt != nil,
-		ClientId:    cs.ClientID,
+		Id:                  string(cs.ID),
+		Title:               cs.Title,
+		OwnerUserId:         cs.OwnerUserID,
+		CreatedAt:           cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:           cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel:         mapAccessLevel(cs.AccessLevel),
+		Archived:            cs.ArchivedAt != nil,
+		ClientId:            cs.ClientID,
+		ConversationGroupId: uuidToBytes(cs.ConversationGroupID),
 	}
 	if cs.AgentID != nil {
 		item.AgentId = cs.AgentID
@@ -948,14 +966,15 @@ func adminConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.
 
 func adminChildConversationSummaryToProto(cs *registrystore.ConversationSummary) *pb.AdminChildConversationSummary {
 	item := &pb.AdminChildConversationSummary{
-		Id:          string(cs.ID),
-		Title:       cs.Title,
-		OwnerUserId: cs.OwnerUserID,
-		CreatedAt:   cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
-		UpdatedAt:   cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
-		AccessLevel: mapAccessLevel(cs.AccessLevel),
-		Archived:    cs.ArchivedAt != nil,
-		ClientId:    cs.ClientID,
+		Id:                  string(cs.ID),
+		Title:               cs.Title,
+		OwnerUserId:         cs.OwnerUserID,
+		CreatedAt:           cs.CreatedAt.Format("2006-01-02T15:04:05Z"),
+		UpdatedAt:           cs.UpdatedAt.Format("2006-01-02T15:04:05Z"),
+		AccessLevel:         mapAccessLevel(cs.AccessLevel),
+		Archived:            cs.ArchivedAt != nil,
+		ClientId:            cs.ClientID,
+		ConversationGroupId: uuidToBytes(cs.ConversationGroupID),
 	}
 	if cs.AgentID != nil {
 		item.AgentId = cs.AgentID
@@ -979,6 +998,7 @@ func adminConversationToProto(conv *registrystore.ConversationDetail) *pb.AdminC
 		AccessLevel:           mapAccessLevel(conv.AccessLevel),
 		Archived:              conv.ArchivedAt != nil,
 		ClientId:              conv.ClientID,
+		ConversationGroupId:   uuidToBytes(conv.ConversationGroupID),
 		HasResponseInProgress: conv.HasResponseInProgress,
 	}
 	if conv.AgentID != nil {
@@ -3506,18 +3526,22 @@ func (s *SearchServer) ListUnindexedEntries(ctx context.Context, req *pb.ListUni
 
 type MemoriesServer struct {
 	pb.UnimplementedMemoriesServiceServer
-	Store    registryepisodic.EpisodicStore
-	Policy   *episodic.PolicyEngine
-	Config   *config.Config
-	Embedder registryembed.Embedder
+	Store       registryepisodic.EpisodicStore
+	Policy      *episodic.PolicyEngine
+	Config      *config.Config
+	Embedder    registryembed.Embedder
+	MemoryStore registrystore.MemoryStore
+	EventBus    registryeventbus.EventBus
 }
 
 type AdminMemoriesServer struct {
 	pb.UnimplementedAdminMemoriesServiceServer
-	Store    registryepisodic.EpisodicStore
-	Policy   *episodic.PolicyEngine
-	Config   *config.Config
-	Embedder registryembed.Embedder
+	Store       registryepisodic.EpisodicStore
+	Policy      *episodic.PolicyEngine
+	Config      *config.Config
+	Embedder    registryembed.Embedder
+	MemoryStore registrystore.MemoryStore
+	EventBus    registryeventbus.EventBus
 }
 
 func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest) (*pb.MemoryWriteResult, error) {
@@ -3560,6 +3584,7 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	// for authz is exactly the kind projected and persisted. No second ResolveKindForWrite.
 	kindSel := req.GetKind()
 	var writeResult *registryepisodic.MemoryWriteResult
+	var memoryEvents []registryeventbus.Event
 	if writeErr := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
 		// 1. Load and authorize the active row before replacing it.
 		var predecessorExpectation *registryepisodic.MemoryPredecessorExpectation
@@ -3625,6 +3650,14 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 			ExpectedRevision:      req.ExpectedRevision,
 			AuthorizedPredecessor: predecessorExpectation,
 		})
+		if putErr != nil {
+			return putErr
+		}
+		event := eventstream.MemoryWriteEvent("updated", "revised", writeResult)
+		if writeResult.Revision <= 1 {
+			event.Event, event.Data.(map[string]any)["change"] = "created", "created"
+		}
+		memoryEvents, putErr = appendGRPCMemoryEvents(txCtx, s.MemoryStore, event)
 		return putErr
 	}); writeErr != nil {
 		// Preserve gRPC status errors (PermissionDenied, InvalidArgument) from the closure.
@@ -3640,6 +3673,7 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 	if result == nil {
 		return nil, status.Error(codes.Internal, "internal server error")
 	}
+	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	resp, err := memoryWriteResultToProto(result)
 	if err != nil {
 		return nil, episodicInternalError("failed to encode memory write response", err)
@@ -3777,6 +3811,7 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 
 	// Authz with actual row kind: look up kind, check authz, archive — all in one write tx.
 	// Per Enhancement 115: run authz with kind="" when row absent; return NotFound only if authz passes.
+	var memoryEvents []registryeventbus.Event
 	if archiveErr := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
 		if s.Policy != nil {
 			// 1. Look up exact kind without loading value. ArchiveFilterExclude: archived rows = absent.
@@ -3803,7 +3838,19 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 			}
 		}
 		// 3. Archive.
-		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
+		item, err := s.Store.GetMemory(txCtx, namespace, key, registryepisodic.ArchiveFilterExclude)
+		if err != nil {
+			return err
+		}
+		if err := s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision); err != nil {
+			return err
+		}
+		if item != nil {
+			now := time.Now().UTC()
+			item.ArchivedAt = &now
+			memoryEvents, err = appendGRPCMemoryEvents(txCtx, s.MemoryStore, eventstream.MemoryChangedEvent("updated", "archived", item))
+		}
+		return err
 	}); archiveErr != nil {
 		// Preserve gRPC status errors (PermissionDenied, NotFound) from the closure.
 		if _, ok := status.FromError(archiveErr); ok {
@@ -3814,6 +3861,7 @@ func (s *MemoriesServer) UpdateMemory(ctx context.Context, req *pb.UpdateMemoryR
 		}
 		return nil, episodicInternalError("failed to archive memory", archiveErr)
 	}
+	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	return &emptypb.Empty{}, nil
 }
 
@@ -4584,11 +4632,18 @@ func (s *AdminMemoriesServer) DeleteMemory(ctx context.Context, req *pb.AdminDel
 	if err != nil {
 		return nil, status.Error(codes.InvalidArgument, err.Error())
 	}
+	var memoryEvents []registryeventbus.Event
 	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.AdminForceDeleteMemory(txCtx, id)
+		if err := s.Store.AdminForceDeleteMemory(txCtx, id); err != nil {
+			return err
+		}
+		var err error
+		memoryEvents, err = appendGRPCMemoryEvents(txCtx, s.MemoryStore, eventstream.MemoryDeletedEvent(id, "hard_deleted"))
+		return err
 	}); err != nil {
 		return nil, episodicInternalError("failed to delete memory", err)
 	}
+	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	return &emptypb.Empty{}, nil
 }
 
@@ -4723,12 +4778,13 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 	}
 
 	kindSel := req.GetKind()
+	var memoryEvents []registryeventbus.Event
 	result, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryWriteResult, error) {
 		policyAttrs, resolvedKind, err := grpcResolveKindProjection(txCtx, s.Store, kindSel, namespace, key, value, index)
 		if err != nil {
 			return nil, err
 		}
-		return s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
+		result, err := s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
 			Namespace:        namespace,
 			Key:              key,
 			Value:            value,
@@ -4738,6 +4794,15 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 			MemoryKind:       resolvedKind,
 			ExpectedRevision: req.ExpectedRevision,
 		})
+		if err != nil {
+			return nil, err
+		}
+		event := eventstream.MemoryWriteEvent("updated", "revised", result)
+		if result.Revision <= 1 {
+			event.Event, event.Data.(map[string]any)["change"] = "created", "created"
+		}
+		memoryEvents, err = appendGRPCMemoryEvents(txCtx, s.MemoryStore, event)
+		return result, err
 	})
 	if err != nil {
 		if _, ok := status.FromError(err); ok {
@@ -4748,6 +4813,7 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 		}
 		return nil, episodicInternalError("failed to store memory", err)
 	}
+	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	resp, err := memoryWriteResultToProto(result)
 	if err != nil {
 		return nil, episodicInternalError("failed to encode memory write response", err)
@@ -4793,14 +4859,28 @@ func (s *AdminMemoriesServer) UpdateMemory(ctx context.Context, req *pb.AdminUpd
 	// Admin memory updates are authorized by admin role/scope/justification
 	// above. They intentionally bypass user OPA authz because archive is an
 	// administrative operation across namespaces.
+	var memoryEvents []registryeventbus.Event
 	if err := inEpisodicWrite(ctx, s.Store, func(txCtx context.Context) error {
-		return s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision)
+		item, err := s.Store.GetMemory(txCtx, namespace, key, registryepisodic.ArchiveFilterExclude)
+		if err != nil {
+			return err
+		}
+		if err := s.Store.ArchiveMemory(txCtx, namespace, key, req.ExpectedRevision); err != nil {
+			return err
+		}
+		if item != nil {
+			now := time.Now().UTC()
+			item.ArchivedAt = &now
+			memoryEvents, err = appendGRPCMemoryEvents(txCtx, s.MemoryStore, eventstream.MemoryChangedEvent("updated", "archived", item))
+		}
+		return err
 	}); err != nil {
 		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
 			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
 		}
 		return nil, episodicInternalError("failed to archive memory", err)
 	}
+	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	return &emptypb.Empty{}, nil
 }
 
@@ -6534,6 +6614,7 @@ type EventStreamServer struct {
 	Config         *config.Config
 	UserIDAsserter *security.UserIDAsserter
 	RateLimiter    *security.RateLimiter
+	EpisodicStore  registryepisodic.EpisodicStore
 }
 
 var grpcEventStreamNodeID = uuid.New().String()
@@ -6682,17 +6763,112 @@ func (s *AdminCheckpointServer) PutCheckpoint(ctx context.Context, req *pb.PutCh
 	var checkpoint *registrystore.ClientCheckpoint
 	err = s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
 		var err error
-		checkpoint, err = checkpoints.AdminPutCheckpoint(txCtx, registrystore.ClientCheckpoint{
+		value := registrystore.ClientCheckpoint{
 			ClientID:    clientID,
 			ContentType: contentType,
 			Value:       json.RawMessage(raw),
-		})
+		}
+		if req.GetExpectedRevision() != "" || req.GetLeaseToken() != "" {
+			leased, ok := s.Store.(registrystore.AdminCheckpointLeaseStore)
+			if !ok {
+				return &registrystore.ValidationError{Field: "leaseToken", Message: "checkpoint leases unavailable"}
+			}
+			checkpoint, err = leased.AdminPutCheckpointCAS(txCtx, registrystore.CheckpointCASWrite{
+				Checkpoint: value, ExpectedRevision: req.GetExpectedRevision(), LeaseToken: req.GetLeaseToken(),
+			})
+		} else {
+			checkpoint, err = checkpoints.AdminPutCheckpoint(txCtx, value)
+		}
 		return err
 	})
 	if err != nil {
 		return nil, mapCheckpointError(err)
 	}
 	return checkpointToProto(checkpoint)
+}
+
+func (s *AdminCheckpointServer) AcquireLease(ctx context.Context, req *pb.AcquireCheckpointLeaseRequest) (*pb.AdminCheckpointLease, error) {
+	if err := s.requireCheckpointLeaseAccess(ctx); err != nil {
+		return nil, err
+	}
+	clientID := strings.TrimSpace(req.GetClientId())
+	if clientID == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id is required")
+	}
+	if !grpcAllowCheckpointClient(ctx, clientID) {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return nil, grpcStatusWithCause(codes.Internal, "generate checkpoint lease token", err)
+	}
+	token := base64.RawURLEncoding.EncodeToString(tokenBytes)
+	var lease *registrystore.ClientCheckpointLease
+	err := s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
+		var err error
+		lease, err = s.Store.(registrystore.AdminCheckpointLeaseStore).AdminAcquireCheckpointLease(txCtx, clientID, token, time.Duration(req.GetTtlSeconds())*time.Second)
+		return err
+	})
+	if err != nil {
+		return nil, mapCheckpointError(err)
+	}
+	return checkpointLeaseToProto(lease), nil
+}
+
+func (s *AdminCheckpointServer) RenewLease(ctx context.Context, req *pb.RenewCheckpointLeaseRequest) (*pb.AdminCheckpointLease, error) {
+	if err := s.requireCheckpointLeaseAccess(ctx); err != nil {
+		return nil, err
+	}
+	clientID := strings.TrimSpace(req.GetClientId())
+	if clientID == "" || strings.TrimSpace(req.GetLeaseToken()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id and lease_token are required")
+	}
+	if !grpcAllowCheckpointClient(ctx, clientID) {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	var lease *registrystore.ClientCheckpointLease
+	err := s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
+		var err error
+		lease, err = s.Store.(registrystore.AdminCheckpointLeaseStore).AdminRenewCheckpointLease(txCtx, clientID, req.GetLeaseToken(), time.Duration(req.GetTtlSeconds())*time.Second)
+		return err
+	})
+	if err != nil {
+		return nil, mapCheckpointError(err)
+	}
+	return checkpointLeaseToProto(lease), nil
+}
+
+func (s *AdminCheckpointServer) ReleaseLease(ctx context.Context, req *pb.ReleaseCheckpointLeaseRequest) (*emptypb.Empty, error) {
+	if err := s.requireCheckpointLeaseAccess(ctx); err != nil {
+		return nil, err
+	}
+	clientID := strings.TrimSpace(req.GetClientId())
+	if clientID == "" || strings.TrimSpace(req.GetLeaseToken()) == "" {
+		return nil, status.Error(codes.InvalidArgument, "client_id and lease_token are required")
+	}
+	if !grpcAllowCheckpointClient(ctx, clientID) {
+		return nil, status.Error(codes.NotFound, "checkpoint not found")
+	}
+	err := s.Store.InWriteTx(ctx, func(txCtx context.Context) error {
+		return s.Store.(registrystore.AdminCheckpointLeaseStore).AdminReleaseCheckpointLease(txCtx, clientID, req.GetLeaseToken())
+	})
+	if err != nil {
+		return nil, mapCheckpointError(err)
+	}
+	return &emptypb.Empty{}, nil
+}
+
+func (s *AdminCheckpointServer) requireCheckpointLeaseAccess(ctx context.Context) error {
+	if !hasGRPCRole(ctx, security.RoleAdmin) {
+		return status.Error(codes.PermissionDenied, "admin role required")
+	}
+	if err := requireGRPCOIDCScope(ctx, security.PermissionAdminCheckpointsWrite); err != nil {
+		return err
+	}
+	if _, ok := s.Store.(registrystore.AdminCheckpointLeaseStore); !ok {
+		return status.Error(codes.Unimplemented, "checkpoint leases unavailable")
+	}
+	return nil
 }
 
 func grpcAllowCheckpointClient(ctx context.Context, clientID string) bool {
@@ -6703,11 +6879,14 @@ func grpcAllowCheckpointClient(ctx context.Context, clientID string) bool {
 func mapCheckpointError(err error) error {
 	var notFound *registrystore.NotFoundError
 	var validation *registrystore.ValidationError
+	var conflict *registrystore.ConflictError
 	switch {
 	case errors.As(err, &notFound):
 		return grpcStatusWithCause(codes.NotFound, "checkpoint not found", err)
 	case errors.As(err, &validation):
 		return grpcStatusWithCause(codes.InvalidArgument, validation.Error(), err)
+	case errors.As(err, &conflict):
+		return grpcStatusWithCause(codes.Aborted, conflict.Error(), err)
 	default:
 		return grpcStatusWithCause(codes.Internal, "internal server error", err)
 	}
@@ -6732,7 +6911,18 @@ func checkpointToProto(checkpoint *registrystore.ClientCheckpoint) (*pb.AdminChe
 		ContentType: checkpoint.ContentType,
 		Value:       pValue,
 		UpdatedAt:   timestamppb.New(checkpoint.UpdatedAt.UTC()),
+		Revision:    checkpoint.Revision,
 	}, nil
+}
+
+func checkpointLeaseToProto(lease *registrystore.ClientCheckpointLease) *pb.AdminCheckpointLease {
+	if lease == nil {
+		return nil
+	}
+	return &pb.AdminCheckpointLease{
+		ClientId: lease.ClientID, LeaseToken: lease.Token, Generation: lease.Generation,
+		ExpiresAt: timestamppb.New(lease.ExpiresAt.UTC()),
+	}
 }
 
 func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stream pb.EventStreamService_SubscribeEventsServer) error {
@@ -6748,6 +6938,13 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 	}
 	if detail != "summary" && detail != "full" {
 		return status.Error(codes.InvalidArgument, "detail must be one of: summary, full")
+	}
+	initialState := strings.TrimSpace(req.GetInitialState())
+	if initialState == "" {
+		initialState = "none"
+	}
+	if initialState != "none" && initialState != "current" {
+		return status.Error(codes.InvalidArgument, "initial_state must be one of: none, current")
 	}
 	adminScope := req.GetScope() == pb.EventScope_EVENT_SCOPE_ADMIN
 	switch req.GetScope() {
@@ -6789,6 +6986,20 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 				"requestID", security.RequestIDFromContext(stream.Context()),
 				"justification", justification,
 			)
+		}
+	}
+	if initialState == "current" {
+		if !adminScope {
+			return status.Error(codes.InvalidArgument, "initial_state=current requires admin scope")
+		}
+		if detail != "full" {
+			return status.Error(codes.InvalidArgument, "initial_state=current requires detail=full")
+		}
+		if req.GetAfterCursor() != "" {
+			return status.Error(codes.InvalidArgument, "initial_state=current cannot be combined with after_cursor")
+		}
+		if s.Config == nil || !s.Config.OutboxEnabled {
+			return status.Error(codes.Unimplemented, "initial_state=current requires the event outbox to be enabled")
 		}
 	}
 
@@ -6914,6 +7125,18 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			return grpcStatusWithCause(codes.Internal, "internal server error", err)
 		}
 	}
+	if initialState == "current" {
+		if outbox == nil {
+			return status.Error(codes.Unimplemented, "initial_state=current is not supported by the configured datastore")
+		}
+		if err := eventstream.ReplaySupported(stream.Context(), s.Store, outbox); err != nil {
+			if errors.Is(err, registrystore.ErrOutboxReplayUnsupported) {
+				return grpcStatusWithCause(codes.Unimplemented, "initial_state=current is not supported by the configured datastore", err)
+			}
+			return grpcStatusWithCause(codes.Internal, "internal server error", err)
+		}
+	}
+	initialStatePending := initialState == "current"
 
 	canRecoverSlowConsumer := func() bool {
 		if s.Config == nil || !s.Config.OutboxEnabled || outbox == nil || lastCursor == "" {
@@ -6941,6 +7164,23 @@ streamLoop:
 		sub, err := s.EventBus.Subscribe(stream.Context(), subscribeUserID)
 		if err != nil {
 			return grpcStatusWithCause(codes.Internal, "internal server error", err)
+		}
+
+		if initialStatePending {
+			highWater, err := s.grpcOutboxHighWater(stream.Context())
+			if err != nil {
+				return grpcStatusWithCause(codes.Internal, "capture current-state boundary", err)
+			}
+			if err := sendGRPCPhaseEvent(stream, "snapshot", highWater); err != nil {
+				return err
+			}
+			if err := eventstream.StreamAdminCurrentState(stream.Context(), s.Store, s.EpisodicStore, kindsFilter, conversationFilter, entryFilter, func(event registryeventbus.Event) error {
+				return sendGRPCEvent(stream, event)
+			}); err != nil {
+				return grpcStatusWithCause(codes.Internal, "stream current state", err)
+			}
+			resumeCursor = highWater
+			initialStatePending = false
 		}
 
 		if resumeCursor != "" {
@@ -6978,7 +7218,11 @@ streamLoop:
 			}
 		}
 
-		if err := sendGRPCPhaseEvent(stream, "live"); err != nil {
+		highWater, err := s.grpcOutboxHighWater(stream.Context())
+		if err != nil {
+			return grpcStatusWithCause(codes.Internal, "internal server error", err)
+		}
+		if err := sendGRPCPhaseEvent(stream, "live", highWater); err != nil {
 			return err
 		}
 
@@ -7083,24 +7327,51 @@ func eventCursorPtr(cursor string) *string {
 }
 
 func sendGRPCEvent(stream pb.EventStreamService_SubscribeEventsServer, event registryeventbus.Event) error {
-	data, err := json.Marshal(event.Data)
+	data, err := eventstream.MarshalDeliveryJSON(event.Data)
 	if err != nil {
 		return err
 	}
 	return stream.Send(&pb.EventNotification{
-		Event:  event.Event,
-		Kind:   event.Kind,
-		Data:   data,
-		Cursor: eventCursorPtr(event.OutboxCursor),
+		Event:      event.Event,
+		Kind:       event.Kind,
+		Data:       data,
+		Cursor:     eventCursorPtr(event.OutboxCursor),
+		OccurredAt: eventTimestampPtr(event.OccurredAt),
+		Change:     eventCursorPtr(event.Change),
 	})
 }
 
-func sendGRPCPhaseEvent(stream pb.EventStreamService_SubscribeEventsServer, phase string) error {
+func eventTimestampPtr(value *time.Time) *timestamppb.Timestamp {
+	if value == nil || value.IsZero() {
+		return nil
+	}
+	return timestamppb.New(value.UTC())
+}
+
+func grpcTimePtr(value time.Time) *time.Time { return &value }
+
+func sendGRPCPhaseEvent(stream pb.EventStreamService_SubscribeEventsServer, phase string, cursor ...string) error {
+	highWater := ""
+	if len(cursor) > 0 {
+		highWater = cursor[0]
+	}
 	return sendGRPCEvent(stream, registryeventbus.Event{
-		Event: "phase",
-		Kind:  "stream",
-		Data:  map[string]string{"phase": phase},
+		Event: "phase", Kind: "stream", Data: map[string]string{"phase": phase}, OutboxCursor: highWater,
 	})
+}
+
+func (s *EventStreamServer) grpcOutboxHighWater(ctx context.Context) (string, error) {
+	highWater, ok := s.Store.(registrystore.OutboxHighWaterStore)
+	if !ok || s.Config == nil || !s.Config.OutboxEnabled {
+		return "", nil
+	}
+	var cursor string
+	err := s.Store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		cursor, err = highWater.CurrentOutboxCursor(txCtx)
+		return err
+	})
+	return cursor, err
 }
 
 type replayGRPCOutcome int
@@ -7157,6 +7428,7 @@ func (s *EventStreamServer) replayGRPCEvents(stream pb.EventStreamService_Subscr
 				Kind:         replayEvent.Kind,
 				Data:         json.RawMessage(replayEvent.Data),
 				OutboxCursor: replayEvent.Cursor,
+				OccurredAt:   grpcTimePtr(replayEvent.CreatedAt),
 			}
 			if replayEvent.Cursor != "" {
 				seen[replayEvent.Cursor] = struct{}{}
@@ -7277,6 +7549,7 @@ func (s *EventStreamServer) replayGRPCAdminEvents(stream pb.EventStreamService_S
 				Kind:         replayEvent.Kind,
 				Data:         json.RawMessage(replayEvent.Data),
 				OutboxCursor: replayEvent.Cursor,
+				OccurredAt:   grpcTimePtr(replayEvent.CreatedAt),
 			}
 			if replayEvent.Cursor != "" {
 				seen[replayEvent.Cursor] = struct{}{}
@@ -7360,6 +7633,7 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 	if !ok {
 		return event, true, nil
 	}
+	event.Change = eventstream.EventChange(event.Data)
 
 	switch event.Kind {
 	case "conversation":
@@ -7371,9 +7645,9 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 			return s.Store.GetConversation(txCtx, userID, conversationID)
 		})
 		if err != nil {
-			return event, false, nil
+			return event, true, nil
 		}
-		event.Data = grpcFullEventData(conv, data)
+		event.Data = eventstream.AgentConversationResource(conv)
 		return event, true, nil
 	case "entry":
 		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
@@ -7390,18 +7664,18 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 			return s.Store.GetEntries(txCtx, userID, conversationID, registrystore.EntryLookupQuery(entryID, channel, clientID))
 		})
 		if err != nil {
-			return event, false, nil
+			return event, true, nil
 		}
 		if page == nil {
-			return event, false, nil
+			return event, true, nil
 		}
 		for i := range page.Data {
 			if page.Data[i].ID == entryID {
-				event.Data = grpcFullEventData(page.Data[i], data)
+				event.Data = eventstream.AgentEntryResource(&page.Data[i])
 				return event, true, nil
 			}
 		}
-		return event, false, nil
+		return event, true, nil
 	default:
 		return event, true, nil
 	}
@@ -7415,6 +7689,7 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 	if !ok {
 		return event, true, nil
 	}
+	event.Change = eventstream.EventChange(event.Data)
 	switch event.Kind {
 	case "conversation":
 		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
@@ -7425,9 +7700,16 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 			return s.Store.AdminGetConversation(txCtx, conversationID)
 		})
 		if err != nil {
-			return event, false, nil
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
 		}
-		event.Data = grpcFullEventData(conv, data)
+		if conv == nil {
+			return event, true, nil
+		}
+		event.Data = eventstream.AdminConversationResource(conv)
 		return event, true, nil
 	case "entry":
 		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
@@ -7442,34 +7724,49 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 			txCtx = config.WithContext(txCtx, s.Config)
 			return s.Store.AdminGetEntries(txCtx, conversationID, registrystore.AdminEntryLookupQuery(entryID))
 		})
-		if err != nil || page == nil {
-			return event, false, nil
+		if err != nil {
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
+		}
+		if page == nil {
+			return event, true, nil
 		}
 		for i := range page.Data {
 			if page.Data[i].ID == entryID {
-				event.Data = grpcFullEventData(page.Data[i], data)
+				event.Data = eventstream.AdminEntryResource(&page.Data[i])
 				return event, true, nil
 			}
 		}
-		return event, false, nil
+		return event, true, nil
+	case "memory":
+		if s.EpisodicStore == nil {
+			return event, true, nil
+		}
+		memoryID, ok := decodeGRPCUUIDField(data, "memory")
+		if !ok {
+			return event, true, nil
+		}
+		item, err := withEpisodicRead(ctx, s.EpisodicStore, func(txCtx context.Context) (*registryepisodic.MemoryItem, error) {
+			return s.EpisodicStore.AdminGetMemoryByID(txCtx, memoryID)
+		})
+		if err != nil {
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
+		}
+		if item == nil {
+			return event, true, nil
+		}
+		event.Data = eventstream.AdminMemoryResource(item)
+		return event, true, nil
 	default:
 		return event, true, nil
 	}
-}
-
-func grpcFullEventData(entity any, summary map[string]any) any {
-	raw, err := json.Marshal(entity)
-	if err != nil {
-		return entity
-	}
-	var out map[string]any
-	if err := json.Unmarshal(raw, &out); err != nil {
-		return entity
-	}
-	if group, ok := summary["conversation_group"].(string); ok && strings.TrimSpace(group) != "" {
-		out["conversationGroupId"] = group
-	}
-	return out
 }
 
 func grpcEventMatchesConversationFilter(event registryeventbus.Event, filter map[string]bool) bool {

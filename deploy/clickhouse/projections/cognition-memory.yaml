@@ -1,0 +1,34 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: cognition_memory_v1
+spec:
+  resource: memory
+  selector:
+    kind: cognition/v1
+  columns:
+    namespace: {type: string, nullable: true}
+    subject: {type: string, nullable: true}
+    memory_kind: {type: string, nullable: true}
+    runtime_id: {type: string, nullable: true}
+    runtime_version: {type: string, nullable: true}
+    confidence: {type: string, nullable: true}
+    memory_observed_at: {type: timestamp, nullable: true}
+    memory_effective_at: {type: timestamp, nullable: true}
+    value:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "namespace": object.get(input.attributes, "namespace", null),
+      "subject": object.get(input.attributes, "sub", null),
+      "memory_kind": object.get(input.attributes, "memoryKind", null),
+      "runtime_id": object.get(input.attributes, "runtimeId", null),
+      "runtime_version": object.get(input.attributes, "runtimeVersion", null),
+      "confidence": object.get(input.attributes, "confidence", null),
+      "memory_observed_at": object.get(input.attributes, "observedAt", null),
+      "memory_effective_at": object.get(input.attributes, "effectiveAt", null),
+      "value": input.value,
+    }

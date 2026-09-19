@@ -16,6 +16,8 @@ import (
 	"syscall"
 	"testing"
 	"time"
+
+	"github.com/ClickHouse/clickhouse-go/v2/lib/driver"
 )
 
 // portCounter allocates unique ports for checkpoint subprocesses.
@@ -167,6 +169,11 @@ type SiteScenario struct {
 	MemServiceURL        string
 	MemServiceUnixSocket string
 	Mock                 *MockServer
+	ClickHouse           *siteClickHouse
+	clickHouseDatabase   string
+	clickHouseConn       driver.Conn
+	clickHouseColumns    []string
+	clickHouseRowCount   int
 
 	t testing.TB
 }

@@ -5,7 +5,7 @@ import { ForkPointBadge } from "@/components/ui/fork-point-badge";
 import { TimestampPopover } from "@/components/ui/timestamp-popover";
 import { ChevronDown, ChevronRight } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { Entry } from "@/api/client";
+import type { AdminEntry as Entry } from "@/api/client";
 import type { ChannelFilter } from "@/lib/entry-render-items";
 import { ContentRenderer } from "@/components/content-renderers/ContentRenderer";
 import type { ViewMode } from "@/components/content-renderers/useContentViewMode";

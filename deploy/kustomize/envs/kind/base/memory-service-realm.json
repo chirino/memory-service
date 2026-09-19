@@ -70,7 +70,7 @@
         "http://localhost:9090/*",
         "http://127.0.0.1:9090/*",
         "http://0.0.0.0:9090/*",
-        "http://api.127.0.0.1.nip.io/*"
+        "http://api.127.0.0.1.nip.io:8080/*"
       ],
       "webOrigins": ["*"],
       "standardFlowEnabled": true,
@@ -129,8 +129,8 @@
         "http://127.0.0.1:5173/*",
         "http://0.0.0.0:5173",
         "http://0.0.0.0:5173/*",
-        "http://chat.127.0.0.1.nip.io",
-        "http://chat.127.0.0.1.nip.io/*"
+        "http://chat.127.0.0.1.nip.io:8080",
+        "http://chat.127.0.0.1.nip.io:8080/*"
       ],
       "webOrigins": [
         "http://localhost:3000",
@@ -145,7 +145,7 @@
         "http://localhost:5173",
         "http://127.0.0.1:5173",
         "http://0.0.0.0:5173",
-        "http://chat.127.0.0.1.nip.io"
+        "http://chat.127.0.0.1.nip.io:8080"
       ],
       "attributes": {
         "post.logout.redirect.uris": "+"

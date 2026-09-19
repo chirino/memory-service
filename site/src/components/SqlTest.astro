@@ -1,0 +1,18 @@
+---
+import { Code } from "astro:components";
+
+interface Props {
+  query: string;
+  columns?: string[];
+  minRows?: number;
+}
+
+const { query, columns = [], minRows = 0 } = Astro.props;
+const sql = query.trim();
+---
+
+<div class="sql-test">
+  <Code code={sql} lang="sql" />
+  <div class="sql-test-metadata" hidden data-query={sql} data-columns={JSON.stringify(columns)} data-min-rows={minRows}>
+  </div>
+</div>

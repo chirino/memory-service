@@ -1,0 +1,22 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: default_memory_v1
+spec:
+  resource: memory
+  selector:
+    kind: default/v1
+  columns:
+    namespace: {type: string, nullable: true}
+    subject: {type: string, nullable: true}
+    value:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "namespace": object.get(input.attributes, "namespace", null),
+      "subject": object.get(input.attributes, "sub", null),
+      "value": input.value,
+    }

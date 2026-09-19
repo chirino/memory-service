@@ -1,0 +1,28 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: langgraph_checkpoint_v1
+spec:
+  resource: entry
+  selector:
+    contentType: LangGraph/checkpoint
+  columns:
+    checkpoint_id: {type: string, nullable: false}
+    checkpoint_namespace: {type: string, nullable: false}
+    parent_checkpoint_id: {type: string, nullable: true}
+    checkpoint:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+    item := input.content[0]
+    output := {
+      "checkpoint_id": item.checkpoint_id,
+      "checkpoint_namespace": object.get(item, "checkpoint_ns", ""),
+      "parent_checkpoint_id": object.get(item, "parent_checkpoint_id", null),
+      "checkpoint": {
+        "checkpoint": item.checkpoint,
+        "metadata": item.metadata,
+      },
+    }

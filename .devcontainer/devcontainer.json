@@ -14,7 +14,7 @@
       "label": "http"
     }
   },
-  "overrideCommand": false,
+  "overrideCommand": true,
   "containerEnv": {
     "IN_DEVCONTAINER": "1"
   },

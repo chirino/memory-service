@@ -70,6 +70,10 @@ type Snapshot struct {
 	ProviderStatusCode    int                 `json:"providerStatusCode,omitempty"`
 	ProviderErrorCode     string              `json:"providerErrorCode,omitempty"`
 	ProviderTransactionID string              `json:"providerTransactionID,omitempty"`
+	Protocol              string              `json:"protocol,omitempty"`
+	PayloadMode           string              `json:"payloadMode,omitempty"`
+	DestinationClass      string              `json:"destinationClass,omitempty"`
+	ConfigDigest          string              `json:"configDigest,omitempty"`
 	RetryAttempt          int                 `json:"retryAttempt,omitempty"`
 	WorkCount             int64               `json:"workCount,omitempty"`
 	FailureCount          int64               `json:"failureCount,omitempty"`
@@ -242,7 +246,17 @@ func (e *Event) SetTaskID(value string)   { e.setString(&e.fields.TaskID, value,
 func (e *Event) SetConnectionID(value string) {
 	e.setString(&e.fields.ConnectionID, value, maxFieldLength)
 }
-func (e *Event) SetCursor(value string) { e.setString(&e.fields.Cursor, value, maxCursorLength) }
+func (e *Event) SetCursor(value string)   { e.setString(&e.fields.Cursor, value, maxCursorLength) }
+func (e *Event) SetProtocol(value string) { e.setString(&e.fields.Protocol, value, maxFieldLength) }
+func (e *Event) SetPayloadMode(value string) {
+	e.setString(&e.fields.PayloadMode, value, maxFieldLength)
+}
+func (e *Event) SetDestinationClass(value string) {
+	e.setString(&e.fields.DestinationClass, value, maxFieldLength)
+}
+func (e *Event) SetConfigDigest(value string) {
+	e.setString(&e.fields.ConfigDigest, value, maxFieldLength)
+}
 
 func (e *Event) setString(target *string, value string, limit int) {
 	if e == nil {
@@ -420,6 +434,10 @@ func snapshotLogArgs(s Snapshot) []any {
 	add("providerStatusCode", s.ProviderStatusCode, s.ProviderStatusCode != 0)
 	add("providerErrorCode", s.ProviderErrorCode, s.ProviderErrorCode != "")
 	add("providerTransactionID", s.ProviderTransactionID, s.ProviderTransactionID != "")
+	add("protocol", s.Protocol, s.Protocol != "")
+	add("payloadMode", s.PayloadMode, s.PayloadMode != "")
+	add("destinationClass", s.DestinationClass, s.DestinationClass != "")
+	add("configDigest", s.ConfigDigest, s.ConfigDigest != "")
 	add("retryAttempt", s.RetryAttempt, s.RetryAttempt != 0)
 	add("workCount", s.WorkCount, s.WorkCount != 0)
 	add("failureCount", s.FailureCount, s.FailureCount != 0)

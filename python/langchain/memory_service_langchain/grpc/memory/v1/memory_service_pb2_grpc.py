@@ -3371,6 +3371,21 @@ class AdminCheckpointServiceStub(object):
                 request_serializer=memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.SerializeToString,
                 response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
                 _registered_method=True)
+        self.AcquireLease = channel.unary_unary(
+                '/memory.v1.AdminCheckpointService/AcquireLease',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.AcquireCheckpointLeaseRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.FromString,
+                _registered_method=True)
+        self.RenewLease = channel.unary_unary(
+                '/memory.v1.AdminCheckpointService/RenewLease',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.RenewCheckpointLeaseRequest.SerializeToString,
+                response_deserializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.FromString,
+                _registered_method=True)
+        self.ReleaseLease = channel.unary_unary(
+                '/memory.v1.AdminCheckpointService/ReleaseLease',
+                request_serializer=memory_dot_v1_dot_memory__service__pb2.ReleaseCheckpointLeaseRequest.SerializeToString,
+                response_deserializer=google_dot_protobuf_dot_empty__pb2.Empty.FromString,
+                _registered_method=True)
 
 
 class AdminCheckpointServiceServicer(object):
@@ -3388,6 +3403,24 @@ class AdminCheckpointServiceServicer(object):
         context.set_details('Method not implemented!')
         raise NotImplementedError('Method not implemented!')
 
+    def AcquireLease(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def RenewLease(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
+    def ReleaseLease(self, request, context):
+        """Missing associated documentation comment in .proto file."""
+        context.set_code(grpc.StatusCode.UNIMPLEMENTED)
+        context.set_details('Method not implemented!')
+        raise NotImplementedError('Method not implemented!')
+
 
 def add_AdminCheckpointServiceServicer_to_server(servicer, server):
     rpc_method_handlers = {
@@ -3400,6 +3433,21 @@ def add_AdminCheckpointServiceServicer_to_server(servicer, server):
                     servicer.PutCheckpoint,
                     request_deserializer=memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.FromString,
                     response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.SerializeToString,
+            ),
+            'AcquireLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.AcquireLease,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.AcquireCheckpointLeaseRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.SerializeToString,
+            ),
+            'RenewLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.RenewLease,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.RenewCheckpointLeaseRequest.FromString,
+                    response_serializer=memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.SerializeToString,
+            ),
+            'ReleaseLease': grpc.unary_unary_rpc_method_handler(
+                    servicer.ReleaseLease,
+                    request_deserializer=memory_dot_v1_dot_memory__service__pb2.ReleaseCheckpointLeaseRequest.FromString,
+                    response_serializer=google_dot_protobuf_dot_empty__pb2.Empty.SerializeToString,
             ),
     }
     generic_handler = grpc.method_handlers_generic_handler(
@@ -3456,6 +3504,87 @@ class AdminCheckpointService(object):
             '/memory.v1.AdminCheckpointService/PutCheckpoint',
             memory_dot_v1_dot_memory__service__pb2.PutCheckpointRequest.SerializeToString,
             memory_dot_v1_dot_memory__service__pb2.AdminCheckpoint.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def AcquireLease(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminCheckpointService/AcquireLease',
+            memory_dot_v1_dot_memory__service__pb2.AcquireCheckpointLeaseRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def RenewLease(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminCheckpointService/RenewLease',
+            memory_dot_v1_dot_memory__service__pb2.RenewCheckpointLeaseRequest.SerializeToString,
+            memory_dot_v1_dot_memory__service__pb2.AdminCheckpointLease.FromString,
+            options,
+            channel_credentials,
+            insecure,
+            call_credentials,
+            compression,
+            wait_for_ready,
+            timeout,
+            metadata,
+            _registered_method=True)
+
+    @staticmethod
+    def ReleaseLease(request,
+            target,
+            options=(),
+            channel_credentials=None,
+            call_credentials=None,
+            insecure=False,
+            compression=None,
+            wait_for_ready=None,
+            timeout=None,
+            metadata=None):
+        return grpc.experimental.unary_unary(
+            request,
+            target,
+            '/memory.v1.AdminCheckpointService/ReleaseLease',
+            memory_dot_v1_dot_memory__service__pb2.ReleaseCheckpointLeaseRequest.SerializeToString,
+            google_dot_protobuf_dot_empty__pb2.Empty.FromString,
             options,
             channel_credentials,
             insecure,

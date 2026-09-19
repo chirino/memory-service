@@ -94,12 +94,16 @@ func adminPutCheckpoint(c *gin.Context, store registrystore.MemoryStore) {
 	if err != nil {
 		var notFound *registrystore.NotFoundError
 		var validation *registrystore.ValidationError
+		var conflict *registrystore.ConflictError
 		switch {
 		case errors.As(err, &notFound):
 			c.JSON(http.StatusNotFound, gin.H{"error": "checkpoint not found"})
 			return
 		case errors.As(err, &validation):
 			c.JSON(http.StatusBadRequest, gin.H{"error": validation.Error()})
+			return
+		case errors.As(err, &conflict):
+			c.JSON(http.StatusConflict, gin.H{"error": conflict.Error()})
 			return
 		}
 		c.JSON(http.StatusInternalServerError, gin.H{"error": err.Error()})

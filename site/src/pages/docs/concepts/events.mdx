@@ -34,7 +34,7 @@ Use the reliable model when a worker, projector, or integration must avoid missi
 Each SSE message contains a JSON envelope on a single `data:` line:
 
 ```
-data: {"event":"created","kind":"entry","data":{"conversation":"<uuid>","conversation_group":"<uuid>","entry":"<uuid>","entry_channel":"history","entry_content_type":"history","entry_role":"USER"},"cursor":"<opaque-cursor>"}
+data: {"event":"created","kind":"entry","data":{"conversation":"<uuid>","conversation_group":"<uuid>","entry":"<uuid>","entry_channel":"history","entry_content_type":"history","entry_role":"USER"},"cursor":"<opaque-cursor>","occurredAt":"2026-09-16T12:00:00Z"}
 ```
 
 The envelope fields are:
@@ -42,7 +42,9 @@ The envelope fields are:
 - **`event`**: action name
 - **`kind`**: resource type
 - **`data`**: kind-specific payload
+- **`change`**: optional precise lifecycle change retained when `data` contains a full resource
 - **`cursor`**: opaque durable replay position when the event came from an outbox-backed stream
+- **`occurredAt`**: source commit time; replay preserves the timestamp used for live delivery
 
 A keepalive comment `: keepalive` is sent every 30 seconds to keep the connection open.
 
@@ -73,12 +75,14 @@ The event stream supports two payload modes:
 - **`detail=summary`**: default. `data` contains identifiers and a small amount of routing metadata.
 - **`detail=full`**: the server enriches business events before sending them.
 
-With `detail=full`:
+With `detail=full`, `data` uses the REST/OpenAPI resource shape for the stream scope:
 
-- `conversation` events carry the full conversation payload.
-- `entry` events carry the full entry payload.
+- Agent `conversation` and `entry` events carry the agent resource shape.
+- Admin `conversation`, `entry`, and `memory` events carry the `AdminConversation`, `AdminEntry`, and `AdminMemoryItem` resource shapes. Admin shapes include output-only internal fields such as `clientId` and `conversationGroupId` where applicable.
 - `response` events are unchanged from `summary`; they keep the compact `conversation`, `conversation_group`, `recording`, and `status` fields.
 - `stream` events are never enriched.
+
+If the current resource no longer exists, the event keeps its summary `data`. Consumers can still process lifecycle and deletion information from that summary.
 
 For frontend cache invalidation, `summary` is usually the right choice because the client already knows how to refetch.
 
@@ -91,20 +95,21 @@ For reliable consumers, choose:
 
 This table shows the default `detail=summary` payload shape.
 
-| Kind           | Event        | Summary `data` fields                                                                              | Notes                                                                                                                                                                     |
-| -------------- | ------------ | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `conversation` | `created`    | `conversation`, `conversation_group`                                                               | New conversation visible to the user                                                                                                                                      |
-| `conversation` | `updated`    | `conversation`, `conversation_group`                                                               | Title or metadata changed                                                                                                                                                 |
-| `conversation` | `deleted`    | `conversation`, `conversation_group`, `members`                                                    | `members` may be included so affected users can be targeted                                                                                                               |
-| `entry`        | `created`    | `conversation`, `conversation_group`, `entry`, `entry_channel`, `entry_content_type`, `entry_role` | New entry appended. `entry_role` is included when it can be derived from entry content.                                                                                   |
-| `response`     | `created`    | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `started`                                                                                                                                           |
-| `response`     | `deleted`    | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `completed` or `failed`                                                                                                                             |
-| `membership`   | `created`    | `conversation_group`, `user`, `role`                                                               | Access granted                                                                                                                                                            |
-| `membership`   | `updated`    | `conversation_group`, `user`, `role`                                                               | Access level changed                                                                                                                                                      |
-| `membership`   | `deleted`    | `conversation_group`, `user`                                                                       | Access removed                                                                                                                                                            |
-| `stream`       | `phase`      | `phase`                                                                                            | Stream phase marker. `phase` is `replay` or `live`. Tail-only streams start at `live`. Replay streams emit `replay` before catch-up and `live` after they reach the tail. |
-| `stream`       | `evicted`    | `reason`                                                                                           | Connection closed, often for slow-consumer or replacement reasons                                                                                                         |
-| `stream`       | `invalidate` | `reason`                                                                                           | Caller must assume events may have been missed                                                                                                                            |
+| Kind           | Event                           | Summary `data` fields                                                                              | Notes                                                                                                                                                                     |
+| -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `conversation` | `created`                       | `conversation`, `conversation_group`                                                               | New conversation visible to the user                                                                                                                                      |
+| `conversation` | `updated`                       | `conversation`, `conversation_group`                                                               | Title or metadata changed                                                                                                                                                 |
+| `conversation` | `deleted`                       | `conversation`, `conversation_group`, `members`                                                    | `members` may be included so affected users can be targeted                                                                                                               |
+| `entry`        | `created`                       | `conversation`, `conversation_group`, `entry`, `entry_channel`, `entry_content_type`, `entry_role` | New entry appended. `entry_role` is included when it can be derived from entry content.                                                                                   |
+| `memory`       | `created`, `updated`, `deleted` | `memory`, `memoryKind`, `revision`, `change`, lifecycle timestamps                                 | Admin-scoped durable lifecycle notification. Values, namespaces, and keys are absent from summary events.                                                                 |
+| `response`     | `created`                       | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `started`                                                                                                                                           |
+| `response`     | `deleted`                       | `conversation`, `conversation_group`, `recording`, `status`                                        | `status` is currently `completed` or `failed`                                                                                                                             |
+| `membership`   | `created`                       | `conversation_group`, `user`, `role`                                                               | Access granted                                                                                                                                                            |
+| `membership`   | `updated`                       | `conversation_group`, `user`, `role`                                                               | Access level changed                                                                                                                                                      |
+| `membership`   | `deleted`                       | `conversation_group`, `user`                                                                       | Access removed                                                                                                                                                            |
+| `stream`       | `phase`                         | `phase`                                                                                            | Stream phase marker. `phase` is `replay` or `live`. Tail-only streams start at `live`. Replay streams emit `replay` before catch-up and `live` after they reach the tail. |
+| `stream`       | `evicted`                       | `reason`                                                                                           | Connection closed, often for slow-consumer or replacement reasons                                                                                                         |
+| `stream`       | `invalidate`                    | `reason`                                                                                           | Caller must assume events may have been missed                                                                                                                            |
 
 ## Frontend Cache Invalidation
 
@@ -149,6 +154,24 @@ Consumer rules for this mode:
 - If the server reports that the cursor is beyond retention, rebuild from source-of-record and restart from a fresh checkpoint.
 
 If `after` is rejected, the server returns an explicit not-implemented error for replay. On REST SSE that is an HTTP `501 Not Implemented` response before the stream opens. On gRPC it is an `Unimplemented` error from `SubscribeEvents`. In both cases, live tail-only events may still be supported even though durable replay is not.
+
+### Initialize an admin projection from current state
+
+The admin stream can send current resources before replay and live events:
+
+```bash
+curl -N -H "Authorization: Bearer $(get-admin-token)" \
+  "http://localhost:9090/v1/admin/events?detail=full&initial_state=current"
+```
+
+`initial_state=current` requires an enabled replayable outbox. Do not combine it with `after`. The stream emits these phases in order:
+
+1. `snapshot`, with the captured high-water cursor
+2. `snapshot` resource events for current conversations, entries, and memories
+3. `replay`, which covers changes after the captured cursor
+4. `live`
+
+Store the snapshot resources, then apply replay and live events with logical idempotency. The snapshot scan can observe concurrent changes, so the replay phase remains required.
 
 ## Subscribing with curl
 
@@ -197,7 +220,7 @@ curl -N -H "Authorization: Bearer $(get-token)" \
   "http://localhost:9090/v1/events?after=${LAST_CURSOR}&detail=summary"
 ```
 
-The same concepts also exist on gRPC `EventStreamService.SubscribeEvents` using `after_cursor`, `detail`, `entry_channels`, `entry_content_types`, and `entry_roles`.
+The same concepts exist on gRPC `EventStreamService.SubscribeEvents` using `after_cursor`, `detail`, `initial_state`, `entry_channels`, `entry_content_types`, and `entry_roles`. The protobuf envelope is typed, while `EventNotification.data` contains the JSON-encoded OpenAPI resource or summary payload.
 
 ## Walkthrough
 
@@ -316,7 +339,7 @@ Entry-channel filtering is not an authorization boundary by itself. Context-chan
 
 **Keepalive**: a `: keepalive` comment is sent every 30 seconds.
 
-**Phase markers**: consumers may receive `stream` / `phase` events with `{"phase":"replay"}` and `{"phase":"live"}`. Tail-only streams start with `live`. Replay-capable streams emit `replay` while catching up and `live` once they reach the current tail.
+**Phase markers**: consumers may receive `stream` / `phase` events with `{"phase":"snapshot"}`, `{"phase":"replay"}`, or `{"phase":"live"}`. Tail-only streams start with `live`. Current-state admin streams start with `snapshot`, replay changes after the boundary, and then reach `live`.
 
 **Connection limit**: the server enforces a per-user limit on concurrent SSE connections. When a new connection is established and the user is already at the limit, the oldest local stream is evicted and receives `stream` / `evicted` with reason `too many connections`. The limit is configurable with `MEMORY_SERVICE_SSE_MAX_CONNECTIONS_PER_USER`.
 

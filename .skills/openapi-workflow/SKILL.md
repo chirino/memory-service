@@ -22,13 +22,15 @@ description: Use when making changes to the OpenAPI contract. Workflow for updat
    ./java/mvnw -f java/pom.xml -pl quarkus/memory-service-rest-quarkus clean compile -am
    ```
 
-4. **Regenerate TypeScript client**:
+4. **Regenerate TypeScript clients**:
    ```bash
-   cd frontends/chat-frontend && npm run generate
+   cd frontends/chat-frontend && npm ci && npm run generate
+   cd ../developer && npm ci && npm run generate
    ```
 
 5. **Verify**:
    ```bash
    ./java/mvnw -f java/pom.xml compile
    cd frontends/chat-frontend && npm run lint && npm run build
+   cd ../developer && npm run lint && npm run build
    ```

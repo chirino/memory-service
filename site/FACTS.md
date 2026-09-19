@@ -13,6 +13,7 @@
 **Rego code blocks**: Astro's default Shiki setup in this repo does not include bundled `rego` syntax. Rego fences are highlighted via `site/remark-rego-prism.mjs` (Prism `rego` grammar) wired into `astro.config.mjs`, with token colors scoped in `site/src/styles/global.css` under `pre.language-rego`.
 **JSON code blocks**: Astro/Shiki emits JSON fences as inline-colored spans without stable token classes in this repo, so `site/src/layouts/DocsLayout.astro` retokenizes `pre[data-language="json"]` on the client and `site/src/styles/global.css` owns the JSON palette.
 **Site build optional-deps gotcha**: If `npm run build` fails with missing `@rollup/rollup-<platform>-<arch>`, run `npm install` in `site/` (host or devcontainer) to restore optional Rollup binaries before retrying.
+**Analytics docs navigation**: Analytics documentation lives under `/docs/analytics/`. Keep provider-neutral projection and query guides at that level, and keep ClickHouse setup, configuration, and operations under `/docs/analytics/clickhouse/`. Entry projection examples must treat `input.content` as the entry's content-block array.
 **Quarkus agent-subagent docs drift**: `site/src/pages/docs/quarkus/agent-subagent-workflows.mdx` must describe the provider-based runtime (`toolProviderSupplier` + `SubAgentToolProviderFactory`) and explicit child-agent tools. The old subclassed `SubAgentTaskTool` / `StreamingSubAgentTaskTool` and join-runner narrative is stale.
 **Quarkus Dev Services storage docs**: `site/src/pages/docs/quarkus/dev-services.mdx` should describe the memory-service container as self-contained by default: SQLite DB, local cache, SQLite vector search, local embeddings, and filesystem attachments. Do not tell users to add PostgreSQL, Redis, Infinispan, Mongo, or pgvector dependencies just to back Memory Service Dev Services.
 **Local example management-route docs**: Quarkus Dev Services and the Spring local Compose example set `MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER=true`; hardened startup otherwise requires a dedicated management listener.
@@ -111,3 +112,8 @@ SITE_TEST_RECORD=all OPENAI_API_KEY=sk-... task test:site
 # Site Module Facts
 
 **Event docs entry-filter parity**: `site/src/pages/docs/concepts/events.mdx` should document REST and gRPC entry filters together (`entry_channels`, `entry_content_types`, `entry_roles`). Framework event guides should call out that browser-facing proxies forward history-channel entry notifications only, while trusted processors may opt into context entries directly against Memory Service.
+
+**Analytics query fixtures**: `site/src/pages/docs/analytics/querying.mdx` uses
+`site/src/fixtures/analytics/querying.json` for both the visible collapsed fixture and
+generated `<SqlTest>` checks. Keep query examples inside `SqlTest` so the site BDD runner
+checks their result columns and non-empty fixture results.

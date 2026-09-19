@@ -5,9 +5,10 @@ import { join } from "path";
 interface Props {
   checkpoint?: string;
   description?: string;
+  fixture?: unknown;
 }
 
-const { checkpoint, description } = Astro.props;
+const { checkpoint, description, fixture } = Astro.props;
 
 // During build, extract test data and save to JSON
 // This runs during static site generation
@@ -24,6 +25,7 @@ try {
       checkpoint,
       sourceFile: Astro.url.pathname,
       ...(description ? { description } : {}),
+      ...(fixture ? { fixture } : {}),
       scenarios,
     };
 
@@ -56,7 +58,7 @@ try {
       // (Astro may render pages twice during build)
       const existing = allScenarios[existingIndex].scenarios;
       for (const newScenario of testData.scenarios) {
-        const isDuplicate = existing.some((s: any) => s.bash === newScenario.bash);
+        const isDuplicate = existing.some((s: any) => JSON.stringify(s) === JSON.stringify(newScenario));
         if (!isDuplicate) {
           existing.push(newScenario);
         }
@@ -72,6 +74,29 @@ try {
 
 function extractTestScenarios(html: string) {
   const scenarios: any[] = [];
+
+  const decode = (value: string) =>
+    value
+      .replace(/&#34;/g, '"')
+      .replace(/&#39;/g, "'")
+      .replace(/&lt;/g, "<")
+      .replace(/&gt;/g, ">")
+      .replace(/&amp;/g, "&")
+      .replace(/&quot;/g, '"');
+
+  const sqlRegex =
+    /<div class="sql-test-metadata" hidden data-query="([^"]*)" data-columns="([^"]*)" data-min-rows="([^"]*)"[^>]*>\s*<\/div>/gs;
+  let sqlMatch;
+  while ((sqlMatch = sqlRegex.exec(html)) !== null) {
+    scenarios.push({
+      kind: "sql",
+      sql: decode(sqlMatch[1]),
+      columns: JSON.parse(decode(sqlMatch[2])),
+      minRows: Number.parseInt(sqlMatch[3], 10) || 0,
+      expectations: [],
+      customSteps: [],
+    });
+  }
 
   // Pre-extract all Steps blocks with their positions.
   // Supports two formats:
@@ -176,6 +201,7 @@ function extractTestScenarios(html: string) {
     }
 
     scenarios.push({
+      kind: "bash",
       bash: bash.bashCode,
       expectations: [],
       customSteps,

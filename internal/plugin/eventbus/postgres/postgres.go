@@ -109,14 +109,16 @@ type postgresBus struct {
 }
 
 type wireEvent struct {
-	Event               string    `json:"event"`
-	Kind                string    `json:"kind"`
-	Data                any       `json:"data"`
-	ConversationGroupID uuid.UUID `json:"conversationGroupId,omitempty"`
-	UserIDs             []string  `json:"userIds,omitempty"`
-	Broadcast           bool      `json:"broadcast,omitempty"`
-	AdminOnly           bool      `json:"adminOnly,omitempty"`
-	Internal            bool      `json:"internal,omitempty"`
+	Event               string     `json:"event"`
+	Kind                string     `json:"kind"`
+	Data                any        `json:"data"`
+	OutboxCursor        string     `json:"cursor,omitempty"`
+	OccurredAt          *time.Time `json:"occurredAt,omitempty"`
+	ConversationGroupID uuid.UUID  `json:"conversationGroupId,omitempty"`
+	UserIDs             []string   `json:"userIds,omitempty"`
+	Broadcast           bool       `json:"broadcast,omitempty"`
+	AdminOnly           bool       `json:"adminOnly,omitempty"`
+	Internal            bool       `json:"internal,omitempty"`
 }
 
 func toWire(e registryeventbus.Event) wireEvent {
@@ -124,6 +126,8 @@ func toWire(e registryeventbus.Event) wireEvent {
 		Event:               e.Event,
 		Kind:                e.Kind,
 		Data:                e.Data,
+		OutboxCursor:        e.OutboxCursor,
+		OccurredAt:          e.OccurredAt,
 		ConversationGroupID: e.ConversationGroupID,
 		UserIDs:             e.UserIDs,
 		Broadcast:           e.Broadcast,
@@ -137,6 +141,8 @@ func fromWire(w wireEvent) registryeventbus.Event {
 		Event:               w.Event,
 		Kind:                w.Kind,
 		Data:                w.Data,
+		OutboxCursor:        w.OutboxCursor,
+		OccurredAt:          w.OccurredAt,
 		ConversationGroupID: w.ConversationGroupID,
 		UserIDs:             w.UserIDs,
 		Broadcast:           w.Broadcast,
@@ -147,6 +153,9 @@ func fromWire(w wireEvent) registryeventbus.Event {
 
 // Publish queues an event for cross-node delivery via pg_notify.
 func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case p.outbound <- event:
 	default:
@@ -157,6 +166,13 @@ func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event)
 		}
 	}
 	return nil
+}
+
+func (p *postgresBus) PublishDurable(ctx context.Context, event registryeventbus.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return p.publishBatch(ctx, []registryeventbus.Event{event})
 }
 
 // Subscribe delegates to the local bus and tracks user-scoped interest.

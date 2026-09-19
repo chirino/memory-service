@@ -48,6 +48,13 @@ type EventOutboxStore interface {
 	EvictOutboxEventsBefore(ctx context.Context, before time.Time, limit int) (int64, error)
 }
 
+// OutboxHighWaterStore exposes an opaque cursor for the newest durable event.
+// It is used to create a race-free backfill boundary and must return "start"
+// when the durable outbox is empty.
+type OutboxHighWaterStore interface {
+	CurrentOutboxCursor(ctx context.Context) (string, error)
+}
+
 // OutboxEnabledProvider exposes whether outbox writes are enabled for the
 // current store instance.
 type OutboxEnabledProvider interface {
