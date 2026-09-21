@@ -105,7 +105,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.2.3
+    image: quay.io/infinispan/server:16.3
     ports:
       - "11222:11222"
     environment:
@@ -118,7 +118,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.3
+    image: quay.io/keycloak/keycloak:26.7.4
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
