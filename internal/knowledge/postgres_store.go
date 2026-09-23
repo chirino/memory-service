@@ -10,10 +10,12 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	internaltracing "github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
+	"gorm.io/plugin/opentelemetry/tracing"
 )
 
 // PostgresKnowledgeStore implements KnowledgeStore using GORM + PostgreSQL.
@@ -22,12 +24,20 @@ type PostgresKnowledgeStore struct {
 }
 
 // OpenPostgresKnowledgeStore opens a new gorm.DB connection for the knowledge store.
-func OpenPostgresKnowledgeStore(dbURL string) (*PostgresKnowledgeStore, error) {
+func OpenPostgresKnowledgeStore(ctx context.Context, dbURL string) (*PostgresKnowledgeStore, error) {
 	db, err := gorm.Open(postgres.Open(dbURL), &gorm.Config{
 		Logger: logger.Discard,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("knowledge store: failed to connect to postgres: %w", err)
+	}
+	tp := internaltracing.ProviderFromContextOrNoop(ctx)
+	if err := db.Use(tracing.NewPlugin(
+		tracing.WithTracerProvider(tp),
+		tracing.WithoutMetrics(),
+		tracing.WithoutQueryVariables(),
+	)); err != nil {
+		return nil, fmt.Errorf("knowledge store: register otelgorm plugin: %w", err)
 	}
 	return &PostgresKnowledgeStore{db: db}, nil
 }

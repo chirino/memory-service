@@ -56,11 +56,12 @@ The change covers:
   `newConfiguredRouter` factory.
 - gRPC unary server path via `tracing.GRPCUnaryServerInterceptor` at position 1.
 - gRPC streaming server path via `tracing.GRPCStreamServerInterceptor` at position 1.
-- Five outbound clients: OpenAI embedder, Infinispan vector HTTP client, Qdrant vector
-  gRPC client, episodic Qdrant gRPC client, and source-URL attachment download HTTP client.
+- Outbound clients and datastores: OpenAI embedder, Infinispan vector HTTP client, Qdrant
+  vector gRPC client, episodic Qdrant gRPC client, source-URL attachment download HTTP client,
+  Prometheus stats HTTP client, and all PostgreSQL GORM datastores.
 
-Other outbound callers (Prometheus stats client, Vault, AWS KMS, Redis, S3, and the cache
-and encryption plugins) are out of scope.
+Other outbound callers (Vault, AWS KMS, Redis, S3, Infinispan/Redis cache, and encryption
+plugins) are out of scope.
 
 ### TracerProvider
 
