@@ -24,9 +24,17 @@ import (
 )
 
 const (
+	// ProjectionRowsOne writes one row per matching resource.
+	ProjectionRowsOne = "one"
+	// ProjectionRowsMany writes zero or more rows per matching resource.
+	ProjectionRowsMany = "many"
+)
+
+const (
 	maxProjectionStringBytes = 64 << 10
 	maxProjectionArrayItems  = 1024
 	maxProjectionJSONBytes   = 1 << 20
+	maxProjectionRows        = 1024
 	defaultJSONDynamicPaths  = 256
 	defaultJSONDynamicTypes  = 16
 	maxJSONDynamicPaths      = 1024
@@ -49,7 +57,7 @@ var (
 	projectionReservedColumns = map[string]struct{}{
 		"exporter_id": {}, "batch_id": {}, "event_id": {}, "resource_id": {}, "ingest_version": {},
 		"conversation_id": {}, "conversation_group_id": {}, "observed_at": {}, "is_deleted": {},
-		"schema_version": {},
+		"schema_version": {}, "row_index": {}, "row_count": {},
 	}
 	projectionReservedTableNames = map[string]struct{}{
 		"schema_versions":       {},
@@ -89,8 +97,10 @@ type projectionMetadata struct {
 }
 
 type projectionSpec struct {
-	Resource       string                      `yaml:"resource"`
-	Selector       projectionSelector          `yaml:"selector"`
+	Resource string             `yaml:"resource"`
+	Selector projectionSelector `yaml:"selector"`
+	// Rows is omitted from the digest when empty so single-row manifests keep their digests.
+	Rows           string                      `yaml:"rows,omitempty" json:",omitempty"`
 	Columns        map[string]projectionColumn `yaml:"columns"`
 	ProjectionRego string                      `yaml:"projectionRego"`
 }
@@ -118,6 +128,7 @@ type Projection struct {
 	Resource      string
 	Selector      string
 	TableName     string
+	RowMode       string
 	ColumnNames   []string
 	Columns       map[string]projectionColumn
 	prepared      *rego.PreparedEvalQuery
@@ -137,8 +148,12 @@ type ProjectionRow struct {
 	ConversationID      string
 	ConversationGroupID string
 	IsDeleted           bool
-	ColumnNames         []string
-	Values              []any
+	// Multi marks rows for tables created with `rows: many`; RowIndex and RowCount are only written for them.
+	Multi       bool
+	RowIndex    uint32
+	RowCount    uint32
+	ColumnNames []string
+	Values      []any
 }
 
 type ProjectionFailureRow struct {
@@ -298,6 +313,14 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 	if manifest.Spec.Resource == "entry" && manifest.Spec.Selector.Kind != "" || manifest.Spec.Resource == "memory" && manifest.Spec.Selector.ContentType != "" {
 		return nil, errors.New("entry projections select contentType and memory projections select kind")
 	}
+	switch manifest.Spec.Rows {
+	case "", ProjectionRowsOne:
+		// Normalize the default so an explicit `rows: one` has the same digest as an omitted field.
+		manifest.Spec.Rows = ""
+	case ProjectionRowsMany:
+	default:
+		return nil, fmt.Errorf("spec.rows must be %s or %s", ProjectionRowsOne, ProjectionRowsMany)
+	}
 	if len(manifest.Spec.Columns) == 0 {
 		return nil, errors.New("spec.columns must not be empty")
 	}
@@ -318,10 +341,17 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 	canonical, _ := json.Marshal(manifest)
 	digestBytes := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(digestBytes[:])
-	projection := &Projection{Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, Selector: selector, TableName: manifest.Metadata.Name, ColumnNames: columnNames, Columns: manifest.Spec.Columns}
+	rows := manifest.Spec.Rows
+	if rows == "" {
+		rows = ProjectionRowsOne
+	}
+	projection := &Projection{Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, Selector: selector, TableName: manifest.Metadata.Name, RowMode: rows, ColumnNames: columnNames, Columns: manifest.Spec.Columns}
 	if strings.TrimSpace(manifest.Spec.ProjectionRego) == "" {
 		if manifest.Spec.Resource != "memory" {
 			return nil, errors.New("entry projections require projectionRego")
+		}
+		if rows == ProjectionRowsMany {
+			return nil, errors.New("spec.rows many requires projectionRego")
 		}
 		projection.useAttributes = true
 		return projection, nil
@@ -512,28 +542,106 @@ func sortedKeys(values map[string]struct{}) string {
 	return strings.Join(keys, ", ")
 }
 
-func (p *Projection) evaluate(ctx context.Context, input map[string]any) ([]any, string) {
-	var output map[string]any
+// Rows evaluates the projection for one resource snapshot. It returns the rows to write,
+// or a payload-free error code when any row is invalid. The base row supplies the
+// shared resource identity and event metadata.
+func (p *Projection) Rows(ctx context.Context, base ProjectionRow, input map[string]any) ([]ProjectionRow, string) {
+	outputs, code := p.evaluate(ctx, input)
+	if code != "" {
+		return nil, code
+	}
+	base.ProjectionName = p.Name
+	base.TableName = p.TableName
+	base.IsDeleted = false
+	base.ColumnNames = append([]string(nil), p.ColumnNames...)
+	if p.RowMode != ProjectionRowsMany {
+		base.Values = outputs[0]
+		return []ProjectionRow{base}, ""
+	}
+	base.Multi = true
+	if len(outputs) == 0 {
+		// A version without rows still needs a marker so rows from older versions stop being current.
+		base.Values = p.tombstoneValues()
+		return []ProjectionRow{base}, ""
+	}
+	rows := make([]ProjectionRow, len(outputs))
+	for i, values := range outputs {
+		row := base
+		row.RowIndex = uint32(i)
+		row.RowCount = uint32(len(outputs))
+		row.Values = values
+		rows[i] = row
+	}
+	return rows, ""
+}
+
+// TombstoneRow returns the row that marks the resource as deleted in the projection table.
+func (p *Projection) TombstoneRow(base ProjectionRow) ProjectionRow {
+	base.ProjectionName = p.Name
+	base.TableName = p.TableName
+	base.IsDeleted = true
+	base.Multi = p.RowMode == ProjectionRowsMany
+	base.RowIndex = 0
+	base.RowCount = 0
+	base.ColumnNames = append([]string(nil), p.ColumnNames...)
+	base.Values = p.tombstoneValues()
+	return base
+}
+
+func (p *Projection) evaluate(ctx context.Context, input map[string]any) ([][]any, string) {
 	if p.useAttributes {
 		attributes, ok := input["attributes"].(map[string]any)
 		if !ok {
 			return nil, "attributes_unavailable"
 		}
-		output = attributes
-	} else {
-		results, err := p.prepared.Eval(ctx, rego.EvalInput(input))
-		if err != nil {
-			return nil, "rego_evaluation_failed"
+		values, code := p.columnValues(attributes)
+		if code != "" {
+			return nil, code
 		}
-		if len(results) != 1 || len(results[0].Expressions) != 1 {
-			return nil, "output_undefined"
-		}
-		var ok bool
-		output, ok = results[0].Expressions[0].Value.(map[string]any)
+		return [][]any{values}, ""
+	}
+	results, err := p.prepared.Eval(ctx, rego.EvalInput(input))
+	if err != nil {
+		return nil, "rego_evaluation_failed"
+	}
+	if len(results) != 1 || len(results[0].Expressions) != 1 {
+		return nil, "output_undefined"
+	}
+	result := results[0].Expressions[0].Value
+	if p.RowMode != ProjectionRowsMany {
+		output, ok := result.(map[string]any)
 		if !ok {
 			return nil, "output_not_object"
 		}
+		values, code := p.columnValues(output)
+		if code != "" {
+			return nil, code
+		}
+		return [][]any{values}, ""
 	}
+	items, ok := result.([]any)
+	if !ok {
+		return nil, "output_not_array"
+	}
+	if len(items) > maxProjectionRows {
+		return nil, "too_many_rows"
+	}
+	rows := make([][]any, 0, len(items))
+	for _, item := range items {
+		output, ok := item.(map[string]any)
+		if !ok {
+			return nil, "output_not_object"
+		}
+		values, code := p.columnValues(output)
+		if code != "" {
+			return nil, code
+		}
+		rows = append(rows, values)
+	}
+	return rows, ""
+}
+
+func (p *Projection) columnValues(output map[string]any) ([]any, string) {
 	if len(output) != len(p.ColumnNames) {
 		return nil, "column_set_mismatch"
 	}

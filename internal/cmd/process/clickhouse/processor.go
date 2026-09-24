@@ -238,6 +238,16 @@ func (p *Processor) writeBackfillPage(ctx context.Context, phase string, records
 			if len(row.PayloadJSON) > p.cfg.MaxRecordBytes {
 				return fmt.Errorf("record_too_large: backfill %s payload is %d bytes and record limit is %d", phase, len(row.PayloadJSON), p.cfg.MaxRecordBytes)
 			}
+			if p.hasPendingMultiRowSnapshot(row.ResourceID) {
+				if err := p.flushLocked(ctx); err != nil {
+					return err
+				}
+				batch, err = p.newBatch("")
+				if err != nil {
+					return err
+				}
+				p.pending = batch
+			}
 			row.Common.BatchID = batch.ID
 			row.Common.IngestVersion = batch.Version
 			row.Common.ObservedAt = batch.ObservedAt
@@ -437,6 +447,11 @@ func (p *Processor) Handle(ctx context.Context, event processruntime.EventEnvelo
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
+	if p.hasPendingMultiRowSnapshot(resourceSourceID(event.Kind, eventData)) {
+		if err := p.flushLocked(ctx); err != nil {
+			return err
+		}
+	}
 	if p.pending == nil {
 		batch, err := p.newBatch(event.Cursor)
 		if err != nil {
@@ -457,6 +472,20 @@ func (p *Processor) Handle(ctx context.Context, event processruntime.EventEnvelo
 		return p.flushLocked(ctx)
 	}
 	return nil
+}
+
+// Distinct snapshots of a multi-row resource must receive distinct batch versions.
+// ReplacingMergeTree replaces each row index independently; equal versions can
+// otherwise leave a mixture of snapshots that the projection view cannot recover.
+func (p *Processor) hasPendingMultiRowSnapshot(resourceID string) bool {
+	if p.pending != nil && resourceID != "" {
+		for _, row := range p.pending.Projections {
+			if row.Multi && row.ResourceID == resourceID {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 func batchRowCount(batch *Batch) int {
@@ -840,10 +869,9 @@ func (p *Processor) applyProjections(ctx context.Context, common Common, resourc
 		if projection.Resource != kind || projection.Selector != selector {
 			continue
 		}
-		row := ProjectionRow{Common: common, ProjectionName: projection.Name, TableName: projection.TableName, ResourceID: resourceID, ConversationID: conversationID, ConversationGroupID: conversationGroupID, IsDeleted: deleted, ColumnNames: append([]string(nil), projection.ColumnNames...)}
+		base := ProjectionRow{Common: common, ResourceID: resourceID, ConversationID: conversationID, ConversationGroupID: conversationGroupID}
 		if deleted {
-			row.Values = projection.tombstoneValues()
-			p.pending.Projections = append(p.pending.Projections, row)
+			p.pending.Projections = append(p.pending.Projections, projection.TombstoneRow(base))
 			p.bytes += 128
 			continue
 		}
@@ -853,17 +881,18 @@ func (p *Processor) applyProjections(ctx context.Context, common Common, resourc
 			}
 			continue
 		}
-		values, code := projection.evaluate(ctx, projectionInput(record))
+		rows, code := projection.Rows(ctx, base, projectionInput(record))
 		if code != "" {
 			if err := p.recordProjectionFailure(common, resourceID, conversationID, conversationGroupID, projection.Name, code); err != nil {
 				return err
 			}
 			continue
 		}
-		row.Values = values
-		p.pending.Projections = append(p.pending.Projections, row)
-		if encoded, err := json.Marshal(values); err == nil {
-			p.bytes += len(encoded) + 128
+		p.pending.Projections = append(p.pending.Projections, rows...)
+		for _, row := range rows {
+			if encoded, err := json.Marshal(row.Values); err == nil {
+				p.bytes += len(encoded) + 128
+			}
 		}
 	}
 	return nil

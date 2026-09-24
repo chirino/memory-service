@@ -161,7 +161,11 @@ func (s *SiteScenario) loadClickHouseFixture(doc *godog.DocString) error {
 		return fmt.Errorf("create ClickHouse analytics schema: %w", err)
 	}
 	defer sink.Close()
-	batch, err := fixtureBatch(fixture, time.Now().UTC())
+	projections, err := clickhouseprocessor.LoadProjectionSet(ctx, []string{projectionPath})
+	if err != nil {
+		return fmt.Errorf("load ClickHouse fixture projections: %w", err)
+	}
+	batch, err := fixtureBatch(ctx, fixture, projections.Items, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -223,7 +227,7 @@ func (s *SiteScenario) clickHouseQueryShouldReturnAtLeast(minimum int) error {
 	return nil
 }
 
-func fixtureBatch(fixture analyticsFixture, anchor time.Time) (clickhouseprocessor.Batch, error) {
+func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections []*clickhouseprocessor.Projection, anchor time.Time) (clickhouseprocessor.Batch, error) {
 	const exporterID = "site-docs"
 	batchID := fixtureID("batch")
 	version := uint64(1)
@@ -249,9 +253,17 @@ func fixtureBatch(fixture analyticsFixture, anchor time.Time) (clickhouseprocess
 			entryCommon := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("entry:" + entry.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: entryAt.Add(2 * time.Second), SchemaVersion: 1}
 			batch.Resources = append(batch.Resources, clickhouseprocessor.ResourceRow{Common: entryCommon, ResourceID: entry.ID, ConversationID: conversation.ID, ConversationGroupID: groupID, ResourceType: "entry", CreatedAt: entryAt, UpdatedAt: entryAt, PayloadJSON: "{}"})
 			addLifecycle("entry", entry.ID, "created", conversation.ID, groupID, entry.ContentType, "", entryAt)
-			if projection := fixtureEntryProjection(entry, entryCommon, conversation.ID, groupID); projection != nil {
-				batch.Projections = append(batch.Projections, *projection)
+			content := make([]any, len(entry.Content))
+			for i, block := range entry.Content {
+				content[i] = block
 			}
+			input := map[string]any{"resource": "entry", "contentType": entry.ContentType, "channel": "HISTORY", "content": content}
+			base := clickhouseprocessor.ProjectionRow{Common: entryCommon, ResourceID: entry.ID, ConversationID: conversation.ID, ConversationGroupID: groupID}
+			rows, err := fixtureProjectionRows(ctx, projections, "entry", entry.ContentType, base, input)
+			if err != nil {
+				return batch, fmt.Errorf("project fixture entry %s: %w", entry.ID, err)
+			}
+			batch.Projections = append(batch.Projections, rows...)
 		}
 	}
 	for _, memory := range fixture.Memories {
@@ -262,9 +274,12 @@ func fixtureBatch(fixture analyticsFixture, anchor time.Time) (clickhouseprocess
 		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("memory:" + memory.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: createdAt.Add(2 * time.Second), SchemaVersion: 1}
 		batch.Resources = append(batch.Resources, clickhouseprocessor.ResourceRow{Common: common, ResourceID: memory.ID, ResourceType: "memory", CreatedAt: createdAt, UpdatedAt: createdAt, PayloadJSON: "{}"})
 		addLifecycle("memory", memory.ID, "created", "", "", "", memory.Kind, createdAt)
-		if projection := fixtureMemoryProjection(memory, common); projection != nil {
-			batch.Projections = append(batch.Projections, *projection)
+		input := map[string]any{"resource": "memory", "kind": memory.Kind, "value": memory.Value, "attributes": memory.Attributes}
+		rows, err := fixtureProjectionRows(ctx, projections, "memory", memory.Kind, clickhouseprocessor.ProjectionRow{Common: common, ResourceID: memory.ID}, input)
+		if err != nil {
+			return batch, fmt.Errorf("project fixture memory %s: %w", memory.ID, err)
 		}
+		batch.Projections = append(batch.Projections, rows...)
 	}
 	for _, deleted := range fixture.DeletedResources {
 		occurredAt, err := relativeTime(anchor, deleted.OccurredAgo)
@@ -283,118 +298,21 @@ func fixtureBatch(fixture analyticsFixture, anchor time.Time) (clickhouseprocess
 	return batch, nil
 }
 
-func fixtureEntryProjection(entry fixtureEntry, common clickhouseprocessor.Common, conversationID, groupID string) *clickhouseprocessor.ProjectionRow {
-	tableNames := map[string]string{
-		"history":              "history_v1",
-		"history/lc4j":         "history_lc4j_v1",
-		"history/vercelai":     "history_vercelai_v1",
-		"LC4J":                 "lc4j_v1",
-		"SpringAI":             "spring_ai_v1",
-		"LangGraph/checkpoint": "langgraph_checkpoint_v1",
-		"vercelai":             "vercelai_v1",
-	}
-	table := tableNames[entry.ContentType]
-	if table == "" {
-		return nil
-	}
-	row := &clickhouseprocessor.ProjectionRow{Common: common, ProjectionName: table, TableName: table, ResourceID: entry.ID, ConversationID: conversationID, ConversationGroupID: groupID}
-	if entry.ContentType == "history" || entry.ContentType == "history/lc4j" || entry.ContentType == "history/vercelai" {
-		if len(entry.Content) == 0 {
-			return nil
-		}
-		item := entry.Content[0]
-		events, _ := item["events"].([]any)
-		attachments, _ := item["attachments"].([]any)
-		eventTypes := fixtureStringFields(events, "eventType")
-		toolNames := fixtureStringFields(events, "toolName")
-		attachmentContentTypes := fixtureStringFields(attachments, "contentType")
-		role, _ := item["role"].(string)
-		text, _ := item["text"].(string)
-		row.ColumnNames = []string{"attachment_content_types", "attachment_count", "event_count", "event_types", "role", "text", "tool_names"}
-		row.Values = []any{attachmentContentTypes, uint64(len(attachments)), uint64(len(events)), eventTypes, role, text, toolNames}
-		if entry.ContentType != "history" {
-			row.ColumnNames = []string{"attachment_content_types", "attachment_count", "completion_event_count", "event_count", "event_types", "response_event_count", "role", "text", "thinking_event_count", "tool_call_count", "tool_names", "tool_result_count"}
-			row.Values = []any{attachmentContentTypes, uint64(len(attachments)), fixtureStringCount(eventTypes, "ChatCompleted"), uint64(len(events)), eventTypes, fixtureStringCount(eventTypes, "PartialResponse"), role, text, fixtureStringCount(eventTypes, "PartialThinking"), fixtureStringCount(eventTypes, "BeforeToolExecution"), toolNames, fixtureStringCount(eventTypes, "ToolExecuted")}
-		}
-		return row
-	}
-	if entry.ContentType == "SpringAI" {
-		roles := fixtureStringFieldsFromMaps(entry.Content, "role")
-		texts := fixtureStringFieldsFromMaps(entry.Content, "text")
-		row.ColumnNames = []string{"assistant_message_count", "message_count", "roles", "system_message_count", "texts", "tool_message_count", "user_message_count"}
-		row.Values = []any{fixtureStringCount(roles, "assistant"), uint64(len(entry.Content)), roles, fixtureStringCount(roles, "system"), texts, fixtureStringCount(roles, "tool"), fixtureStringCount(roles, "user")}
-		return row
-	}
-	if entry.ContentType != "LangGraph/checkpoint" {
-		content, _ := json.Marshal(map[string]any{"items": entry.Content})
-		row.ColumnNames = []string{"content", "message_count"}
-		row.Values = []any{string(content), uint64(len(entry.Content))}
-		return row
-	}
-	if len(entry.Content) == 0 {
-		return nil
-	}
-	item := entry.Content[0]
-	checkpoint, _ := json.Marshal(map[string]any{"checkpoint": item["checkpoint"], "metadata": item["metadata"]})
-	row.ColumnNames = []string{"checkpoint", "checkpoint_id", "checkpoint_namespace", "parent_checkpoint_id"}
-	row.Values = []any{string(checkpoint), item["checkpoint_id"], item["checkpoint_ns"], item["parent_checkpoint_id"]}
-	return row
-}
-
-func fixtureStringFieldsFromMaps(items []map[string]any, field string) []string {
-	values := make([]string, 0, len(items))
-	for _, item := range items {
-		value, ok := item[field].(string)
-		if ok {
-			values = append(values, value)
-		}
-	}
-	return values
-}
-
-func fixtureStringFields(items []any, field string) []string {
-	values := make([]string, 0, len(items))
-	for _, item := range items {
-		object, ok := item.(map[string]any)
-		if !ok {
+// fixtureProjectionRows evaluates the bundled projection manifests so documentation queries
+// run against the same rows the processor writes.
+func fixtureProjectionRows(ctx context.Context, projections []*clickhouseprocessor.Projection, resource, selector string, base clickhouseprocessor.ProjectionRow, input map[string]any) ([]clickhouseprocessor.ProjectionRow, error) {
+	var result []clickhouseprocessor.ProjectionRow
+	for _, projection := range projections {
+		if projection.Resource != resource || projection.Selector != selector {
 			continue
 		}
-		value, ok := object[field].(string)
-		if ok && value != "" {
-			values = append(values, value)
+		rows, code := projection.Rows(ctx, base, input)
+		if code != "" {
+			return nil, fmt.Errorf("projection %s failed with %s", projection.Name, code)
 		}
+		result = append(result, rows...)
 	}
-	return values
-}
-
-func fixtureStringCount(values []string, expected string) uint64 {
-	var count uint64
-	for _, value := range values {
-		if value == expected {
-			count++
-		}
-	}
-	return count
-}
-
-func fixtureMemoryProjection(memory fixtureMemory, common clickhouseprocessor.Common) *clickhouseprocessor.ProjectionRow {
-	value, _ := json.Marshal(memory.Value)
-	row := &clickhouseprocessor.ProjectionRow{Common: common, ResourceID: memory.ID}
-	switch memory.Kind {
-	case "default/v1":
-		row.ProjectionName = "default_memory_v1"
-		row.TableName = row.ProjectionName
-		row.ColumnNames = []string{"namespace", "subject", "value"}
-		row.Values = []any{memory.Attributes["namespace"], memory.Attributes["sub"], string(value)}
-	case "cognition/v1":
-		row.ProjectionName = "cognition_memory_v1"
-		row.TableName = row.ProjectionName
-		row.ColumnNames = []string{"confidence", "memory_effective_at", "memory_kind", "memory_observed_at", "namespace", "runtime_id", "runtime_version", "subject", "value"}
-		row.Values = []any{memory.Attributes["confidence"], nil, memory.Attributes["memoryKind"], nil, memory.Attributes["namespace"], memory.Attributes["runtimeId"], memory.Attributes["runtimeVersion"], memory.Attributes["sub"], string(value)}
-	default:
-		return nil
-	}
-	return row
+	return result, nil
 }
 
 var dayDurationPattern = regexp.MustCompile(`^(\d+)d(.*)$`)

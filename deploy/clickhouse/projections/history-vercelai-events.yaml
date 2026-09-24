@@ -1,0 +1,55 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: history_vercelai_events_v1
+spec:
+  resource: entry
+  selector:
+    contentType: history/vercelai
+  rows: many
+  columns:
+    role: {type: string, nullable: true}
+    event_type: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+    tool_call_id: {type: string, nullable: true}
+    tool_name: {type: string, nullable: true}
+    tool_input: {type: json_string, nullable: true}
+    tool_output: {type: json_string, nullable: true}
+    model_name: {type: string, nullable: true}
+    finish_reason: {type: string, nullable: true}
+    input_tokens: {type: uint64, nullable: true}
+    output_tokens: {type: uint64, nullable: true}
+    total_tokens: {type: uint64, nullable: true}
+  projectionRego: |
+    package memoryservice.analytics
+
+    item := input.content[0]
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    # Completion events may carry the whole-request `totalUsage` and the last step's `usage`.
+    event_usage(event) := event.totalUsage if {
+      is_object(event.totalUsage)
+    } else := field(event, "usage")
+
+    output := [row |
+      some event in field(item, "events")
+      usage := event_usage(event)
+      row := {
+        "role": field(item, "role"),
+        "event_type": field(event, "eventType"),
+        "text": field(event, "chunk"),
+        "tool_call_id": field(event, "id"),
+        "tool_name": field(event, "toolName"),
+        "tool_input": field(event, "input"),
+        "tool_output": field(event, "output"),
+        "model_name": field(field(event, "response"), "modelId"),
+        "finish_reason": field(event, "finishReason"),
+        "input_tokens": field(usage, "inputTokens"),
+        "output_tokens": field(usage, "outputTokens"),
+        "total_tokens": field(usage, "totalTokens"),
+      }
+    ]

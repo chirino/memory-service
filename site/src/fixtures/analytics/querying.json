@@ -25,9 +25,10 @@
             "role": "AI",
             "text": "I can also compare train times.",
             "events": [
-              {"eventType": "BeforeToolExecution", "toolName": "railSearch", "input": {"from": "New York", "to": "Montreal"}},
-              {"eventType": "ToolExecuted", "toolName": "railSearch", "output": {"trains": 3}},
-              {"eventType": "PartialResponse", "chunk": "The morning train is the least expensive."}
+              {"eventType": "BeforeToolExecution", "id": "call-rail-1", "toolName": "railSearch", "arguments": "{\"from\":\"New York\",\"to\":\"Montreal\"}"},
+              {"eventType": "ToolExecuted", "id": "call-rail-1", "toolName": "railSearch", "output": "{\"trains\":3}"},
+              {"eventType": "PartialResponse", "chunk": "The morning train is the least expensive."},
+              {"eventType": "ChatCompleted", "metadata": {"modelName": "gpt-4o-mini", "finishReason": "STOP", "tokenUsage": {"inputTokenCount": 412, "outputTokenCount": 38, "totalTokenCount": 450}}}
             ],
             "attachments": [{"attachmentId": "aaaaaaaa-1111-4111-8111-111111111111", "contentType": "application/pdf", "name": "train-options.pdf"}]
           }]
@@ -36,7 +37,12 @@
           "id": "11111111-1111-4111-8111-111111111104",
           "createdAgo": "20d23h50m",
           "contentType": "LC4J",
-          "content": [{"type": "AiMessage", "text": "The morning train is the least expensive."}]
+          "content": [
+            {"type": "USER", "contents": [{"type": "TEXT", "text": "Compare train times to Montreal."}]},
+            {"type": "AI", "toolExecutionRequests": [{"id": "call-rail-1", "name": "railSearch", "arguments": "{\"from\":\"New York\",\"to\":\"Montreal\"}"}]},
+            {"type": "TOOL_EXECUTION_RESULT", "id": "call-rail-1", "toolName": "railSearch", "text": "{\"trains\":3}"},
+            {"type": "AI", "text": "The morning train is the least expensive."}
+          ]
         }
       ]
     },
@@ -59,9 +65,10 @@
             "role": "AI",
             "text": "Order 1042 is delayed by one day.",
             "events": [
-              {"eventType": "BeforeToolExecution", "toolName": "orderStatus", "input": {"orderId": "1042"}},
-              {"eventType": "ToolExecuted", "toolName": "orderStatus", "output": {"delayDays": 1}},
-              {"eventType": "ChatCompleted", "finishReason": "stop"}
+              {"eventType": "BeforeToolExecution", "id": "call-order-1", "toolName": "orderStatus", "input": {"orderId": "1042"}},
+              {"eventType": "ToolExecuted", "id": "call-order-1", "toolName": "orderStatus", "output": {"delayDays": 1}},
+              {"eventType": "PartialResponse", "chunk": "Order 1042 is delayed by one day."},
+              {"eventType": "ChatCompleted", "finishReason": "stop", "response": {"modelId": "gpt-4o-mini"}, "totalUsage": {"inputTokens": 280, "outputTokens": 21, "totalTokens": 301}}
             ]
           }]
         },
@@ -69,7 +76,12 @@
           "id": "22222222-2222-4222-8222-222222222203",
           "createdAgo": "7d23h52m",
           "contentType": "vercelai",
-          "content": [{"role": "assistant", "content": [{"type": "text", "text": "I notified the customer."}]}]
+          "content": [
+            {"role": "user", "content": "Tell the customer about order 1042."},
+            {"role": "assistant", "content": [{"type": "tool-call", "toolCallId": "call-notify-1", "toolName": "notifyCustomer", "input": {"orderId": "1042"}}]},
+            {"role": "tool", "content": [{"type": "tool-result", "toolCallId": "call-notify-1", "toolName": "notifyCustomer", "output": {"type": "json", "value": {"sent": true}}}]},
+            {"role": "assistant", "content": [{"type": "text", "text": "I notified the customer."}]}
+          ]
         }
       ]
     },

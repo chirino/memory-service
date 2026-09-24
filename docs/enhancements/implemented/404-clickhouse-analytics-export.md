@@ -624,8 +624,10 @@ spec:
     }
 ```
 
-Entry `content` is the source entry's content-block array. A projection produces one row
-per matching entry. It can select a block by index or preserve the array in a JSON column.
+Entry `content` is the source entry's content-block array. By default, a projection
+produces one row per matching entry. It can select a block by index or preserve the array
+in a JSON column. A projection that sets `spec.rows: many` produces one row per element of
+an `output` array instead; see [Multi-row projections](#multi-row-projections).
 
 Each projection:
 
@@ -633,7 +635,8 @@ Each projection:
 - selects either one exact entry `contentType` or one exact memory `kind`
 - has a content digest stored in the checkpoint and projection registry
 - defines columns from an allowlisted type system with explicit provider support
-- writes one row per matching generic record into a dedicated versioned table
+- writes one row per matching generic record into a dedicated versioned table, or zero or
+  more rows when the manifest sets `rows: many`
 - never replaces the generic row
 
 `metadata.name` maps directly to the ClickHouse table name without sanitizing, prefixing,
@@ -740,6 +743,46 @@ batch finishes, a new projection set starts with a new digest. A projection sche
 uses a new manifest name and therefore a new physical table.
 Historical projection backfill is an explicit command, not an automatic startup side
 effect.
+
+#### Multi-row projections
+
+Some content holds a list whose items analysts want to filter and aggregate individually,
+such as the messages in a chat-memory entry or the events in a history entry. Returning
+those items as parallel arrays in one row loses per-item types, nullability, and sort keys.
+`spec.rows` accepts `one` (the default) or `many`. With `many`, `output` must be an array
+of objects, and each object must match the declared columns exactly.
+
+- `rows` is part of the immutable manifest digest. The digest omits the field when it is
+  absent or `one`, so single-row manifests keep the digests they had before the field
+  existed.
+- Multi-row tables add processor-owned `row_index UInt32` (position in the `output`
+  array) and `row_count UInt32` (rows produced by the same resource version) columns, and
+  use `ORDER BY (exporter_id, resource_id, row_index)`. `row_index` and `row_count` are
+  reserved column names for every projection.
+- Rows are validated as a unit. One invalid row records a single payload-free projection
+  failure for the resource and writes none of its rows. A resource may produce at most
+  1,024 rows.
+- A version that produces an empty array writes one marker row with `row_count = 0` so
+  rows from older versions stop being current. Tombstones are also single rows with
+  `row_count = 0` and `is_deleted = 1`.
+- The `_all` view keeps every row of each resource's newest `(ingest_version, event_id)`
+  and deduplicates replays per `row_index`. It drops marker rows by requiring
+  `row_index < row_count` unless the row is a tombstone. Rows beyond a shrunken version's
+  row count are never replaced by the `ReplacingMergeTree` key, so the view filters them
+  by version. Existing retention validation already requires projection retention to be
+  no longer than tombstone retention, and the newest version is always observed after
+  older rows, so TTL cannot expire a newer marker or tombstone before older rows. Deletion
+  fences still govern `_current`.
+- The registry does not record the row mode. Views for registered projections that are no
+  longer configured derive it from the physical table's sorting key.
+- A memory projection that sets `rows: many` must define `projectionRego`; attribute
+  mapping always yields one row.
+
+The bundled example-app projections use multi-row tables for chat-memory formats
+(`spring_ai_messages_v1`, `lc4j_messages_v1`, and `vercelai_messages_v1`: one row per
+message) and history events (`history_lc4j_events_v1` and `history_vercelai_events_v1`:
+one row per event, with tool call, model, finish reason, and token usage fields). The
+per-entry `history*_v1` projections remain for entry-level counts.
 
 ### Projection failures
 
@@ -1116,6 +1159,13 @@ Feature: ClickHouse analytics export
     And that table contains a column named "event_type"
     And ClickHouse contains views named "history_lc4j_events_v1_current" and "history_lc4j_events_v1_all"
 
+  Scenario: Multi-row projections expose only the newest version's rows
+    Given a projection with rows set to many
+    When an entry version produces three rows, is replayed, and is then updated to one row
+    Then the current view contains only the updated row
+    And a later version with no rows hides all earlier rows
+    And a tombstone leaves one row in the all view and none in the current view
+
   Scenario: ClickHouse projections support provider-specific semi-structured types
     Given a ClickHouse projection with a declared Variant column and a native JSON column
     When a matching record contains a tagged variant and deeply nested JSON content
@@ -1227,7 +1277,7 @@ The implementation provides:
 - durable source timestamps, gRPC live-phase high-water cursors, and transactional lifecycle events for PostgreSQL, SQLite, and MongoDB
 - managed, record-only, and external hard-delete ownership with payload-free queue records and synchronous managed mutations
 - processor-side metadata and projection filtering of full admin resource events, plus an explicit acknowledgment before full payload persistence
-- strict immutable projection manifests, sandboxed Rego execution, MemoryKindVersion attribute reuse, typed versioned tables, payload-free failure records, and explicit projection replay scans
+- strict immutable projection manifests, sandboxed Rego execution, MemoryKindVersion attribute reuse, typed versioned tables, opt-in multi-row projections, payload-free failure records, and explicit projection replay scans
 - managed or external retention ownership plus lifecycle, generic, tombstone, projection, and failure retention settings
 - pinned Compose and PostgreSQL/MongoDB Kustomize deployments, bundled example-app projections, operator documentation, native/HTTP integration tests, fixture-backed documentation query tests, and Compose/kind smoke tasks
 

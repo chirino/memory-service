@@ -4,7 +4,7 @@ title: Create analytics projections
 description: Map approved entry content or memory values to typed analytics tables.
 ---
 
-Use a projection when analysts need approved fields from an entry or memory. A projection selects one exact entry `contentType` or memory `kind`, evaluates deployment-owned Rego, and writes one typed row for each matching resource.
+Use a projection when analysts need approved fields from an entry or memory. A projection selects one exact entry `contentType` or memory `kind`, evaluates deployment-owned Rego, and writes typed rows for each matching resource. By default, a projection writes one row per resource. Set `rows: many` to write one row per item, such as each message or tool call in an entry.
 
 ## Create a projection manifest
 
@@ -49,7 +49,85 @@ spec:
     }
 ```
 
-An entry's `content` value is an array of content blocks. The projection above reads the first block. A projection produces one row per entry, so preserve the complete block array in a `json` column when analysts need to inspect an unknown number of blocks.
+An entry's `content` value is an array of content blocks. The projection above reads the first block and produces one row per entry. To produce a row for every block, or for every item nested inside a block, [write several rows per resource](#write-several-rows-per-resource).
+
+## Write several rows per resource
+
+Some content holds a list that analysts want to filter, join, or aggregate item by item. Examples include the messages in a chat memory entry or the tool calls in a history entry. Set `spec.rows` to `many` and return an array from `output`. Each array element becomes one row.
+
+Create `support-ticket-steps-projection.yaml`:
+
+```yaml
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: support_ticket_steps_v1
+spec:
+  resource: entry
+  selector:
+    contentType: support-ticket/v1
+  rows: many
+  columns:
+    action:
+      type: string
+      nullable: false
+    agent:
+      type: string
+      nullable: true
+    duration_ms:
+      type: uint64
+      nullable: true
+  projectionRego: |
+    package memoryservice.analytics
+
+    ticket := input.content[0]
+
+    output := [row |
+      some step in object.get(ticket, "steps", [])
+      row := {
+        "action": object.get(step, "action", null),
+        "agent": object.get(step, "agent", null),
+        "duration_ms": object.get(step, "durationMs", null),
+      }
+    ]
+```
+
+This entry produces three rows in `support_ticket_steps_v1`:
+
+```json
+{
+  "contentType": "support-ticket/v1",
+  "content": [
+    {
+      "outcome": "resolved",
+      "steps": [
+        { "action": "triage", "agent": "router", "durationMs": 120 },
+        { "action": "lookup-order", "agent": "orders", "durationMs": 340 },
+        { "action": "reply", "agent": "writer", "durationMs": 95 }
+      ]
+    }
+  ]
+}
+```
+
+The `rows` value accepts `one` (the default) or `many`. It is part of the immutable manifest, so switching an existing projection to `many` requires a new projection name.
+
+Multi-row tables add two processor-owned columns:
+
+| Column      | Type     | Meaning                                                 |
+| ----------- | -------- | ------------------------------------------------------- |
+| `row_index` | `UInt32` | Zero-based position of the row in the `output` array.   |
+| `row_count` | `UInt32` | Number of rows that the same resource version produced. |
+
+`row_index` and `row_count` are reserved column names for every projection. Rows are keyed by `(exporter_id, resource_id, row_index)`, so a query can order the rows for one resource by `row_index`. When the Rego skips items, `row_index` counts only the rows it returned. Declare a column when analysts need the item's original position.
+
+Every version of a resource replaces all of its earlier rows. The `_current` and `_all` views return the rows from the newest version only. If an update returns fewer rows than before, the extra rows from the earlier version disappear from both views. An empty array writes no visible rows and hides the rows of earlier versions. A deleted resource leaves a single tombstone row in the `_all` view.
+
+Inside an array comprehension, a reference to a missing field such as `step.action` makes Rego skip that element without an error. Read fields with `object.get(..., null)` instead. A missing required value then fails validation rather than silently dropping a row.
+
+The processor validates all rows before writing any of them. If one row has a missing column or an invalid value, the whole resource is recorded in `projection_failures` and none of its rows are written. A single resource can produce at most `1024` rows.
+
+A memory projection that sets `rows: many` must define `projectionRego`.
 
 ## Choose stable SQL names
 
@@ -111,7 +189,7 @@ Memory projections receive these input fields:
 - `value`
 - `attributes`
 
-The `output` rule must return exactly the columns declared by the manifest. The processor rejects missing columns, extra columns, invalid types, and null values for columns with `nullable: false`.
+The `output` rule must return an object with exactly the columns declared by the manifest. For a `rows: many` projection, `output` must return an array of such objects. The processor rejects missing columns, extra columns, invalid types, and null values for columns with `nullable: false`.
 
 A memory projection can omit `projectionRego`. In that case, the processor maps persisted `MemoryKindVersion` attributes to columns with matching names.
 
@@ -119,23 +197,23 @@ A memory projection can omit `projectionRego`. In that case, the processor maps 
 
 The distributed image includes individual example-app projection files under `/etc/memory-service/clickhouse/projections`. Load the whole directory or select only the files needed by your deployment:
 
-| File                        | Resource | Selector               | Table                     |
-| --------------------------- | -------- | ---------------------- | ------------------------- |
-| `history.yaml`              | Entry    | `history`              | `history_v1`              |
-| `history-lc4j.yaml`         | Entry    | `history/lc4j`         | `history_lc4j_v1`         |
-| `history-vercelai.yaml`     | Entry    | `history/vercelai`     | `history_vercelai_v1`     |
-| `lc4j.yaml`                 | Entry    | `LC4J`                 | `lc4j_v1`                 |
-| `spring-ai.yaml`            | Entry    | `SpringAI`             | `spring_ai_v1`            |
-| `langgraph-checkpoint.yaml` | Entry    | `LangGraph/checkpoint` | `langgraph_checkpoint_v1` |
-| `vercelai.yaml`             | Entry    | `vercelai`             | `vercelai_v1`             |
-| `default-memory.yaml`       | Memory   | `default/v1`           | `default_memory_v1`       |
-| `cognition-memory.yaml`     | Memory   | `cognition/v1`         | `cognition_memory_v1`     |
+| File                           | Resource | Selector               | Table                        | Rows                        |
+| ------------------------------ | -------- | ---------------------- | ---------------------------- | --------------------------- |
+| `history.yaml`                 | Entry    | `history`              | `history_v1`                 | One per entry               |
+| `history-lc4j.yaml`            | Entry    | `history/lc4j`         | `history_lc4j_v1`            | One per entry               |
+| `history-lc4j-events.yaml`     | Entry    | `history/lc4j`         | `history_lc4j_events_v1`     | One per history event       |
+| `history-vercelai.yaml`        | Entry    | `history/vercelai`     | `history_vercelai_v1`        | One per entry               |
+| `history-vercelai-events.yaml` | Entry    | `history/vercelai`     | `history_vercelai_events_v1` | One per history event       |
+| `lc4j.yaml`                    | Entry    | `LC4J`                 | `lc4j_messages_v1`           | One per LangChain4j message |
+| `spring-ai.yaml`               | Entry    | `SpringAI`             | `spring_ai_messages_v1`      | One per Spring AI message   |
+| `langgraph-checkpoint.yaml`    | Entry    | `LangGraph/checkpoint` | `langgraph_checkpoint_v1`    | One per entry               |
+| `vercelai.yaml`                | Entry    | `vercelai`             | `vercelai_messages_v1`       | One per Vercel AI message   |
+| `default-memory.yaml`          | Memory   | `default/v1`           | `default_memory_v1`          | One per memory              |
+| `cognition-memory.yaml`        | Memory   | `cognition/v1`         | `cognition_memory_v1`        | One per memory              |
 
-The `spring_ai_v1` table stores the ordered Spring AI message roles and text in parallel
-`roles` and `texts` arrays. It also stores `message_count` and separate counts for system,
-user, assistant, and tool messages. It does not copy the original entry content into a JSON
-column. Matching positions in `roles` and `texts` represent the same source message;
-`arrayEnumerate(roles)` produces its one-based content-array position for a query.
+The message tables store one row for each message in a chat-memory entry, in content order. `spring_ai_messages_v1` stores each message's `role` and `text`. `lc4j_messages_v1` stores the LangChain4j `message_type`. `vercelai_messages_v1` stores the model message `role`. Both of those tables also store the message `text`, the `tool_names` that the message calls or answers, and the complete `message` as native JSON.
+
+The history event tables store one row for each recorded event of an agent response. Each row includes the entry `role`, `event_type`, streamed `text`, and, for tool events, `tool_call_id`, `tool_name`, `tool_input`, and `tool_output`. `tool_input` and `tool_output` hold canonical JSON strings; the LangChain4j table decodes tool arguments and results that contain JSON. Completion events add `model_name`, `finish_reason`, `input_tokens`, `output_tokens`, and `total_tokens`. In the Vercel AI table, step events also report usage, so filter on `event_type = 'ChatCompleted'` before you sum tokens. The per-entry history tables remain available for entry-level counts.
 
 The repository's `compose.yaml` loads the entire directory in `projected` mode. For another container deployment, set `MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=projected` and `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=/etc/memory-service/clickhouse/projections` on the processor.
 

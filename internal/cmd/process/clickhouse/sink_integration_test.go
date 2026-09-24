@@ -2,6 +2,7 @@ package clickhouse
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -204,6 +205,136 @@ spec:
 	var count uint64
 	require.NoError(t, sink.conn.QueryRow(ctx, "SELECT count() FROM memory_service."+quoteIdentifier(table+"_current")+" WHERE exporter_id=?", cfg.ExporterID).Scan(&count))
 	require.Zero(t, count)
+}
+
+func TestClickHouseMultiRowProjectionIntegration(t *testing.T) {
+	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
+		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	defer cancel()
+	dir := t.TempDir()
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("clickhouse"), 0o600))
+	manifestPath := filepath.Join(dir, "projection.yaml")
+	require.NoError(t, os.WriteFile(manifestPath, []byte(`apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata: {name: support_steps_v1}
+spec:
+  resource: entry
+  selector: {contentType: support-steps/v1}
+  rows: many
+  columns:
+    step: {type: string, nullable: false}
+  projectionRego: |
+    package memoryservice.analytics
+    output := [{"step": step} | some step in input.content]
+`), 0o600))
+	database, _ := createIntegrationDatabase(t, ctx)
+	cfg := integrationDatabaseConfig(database, "integration-multi-row", dir, manifestPath)
+	sink, err := OpenSink(ctx, cfg)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = sink.Close() })
+	projection := sink.projections[0]
+	table := projection.TableName
+
+	var sortingKey string
+	require.NoError(t, sink.conn.QueryRow(ctx, "SELECT sorting_key FROM system.tables WHERE database=? AND name=?", database, table).Scan(&sortingKey))
+	require.Equal(t, multiRowSortingKey, sortingKey)
+
+	resourceID := "multi-row-entry"
+	now := time.Now().UTC()
+	write := func(suffix string, version uint64, deleted bool, steps ...any) {
+		t.Helper()
+		batchID := strings.Repeat(suffix, 64)
+		common := Common{ExporterID: cfg.ExporterID, BatchID: batchID, EventID: strings.Repeat(suffix, 64), SourceCursor: suffix, IngestVersion: version, ObservedAt: now.Add(time.Duration(version) * time.Second), SchemaVersion: schemaVersion}
+		base := ProjectionRow{Common: common, ResourceID: resourceID, ConversationID: "multi-row-conversation", ConversationGroupID: "multi-row-group"}
+		rows := []ProjectionRow{projection.TombstoneRow(base)}
+		if !deleted {
+			var code string
+			rows, code = projection.Rows(ctx, base, map[string]any{"content": steps})
+			require.Empty(t, code)
+		}
+		require.NoError(t, sink.WriteBatch(ctx, Batch{ID: batchID, ExporterID: cfg.ExporterID, FirstCursor: suffix, LastCursor: suffix, Version: version, ObservedAt: common.ObservedAt,
+			Resources:   []ResourceRow{{Common: common, ResourceID: resourceID, ResourceType: "entry", CreatedAt: now, UpdatedAt: common.ObservedAt, IsDeleted: deleted, PayloadJSON: `{}`}},
+			Projections: rows,
+		}))
+	}
+	steps := func(view string) []string {
+		t.Helper()
+		rows, err := sink.conn.Query(ctx, "SELECT step FROM "+quoteIdentifier(database)+"."+quoteIdentifier(table+view)+" WHERE exporter_id=? AND is_deleted=0 ORDER BY row_index", cfg.ExporterID)
+		require.NoError(t, err)
+		defer rows.Close()
+		result := []string{}
+		for rows.Next() {
+			var step string
+			require.NoError(t, rows.Scan(&step))
+			result = append(result, step)
+		}
+		require.NoError(t, rows.Err())
+		return result
+	}
+	countAll := func() uint64 {
+		t.Helper()
+		var count uint64
+		require.NoError(t, sink.conn.QueryRow(ctx, "SELECT count() FROM "+quoteIdentifier(database)+"."+quoteIdentifier(table+"_all")+" WHERE exporter_id=?", cfg.ExporterID).Scan(&count))
+		return count
+	}
+
+	write("a", 1, false, "plan", "act", "check")
+	require.Equal(t, []string{"plan", "act", "check"}, steps("_current"))
+	var rowIndex, rowCount uint32
+	require.NoError(t, sink.conn.QueryRow(ctx, "SELECT row_index, row_count FROM "+quoteIdentifier(database)+"."+quoteIdentifier(table+"_current")+" WHERE step='check'").Scan(&rowIndex, &rowCount))
+	require.Equal(t, uint32(2), rowIndex)
+	require.Equal(t, uint32(3), rowCount)
+
+	write("a", 1, false, "plan", "act", "check")
+	require.Equal(t, []string{"plan", "act", "check"}, steps("_current"), "replayed versions must not duplicate rows")
+
+	write("b", 2, false, "escalate")
+	require.Equal(t, []string{"escalate"}, steps("_current"), "rows beyond the newest version's row count must disappear")
+
+	write("c", 3, false)
+	require.Empty(t, steps("_current"), "a version without rows hides older rows")
+	require.Zero(t, countAll(), "empty-version markers are not rows")
+
+	write("d", 4, false, "reopen", "resolve")
+	require.Equal(t, []string{"reopen", "resolve"}, steps("_current"))
+
+	reopened, err := OpenSink(ctx, cfg)
+	require.NoError(t, err, "reopening must rebuild registered multi-row views")
+	require.NoError(t, reopened.Close())
+	require.Equal(t, []string{"reopen", "resolve"}, steps("_current"))
+
+	write("e", 5, true)
+	require.Empty(t, steps("_current"))
+	require.Equal(t, uint64(1), countAll(), "the tombstone remains visible in the all view")
+
+	// Feed repeated snapshots through the real batcher, then force physical replacement.
+	processor, err := NewProcessor(cfg, sink)
+	require.NoError(t, err)
+	require.NoError(t, processor.SetLeaseGeneration(1))
+	cursors := []string{"merged:0", "merged:1"}
+	if eventID(cfg.ExporterID, cursors[0], "entry", "updated", "updated") < eventID(cfg.ExporterID, cursors[1], "entry", "updated", "updated") {
+		cursors[0], cursors[1] = cursors[1], cursors[0]
+	}
+	for i, content := range []string{`["plan","act","check"]`, `["resolve"]`} {
+		payload := json.RawMessage(`{"id":"multi-row-entry","conversationId":"multi-row-conversation","contentType":"support-steps/v1","content":` + content + `}`)
+		require.NoError(t, processor.Handle(ctx, processruntime.EventEnvelope{Kind: "entry", Event: "updated", Cursor: cursors[i], Data: payload}))
+	}
+	require.NoError(t, processor.Flush(ctx))
+	require.Equal(t, []string{"resolve"}, steps("_current"), "newest snapshot must be visible before physical replacement")
+	require.NoError(t, sink.conn.Exec(ctx, "OPTIMIZE TABLE "+quoteIdentifier(database)+"."+quoteIdentifier(table)+" FINAL"))
+	require.Equal(t, []string{"resolve"}, steps("_current"), "physical replacement must preserve the complete newest snapshot")
+
+	for i, content := range []string{`["retry","verify"]`, `[]`} {
+		payload := json.RawMessage(`{"id":"multi-row-entry","conversationId":"multi-row-conversation","contentType":"support-steps/v1","content":` + content + `}`)
+		require.NoError(t, processor.Handle(ctx, processruntime.EventEnvelope{Kind: "entry", Event: "updated", Cursor: cursors[i], Data: payload}))
+	}
+	require.NoError(t, processor.Flush(ctx))
+	require.Empty(t, steps("_current"), "newest empty snapshot must hide all older rows before merging")
+	require.NoError(t, sink.conn.Exec(ctx, "OPTIMIZE TABLE "+quoteIdentifier(database)+"."+quoteIdentifier(table)+" FINAL"))
+	require.Empty(t, steps("_current"), "newest empty snapshot must hide all older rows after merging")
+
 }
 
 func TestClickHouseRejectsUnregisteredProjectionRelation(t *testing.T) {

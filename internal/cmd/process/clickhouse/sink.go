@@ -532,6 +532,10 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 			continue
 		}
 		columns := []string{"exporter_id", "batch_id", "event_id", "resource_id", "conversation_id", "conversation_group_id", "ingest_version", "observed_at", "is_deleted", "schema_version"}
+		multi := rows[0].Multi
+		if multi {
+			columns = append(columns, "row_index", "row_count")
+		}
 		columns = append(columns, rows[0].ColumnNames...)
 		quoted := make([]string, len(columns))
 		for i, column := range columns {
@@ -542,7 +546,13 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 			return fmt.Errorf("prepare projection %s batch: %w", table, err)
 		}
 		for _, row := range rows {
+			if row.Multi != multi {
+				return fmt.Errorf("projection %s mixes single-row and multi-row writes", table)
+			}
 			values := []any{row.ExporterID, row.BatchID, row.EventID, row.ResourceID, row.ConversationID, row.ConversationGroupID, row.IngestVersion, row.ObservedAt, boolByte(row.IsDeleted), row.SchemaVersion}
+			if multi {
+				values = append(values, row.RowIndex, row.RowCount)
+			}
 			values = append(values, row.Values...)
 			if err := insert.Append(values...); err != nil {
 				return fmt.Errorf("append projection %s row: %w", row.ProjectionName, err)

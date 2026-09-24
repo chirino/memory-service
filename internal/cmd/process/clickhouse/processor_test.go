@@ -1061,3 +1061,44 @@ func (s *markerEventStream) Recv() (processruntime.EventEnvelope, error) {
 	s.index++
 	return event, nil
 }
+
+func TestProcessorSeparatesMultiRowSnapshots(t *testing.T) {
+	ctx := context.Background()
+	for _, backfill := range []bool{false, true} {
+		name := "live"
+		if backfill {
+			name = "backfill"
+		}
+		t.Run(name, func(t *testing.T) {
+			sink := &fakeSink{err: errors.New("retry insert"), failures: 1}
+			cfg := testConfig()
+			p, err := NewProcessor(cfg, sink)
+			require.NoError(t, err)
+			p.projections.Items = []*Projection{testMultiRowProjection(t, `output := [{"step": step} | some step in input.content]`)}
+			require.NoError(t, p.SetLeaseGeneration(1))
+			payloads := []json.RawMessage{
+				json.RawMessage(`{"id":"entry-1","conversationId":"c1","contentType":"support-steps/v1","content":["plan","act","check"]}`),
+				json.RawMessage(`{"id":"entry-1","conversationId":"c1","contentType":"support-steps/v1","content":["resolve"]}`),
+			}
+			if backfill {
+				var records []*pb.AnalyticsRecord
+				for _, payload := range payloads {
+					record, err := analyticsRecordFromResource("entry", payload)
+					require.NoError(t, err)
+					records = append(records, record)
+				}
+				require.NoError(t, p.writeBackfillPage(ctx, "entry", records))
+			} else {
+				require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Kind: "entry", Event: "updated", Cursor: "first", Data: payloads[0]}))
+				require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Kind: "entry", Event: "updated", Cursor: "second", Data: payloads[1]}))
+				require.Equal(t, "first", p.state.SafeCursor, "only the flushed snapshot may advance the checkpoint")
+				require.NoError(t, p.Flush(ctx))
+				require.Equal(t, "second", p.state.SafeCursor)
+			}
+			require.Len(t, sink.batches, 2, "distinct snapshots must not share a ReplacingMergeTree version")
+			require.Len(t, sink.batches[0].Projections, 3)
+			require.Len(t, sink.batches[1].Projections, 1)
+			require.Greater(t, sink.batches[1].Projections[0].IngestVersion, sink.batches[0].Projections[0].IngestVersion)
+		})
+	}
+}

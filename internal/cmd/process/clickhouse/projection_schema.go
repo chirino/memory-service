@@ -15,6 +15,18 @@ type registeredProjection struct {
 	Name      string
 	TableName string
 	Resource  string
+	RowMode   string
+}
+
+// multiRowSortingKey identifies tables created for `rows: many` projections. The registry
+// does not store the row mode, so views for registered projections derive it from the table.
+const multiRowSortingKey = "exporter_id, resource_id, row_index"
+
+func projectionRowsForSortingKey(sortingKey string) string {
+	if sortingKey == multiRowSortingKey {
+		return ProjectionRowsMany
+	}
+	return ProjectionRowsOne
 }
 
 func (s *ClickHouseSink) ensureProjectionSchema(ctx context.Context, mode string) error {
@@ -60,13 +72,17 @@ func (s *ClickHouseSink) ensureProjectionSchema(ctx context.Context, mode string
 				}
 				columns = append(columns, fmt.Sprintf("`%s` %s", name, columnType))
 			}
+			rowColumns, sortingKey := "", "exporter_id, resource_id"
+			if projection.RowMode == ProjectionRowsMany {
+				rowColumns, sortingKey = "row_index UInt32, row_count UInt32,\n  ", multiRowSortingKey
+			}
 			statement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
   exporter_id String, batch_id FixedString(64), event_id FixedString(64), resource_id String,
   conversation_id String, conversation_group_id String,
   ingest_version UInt64, observed_at DateTime64(9, 'UTC'), is_deleted UInt8,
   schema_version UInt16,
-  %s
-) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (exporter_id, resource_id)`, quoteIdentifier(s.database), quoteIdentifier(projection.TableName), strings.Join(columns, ",\n  "))
+  %s%s
+) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (%s)`, quoteIdentifier(s.database), quoteIdentifier(projection.TableName), rowColumns, strings.Join(columns, ",\n  "), sortingKey)
 			if err := s.conn.Exec(ctx, statement); err != nil {
 				return fmt.Errorf("create projection table %s: %w", projection.TableName, err)
 			}
@@ -131,15 +147,16 @@ ORDER BY projection_name`, quoteIdentifier(s.database)), s.config.ExporterID)
 	if err := rows.Close(); err != nil {
 		return nil, err
 	}
-	for _, projection := range result {
+	for i, projection := range result {
 		var count uint64
-		var engine string
-		if err := s.conn.QueryRow(ctx, "SELECT count(), any(engine) FROM system.tables WHERE database=? AND name=?", s.database, projection.TableName).Scan(&count, &engine); err != nil {
+		var engine, sortingKey string
+		if err := s.conn.QueryRow(ctx, "SELECT count(), any(engine), any(sorting_key) FROM system.tables WHERE database=? AND name=?", s.database, projection.TableName).Scan(&count, &engine, &sortingKey); err != nil {
 			return nil, fmt.Errorf("validate registered projection table %s: %w", projection.TableName, err)
 		}
 		if count != 1 || engine == "View" || engine == "MaterializedView" {
 			return nil, fmt.Errorf("registered projection table %s.%s is missing or is not a physical table", s.database, projection.TableName)
 		}
+		result[i].RowMode = projectionRowsForSortingKey(sortingKey)
 	}
 	return result, nil
 }
@@ -220,7 +237,7 @@ func (s *ClickHouseSink) ensureRegisteredProjectionSchemas(ctx context.Context, 
 			}
 			continue
 		}
-		if err := s.conn.Exec(ctx, projectionAllViewStatement(s.database, projection.TableName)); err != nil {
+		if err := s.conn.Exec(ctx, projectionAllViewStatement(s.database, projection.TableName, projection.RowMode)); err != nil {
 			return fmt.Errorf("create projection all view %s: %w", projection.TableName, err)
 		}
 		if err := s.conn.Exec(ctx, projectionCurrentViewStatement(s.database, projection.TableName, projection.Resource)); err != nil {
@@ -230,8 +247,21 @@ func (s *ClickHouseSink) ensureRegisteredProjectionSchemas(ctx context.Context, 
 	return nil
 }
 
-func projectionAllViewStatement(database, table string) string {
+func projectionAllViewStatement(database, table, rowMode string) string {
 	prefix := quoteIdentifier(database) + "."
+	if rowMode == ProjectionRowsMany {
+		// Keep every row of the latest resource version. Older versions may have had more rows,
+		// and those row indexes are never replaced, so filter them by version instead of by key.
+		// Rows with row_index >= row_count are markers for versions that projected no rows.
+		return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
+SELECT r.* EXCEPT(version_rank, rn) FROM (
+ SELECT r.*,
+  dense_rank() OVER (PARTITION BY r.exporter_id, r.resource_id ORDER BY r.ingest_version DESC, r.event_id DESC) version_rank,
+  row_number() OVER (PARTITION BY r.exporter_id, r.resource_id, r.row_index ORDER BY r.ingest_version DESC, r.event_id DESC) rn
+ FROM %s%s r
+) r
+WHERE version_rank=1 AND rn=1 AND (r.is_deleted=1 OR r.row_index < r.row_count)`, prefix, quoteIdentifier(table+"_all"), prefix, quoteIdentifier(table))
+	}
 	return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
 SELECT r.* EXCEPT(rn) FROM (
  SELECT r.*, row_number() OVER (PARTITION BY r.exporter_id, r.resource_id ORDER BY r.ingest_version DESC, r.event_id DESC) rn

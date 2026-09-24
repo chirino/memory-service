@@ -51,7 +51,7 @@ ORDER BY projection_name;`}
   minRows={1}
 />
 
-Use a `*_current` view for dashboards and current-state reports. These views return the latest non-deleted row for each resource. Use a `*_all` view when you also need the latest tombstone. Query a physical table when you need retained version rows.
+Use a `*_current` view for dashboards and current-state reports. These views return the latest non-deleted row for each resource, or every row of the latest version for a [multi-row projection](/docs/analytics/projections/#write-several-rows-per-resource). Use a `*_all` view when you also need the latest tombstone. Query a physical table when you need retained version rows.
 
 ## Find the most active conversations
 
@@ -265,6 +265,84 @@ ORDER BY entries DESC, content_type;`}
 />
 
 The history projections store typed analytics fields rather than the original content JSON. Both include `role`, `text`, event and attachment counts, event types, tool names, and attachment content types. The LC4J history projection also counts response, thinking, tool-call, tool-result, and completion events. Use the projected `resource_id` with the Memory Service API when you need the authoritative entry.
+
+## Analyze tool calls and token usage
+
+The history event projections write one row for each recorded event. Count tool calls across the LangChain4j and Vercel AI history formats:
+
+<SqlTest
+  query={`SELECT
+  tool_name,
+  count() AS calls,
+  uniqExact(resource_id) AS entries,
+  max(observed_at) AS latest_call_at
+FROM (
+  SELECT tool_name, resource_id, observed_at
+  FROM memory_service.history_lc4j_events_v1_current
+  WHERE event_type = 'BeforeToolExecution'
+  UNION ALL
+  SELECT tool_name, resource_id, observed_at
+  FROM memory_service.history_vercelai_events_v1_current
+  WHERE event_type = 'BeforeToolExecution'
+)
+GROUP BY tool_name
+ORDER BY calls DESC, tool_name;`}
+  columns={["tool_name", "calls", "entries", "latest_call_at"]}
+  minRows={1}
+/>
+
+Sum token usage by model from completion events:
+
+<SqlTest
+  query={`SELECT
+  model_name,
+  count() AS responses,
+  sum(input_tokens) AS input_tokens,
+  sum(output_tokens) AS output_tokens
+FROM (
+  SELECT model_name, input_tokens, output_tokens
+  FROM memory_service.history_lc4j_events_v1_current
+  WHERE event_type = 'ChatCompleted'
+  UNION ALL
+  SELECT model_name, input_tokens, output_tokens
+  FROM memory_service.history_vercelai_events_v1_current
+  WHERE event_type = 'ChatCompleted'
+)
+GROUP BY model_name
+ORDER BY input_tokens DESC;`}
+  columns={["model_name", "responses", "input_tokens", "output_tokens"]}
+  minRows={1}
+/>
+
+Filter on `ChatCompleted` before summing. Vercel AI step events also carry usage, so summing every event counts the same tokens more than once.
+
+## Break down chat memory by message role
+
+The chat memory projections write one row for each message. Compare message roles across frameworks:
+
+<SqlTest
+  query={`SELECT
+  framework,
+  role,
+  count() AS messages,
+  uniqExact(resource_id) AS entries
+FROM (
+  SELECT 'Spring AI' AS framework, role, resource_id
+  FROM memory_service.spring_ai_messages_v1_current
+  UNION ALL
+  SELECT 'Vercel AI' AS framework, role, resource_id
+  FROM memory_service.vercelai_messages_v1_current
+  UNION ALL
+  SELECT 'LangChain4j' AS framework, message_type AS role, resource_id
+  FROM memory_service.lc4j_messages_v1_current
+)
+GROUP BY framework, role
+ORDER BY framework, messages DESC, role;`}
+  columns={["framework", "role", "messages", "entries"]}
+  minRows={1}
+/>
+
+Order by `resource_id, row_index` to read the messages of each entry in their original order.
 
 ## Find projection failures
 

@@ -1,33 +1,27 @@
 apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
 metadata:
-  name: spring_ai_v1
+  name: spring_ai_messages_v1
 spec:
   resource: entry
   selector:
     contentType: SpringAI
+  rows: many
   columns:
-    message_count: {type: uint64, nullable: false}
-    roles: {type: string_array, nullable: false}
-    texts: {type: string_array, nullable: false}
-    user_message_count: {type: uint64, nullable: false}
-    assistant_message_count: {type: uint64, nullable: false}
-    system_message_count: {type: uint64, nullable: false}
-    tool_message_count: {type: uint64, nullable: false}
+    role: {type: string, nullable: true}
+    text: {type: string, nullable: true}
   projectionRego: |
     package memoryservice.analytics
-    roles := [object.get(message, "role", "") | some message in input.content]
-    texts := [object.get(message, "text", "") | some message in input.content]
-    user_messages := [role | some role in roles; role == "user"]
-    assistant_messages := [role | some role in roles; role == "assistant"]
-    system_messages := [role | some role in roles; role == "system"]
-    tool_messages := [role | some role in roles; role == "tool"]
-    output := {
-      "message_count": count(input.content),
-      "roles": roles,
-      "texts": texts,
-      "user_message_count": count(user_messages),
-      "assistant_message_count": count(assistant_messages),
-      "system_message_count": count(system_messages),
-      "tool_message_count": count(tool_messages),
-    }
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    output := [row |
+      some message in input.content
+      row := {
+        "role": field(message, "role"),
+        "text": field(message, "text"),
+      }
+    ]
