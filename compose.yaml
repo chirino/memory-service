@@ -308,7 +308,7 @@ services:
         condition: service_healthy
 
   minio:
-    image: minio/minio:latest
+    image: pgsty/minio:latest
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -326,7 +326,7 @@ services:
       start_period: 10s
 
   minio-init:
-    image: minio/mc:latest
+    image: pgsty/mc:latest
     entrypoint: >
       /bin/sh -c "
       until mc alias set minio http://minio:9000 minioadmin minioadmin; do
