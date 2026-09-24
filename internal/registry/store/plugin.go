@@ -112,6 +112,58 @@ type ConversationDetail struct {
 	HasResponseInProgress bool `json:"hasResponseInProgress,omitempty"`
 }
 
+// CreateConversationResult distinguishes new conversation creation from exact retry.
+type CreateConversationResult struct {
+	Conversation *ConversationDetail
+	ExactRetry   bool // true when a client-supplied ID matched an existing conversation
+}
+
+// ConversationsMatch compares all semantically significant creation fields.
+// Server-assigned fields (createdAt, updatedAt, conversationGroupID) are excluded.
+// Identity fields (userID, clientID) come from the request context, following #528 pattern.
+// The existingDecryptedTitle parameter should be the decrypted title from existing.Title.
+func ConversationsMatch(existing *model.Conversation,
+	userID, clientID, title string,
+	existingDecryptedTitle string,
+	metadata map[string]interface{},
+	agentID *string,
+	forkedAtConversationID *string,
+	forkedAtEntryID *uuid.UUID,
+	startedByConversationID *string,
+	startedByEntryID *uuid.UUID) bool {
+	// Identity fields from request context (lesson from #528)
+	if existing.OwnerUserID != userID {
+		return false
+	}
+	if existing.ClientID != clientID {
+		return false
+	}
+	// Request payload fields
+	if existingDecryptedTitle != title {
+		return false
+	}
+	if !metadataEqual(existing.Metadata, metadata) {
+		return false
+	}
+	if !stringPointersEqual(existing.AgentID, agentID) {
+		return false
+	}
+	// All lineage fields — forked-at and started-by
+	if !stringPointersEqual(existing.ForkedAtConversationID, forkedAtConversationID) {
+		return false
+	}
+	if !uuidPointersEqual(existing.ForkedAtEntryID, forkedAtEntryID) {
+		return false
+	}
+	if !stringPointersEqual(existing.StartedByConversationID, startedByConversationID) {
+		return false
+	}
+	if !uuidPointersEqual(existing.StartedByEntryID, startedByEntryID) {
+		return false
+	}
+	return true
+}
+
 type UnarchiveConversationResult struct {
 	ConversationGroupID uuid.UUID
 	Changed             bool
@@ -361,7 +413,8 @@ type MemoryStore interface {
 	// Conversations
 	CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
 	// CreateConversationWithID creates a conversation with the given ID. Used by gRPC AppendEntry for fork-on-append.
-	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*ConversationDetail, error)
+	// Returns CreateConversationResult to distinguish new creation from exact retry (following #528 pattern).
+	CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*CreateConversationResult, error)
 	ListConversations(ctx context.Context, userID string, query *string, afterCursor *string, limit int, mode model.ConversationListMode, ancestry model.ConversationAncestryFilter, archived ArchiveFilter, metadataFilters []ConversationMetadataPredicate, sort ...ConversationSort) ([]ConversationSummary, *string, error)
 	GetConversation(ctx context.Context, userID string, conversationID string) (*ConversationDetail, error)
 	UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadataPatch MetadataPatch) (*ConversationDetail, error)

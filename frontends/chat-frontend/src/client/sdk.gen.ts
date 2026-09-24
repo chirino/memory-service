@@ -190,6 +190,13 @@ export class ConversationsService {
    * Create a conversation
    *
    * Creates a new conversation owned by the current user.
+   *
+   * **Idempotency**: When a conversation ID is provided in the request, this
+   * operation is idempotent. If the exact same conversation already exists
+   * (same ID, title, metadata, and ownership), the operation returns 200 OK
+   * with the existing conversation. If a conversation with the same ID exists
+   * but has different properties, the operation returns 409 Conflict with
+   * error code `conversation_already_exists`.
    */
   public static createConversation<ThrowOnError extends boolean = true>(
     parameters: {

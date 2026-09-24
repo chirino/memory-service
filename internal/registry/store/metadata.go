@@ -49,6 +49,20 @@ func metadataValuesEqual(left, right interface{}) bool {
 	return leftOK && rightOK && jsonSemanticEqual(leftValue, rightValue)
 }
 
+// metadataEqual compares two metadata maps for semantic equality.
+func metadataEqual(left, right map[string]interface{}) bool {
+	if len(left) != len(right) {
+		return false
+	}
+	for key, leftValue := range left {
+		rightValue, exists := right[key]
+		if !exists || !metadataValuesEqual(leftValue, rightValue) {
+			return false
+		}
+	}
+	return true
+}
+
 func normalizeMetadataJSONValue(value reflect.Value) (interface{}, bool) {
 	if !value.IsValid() {
 		return nil, true

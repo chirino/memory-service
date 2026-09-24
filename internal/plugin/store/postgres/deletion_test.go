@@ -22,13 +22,17 @@ func TestDescendantDeletionAtomicityAndClosure(t *testing.T) {
 		var err error
 		parent, err = store.CreateConversation(ctx, "owner", "app", "parent", nil, nil, nil, nil)
 		require.NoError(t, err)
-		child, err = store.createConversationWithID(ctx, "owner", "app", "child", "child", nil, nil, nil, nil, &parent.ID, nil)
+		result, err := store.createConversationWithID(ctx, "owner", "app", "child", "child", nil, nil, nil, nil, &parent.ID, nil)
+		require.NoError(t, err)
+		child = result.Conversation
 		require.NoError(t, err)
 		_, err = store.ShareConversation(ctx, "owner", child.ID, "child-reader", model.AccessLevelReader)
 		require.NoError(t, err)
 		fork, err = store.CreateConversation(ctx, "owner", "app", "child fork", nil, nil, &child.ID, nil)
 		require.NoError(t, err)
-		grandchild, err = store.createConversationWithID(ctx, "owner", "app", "grandchild", "grandchild", nil, nil, nil, nil, &fork.ID, nil)
+		result, err = store.createConversationWithID(ctx, "owner", "app", "grandchild", "grandchild", nil, nil, nil, nil, &fork.ID, nil)
+		require.NoError(t, err)
+		grandchild = result.Conversation
 		require.NoError(t, err)
 		unrelated, err = store.CreateConversation(ctx, "owner", "app", "unrelated", nil, nil, nil, nil)
 		return err

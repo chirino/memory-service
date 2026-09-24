@@ -39,7 +39,7 @@ func (m *metricsStore) CreateConversation(ctx context.Context, userID string, cl
 	return m.inner.CreateConversation(ctx, userID, clientID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }
 
-func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*store.ConversationDetail, error) {
+func (m *metricsStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*store.CreateConversationResult, error) {
 	defer observe("create_conversation", time.Now())
 	return m.inner.CreateConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID)
 }

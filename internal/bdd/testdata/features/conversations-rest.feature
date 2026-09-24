@@ -541,3 +541,196 @@ Feature: Conversations REST API
     Then the response status should be 200
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${rootConversationId}"
+
+
+  Scenario: Create conversation with explicit ID - exact retry returns 200
+    When I create a conversation with request:
+    """
+    {
+      "id": "idempotent-conv-001",
+      "title": "Idempotent Conversation"
+    }
+    """
+    Then the response status should be 201
+    And set "firstCreatedAt" to the json response field "createdAt"
+    # Exact retry with same parameters
+    When I create a conversation with request:
+    """
+    {
+      "id": "idempotent-conv-001",
+      "title": "Idempotent Conversation"
+    }
+    """
+    Then the response status should be 200
+    And the response body "id" should be "idempotent-conv-001"
+    And the response body "createdAt" should be "${firstCreatedAt}"
+
+  Scenario: Create conversation with explicit ID - conflicting retry returns 409
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-conv-001",
+      "title": "Original Title"
+    }
+    """
+    Then the response status should be 201
+    # Conflicting retry with different title
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-conv-001",
+      "title": "Different Title"
+    }
+    """
+    Then the response status should be 409
+    And the response body "code" should be "conversation_already_exists"
+    And the response body "details.conversationId" should be "conflict-conv-001"
+
+  Scenario: Create conversation with explicit ID - conflicting metadata returns 409
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-meta-001",
+      "title": "Test",
+      "metadata": {"key": "value1"}
+    }
+    """
+    Then the response status should be 201
+    # Conflicting retry with different metadata
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-meta-001",
+      "title": "Test",
+      "metadata": {"key": "value2"}
+    }
+    """
+    Then the response status should be 409
+    And the response body "code" should be "conversation_already_exists"
+
+  Scenario: Create conversation with explicit ID - archived conversation returns 404
+    When I create a conversation with request:
+    """
+    {
+      "id": "archived-conv-001",
+      "title": "Will Be Archived"
+    }
+    """
+    Then the response status should be 201
+    And set "archivedConvId" to "archived-conv-001"
+    # Archive the conversation
+    When I call PATCH "/v1/conversations/${archivedConvId}" with body:
+    """
+    {
+      "archived": true
+    }
+    """
+    Then the response status should be 200
+    # Try to create with same ID
+    When I create a conversation with request:
+    """
+    {
+      "id": "archived-conv-001",
+      "title": "Will Be Archived"
+    }
+    """
+    Then the response status should be 404
+
+  Scenario: Create conversation with explicit ID and metadata - exact retry with nil vs empty metadata
+    When I create a conversation with request:
+    """
+    {
+      "id": "meta-nil-empty-001",
+      "title": "Metadata Test"
+    }
+    """
+    Then the response status should be 201
+    # Retry with explicit empty metadata (should match nil)
+    When I create a conversation with request:
+    """
+    {
+      "id": "meta-nil-empty-001",
+      "title": "Metadata Test",
+      "metadata": {}
+    }
+    """
+    Then the response status should be 200
+
+  Scenario: Create conversation with explicit ID - multiple exact retries remain idempotent
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 201
+    And set "originalCreatedAt" to the json response field "createdAt"
+    # Second retry
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${originalCreatedAt}"
+    # Third retry
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${originalCreatedAt}"
+
+
+
+  Scenario: Create conversation with explicit ID - cross-user isolation (404 for different user)
+    Given I am authenticated as user "alice"
+    When I create a conversation with request:
+    """
+    {
+      "id": "cross-user-001",
+      "title": "Alice's Conversation"
+    }
+    """
+    Then the response status should be 201
+    # Switch to different user and try same ID
+    Given I am authenticated as user "bob"
+    When I create a conversation with request:
+    """
+    {
+      "id": "cross-user-001",
+      "title": "Alice's Conversation"
+    }
+    """
+    Then the response status should be 404
+
+  Scenario: Create conversation with explicit ID - concurrent exact retries produce one conversation
+    When I create a conversation with request:
+    """
+    {
+      "id": "concurrent-001",
+      "title": "Concurrent Test"
+    }
+    """
+    Then the response status should be 201
+    And set "firstCreatedAt" to the json response field "createdAt"
+    # Simulate concurrent retry (DB constraint fires, returns existing)
+    When I create a conversation with request:
+    """
+    {
+      "id": "concurrent-001",
+      "title": "Concurrent Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${firstCreatedAt}"
+    # Verify only one conversation exists
+    When I call GET "/v1/conversations/concurrent-001"
+    Then the response status should be 200
+    And the response body "id" should be "concurrent-001"

@@ -384,6 +384,11 @@ func int64PointersEqual(left, right *int64) bool {
 }
 
 // EpochForChannel applies epoch semantics to an entry. Epochs belong only to
+
+func uuidPointersEqual(left, right *uuid.UUID) bool {
+	return left == nil && right == nil || left != nil && right != nil && *left == *right
+}
+
 // context entries; context defaults to epoch 1 when the request omits one.
 func EpochForChannel(channel model.Channel, requested *int64) *int64 {
 	if channel != model.ChannelContext {

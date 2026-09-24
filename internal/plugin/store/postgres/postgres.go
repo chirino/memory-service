@@ -278,19 +278,23 @@ func (s *PostgresStore) decryptEntryContent(entryID uuid.UUID, data []byte) ([]b
 
 func (s *PostgresStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	convID := string(uuid.NewString())
+	result, err := s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Conversation, nil
+}
+
+func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *PostgresStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
-}
-
-func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *PostgresStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	// Started-by references have no foreign key. Hold the explicit parent lock
 	// through child creation even when the caller has not opened a write scope.
 	if startedByConversationID != nil {
 		if scoped, ok := scopeFromContext(ctx); !ok || scoped == nil {
-			var result *registrystore.ConversationDetail
+			var result *registrystore.CreateConversationResult
 			err := s.InWriteTx(ctx, func(txCtx context.Context) error {
 				var err error
 				result, err = s.createConversationWithID(txCtx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID)
@@ -445,38 +449,66 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		return nil, fmt.Errorf("failed to create conversation: %w", createResult.Error)
 	}
 	if createResult.RowsAffected == 0 {
+		// Conflict detected - fetch existing record WITHOUT archive filter to handle all cases
 		var existing model.Conversation
-		result := db.Where("id = ? AND archived_at IS NULL", convID).Limit(1).Find(&existing)
+		result := db.Where("id = ?", convID).Limit(1).Find(&existing)
 		if result.Error != nil {
 			return nil, fmt.Errorf("failed to load existing conversation: %w", result.Error)
 		}
 		if result.RowsAffected == 0 {
-			return nil, fmt.Errorf("failed to load existing conversation after conflict: %s", convID)
+			return nil, fmt.Errorf("conflict on insert but existing record not found: %s", convID)
 		}
-		if err := s.hydrateConversationFork(ctx, &existing); err != nil {
-			return nil, err
+
+		// 1. Archived conversation - treat as unavailable (same as not found)
+		if existing.ArchivedAt != nil {
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
 		}
-		title, err := s.decryptConversationTitle(existing.ID, existing.Title)
+
+		// 2. User isolation - another user owns this ID
+		if existing.OwnerUserID != userID {
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+		}
+
+		// Decrypt title for comparison
+		decryptedTitle, err := s.decryptConversationTitle(existing.ID, existing.Title)
 		if err != nil {
 			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
 		}
-		return &registrystore.ConversationDetail{
-			ConversationSummary: registrystore.ConversationSummary{
-				ID:                      existing.ID,
-				Title:                   title,
-				OwnerUserID:             existing.OwnerUserID,
-				ClientID:                existing.ClientID,
-				AgentID:                 existing.AgentID,
-				Metadata:                existing.Metadata,
-				ConversationGroupID:     existing.ConversationGroupID,
-				ForkedAtConversationID:  existing.ForkedAtConversationID,
-				ForkedAtEntryID:         existing.ForkedAtEntryID,
-				StartedByConversationID: existing.StartedByConversationID,
-				StartedByEntryID:        existing.StartedByEntryID,
-				CreatedAt:               existing.CreatedAt,
-				UpdatedAt:               existing.UpdatedAt,
-				AccessLevel:             model.AccessLevelOwner,
+
+		// Hydrate fork lineage before comparison (fork fields are populated from ancestry table)
+		if err := s.hydrateConversationFork(ctx, &existing); err != nil {
+			return nil, err
+		}
+
+		// 3. Compare complete creation request
+		if !registrystore.ConversationsMatch(&existing, userID, clientID, title, decryptedTitle, metadata, agentID,
+			forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID) {
+			// Conflicting retry
+			return nil, registrystore.NewConversationIDConflictError(convID)
+		}
+
+		// Exact retry - return existing conversation
+
+		return &registrystore.CreateConversationResult{
+			Conversation: &registrystore.ConversationDetail{
+				ConversationSummary: registrystore.ConversationSummary{
+					ID:                      existing.ID,
+					Title:                   decryptedTitle,
+					OwnerUserID:             existing.OwnerUserID,
+					ClientID:                existing.ClientID,
+					AgentID:                 existing.AgentID,
+					Metadata:                existing.Metadata,
+					ConversationGroupID:     existing.ConversationGroupID,
+					ForkedAtConversationID:  existing.ForkedAtConversationID,
+					ForkedAtEntryID:         existing.ForkedAtEntryID,
+					StartedByConversationID: existing.StartedByConversationID,
+					StartedByEntryID:        existing.StartedByEntryID,
+					CreatedAt:               existing.CreatedAt,
+					UpdatedAt:               existing.UpdatedAt,
+					AccessLevel:             model.AccessLevelOwner,
+				},
 			},
+			ExactRetry: true,
 		}, nil
 	}
 
@@ -509,23 +541,26 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		}
 	}
 
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      convID,
-			Title:                   title,
-			OwnerUserID:             ownerUserID,
-			ClientID:                clientID,
-			AgentID:                 agentID,
-			Metadata:                metadata,
-			ConversationGroupID:     actualGroupID,
-			ForkedAtConversationID:  forkedAtConversationID,
-			ForkedAtEntryID:         forkedAtEntryID,
-			StartedByConversationID: logicalStartedByConversationID,
-			StartedByEntryID:        logicalStartedByEntryID,
-			CreatedAt:               now,
-			UpdatedAt:               now,
-			AccessLevel:             model.AccessLevelOwner,
+	return &registrystore.CreateConversationResult{
+		Conversation: &registrystore.ConversationDetail{
+			ConversationSummary: registrystore.ConversationSummary{
+				ID:                      convID,
+				Title:                   title,
+				OwnerUserID:             ownerUserID,
+				ClientID:                clientID,
+				AgentID:                 agentID,
+				Metadata:                metadata,
+				ConversationGroupID:     actualGroupID,
+				ForkedAtConversationID:  forkedAtConversationID,
+				ForkedAtEntryID:         forkedAtEntryID,
+				StartedByConversationID: logicalStartedByConversationID,
+				StartedByEntryID:        logicalStartedByEntryID,
+				CreatedAt:               now,
+				UpdatedAt:               now,
+				AccessLevel:             model.AccessLevelOwner,
+			},
 		},
+		ExactRetry: false,
 	}, nil
 }
 
@@ -1843,19 +1878,25 @@ func (s *PostgresStore) appendEntries(ctx context.Context, userID string, conver
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.
-			pgErr, ok := pgUniqueViolation(err)
-			if !ok {
+			// createConversationWithID now handles the raw PK violation internally and
+			// returns ConversationIDConflictError when fields differ. In the auto-create
+			// path that simply means the conversation already exists — load it and go on.
+			pgErr, isPgViolation := pgUniqueViolation(err)
+			var convIDConflict *registrystore.ConversationIDConflictError
+			if !isPgViolation && !errors.As(err, &convIDConflict) {
 				return nil, err
 			}
-			log.Warn("append auto-create race detected",
-				"userID", userID,
-				"conversationID", string(conversationID),
-				"constraint", pgErr.ConstraintName,
-				"table", pgErr.TableName,
-				"detail", pgErr.Detail,
-				"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
-				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
-			)
+			if isPgViolation {
+				log.Warn("append auto-create race detected",
+					"userID", userID,
+					"conversationID", string(conversationID),
+					"constraint", pgErr.ConstraintName,
+					"table", pgErr.TableName,
+					"detail", pgErr.Detail,
+					"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
+					"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+				)
+			}
 			loaded := false
 			for attempt := 0; attempt < 10; attempt++ {
 				convResult = db.
@@ -1875,17 +1916,17 @@ func (s *PostgresStore) appendEntries(ctx context.Context, userID string, conver
 				return nil, err
 			}
 		} else {
-			encTitle, err := s.encryptConversationTitle(detail.ID, detail.Title)
+			encTitle, err := s.encryptConversationTitle(detail.Conversation.ID, detail.Conversation.Title)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt title: %w", err)
 			}
 			conv = model.Conversation{
-				ID:                  detail.ID,
-				ConversationGroupID: detail.ConversationGroupID,
-				OwnerUserID:         detail.OwnerUserID,
+				ID:                  detail.Conversation.ID,
+				ConversationGroupID: detail.Conversation.ConversationGroupID,
+				OwnerUserID:         detail.Conversation.OwnerUserID,
 				Title:               encTitle,
-				CreatedAt:           detail.CreatedAt,
-				UpdatedAt:           detail.UpdatedAt,
+				CreatedAt:           detail.Conversation.CreatedAt,
+				UpdatedAt:           detail.Conversation.UpdatedAt,
 			}
 		}
 	}

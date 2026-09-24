@@ -32,9 +32,12 @@ func TestSQLiteMetadataFilterLatestMatchingFork(t *testing.T) {
 
 	var root *registrystore.ConversationDetail
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var createErr error
-		root, createErr = store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Root", map[string]interface{}{"match": "yes"}, nil, nil, nil)
-		return createErr
+		result, createErr := store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Root", map[string]interface{}{"match": "yes"}, nil, nil, nil)
+		if createErr != nil {
+			return createErr
+		}
+		root = result.Conversation
+		return nil
 	})
 	require.NoError(t, err)
 
@@ -95,9 +98,12 @@ func TestSQLiteMetadataFilterMatchesOnlyScalarStrings(t *testing.T) {
 
 	var stringConv *registrystore.ConversationDetail
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var createErr error
-		stringConv, createErr = store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "String", map[string]interface{}{"kind": "1"}, nil, nil, nil)
-		return createErr
+		result, createErr := store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "String", map[string]interface{}{"kind": "1"}, nil, nil, nil)
+		if createErr != nil {
+			return createErr
+		}
+		stringConv = result.Conversation
+		return nil
 	})
 	require.NoError(t, err)
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
@@ -146,11 +152,11 @@ func TestSQLiteMetadataFilterSameKeyDuplicateAND(t *testing.T) {
 
 	var convRunning *registrystore.ConversationDetail
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var createErr error
-		convRunning, createErr = store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Running", map[string]interface{}{"status": "running"}, nil, nil, nil)
+		result, createErr := store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Running", map[string]interface{}{"status": "running"}, nil, nil, nil)
 		if createErr != nil {
 			return createErr
 		}
+		convRunning = result.Conversation
 		_, createErr = store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000002", "Waiting", map[string]interface{}{"status": "waiting"}, nil, nil, nil)
 		if createErr != nil {
 			return createErr
@@ -225,9 +231,12 @@ func TestSQLiteMetadataFilterInvalidCursor(t *testing.T) {
 	// Public inaccessible cursor returns BadRequestError
 	var convUser2 *registrystore.ConversationDetail
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var createErr error
-		convUser2, createErr = store.CreateConversationWithID(txCtx, "user2", "", "00000000-0000-4000-8000-000000000099", "User2 Conv", nil, nil, nil, nil)
-		return createErr
+		result, createErr := store.CreateConversationWithID(txCtx, "user2", "", "00000000-0000-4000-8000-000000000099", "User2 Conv", nil, nil, nil, nil)
+		if createErr != nil {
+			return createErr
+		}
+		convUser2 = result.Conversation
+		return nil
 	})
 	require.NoError(t, err)
 	inaccessibleCursor := convUser2.ID
@@ -370,9 +379,12 @@ func TestSQLiteMetadataFilterNotEqual(t *testing.T) {
 
 	var conv1 *registrystore.ConversationDetail
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var createErr error
-		conv1, createErr = store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Conv1", map[string]interface{}{"status": "running"}, nil, nil, nil)
-		return createErr
+		result, createErr := store.CreateConversationWithID(txCtx, "user1", "", "00000000-0000-4000-8000-000000000001", "Conv1", map[string]interface{}{"status": "running"}, nil, nil, nil)
+		if createErr != nil {
+			return createErr
+		}
+		conv1 = result.Conversation
+		return nil
 	})
 	require.NoError(t, err)
 	err = store.InWriteTx(ctx, func(txCtx context.Context) error {

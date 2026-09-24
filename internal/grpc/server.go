@@ -610,16 +610,23 @@ func (s *ConversationsServer) CreateConversation(ctx context.Context, req *pb.Cr
 	conv, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.ConversationDetail, error) {
 		clientID := getClientID(ctx)
 		var conv *registrystore.ConversationDetail
+		var isExactRetry bool
 		var err error
 		if convID != nil {
-			conv, err = s.Store.CreateConversationWithID(txCtx, userID, clientID, *convID, req.GetTitle(), meta, agentID, forkConvID, forkEntryID)
+			result, err := s.Store.CreateConversationWithID(txCtx, userID, clientID, *convID, req.GetTitle(), meta, agentID, forkConvID, forkEntryID)
+			if err != nil {
+				return nil, err
+			}
+			conv = result.Conversation
+			isExactRetry = result.ExactRetry
 		} else {
 			conv, err = s.Store.CreateConversation(txCtx, userID, clientID, req.GetTitle(), meta, agentID, forkConvID, forkEntryID)
+			if err != nil {
+				return nil, err
+			}
 		}
-		if err != nil {
-			return nil, err
-		}
-		if s.EventBus != nil && conv != nil {
+		// Suppress events for exact retry (following #528 pattern)
+		if s.EventBus != nil && conv != nil && !isExactRetry {
 			events := []registryeventbus.Event{{
 				Event: "created",
 				Kind:  "conversation",

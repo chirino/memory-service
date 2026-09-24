@@ -488,6 +488,25 @@ type conversationAncestryDoc struct {
 	Ancestors            []ancestryAncestorDoc `bson:"ancestors"`
 }
 
+func (c convDoc) toModel() model.Conversation {
+	return model.Conversation{
+		ID:                      c.ID,
+		Title:                   c.Title,
+		OwnerUserID:             c.OwnerUserID,
+		ClientID:                c.ClientID,
+		AgentID:                 c.AgentID,
+		Metadata:                c.Metadata,
+		ConversationGroupID:     strToUUID(c.ConversationGroupID),
+		ForkedAtConversationID:  c.ForkedAtConversationID,
+		ForkedAtEntryID:         c.ForkedAtEntryID,
+		StartedByConversationID: c.StartedByConversationID,
+		StartedByEntryID:        ptrStrToUUID(c.StartedByEntryID),
+		CreatedAt:               c.CreatedAt,
+		UpdatedAt:               c.UpdatedAt,
+		ArchivedAt:              c.ArchivedAt,
+	}
+}
+
 type memberDoc struct {
 	ConversationGroupID string            `bson:"conversation_group_id"`
 	UserID              string            `bson:"user_id"`
@@ -945,14 +964,18 @@ func (s *MongoStore) resolveConversationID(ctx context.Context, groupID string) 
 // --- Conversations ---
 
 func (s *MongoStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversation(ctx, userID, clientID, agentID, string(uuid.NewString()), title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	result, err := s.createConversation(ctx, userID, clientID, agentID, string(uuid.NewString()), title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Conversation, nil
 }
 
-func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	return s.createConversation(ctx, userID, clientID, agentID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *MongoStore) createConversation(ctx context.Context, userID string, clientID string, agentID *string, convID string, title string, metadata map[string]any, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *MongoStore) createConversation(ctx context.Context, userID string, clientID string, agentID *string, convID string, title string, metadata map[string]any, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	groupID := uuid.New()
 	now := time.Now()
 
@@ -1092,18 +1115,102 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		return nil, err
 	}
 	if existingDetail != nil {
-		return existingDetail, nil
+		// Ancestry exists - load and validate the existing conversation before declaring exact retry
+		var existing convDoc
+		findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing)
+		if findErr != nil {
+			// Clean up provisional ancestry claim
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, fmt.Errorf("ancestry exists but conversation not found: %s", convID)
+		}
+
+		// 1. Archived conversation - treat as unavailable
+		if existing.ArchivedAt != nil {
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+		}
+
+		// 2. User isolation - another user owns this ID
+		if existing.OwnerUserID != userID {
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+		}
+
+		// Decrypt title for comparison
+		decryptedTitle, err := s.decryptConversationTitle(existing.ID, existing.Title)
+		if err != nil {
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
+
+		// Hydrate fork lineage before comparison (fork fields are populated from ancestry collection)
+		if err := s.hydrateConversationLineage(ctx, &existing); err != nil {
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, err
+		}
+
+		// 3. Compare complete creation request
+		existingModel := existing.toModel()
+		if !registrystore.ConversationsMatch(&existingModel, userID, clientID, title, decryptedTitle, metadata, agentID,
+			forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID) {
+			// Conflicting retry - clean up provisional ancestry
+			_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+			return nil, registrystore.NewConversationIDConflictError(convID)
+		}
+
+		// Exact retry - return validated existing conversation
+		return &registrystore.CreateConversationResult{
+			Conversation: existingDetail,
+			ExactRetry:   true,
+		}, nil
 	}
 	if _, err := s.conversations().InsertOne(ctx, doc); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
+			// Conflict detected - fetch existing record WITHOUT archive filter
 			var existing convDoc
-			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing); findErr == nil {
-				summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
-				if summaryErr != nil {
-					return nil, summaryErr
-				}
-				return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
+			findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing)
+			if findErr != nil {
+				return nil, fmt.Errorf("conflict on insert but existing record not found: %s", convID)
 			}
+
+			// 1. Archived conversation - treat as unavailable
+			if existing.ArchivedAt != nil {
+				return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+			}
+
+			// 2. User isolation - another user owns this ID
+			if existing.OwnerUserID != userID {
+				return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+			}
+
+			// Decrypt title for comparison
+			decryptedTitle, err := s.decryptConversationTitle(existing.ID, existing.Title)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
+
+			// 3. Compare complete creation request
+			existingModel := existing.toModel()
+			if !registrystore.ConversationsMatch(&existingModel, userID, clientID, title, decryptedTitle, metadata, agentID,
+				forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID) {
+				// Conflicting retry
+				return nil, registrystore.NewConversationIDConflictError(convID)
+			}
+
+			// Exact retry - hydrate and return existing conversation
+			if err := s.hydrateConversationLineage(ctx, &existing); err != nil {
+				return nil, err
+			}
+
+			summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
+			if summaryErr != nil {
+				return nil, summaryErr
+			}
+
+			return &registrystore.CreateConversationResult{
+				Conversation: &registrystore.ConversationDetail{ConversationSummary: summary},
+				ExactRetry:   true,
+			}, nil
 		}
 		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
@@ -1133,23 +1240,26 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 			}
 		}
 	}
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      convID,
-			Title:                   title,
-			OwnerUserID:             ownerUserID,
-			ClientID:                clientID,
-			AgentID:                 agentID,
-			Metadata:                metadata,
-			ConversationGroupID:     strToUUID(actualGroupID),
-			ForkedAtConversationID:  forkedAtConversationID,
-			ForkedAtEntryID:         forkedAtEntryID,
-			StartedByConversationID: logicalStartedByConversationID,
-			StartedByEntryID:        logicalStartedByEntryID,
-			CreatedAt:               now,
-			UpdatedAt:               now,
-			AccessLevel:             model.AccessLevelOwner,
+	return &registrystore.CreateConversationResult{
+		Conversation: &registrystore.ConversationDetail{
+			ConversationSummary: registrystore.ConversationSummary{
+				ID:                      convID,
+				Title:                   title,
+				OwnerUserID:             ownerUserID,
+				ClientID:                clientID,
+				AgentID:                 agentID,
+				Metadata:                metadata,
+				ConversationGroupID:     strToUUID(actualGroupID),
+				ForkedAtConversationID:  forkedAtConversationID,
+				ForkedAtEntryID:         forkedAtEntryID,
+				StartedByConversationID: logicalStartedByConversationID,
+				StartedByEntryID:        logicalStartedByEntryID,
+				CreatedAt:               now,
+				UpdatedAt:               now,
+				AccessLevel:             model.AccessLevelOwner,
+			},
 		},
+		ExactRetry: false,
 	}, nil
 }
 
@@ -2637,12 +2747,27 @@ func (s *MongoStore) appendEntries(ctx context.Context, userID string, conversat
 		}
 		detail, createErr := s.createConversation(ctx, userID, resolvedClientID, agentID, conversationID, "", nil, forkedAtConvID, forkedAtEntryID, startedByConversationID, startedByEntryID)
 		if createErr != nil {
-			return nil, createErr
-		}
-		conv = convDoc{
-			ID:                  string(detail.ID),
-			ConversationGroupID: uuidToStr(detail.ConversationGroupID),
-			OwnerUserID:         detail.OwnerUserID,
+			// createConversation handles the raw PK violation internally and returns
+			// ConversationIDConflictError when fields differ. In the auto-create path
+			// that means the conversation already exists — load it and continue.
+			var convIDConflict *registrystore.ConversationIDConflictError
+			if !errors.As(createErr, &convIDConflict) {
+				return nil, createErr
+			}
+			// Load the existing conversation by ID and continue with the append.
+			var existingDoc convDoc
+			if findErr := s.conversations().FindOne(ctx,
+				bson.M{"_id": string(conversationID)},
+			).Decode(&existingDoc); findErr != nil {
+				return nil, createErr
+			}
+			conv = existingDoc
+		} else {
+			conv = convDoc{
+				ID:                  string(detail.Conversation.ID),
+				ConversationGroupID: uuidToStr(detail.Conversation.ConversationGroupID),
+				OwnerUserID:         detail.Conversation.OwnerUserID,
+			}
 		}
 	}
 	// Block appending to archived conversations. Use explicit unarchive via conversationPatch.archived=false first.

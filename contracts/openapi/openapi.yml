@@ -202,6 +202,13 @@ paths:
       summary: Create a conversation
       description: |-
         Creates a new conversation owned by the current user.
+
+        **Idempotency**: When a conversation ID is provided in the request, this
+        operation is idempotent. If the exact same conversation already exists
+        (same ID, title, metadata, and ownership), the operation returns 200 OK
+        with the existing conversation. If a conversation with the same ID exists
+        but has different properties, the operation returns 409 Conflict with
+        error code `conversation_already_exists`.
       operationId: createConversation
       requestBody:
         required: true
@@ -210,12 +217,44 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateConversationRequest'
       responses:
+        '200':
+          description: |-
+            Exact retry: a conversation with the provided ID already exists and
+            matches all request properties (title, metadata, ownership). Returns
+            the existing conversation without creating a duplicate.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Conversation'
         '201':
           description: The created conversation.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/Conversation'
+        '404':
+          description: |-
+            A conversation with the provided ID exists but is archived or belongs
+            to a different user.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |-
+            A conversation with the provided ID already exists but has different
+            properties (title, metadata, or ownership). Error code will be
+            `conversation_already_exists`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              example:
+                code: "conversation_already_exists"
+                error: "conversation with id 550e8400-e29b-41d4-a716-446655440000 exists but the request differs"
+                requestId: "req_abc123"
+                details:
+                  conversationId: "550e8400-e29b-41d4-a716-446655440000"
         default:
           $ref: '#/components/responses/Error'
       security:

@@ -1913,6 +1913,13 @@ type ClientInterface interface {
 	//
 	// Creates a new conversation owned by the current user.
 	//
+	// **Idempotency**: When a conversation ID is provided in the request, this
+	// operation is idempotent. If the exact same conversation already exists
+	// (same ID, title, metadata, and ownership), the operation returns 200 OK
+	// with the existing conversation. If a conversation with the same ID exists
+	// but has different properties, the operation returns 409 Conflict with
+	// error code `conversation_already_exists`.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /v1/conversations (the `CreateConversation` operationId).
@@ -1921,6 +1928,13 @@ type ClientInterface interface {
 	// CreateConversation Create a conversation
 	//
 	// Creates a new conversation owned by the current user.
+	//
+	// **Idempotency**: When a conversation ID is provided in the request, this
+	// operation is idempotent. If the exact same conversation already exists
+	// (same ID, title, metadata, and ownership), the operation returns 200 OK
+	// with the existing conversation. If a conversation with the same ID exists
+	// but has different properties, the operation returns 409 Conflict with
+	// error code `conversation_already_exists`.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -2575,6 +2589,13 @@ func (c *Client) ListConversations(ctx context.Context, params *ListConversation
 //
 // Creates a new conversation owned by the current user.
 //
+// **Idempotency**: When a conversation ID is provided in the request, this
+// operation is idempotent. If the exact same conversation already exists
+// (same ID, title, metadata, and ownership), the operation returns 200 OK
+// with the existing conversation. If a conversation with the same ID exists
+// but has different properties, the operation returns 409 Conflict with
+// error code `conversation_already_exists`.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /v1/conversations (the `CreateConversation` operationId).
@@ -2593,6 +2614,13 @@ func (c *Client) CreateConversationWithBody(ctx context.Context, contentType str
 // CreateConversation Create a conversation
 //
 // Creates a new conversation owned by the current user.
+//
+// **Idempotency**: When a conversation ID is provided in the request, this
+// operation is idempotent. If the exact same conversation already exists
+// (same ID, title, metadata, and ownership), the operation returns 200 OK
+// with the existing conversation. If a conversation with the same ID exists
+// but has different properties, the operation returns 409 Conflict with
+// error code `conversation_already_exists`.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -5887,6 +5915,13 @@ type ClientWithResponsesInterface interface {
 	//
 	// Creates a new conversation owned by the current user.
 	//
+	// **Idempotency**: When a conversation ID is provided in the request, this
+	// operation is idempotent. If the exact same conversation already exists
+	// (same ID, title, metadata, and ownership), the operation returns 200 OK
+	// with the existing conversation. If a conversation with the same ID exists
+	// but has different properties, the operation returns 409 Conflict with
+	// error code `conversation_already_exists`.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/conversations (the `CreateConversation` operationId).
@@ -5895,6 +5930,13 @@ type ClientWithResponsesInterface interface {
 	// CreateConversationWithResponse Create a conversation
 	//
 	// Creates a new conversation owned by the current user.
+	//
+	// **Idempotency**: When a conversation ID is provided in the request, this
+	// operation is idempotent. If the exact same conversation already exists
+	// (same ID, title, metadata, and ownership), the operation returns 200 OK
+	// with the existing conversation. If a conversation with the same ID exists
+	// but has different properties, the operation returns 409 Conflict with
+	// error code `conversation_already_exists`.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6813,15 +6855,36 @@ func (r ListConversationsResp) ContentType() string {
 type CreateConversationResp struct {
 	Body         []byte
 	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *Conversation
 	// JSON201 the response for an HTTP 201 `application/json` response
 	JSON201 *Conversation
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r CreateConversationResp) GetJSON200() *Conversation {
+	return r.JSON200
 }
 
 // GetJSON201 returns the response for an HTTP 201 `application/json` response
 func (r CreateConversationResp) GetJSON201() *Conversation {
 	return r.JSON201
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r CreateConversationResp) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r CreateConversationResp) GetJSON409() *ErrorResponse {
+	return r.JSON409
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -8552,6 +8615,13 @@ func (c *ClientWithResponses) ListConversationsWithResponse(ctx context.Context,
 //
 // Creates a new conversation owned by the current user.
 //
+// **Idempotency**: When a conversation ID is provided in the request, this
+// operation is idempotent. If the exact same conversation already exists
+// (same ID, title, metadata, and ownership), the operation returns 200 OK
+// with the existing conversation. If a conversation with the same ID exists
+// but has different properties, the operation returns 409 Conflict with
+// error code `conversation_already_exists`.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /v1/conversations (the `CreateConversation` operationId).
@@ -8566,6 +8636,13 @@ func (c *ClientWithResponses) CreateConversationWithBodyWithResponse(ctx context
 // CreateConversationWithResponse Create a conversation
 //
 // Creates a new conversation owned by the current user.
+//
+// **Idempotency**: When a conversation ID is provided in the request, this
+// operation is idempotent. If the exact same conversation already exists
+// (same ID, title, metadata, and ownership), the operation returns 200 OK
+// with the existing conversation. If a conversation with the same ID exists
+// but has different properties, the operation returns 409 Conflict with
+// error code `conversation_already_exists`.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -9632,12 +9709,33 @@ func ParseCreateConversationResp(rsp *http.Response) (*CreateConversationResp, e
 	}
 
 	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest Conversation
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
 		var dest Conversation
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

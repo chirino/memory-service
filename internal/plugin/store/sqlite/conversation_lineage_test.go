@@ -50,9 +50,12 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 	concrete := store.(*SQLiteStore)
 	var parent *registrystore.ConversationDetail
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var err error
-		parent, err = store.CreateConversationWithID(txCtx, "user1", "client1", "parent", "Parent", nil, nil, nil, nil)
-		return err
+		result, err := store.CreateConversationWithID(txCtx, "user1", "client1", "parent", "Parent", nil, nil, nil, nil)
+		if err != nil {
+			return err
+		}
+		parent = result.Conversation
+		return nil
 	}))
 
 	var parentEntries []model.Entry
@@ -71,9 +74,12 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 
 	var child *registrystore.ConversationDetail
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
-		var err error
-		child, err = concrete.createConversationWithID(txCtx, "user1", "client1", "child", "Child", nil, nil, nil, nil, &parent.ID, &parentEntries[0].ID)
-		return err
+		result, err := concrete.createConversationWithID(txCtx, "user1", "client1", "child", "Child", nil, nil, nil, nil, &parent.ID, &parentEntries[0].ID)
+		if err != nil {
+			return err
+		}
+		child = result.Conversation
+		return nil
 	}))
 	var childEntries []model.Entry
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {

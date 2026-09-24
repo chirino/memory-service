@@ -6,6 +6,7 @@ import (
 )
 
 const DuplicateSequenceConflictCode = "duplicate_sequence"
+const ConversationAlreadyExistsCode = "conversation_already_exists"
 
 // NotFoundError indicates the resource was not found (or user lacks access).
 type NotFoundError struct {
@@ -48,6 +49,31 @@ func NewDuplicateSequenceConflict() error {
 func IsDuplicateSequenceConflict(err error) bool {
 	var conflict *ConflictError
 	return errors.As(err, &conflict) && conflict.Code == DuplicateSequenceConflictCode
+}
+
+// ConversationIDConflictError indicates a conversation with the provided ID exists
+// but the request differs from the stored conversation.
+// It embeds ConflictError so errors.As() can detect it for gRPC error mapping.
+type ConversationIDConflictError struct {
+	*ConflictError
+	ConversationID string
+}
+
+func (e *ConversationIDConflictError) Unwrap() error {
+	return e.ConflictError
+}
+
+func NewConversationIDConflictError(conversationID string) error {
+	return &ConversationIDConflictError{
+		ConflictError: &ConflictError{
+			Message: fmt.Sprintf("conversation with id %s exists but the request differs", conversationID),
+			Code:    ConversationAlreadyExistsCode,
+			Details: map[string]interface{}{
+				"conversationId": conversationID,
+			},
+		},
+		ConversationID: conversationID,
+	}
 }
 
 // ForbiddenError indicates insufficient access.

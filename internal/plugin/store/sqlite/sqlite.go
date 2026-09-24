@@ -457,14 +457,18 @@ func (s *SQLiteStore) decryptEntryContent(entryID uuid.UUID, data []byte) ([]byt
 
 func (s *SQLiteStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
 	convID := string(uuid.NewString())
+	result, err := s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Conversation, nil
+}
+
+func (s *SQLiteStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *SQLiteStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversationWithID(ctx, userID, clientID, convID, title, metadata, agentID, forkedAtConversationID, forkedAtEntryID, nil, nil)
-}
-
-func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	db := s.writeDBFor(ctx, "sqlite store create conversation")
 	groupID := uuid.New()
 	now := time.Now()
@@ -594,15 +598,81 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		UpdatedAt:               now,
 	}
 
-	if err := db.Create(&conv).Error; err != nil {
-		logDuplicateKey("createConversationWithID:createConversation", err,
+	createErr := db.Create(&conv).Error
+	if createErr != nil {
+		// Check if this is a duplicate key error
+		if _, ok := sqliteUniqueViolation(createErr); ok {
+			// Conflict detected - fetch existing record WITHOUT archive filter
+			var existing model.Conversation
+			result := db.Where("id = ?", convID).Limit(1).Find(&existing)
+			if result.Error != nil {
+				return nil, fmt.Errorf("failed to load existing conversation: %w", result.Error)
+			}
+			if result.RowsAffected == 0 {
+				return nil, fmt.Errorf("conflict on insert but existing record not found: %s", convID)
+			}
+
+			// 1. Archived conversation - treat as unavailable
+			if existing.ArchivedAt != nil {
+				return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+			}
+
+			// 2. User isolation - another user owns this ID
+			if existing.OwnerUserID != userID {
+				return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+			}
+
+			// Decrypt title for comparison
+			decryptedTitle, err := s.decryptConversationTitle(existing.ID, existing.Title)
+			if err != nil {
+				return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+			}
+
+			// Hydrate fork lineage before comparison (fork fields are populated from ancestry table)
+			if err := s.hydrateConversationFork(ctx, &existing); err != nil {
+				return nil, err
+			}
+
+			// 3. Compare complete creation request
+			if !registrystore.ConversationsMatch(&existing, userID, clientID, title, decryptedTitle, metadata, agentID,
+				forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID) {
+				// Conflicting retry
+				return nil, registrystore.NewConversationIDConflictError(convID)
+			}
+
+			// Exact retry - return existing conversation
+
+			return &registrystore.CreateConversationResult{
+				Conversation: &registrystore.ConversationDetail{
+					ConversationSummary: registrystore.ConversationSummary{
+						ID:                      existing.ID,
+						Title:                   decryptedTitle,
+						OwnerUserID:             existing.OwnerUserID,
+						ClientID:                existing.ClientID,
+						AgentID:                 existing.AgentID,
+						Metadata:                existing.Metadata,
+						ConversationGroupID:     existing.ConversationGroupID,
+						ForkedAtConversationID:  existing.ForkedAtConversationID,
+						ForkedAtEntryID:         existing.ForkedAtEntryID,
+						StartedByConversationID: existing.StartedByConversationID,
+						StartedByEntryID:        existing.StartedByEntryID,
+						CreatedAt:               existing.CreatedAt,
+						UpdatedAt:               existing.UpdatedAt,
+						AccessLevel:             model.AccessLevelOwner,
+					},
+				},
+				ExactRetry: true,
+			}, nil
+		}
+
+		logDuplicateKey("createConversationWithID:createConversation", createErr,
 			"userID", userID,
 			"conversationID", string(convID),
 			"conversationGroupID", actualGroupID.String(),
 			"forkedAtConversationID", conversationIDPtrString(forkedAtConversationID),
 			"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
 		)
-		return nil, fmt.Errorf("failed to create conversation: %w", err)
+		return nil, fmt.Errorf("failed to create conversation: %w", createErr)
 	}
 
 	if err := s.createConversationAncestry(ctx, db, actualGroupID, convID, sourceConv, forkedAtEntryID, anchorOwnerDepth); err != nil {
@@ -634,23 +704,26 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		}
 	}
 
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      convID,
-			Title:                   title,
-			OwnerUserID:             ownerUserID,
-			ClientID:                clientID,
-			AgentID:                 agentID,
-			Metadata:                metadata,
-			ConversationGroupID:     actualGroupID,
-			ForkedAtConversationID:  forkedAtConversationID,
-			ForkedAtEntryID:         forkedAtEntryID,
-			StartedByConversationID: logicalStartedByConversationID,
-			StartedByEntryID:        logicalStartedByEntryID,
-			CreatedAt:               now,
-			UpdatedAt:               now,
-			AccessLevel:             model.AccessLevelOwner,
+	return &registrystore.CreateConversationResult{
+		Conversation: &registrystore.ConversationDetail{
+			ConversationSummary: registrystore.ConversationSummary{
+				ID:                      convID,
+				Title:                   title,
+				OwnerUserID:             ownerUserID,
+				ClientID:                clientID,
+				AgentID:                 agentID,
+				Metadata:                metadata,
+				ConversationGroupID:     actualGroupID,
+				ForkedAtConversationID:  forkedAtConversationID,
+				ForkedAtEntryID:         forkedAtEntryID,
+				StartedByConversationID: logicalStartedByConversationID,
+				StartedByEntryID:        logicalStartedByEntryID,
+				CreatedAt:               now,
+				UpdatedAt:               now,
+				AccessLevel:             model.AccessLevelOwner,
+			},
 		},
+		ExactRetry: false,
 	}, nil
 }
 
@@ -1888,21 +1961,27 @@ func (s *SQLiteStore) appendEntries(ctx context.Context, userID string, conversa
 		if err != nil {
 			// Concurrent writers can race to auto-create the same root conversation.
 			// If another request won the insert, load the conversation and continue.
-			sqliteErr, ok := sqliteUniqueViolation(err)
-			if !ok {
+			// createConversationWithID now handles the raw PK violation internally and
+			// returns ConversationIDConflictError when fields differ. In the auto-create
+			// path that simply means the conversation already exists — load it and go on.
+			sqliteErr, isSQLiteViolation := sqliteUniqueViolation(err)
+			var convIDConflict *registrystore.ConversationIDConflictError
+			if !isSQLiteViolation && !errors.As(err, &convIDConflict) {
 				return nil, err
 			}
-			log.Warn("append auto-create race detected",
-				"userID", userID,
-				"conversationID", string(conversationID),
-				"sqliteCode", sqliteErr.Code,
-				"sqliteExtendedCode", sqliteErr.ExtendedCode,
-				"detail", sqliteErr.Error(),
-				"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
-				"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
-				"startedByConversationID", conversationIDPtrString(startedByConversationID),
-				"startedByEntryID", uuidPtrString(startedByEntryID),
-			)
+			if isSQLiteViolation {
+				log.Warn("append auto-create race detected",
+					"userID", userID,
+					"conversationID", string(conversationID),
+					"sqliteCode", sqliteErr.Code,
+					"sqliteExtendedCode", sqliteErr.ExtendedCode,
+					"detail", sqliteErr.Error(),
+					"forkedAtConversationID", conversationIDPtrString(forkedAtConvID),
+					"forkedAtEntryID", uuidPtrString(forkedAtEntryID),
+					"startedByConversationID", conversationIDPtrString(startedByConversationID),
+					"startedByEntryID", uuidPtrString(startedByEntryID),
+				)
+			}
 			loaded := false
 			for attempt := 0; attempt < 10; attempt++ {
 				convResult = db.
@@ -1922,19 +2001,19 @@ func (s *SQLiteStore) appendEntries(ctx context.Context, userID string, conversa
 				return nil, err
 			}
 		} else {
-			encTitle, err := s.encryptConversationTitle(detail.ID, detail.Title)
+			encTitle, err := s.encryptConversationTitle(detail.Conversation.ID, detail.Conversation.Title)
 			if err != nil {
 				return nil, fmt.Errorf("failed to encrypt title: %w", err)
 			}
 			conv = model.Conversation{
-				ID:                      detail.ID,
-				ConversationGroupID:     detail.ConversationGroupID,
-				OwnerUserID:             detail.OwnerUserID,
+				ID:                      detail.Conversation.ID,
+				ConversationGroupID:     detail.Conversation.ConversationGroupID,
+				OwnerUserID:             detail.Conversation.OwnerUserID,
 				Title:                   encTitle,
-				StartedByConversationID: detail.StartedByConversationID,
-				StartedByEntryID:        detail.StartedByEntryID,
-				CreatedAt:               detail.CreatedAt,
-				UpdatedAt:               detail.UpdatedAt,
+				StartedByConversationID: detail.Conversation.StartedByConversationID,
+				StartedByEntryID:        detail.Conversation.StartedByEntryID,
+				CreatedAt:               detail.Conversation.CreatedAt,
+				UpdatedAt:               detail.Conversation.UpdatedAt,
 			}
 		}
 	}
