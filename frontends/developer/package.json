@@ -25,7 +25,7 @@
     "@radix-ui/react-tabs": "^1.1.21",
     "@radix-ui/react-tooltip": "^1.2.16",
     "@tanstack/react-query": "5.102.0",
-    "@tanstack/react-router": "1.170.31",
+    "@tanstack/react-router": "1.170.36",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.562.0",
@@ -58,11 +58,12 @@
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.46.4",
     "vite": "^8.0.16",
-    "vitest": "^4.1.11",
-    "@tanstack/react-router": "1.170.36"
+    "vitest": "^4.1.11"
   },
   "overrides": {
     "js-yaml": "4.3.2",
-    "brace-expansion@^1": "1.1.18"
+    "brace-expansion@^1": "1.1.18",
+    "@babel/parser": "7.29.8",
+    "unplugin": "3.3.0"
   }
 }
