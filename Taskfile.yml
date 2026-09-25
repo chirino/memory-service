@@ -116,7 +116,7 @@ tasks:
   generate:typescript:
     cmds:
       - |
-        npx prettier -w \
+        npx --yes prettier -w \
           "typescript/vercelai/src/**/*.{ts,tsx,js}" \
           "typescript/examples/vecelai/chat-vecelai-ts/src/**/*.{ts,tsx,js}" \
           "typescript/examples/vecelai/doc-checkpoints/*/src/**/*.{ts,tsx,js}"
