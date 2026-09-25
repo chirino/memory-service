@@ -375,6 +375,84 @@
       "reason": "openai 3.x is a breaking major version; langchain-openai constrains openai<3.0.0; requires compatibility migration",
       "introducedBy": "upstream-constraint",
       "reviewCondition": "langchain-openai upgrades its openai constraint to support 3.x"
+    },
+    {
+      "ecosystem": "maven",
+      "name": "io.quarkiverse.langchain4j:quarkus-langchain4j-bom",
+      "pinnedVersion": "1.13.3",
+      "location": "java/pom.xml: quarkus-langchain4j.version",
+      "class": "temporary cooldown",
+      "reason": "1.14.0 published 2026-09-25 (0 days), inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.14.0",
+      "blockedPublishedAt": "2026-09-25",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "maven",
+      "name": "com.google.protobuf:protobuf-java",
+      "pinnedVersion": "4.36.1",
+      "location": "java/spring/pom.xml: protobuf.version",
+      "class": "temporary cooldown",
+      "reason": "4.36.2 published 2026-09-17 (8 days), inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "4.36.2",
+      "blockedPublishedAt": "2026-09-17",
+      "reviewAfter": "next dependency update (after 2026-09-27)"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "ai",
+      "pinnedVersion": "5.0.255",
+      "location": "typescript/examples/vecelai/*/package.json overrides",
+      "class": "temporary cooldown",
+      "reason": "5.0.266 published 2026-09-24 (1 day), inside 10-day cooldown; 5.0.255 is latest eligible",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "5.0.266",
+      "blockedPublishedAt": "2026-09-24T18:50:22Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "@ai-sdk/openai",
+      "pinnedVersion": "2.0.127",
+      "location": "typescript/examples/vecelai/*/package.json overrides",
+      "class": "temporary cooldown",
+      "reason": "2.0.130 published 2026-09-24 (1 day), inside 10-day cooldown; 2.0.127 is latest eligible",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "2.0.130",
+      "blockedPublishedAt": "2026-09-24T18:50:22Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "prettier",
+      "pinnedVersion": "3.9.6",
+      "location": "site/package.json, typescript/examples/vecelai/*/package.json",
+      "class": "temporary cooldown",
+      "reason": "3.9.7 published 2026-09-16 (9 days), 3.9.8 (2026-09-17, 8 days) both inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "3.9.9",
+      "blockedPublishedAt": "2026-09-23T06:31:34Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "npm",
+      "name": "prettier-plugin-astro",
+      "pinnedVersion": "0.14.1",
+      "location": "site/package.json",
+      "class": "temporary cooldown",
+      "reason": "1.1.0 published 2026-09-24 (1 day), inside 10-day cooldown; also major version bump",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.1.0",
+      "blockedPublishedAt": "2026-09-24T20:34:22Z",
+      "reviewAfter": "next dependency update, verify major version API compat"
     }
   ]
 }
