@@ -97,6 +97,39 @@ func TestAdminMemoryKindLifecycleRequiresJustification(t *testing.T) {
 	}
 }
 
+// Both admin prefixes are audited: /v1/admin/... and /admin/v1/....
+func TestAdminAuditMiddlewareCoversBothAdminPrefixes(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, path := range []string{"/v1/admin/conversations", "/admin/v1/memories"} {
+		t.Run(path, func(t *testing.T) {
+			router := gin.New()
+			router.Use(AdminAuditMiddleware(true))
+			router.GET(path, func(c *gin.Context) { c.Status(http.StatusNoContent) })
+
+			missing := httptest.NewRecorder()
+			router.ServeHTTP(missing, httptest.NewRequest(http.MethodGet, path, nil))
+			require.Equal(t, http.StatusBadRequest, missing.Code)
+
+			withQuery := httptest.NewRecorder()
+			router.ServeHTTP(withQuery, httptest.NewRequest(http.MethodGet, path+"?justification=approved", nil))
+			require.Equal(t, http.StatusNoContent, withQuery.Code)
+
+			withHeader := httptest.NewRecorder()
+			request := httptest.NewRequest(http.MethodGet, path, nil)
+			request.Header.Set("X-Justification", "approved")
+			router.ServeHTTP(withHeader, request)
+			require.Equal(t, http.StatusNoContent, withHeader.Code)
+		})
+	}
+
+	router := gin.New()
+	router.Use(AdminAuditMiddleware(true))
+	router.GET("/v1/conversations", func(c *gin.Context) { c.Status(http.StatusNoContent) })
+	nonAdmin := httptest.NewRecorder()
+	router.ServeHTTP(nonAdmin, httptest.NewRequest(http.MethodGet, "/v1/conversations", nil))
+	require.Equal(t, http.StatusNoContent, nonAdmin.Code)
+}
+
 func TestOperationEventMiddlewareUsesRouteTemplateAndNormalizedError(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	router := gin.New()

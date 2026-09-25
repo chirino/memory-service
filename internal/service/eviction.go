@@ -103,34 +103,9 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		}
 		var eventsToPublish []registryeventbus.Event
 		if err := e.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-			// Create vector delete tasks before hard-deleting so orphaned
-			// embeddings are cleaned up asynchronously by the task processor.
-			for _, id := range ids {
-				body := map[string]interface{}{"conversationGroupId": id.String()}
-				if err := e.store.CreateTask(writeCtx, "vector_store_delete", body); err != nil {
-					if _, interrupted := jobContextResult(ctx, err); interrupted {
-						return err
-					}
-					log.Error("Eviction: create vector delete task failed", "groupId", id, "err", err)
-					event.SetReason("task_create_failed")
-					event.EnrichError(err)
-					failures++
-				}
-			}
-			deletedGroups, err := e.store.LoadDeletedConversationGroups(writeCtx, ids)
-			if err != nil {
-				return err
-			}
-			appended, used, err := eventstream.AppendOutboxEvents(writeCtx, e.store, eventstream.ConversationDeletedEvents(deletedGroups)...)
-			if err != nil {
-				return err
-			}
-			if used {
-				eventsToPublish = appended
-			} else {
-				eventsToPublish = eventstream.ConversationDeletedEvents(deletedGroups)
-			}
-			return e.store.HardDeleteConversationGroups(writeCtx, ids)
+			var err error
+			eventsToPublish, err = eventstream.DeleteConversationGroups(writeCtx, e.store, ids)
+			return err
 		}); err != nil {
 			if markJobInterrupted(event, ctx, err) {
 				return

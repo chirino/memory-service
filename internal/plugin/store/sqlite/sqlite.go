@@ -2220,6 +2220,8 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
+// Like normal root creation it must also write the ancestry self row, or
+// ancestry-backed context and entry-listing reads fail after the first sync.
 func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (model.Conversation, error) {
 	db := s.writeDBFor(ctx, "sqlite store auto create conversation")
 	now := time.Now()
@@ -3221,6 +3223,17 @@ func (s *SQLiteStore) CountEvictableGroups(ctx context.Context, cutoff time.Time
 func (s *SQLiteStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]registrystore.DeletedConversationGroup, error) {
 	if len(groupIDs) == 0 {
 		return nil, nil
+	}
+
+	db := s.writeDBFor(ctx, "prepare conversation deletion")
+	groupIDs, err := registrystore.ExpandConversationGroupDeletion(groupIDs, func(frontier []uuid.UUID) ([]uuid.UUID, error) {
+		parents := db.Model(&model.Conversation{}).Select("id").Where("conversation_group_id IN ?", frontier)
+		var children []uuid.UUID
+		err := db.Model(&model.Conversation{}).Distinct("conversation_group_id").Where("started_by_conversation_id IN (?)", parents).Pluck("conversation_group_id", &children).Error
+		return children, err
+	})
+	if err != nil {
+		return nil, err
 	}
 
 	type conversationRow struct {

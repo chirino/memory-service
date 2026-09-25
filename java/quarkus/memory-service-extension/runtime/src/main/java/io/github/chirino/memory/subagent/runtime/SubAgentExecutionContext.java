@@ -6,6 +6,11 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * Thread-local auth context used by async sub-agent tasks when no HTTP request scope is active.
+ *
+ * <p>Background child-task execution carries the user ID and bearer token through this
+ * thread-local plus a per-child-conversation fallback map ({@link #bindConversation}), because
+ * child work can hop threads. Off-request code must read auth only from here; CDI {@code
+ * SecurityIdentity} is request-scoped and unavailable on those threads.
  */
 public final class SubAgentExecutionContext {
 

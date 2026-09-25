@@ -431,7 +431,7 @@ Capability tests verify the REST and gRPC values and document that missing or ze
 - [x] Add agent and admin REST and gRPC BDD coverage.
 - [x] Add PostgreSQL, SQLite, MongoDB, and parser unit coverage.
 - [x] Update agent and admin conversation documentation with equality, not-equal, repeated-filter, limit, compatibility, and rollout examples.
-- [x] Update `internal/FACTS.md` and this enhancement as implementation details become final.
+- [x] Update repository knowledge and this enhancement as implementation details become final.
 - [x] Run the verification commands below.
 - [x] Add `metadata` overload to Quarkus `MemoryServiceProxy` and fix `UnixSocketRestClientFactory`/`UnixSocketHttpClient` to serialize collections as repeated query parameters.
 - [x] Add `metadata` overload to Spring `MemoryServiceProxy`.
@@ -470,7 +470,7 @@ Capability tests verify the REST and gRPC values and document that missing or ze
 | Python client test | `python/langchain/tests/test_proxy_metadata.py` |
 | TypeScript convenience client | `typescript/vercelai/src/index.ts` |
 | Client documentation | `site/src/pages/docs/quarkus/grpc-client.mdx`, `site/src/pages/docs/quarkus/rest-client.mdx`, `site/src/pages/docs/spring/grpc-client.mdx`, `site/src/pages/docs/spring/rest-client.mdx`, `site/src/pages/docs/python-langchain/conversation-history.mdx`, `site/src/pages/docs/typescript-vecelai/conversation-history.mdx` |
-| Repository knowledge | `internal/FACTS.md`, `AGENTS.md` |
+| Repository knowledge | Tests, code comments, skills, `AGENTS.md` |
 | Enhancement status | `docs/enhancements/implemented/116-repeatable-conversation-metadata-filters.md` |
 
 Java REST and protobuf sources are generated under Maven `target` directories and are not committed. The Quarkus and Spring REST and protobuf modules compile the updated contracts during verification.

@@ -368,10 +368,13 @@ CREATE INDEX idx_conversations_started_by_conversation_id
 
 Lifecycle semantics:
 
-- archive and unarchive operations change only the selected conversation's fork group,
-- hard eviction deletes only the selected conversation group and its fork tree,
-- started child groups remain readable when the referenced parent group is evicted, and
-- surviving branches keep their raw `startedByConversationId` and optional `startedByEntryId` values as dangling soft references.
+- deleting a conversation still deletes its fork tree under the existing rules,
+- hard-deleting a parent conversation group also deletes all direct and indirect started child groups, including their fork trees, and
+- hard-deleting a child group deletes that group's descendants without deleting its ancestors.
+
+Archive remains group-scoped. Eviction expands the deletion set through started-child links before deleting any records, even when descendants are not archived. It snapshots each affected group's members, records one `conversation/deleted` event per conversation, and schedules vector cleanup for every affected group. Background eviction and both admin eviction response modes use the same deletion operation.
+
+PostgreSQL locks the affected groups and conversations while discovering descendants, preventing concurrent child or fork creation from escaping the event snapshot. PostgreSQL and SQLite commit deletion, cleanup tasks, and outbox events together. MongoDB explicitly traverses and deletes the same group closure but retains its existing non-atomic write-scope limitation. SQL foreign-key cascades remain as storage cleanup; they do not determine which lifecycle events are emitted. No persisted schema change or data reset is required.
 
 #### Entries
 
@@ -581,7 +584,7 @@ Feature: Agent conversation lineage
 - Store tests verifying child conversations start with only the atomic first entry and no inherited history
 - Store tests verifying child conversations copy parent ownership
 - Store tests verifying child conversations copy parent memberships
-- Store tests verifying parent-group eviction preserves descendant child groups and their started-by lineage
+- Store tests verifying parent-group eviction deletes descendant child groups and emits their lifecycle events
 - Child-listing API tests verifying only direct visible children are returned
 - Child-listing API tests verifying cursor/limit pagination
 - Conversation-list tests for `ancestry=roots|children|all`
@@ -631,7 +634,7 @@ The current partial implementation still reflects the more general multi-agent-p
 - [x] Copy parent ownership on child conversation creation
 - [x] Implement child membership copying on conversation creation
 - [x] Ensure child conversations start with the atomic first entry and no inherited history
-- [x] Preserve started child-conversation trees and their lineage when hard-evicting a parent group
+- [x] Delete started child-conversation trees and emit their lifecycle events when hard-evicting a parent group
 - [x] Add REST and gRPC child-listing APIs
 - [x] Ensure child-listing returns only direct visible children
 - [x] Add child-listing pagination parameters and cursor handling

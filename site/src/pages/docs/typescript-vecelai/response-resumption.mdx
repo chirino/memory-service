@@ -107,6 +107,8 @@ curl -NsSfX POST http://localhost:9090/chat/a9f2d4c3-7b1e-4d5f-9c44-2e6a8b7c5333
 
 Install the optional gRPC dependencies used by response recording:
 
+{/* Keep this install step: the response recorder helpers are gRPC-backed, and @grpc/grpc-js and @grpc/proto-loader are optional peer dependencies. */}
+
 ```bash
 cd typescript/examples/vecelai/doc-checkpoints/05b-response-resumption
 npm install @grpc/grpc-js @grpc/proto-loader

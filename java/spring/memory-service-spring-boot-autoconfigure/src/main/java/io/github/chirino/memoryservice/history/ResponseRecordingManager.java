@@ -4,6 +4,14 @@ import java.util.List;
 import org.springframework.lang.Nullable;
 import reactor.core.publisher.Flux;
 
+/**
+ * Client-side response-stream lifecycle: {@code recorder(...)}, {@code replay(...)}, {@code
+ * check(...)}, {@code requestCancel(...)}, and {@code enabled()}.
+ *
+ * <p>Naming is split by scope on purpose: client-side lifecycle APIs are {@code
+ * ResponseRecordingManager} / {@code RecordingSession}, while the record-only server/proto pieces
+ * are {@code ResponseRecorderService}. Do not rename this back to {@code ResponseRecorder}.
+ */
 public interface ResponseRecordingManager {
 
     RecordingSession recorder(String conversationId);

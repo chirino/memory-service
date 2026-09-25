@@ -419,7 +419,7 @@ Add unit tests for:
 - [x] Add low-cardinality assertion metrics and structured security logging.
 - [x] Add unit tests and production-mode REST/gRPC BDD scenarios without changing existing `auth_testfixtures` tests.
 - [x] Update site configuration, deployment-security, REST, and gRPC client documentation with API-key and OIDC examples.
-- [x] Update Enhancement 101 and `internal/FACTS.md` to remove the obsolete `RequestActor` behavior after implementation.
+- [x] Update Enhancement 101 and repository knowledge to remove the obsolete `RequestActor` behavior after implementation.
 - [x] Validate the downstream `cognition-processor-quarkus` migration to per-request gRPC metadata.
 
 ## Files to Modify
@@ -453,7 +453,7 @@ Add unit tests for:
 | `site/src/pages/docs/deployment/security.mdx` | Document the trust boundary, proxy behavior, and role separation. |
 | REST/gRPC client pages under `site/src/pages/docs/` | Show per-request REST headers and gRPC metadata. |
 | `docs/enhancements/101-grpc-api-parity-for-cognition.md` | Mark `RequestActor` sections as superseded by this enhancement after implementation. |
-| `internal/FACTS.md` | Replace the obsolete gRPC actor-policy fact after implementation. |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Replace the obsolete gRPC actor-policy fact after implementation. |
 
 Generated-file paths may vary with the existing generators; all checked-in outputs changed by `go generate .`, Maven generation, frontend generation, and `task verify:python` must be committed.
 

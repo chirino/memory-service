@@ -100,7 +100,7 @@ type projectionSpec struct {
 	Resource string             `yaml:"resource"`
 	Selector projectionSelector `yaml:"selector"`
 	// Rows is omitted from the digest when empty so single-row manifests keep their digests.
-	Rows           string                      `yaml:"rows,omitempty" json:",omitempty"`
+	Rows           string                      `json:",omitempty"     yaml:"rows,omitempty"`
 	Columns        map[string]projectionColumn `yaml:"columns"`
 	ProjectionRego string                      `yaml:"projectionRego"`
 }

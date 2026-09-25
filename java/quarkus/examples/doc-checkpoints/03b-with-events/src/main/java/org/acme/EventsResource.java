@@ -23,6 +23,8 @@ public class EventsResource {
         return proxy.streamEvents(kinds).filter(EventsResource::isFrontendVisible);
     }
 
+    // Browser-facing proxies forward only history-channel entry notifications; context entries
+    // are agent-internal. Filter here and keep MemoryServiceProxy.streamEvents generic.
     private static boolean isFrontendVisible(EventNotification event) {
         if (!"entry".equals(event.kind())) {
             return true;

@@ -22,6 +22,7 @@ from memory_service_langchain import (
     to_fastapi_response,
 )
 
+# uvicorn.error, not __name__, so INFO diagnostics appear alongside access logs.
 LOG = logging.getLogger("uvicorn.error")
 
 
@@ -91,6 +92,8 @@ recording_manager = MemoryServiceResponseRecordingManager.from_env()
 LOG.info("chat response memory-service integration enabled")
 
 def find_repo_root(start: Path) -> Path:
+    # Search for Taskfile.yml rather than a fixed parents[N]; a wrong depth
+    # resolved the frontend dist under python/frontends.
     for candidate in (start, *start.parents):
         if (candidate / "Taskfile.yml").is_file():
             return candidate

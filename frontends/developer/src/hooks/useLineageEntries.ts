@@ -35,6 +35,9 @@ const pageSize = 50;
  * then pages backward through older entries.
  * Sibling-fork entries are never requested; navigation options from the
  * admin fork snapshot are attached to their visible display entries.
+ * Keep forks=none with beforeCursor reverse paging: fork badges come from the
+ * admin {conversationIds, forkPoints} snapshot, so do not fetch sibling
+ * entries with forks=all.
  */
 export function useLineageEntries({ conversationId, forkPoints }: UseLineageEntriesOptions): UseLineageEntriesResult {
   const initialOptions = {

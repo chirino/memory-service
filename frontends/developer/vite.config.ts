@@ -7,6 +7,8 @@ import path from 'path'
 export default defineConfig({
   base: '/developer/',
   plugins: [
+    // Generates src/routeTree.gen.ts (gitignored). That is why the build
+    // script runs `vite build` before `tsc -b`.
     TanStackRouterVite(),
     react({
       babel: {

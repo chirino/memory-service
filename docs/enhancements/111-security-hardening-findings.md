@@ -1374,7 +1374,7 @@ Feature: authenticated and browser-safe attachments
 | Dev/demo | `compose.yaml`, Keycloak realm, monitoring routes, `.devcontainer/**` |
 | Engineering documentation | `docs/encryption.md`, `deploy/fly/README.md`, release notes |
 | Operator security guide | `site/src/pages/docs/deployment/security.mdx`, `site/src/components/DocsSidebar.astro` |
-| Existing site guidance | `site/src/pages/docs/deployment/docker.mdx`, `site/src/pages/docs/configuration.mdx`, `site/src/pages/docs/concepts/attachments.mdx`, `site/src/pages/docs/faq.mdx`, `site/FACTS.md` |
+| Existing site guidance | `site/src/pages/docs/deployment/docker.mdx`, `site/src/pages/docs/configuration.mdx`, `site/src/pages/docs/concepts/attachments.mdx`, `site/src/pages/docs/faq.mdx` |
 | Context exclusions | `.dockerignore` |
 
 ## Verification

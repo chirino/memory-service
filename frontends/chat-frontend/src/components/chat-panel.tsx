@@ -1233,6 +1233,10 @@ export function ChatPanel({
     },
   });
 
+  // /forks above is a lightweight {conversationIds, forkPoints} index. Entries
+  // load only the selected path (forks=none, tail=true) and prepend older
+  // beforeCursor pages. Do not restore forks=all loading or client-side
+  // ancestry reconstruction.
   const entriesQuery = useInfiniteQuery({
     queryKey: ["conversation-path-messages", conversationId],
     enabled: Boolean(conversationId && conversationQuery.data && forksQuery.data),

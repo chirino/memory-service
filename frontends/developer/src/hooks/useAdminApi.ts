@@ -1,3 +1,9 @@
+// Prefer the generated *Options/*Mutation helpers from @hey-api/openapi-ts:
+// their query keys are typed objects ({ _id, path, query, ... }), so do not
+// replace them with string-array keys. The hand-written infinite queries below
+// are the exception: they use ["<operationId>", params] keys. String-prefix
+// invalidations such as ["adminListConversations"] match only those keys, not
+// the generated object keys.
 import { useQuery, useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   adminListConversationsOptions,

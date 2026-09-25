@@ -13,6 +13,7 @@ import (
 	"github.com/chirino/memory-service/internal/model"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/gorm"
@@ -213,16 +214,16 @@ func TestSQLiteForkedChildLineageSurvivesReopen(t *testing.T) {
 	assertArchived(childTree, false)
 
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
-		return store.HardDeleteConversationGroups(txCtx, []uuid.UUID{parent.ConversationGroupID})
+		events, err := eventstream.DeleteConversationGroups(txCtx, store, []uuid.UUID{parent.ConversationGroupID})
+		require.Len(t, events, 4)
+		return err
 	}))
-	for _, conversationID := range []string{child.ID, "child-fork"} {
-		var surviving *registrystore.ConversationDetail
-		require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {
-			var err error
-			surviving, err = store.GetConversation(txCtx, "user1", conversationID)
+	for _, conversationID := range append(parentTree, childTree...) {
+		err := store.InReadTx(ctx, func(txCtx context.Context) error {
+			_, err := store.GetConversation(txCtx, "user1", conversationID)
 			return err
-		}))
-		require.Equal(t, &parent.ID, surviving.StartedByConversationID)
-		require.Equal(t, &parentEntries[0].ID, surviving.StartedByEntryID)
+		})
+		var notFound *registrystore.NotFoundError
+		require.ErrorAs(t, err, &notFound, conversationID)
 	}
 }

@@ -164,17 +164,7 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		sb.WriteString("\n")
 	}
 
-	framework := deriveFramework(s.SourceFile)
-	title := s.Description
-	if title == "" {
-		title = deriveFeatureName(s.SourceFile)
-	}
-	checkpointName := lastSegment(s.Checkpoint)
-	scenarioLabel := title
-	if checkpointName != "" {
-		scenarioLabel += " - " + checkpointName
-	}
-	sb.WriteString(fmt.Sprintf("  Scenario: [%s] %s\n", framework, scenarioLabel))
+	sb.WriteString(fmt.Sprintf("  Scenario: %s\n", scenarioName(s)))
 	sb.WriteString(fmt.Sprintf("    # From %s\n", s.SourceFile))
 
 	if scenarioUsesUnixSocket(sourceFile) {
@@ -250,6 +240,21 @@ func writeScenario(sb *strings.Builder, s ScenarioData, sourceFile string, curlO
 		sb.WriteString("    When I stop the checkpoint\n")
 	}
 	return nil
+}
+
+// scenarioName returns the generated godog scenario name for s. At runtime it
+// is also the scenario key used by the UUID and checkpoint-path registries
+// (see SiteScenario.scenarioKey).
+func scenarioName(s ScenarioData) string {
+	title := s.Description
+	if title == "" {
+		title = deriveFeatureName(s.SourceFile)
+	}
+	label := title
+	if checkpointName := lastSegment(s.Checkpoint); checkpointName != "" {
+		label += " - " + checkpointName
+	}
+	return fmt.Sprintf("[%s] %s", deriveFramework(s.SourceFile), label)
 }
 
 func containsCurl(bash string) bool {

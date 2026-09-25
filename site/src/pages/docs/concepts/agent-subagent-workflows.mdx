@@ -102,7 +102,7 @@ curl -X POST "http://localhost:8080/v1/conversations/$CHILD_ID/entries" \
   }'
 ```
 
-The server creates the child conversation and writes that first entry in one operation. Archiving or unarchiving the parent changes only the parent's fork group. If retention eviction later hard-deletes the parent group, the child group remains readable. Its `startedByConversationId` and optional `startedByEntryId` remain as provenance, even though the referenced parent no longer exists.
+The server creates the child conversation and writes that first entry in one operation. Archiving or unarchiving the parent changes only the parent's fork group. If retention eviction later hard-deletes the parent group, it also deletes all descendant child groups and their forks, even if they are not archived. Each deleted conversation emits a `conversation/deleted` lifecycle event; that event also covers its entries.
 
 ## Listing Root and Child Conversations
 

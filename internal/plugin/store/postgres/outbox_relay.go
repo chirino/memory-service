@@ -136,6 +136,8 @@ func (r *postgresOutboxRelay) runLeader(ctx context.Context, lockConn *sql.Conn,
 		}
 	}()
 
+	// Bootstrap errors go back to the caller through ready; only log the
+	// "relay stopped" warning for failures after startup (ready == nil).
 	if err := r.ensurePublication(ctx); err != nil {
 		if ready != nil {
 			ready <- err

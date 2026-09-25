@@ -364,7 +364,7 @@ The public `ancestry=roots|children|all` conversation-list parameter describes l
 
 ### Delete Semantics
 
-The service archives, unarchives, and hard-deletes whole conversation groups; it does not apply those operations to individual fork nodes. `conversation_ancestry.conversation_group_id` therefore references `conversation_groups(id) ON DELETE CASCADE`, so deletion removes the selected group's conversations, entries, memberships, and ancestry rows. Started-by fields are cross-group soft references. A parent-group lifecycle operation does not change its started child groups, and those groups keep their raw started-by IDs after parent eviction.
+The service archives, unarchives, and hard-deletes whole conversation groups; it does not apply those operations to individual fork nodes. `conversation_ancestry.conversation_group_id` therefore references `conversation_groups(id) ON DELETE CASCADE`, so deletion removes the selected group's conversations, entries, memberships, and ancestry rows. Started-by fields are cross-group soft references. Archive and unarchive do not change started child groups. Eviction explicitly expands through descendant child groups before capturing lifecycle events and deleting the complete set.
 
 Individual conversation hard deletion remains unsupported. If it is introduced later, it must define whether descendants are deleted, reparented, or rejected; closure-row foreign keys alone are not a substitute for that policy.
 
@@ -563,7 +563,7 @@ Populate groups with many sibling branches and deep ancestry, then confirm:
 | `docs/datastore-reset.md` | Document the schema-110 reset requirement for deployments. |
 | `docs/release-notes.md` | Call out the reset-required schema squash and ancestry closure change. |
 | `docs/enhancements/implemented/034-forked-entry-retrieval.md` | Mark the group-load retrieval design as superseded by this enhancement after implementation. |
-| `AGENTS.md` and `internal/FACTS.md` | Record the new ancestry source of truth and reset requirement after implementation. |
+| `AGENTS.md` | Record the new ancestry source of truth and reset requirement after implementation. |
 
 ## Verification
 

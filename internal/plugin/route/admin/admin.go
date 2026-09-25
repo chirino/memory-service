@@ -156,13 +156,6 @@ func HandleAdminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus 
 	adminEvict(c, store, eventBus)
 }
 
-func choosePublishedEvents(events []registryeventbus.Event, appended []registryeventbus.Event, used bool) []registryeventbus.Event {
-	if used {
-		return appended
-	}
-	return events
-}
-
 // HandleAdminStatsRequestRate exposes admin request-rate stats for wrapper-native adapters.
 func HandleAdminStatsRequestRate(c *gin.Context, cfg *config.Config) {
 	if !runMiddlewares(c, security.RequireAuditorRole()) {
@@ -1098,162 +1091,114 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 	// Check if SSE is requested
 	asyncRequested := strings.EqualFold(c.Query("async"), "true")
 	acceptsSSE := strings.Contains(strings.ToLower(c.GetHeader("Accept")), "text/event-stream")
-	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-		evictConversationGroups := func() error {
-			batchSize := 1000
-			for {
-				ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
-				if err != nil {
-					return err
-				}
-				if len(ids) == 0 {
-					return nil
-				}
-				createVectorDeleteTasks(ctx, store, ids)
-				deletedGroups, err := store.LoadDeletedConversationGroups(ctx, ids)
-				if err != nil {
-					return err
-				}
-				events := eventstream.ConversationDeletedEvents(deletedGroups)
-				appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
-				if err != nil {
-					return err
-				}
-				if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
-					return err
-				}
-				if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, choosePublishedEvents(events, appended, used)...); err != nil {
-					return err
-				}
-			}
-		}
-		evictOutboxRows := func() error {
-			const batchSize = 1000
-			for {
-				deleted, err := outboxStore.EvictOutboxEventsBefore(ctx, cutoff, batchSize)
-				if err != nil {
-					return err
-				}
-				if deleted == 0 {
-					return nil
-				}
-			}
-		}
-		if asyncRequested || acceptsSSE {
-			c.Writer.Header().Set("Content-Type", "text/event-stream")
-			c.Writer.Header().Set("Cache-Control", "no-cache")
-			c.Writer.Header().Set("Connection", "keep-alive")
+	reportError := func(err error) {
+		if (asyncRequested || acceptsSSE) && c.Writer.Written() {
+			_ = c.Error(err)
+			security.SetOperationTerminalError(c, "eviction_failed", err)
+			data, _ := json.Marshal(gin.H{"error": err.Error()})
+			fmt.Fprintf(c.Writer, "event: error\ndata: %s\n\n", data)
 			c.Writer.Flush()
-
-			writeProgress := func(progress int) {
-				fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":%d}\n\n", progress)
-				c.Writer.Flush()
-			}
-
-			conversationWeight := 100
-			if evictConversations && evictOutboxEvents {
-				conversationWeight = 90
-			}
-
-			if evictConversations {
-				total, err := store.CountEvictableGroups(ctx, cutoff)
-				if err != nil {
-					fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-					c.Writer.Flush()
-					return nil
-				}
-				if total > 0 {
-					batchSize := 1000
-					evicted := int64(0)
-					for {
-						ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
-						if err != nil {
-							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-							c.Writer.Flush()
-							return nil
-						}
-						if len(ids) == 0 {
-							break
-						}
-						createVectorDeleteTasks(ctx, store, ids)
-						deletedGroups, err := store.LoadDeletedConversationGroups(ctx, ids)
-						if err != nil {
-							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-							c.Writer.Flush()
-							return nil
-						}
-						events := eventstream.ConversationDeletedEvents(deletedGroups)
-						appended, used, err := eventstream.AppendOutboxEvents(ctx, store, events...)
-						if err != nil {
-							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-							c.Writer.Flush()
-							return nil
-						}
-						if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
-							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-							c.Writer.Flush()
-							return nil
-						}
-						if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, choosePublishedEvents(events, appended, used)...); err != nil {
-							fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-							c.Writer.Flush()
-							return nil
-						}
-						evicted += int64(len(ids))
-						progress := int(float64(evicted) / float64(total) * float64(conversationWeight))
-						if progress > conversationWeight {
-							progress = conversationWeight
-						}
-						writeProgress(progress)
-					}
-				} else if !evictOutboxEvents {
-					writeProgress(100)
-					return nil
-				}
-			}
-
-			if evictOutboxEvents {
-				if evictConversations {
-					writeProgress(conversationWeight)
-				} else {
-					writeProgress(50)
-				}
-				if err := evictOutboxRows(); err != nil {
-					fmt.Fprintf(c.Writer, "event: error\ndata: {\"error\":\"%s\"}\n\n", err.Error())
-					c.Writer.Flush()
-					return nil
-				}
-			}
-
-			writeProgress(100)
-			return nil
+			return
 		}
-
-		if evictConversations {
-			if err := evictConversationGroups(); err != nil {
-				return err
-			}
-		}
-		if evictOutboxEvents {
-			if err := evictOutboxRows(); err != nil {
-				return err
-			}
-		}
-		c.Status(http.StatusNoContent)
-		return nil
-	}); err != nil {
 		handleError(c, err)
 	}
-}
+	streamProgress := asyncRequested || acceptsSSE
+	if streamProgress {
+		c.Writer.Header().Set("Content-Type", "text/event-stream")
+		c.Writer.Header().Set("Cache-Control", "no-cache")
+		c.Writer.Header().Set("Connection", "keep-alive")
+		c.Writer.Flush()
+	}
+	writeProgress := func(progress int) {
+		if !streamProgress {
+			return
+		}
+		// Reserve 100 for completion of every requested resource type.
+		if progress >= 100 {
+			progress = 99
+		}
+		fmt.Fprintf(c.Writer, "event: progress\ndata: {\"progress\":%d}\n\n", progress)
+		c.Writer.Flush()
+	}
+	conversationWeight := 100
+	if evictConversations && evictOutboxEvents {
+		conversationWeight = 90
+	}
 
-func createVectorDeleteTasks(ctx context.Context, store registrystore.MemoryStore, groupIDs []uuid.UUID) {
-	for _, id := range groupIDs {
-		body := map[string]interface{}{
-			"conversationGroupId": id.String(),
+	const batchSize = 1000
+	if evictConversations {
+		var total int64
+		if streamProgress {
+			if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+				var err error
+				total, err = store.CountEvictableGroups(ctx, cutoff)
+				return err
+			}); err != nil {
+				reportError(err)
+				return
+			}
 		}
-		if err := store.CreateTask(ctx, "vector_store_delete", body); err != nil {
-			log.Error("Failed to create vector_store_delete task", "groupId", id, "err", err)
+		var evicted int64
+		for {
+			var eventsToPublish []registryeventbus.Event
+			var batchCount int
+			if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+				ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
+				if err != nil || len(ids) == 0 {
+					return err
+				}
+				batchCount = len(ids)
+				eventsToPublish, err = eventstream.DeleteConversationGroups(ctx, store, ids)
+				return err
+			}); err != nil {
+				reportError(err)
+				return
+			}
+			if batchCount == 0 {
+				break
+			}
+			// Publish each completed batch before another operation can fail.
+			// SQL commits first; MongoDB cannot roll back completed batches.
+			if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
+				reportError(err)
+				return
+			}
+			evicted += int64(batchCount)
+			if total > 0 {
+				progress := int(float64(evicted) / float64(total) * float64(conversationWeight))
+				if progress > conversationWeight {
+					progress = conversationWeight
+				}
+				writeProgress(progress)
+			}
 		}
+	}
+	if evictOutboxEvents {
+		if evictConversations {
+			writeProgress(conversationWeight)
+		} else {
+			writeProgress(50)
+		}
+		for {
+			var deleted int64
+			if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
+				var err error
+				deleted, err = outboxStore.EvictOutboxEventsBefore(ctx, cutoff, batchSize)
+				return err
+			}); err != nil {
+				reportError(err)
+				return
+			}
+			if deleted == 0 {
+				break
+			}
+		}
+	}
+	if streamProgress {
+		fmt.Fprint(c.Writer, "event: progress\ndata: {\"progress\":100}\n\n")
+		c.Writer.Flush()
+	} else {
+		c.Status(http.StatusNoContent)
 	}
 }
 

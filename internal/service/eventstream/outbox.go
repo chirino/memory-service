@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"time"
 
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
@@ -14,6 +15,36 @@ import (
 
 type relayOwnedOutboxPublisher interface {
 	RelayPublishesOutboxEvents() bool
+}
+
+// DeleteConversationGroups prepares the complete started-child/fork closure,
+// captures recipients before memberships disappear, and records cleanup work and
+// deletion events. Call inside InWriteTx and publish the returned events after
+// commit. SQL stores keep the snapshot, outbox, tasks, and delete atomic.
+func DeleteConversationGroups(ctx context.Context, store registrystore.MemoryStore, groupIDs []uuid.UUID) ([]registryeventbus.Event, error) {
+	groups, err := store.LoadDeletedConversationGroups(ctx, groupIDs)
+	if err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, 0, len(groups))
+	for _, group := range groups {
+		ids = append(ids, group.ConversationGroupID)
+		if err := store.CreateTask(ctx, "vector_store_delete", map[string]any{"conversationGroupId": group.ConversationGroupID.String()}); err != nil {
+			return nil, fmt.Errorf("create vector cleanup for group %s: %w", group.ConversationGroupID, err)
+		}
+	}
+	events := ConversationDeletedEvents(groups)
+	appended, used, err := AppendOutboxEvents(ctx, store, events...)
+	if err != nil {
+		return nil, err
+	}
+	if err := store.HardDeleteConversationGroups(ctx, ids); err != nil {
+		return nil, err
+	}
+	if used {
+		return appended, nil
+	}
+	return events, nil
 }
 
 func ConversationDeletedEvents(groups []registrystore.DeletedConversationGroup) []registryeventbus.Event {

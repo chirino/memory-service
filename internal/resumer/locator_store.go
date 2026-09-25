@@ -22,6 +22,9 @@ type LocatorStore interface {
 	Exists(ctx context.Context, conversationID string) (bool, error)
 }
 
+// NewLocatorStore selects a backend from cfg.CacheType, which is shared with the
+// memory-entries cache plugins (internal/plugin/cache/*); a new cache kind needs
+// both a cache plugin and locator-store support here.
 func NewLocatorStore(ctx context.Context, cfg *config.Config) (LocatorStore, error) {
 	if cfg == nil {
 		return noopLocatorStore{}, nil

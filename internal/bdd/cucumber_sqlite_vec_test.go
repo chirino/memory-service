@@ -31,6 +31,9 @@ func TestFeaturesSQLiteVec(t *testing.T) {
 	cfg.Listener.Port = 0
 	cfg.Listener.EnableTLS = false
 
+	// Default REST/gRPC runners often disable semantic search, so episodic semantic and
+	// vector memory scenarios belong in features-sqlite, which runs with sqlite vectors,
+	// local embeddings and semantic search enabled.
 	featuresDir := filepath.Join("testdata", "features-sqlite")
 	if _, err := os.Stat(featuresDir); os.IsNotExist(err) {
 		t.Skipf("SQLite vector feature files directory not found: %s", featuresDir)

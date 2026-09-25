@@ -78,6 +78,8 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
         authorization: str | None = None
         if self.authorization_getter:
             authorization = self.authorization_getter()
+        # ContextVar request auth does not reliably reach LangGraph checkpointer
+        # worker threads, so fall back to the conversation-scoped map.
         if not authorization and thread_id:
             authorization = get_conversation_authorization(thread_id)
         if authorization:
@@ -327,6 +329,9 @@ class MemoryServiceCheckpointSaver(BaseCheckpointSaver[str]):
             ],
         }
 
+        # The first append must carry fork metadata: checkpoint writes can
+        # precede history middleware writes, so a fork would otherwise be
+        # created as a root conversation.
         append_payload = self._payload_with_fork_metadata(payload)
 
         response = self._request(

@@ -16,11 +16,12 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
-	"github.com/chirino/memory-service/internal/tracing"
+	internaltracing "github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pgvec "github.com/pgvector/pgvector-go"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
+	"gorm.io/plugin/opentelemetry/tracing"
 )
 
 func init() {
@@ -31,6 +32,14 @@ func init() {
 			db, err := gorm.Open(postgres.Open(cfg.DBURL), &gorm.Config{})
 			if err != nil {
 				return nil, fmt.Errorf("episodic store: failed to connect to postgres: %w", err)
+			}
+			tp := internaltracing.ProviderFromContextOrNoop(ctx)
+			if err := db.Use(tracing.NewPlugin(
+				tracing.WithTracerProvider(tp),
+				tracing.WithoutMetrics(),
+				tracing.WithoutQueryVariables(),
+			)); err != nil {
+				return nil, fmt.Errorf("episodic store: register otelgorm plugin: %w", err)
 			}
 			sqlDB, err := db.DB()
 			if err != nil {
@@ -45,7 +54,7 @@ func init() {
 			}
 			store := &postgresEpisodicStore{db: db, s: ps}
 			if strings.EqualFold(strings.TrimSpace(cfg.VectorType), "qdrant") {
-				client, qErr := episodicqdrant.New(cfg, tracing.ProviderFromContext(ctx), tracing.OutboundPropagatorFromContext(ctx))
+				client, qErr := episodicqdrant.New(cfg, internaltracing.ProviderFromContext(ctx), internaltracing.OutboundPropagatorFromContext(ctx))
 				if qErr != nil {
 					log.Warn("Episodic qdrant unavailable; falling back to local vector backend", "err", qErr)
 				} else {

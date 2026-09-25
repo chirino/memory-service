@@ -40,6 +40,8 @@ public final class SecurityHelper {
         return identity.getPrincipal().getName();
     }
 
+    // Returns null without an active request context: Instance.get() on background child-task
+    // threads fails inside the request-scoped SecurityIdentity proxy.
     private static SecurityIdentity resolveIdentity(Instance<SecurityIdentity> identityInstance) {
         if (!Arc.container().requestContext().isActive()) {
             return null;

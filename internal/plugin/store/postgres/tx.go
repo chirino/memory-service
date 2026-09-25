@@ -28,6 +28,9 @@ func scopeFromContext(ctx context.Context) (*scope, bool) {
 	return s, ok
 }
 
+// dbFor returns the route-scoped transaction when one is active. Store code must
+// use it (or writeDBFor) rather than s.db.WithContext(ctx); the base handle runs on
+// a different transaction and misses uncommitted work such as sync auto-create rows.
 func (s *PostgresStore) dbFor(ctx context.Context) *gorm.DB {
 	if scoped, ok := scopeFromContext(ctx); ok && scoped != nil && scoped.db != nil {
 		return scoped.db.WithContext(ctx)
@@ -35,6 +38,7 @@ func (s *PostgresStore) dbFor(ctx context.Context) *gorm.DB {
 	return s.db.WithContext(ctx)
 }
 
+// writeDBFor is dbFor for writes; it rejects use inside a read-only scope.
 func (s *PostgresStore) writeDBFor(ctx context.Context, op string) (*gorm.DB, error) {
 	if scoped, ok := scopeFromContext(ctx); ok && scoped != nil && scoped.db != nil {
 		if scoped.intent != txscope.IntentWrite {

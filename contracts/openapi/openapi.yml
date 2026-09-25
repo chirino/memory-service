@@ -3036,6 +3036,9 @@ components:
           minLength: 1
           maxLength: 1000
           description: Natural language query.
+        # Keep each oneOf branch a $ref to a named component schema: inline branches make
+        # oapi-codegen generate duplicate names (e.g. SearchConversationsRequestSearchType1).
+        # Do not add a `default` to this union: Quarkus REST client generation emits invalid Java.
         searchType:
           oneOf:
             - $ref: '#/components/schemas/SearchConversationsSearchTypeSingle'

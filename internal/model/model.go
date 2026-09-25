@@ -76,6 +76,8 @@ type ConversationGroup struct {
 func (ConversationGroup) TableName() string { return "conversation_groups" }
 
 // Conversation represents a single conversation within a group.
+// ClientID is the authenticated app/system identity, not the logical agent
+// (that is AgentID); it is internal metadata kept out of user-facing REST payloads.
 type Conversation struct {
 	ID                     string                 `json:"id"                               gorm:"primaryKey;type:text"`
 	Title                  []byte                 `json:"-"                                gorm:"type:bytea"` // encrypted

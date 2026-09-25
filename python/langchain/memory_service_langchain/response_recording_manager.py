@@ -25,6 +25,9 @@ _GRPC_FALLBACK_CODES = {
     grpc.StatusCode.FAILED_PRECONDITION,
 }
 
+# Replay has no deadline unless MEMORY_SERVICE_GRPC_REPLAY_TIMEOUT_SECONDS is
+# set. These codes end /resume replay as a normal termination rather than an
+# error, which avoids ASGI crash logs on client disconnects and long polls.
 _GRPC_REPLAY_TERMINAL_CODES = {
     grpc.StatusCode.DEADLINE_EXCEEDED,
     grpc.StatusCode.CANCELLED,
@@ -142,6 +145,13 @@ class MemoryServiceResponseRecordingManager:
     async def stream_from_source(
         self, conversation_id: str, source: AsyncIterator[str]
     ) -> AsyncIterator[str]:
+        """Record ``source`` in a background task and stream it to the caller.
+
+        Callers must create the conversation (or append USER history) before
+        returning the ``StreamingResponse``. Otherwise ``CheckRecordings`` can
+        return ``[]`` because access control checks the conversation before the
+        background producer has created it.
+        """
         state = _ResumeState(tokens=[])
         recorder = self._create_stream_recorder(conversation_id)
         producer_task = asyncio.create_task(
@@ -239,6 +249,8 @@ class MemoryServiceResponseRecordingManager:
                         continue
 
                     buffer += chunk
+                    # Recordings may be SSE-framed "data:" records or JSON lines;
+                    # detect which from the first bytes and reframe accordingly.
                     if framing_mode is None:
                         stripped = buffer.lstrip()
                         if stripped.startswith("data:"):
@@ -578,6 +590,8 @@ class MemoryServiceResponseRecordingManager:
             conversation_id,
             bool(producer_task is not None and not producer_task.done()),
         )
+        # Cancel the task, not just the flag, so its finally block runs promptly
+        # and closes the recorder stream.
         if producer_task is not None and not producer_task.done():
             producer_task.cancel()
 

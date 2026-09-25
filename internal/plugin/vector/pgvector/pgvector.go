@@ -29,7 +29,7 @@ func (m *pgvectorMigrator) Migrate(ctx context.Context) error {
 		return nil
 	}
 	log.Info("Running migration", "name", m.Name())
-	db, err := openDB(cfg.DBURL)
+	db, err := openDB(ctx, cfg.DBURL)
 	if err != nil {
 		return fmt.Errorf("pgvector migrate: %w", err)
 	}
@@ -49,15 +49,15 @@ func load(ctx context.Context) (registryvector.VectorStore, error) {
 	if cfg == nil {
 		return nil, fmt.Errorf("pgvector: missing config in context")
 	}
-	db, err := openDB(cfg.DBURL)
+	db, err := openDB(ctx, cfg.DBURL)
 	if err != nil {
 		return nil, fmt.Errorf("pgvector: %w", err)
 	}
 	return &PgvectorStore{db: db}, nil
 }
 
-func openDB(dbURL string) (*gorm.DB, error) {
-	return openGormDB(dbURL)
+func openDB(ctx context.Context, dbURL string) (*gorm.DB, error) {
+	return openGormDB(ctx, dbURL)
 }
 
 // PgvectorStore implements VectorStore using pgvector extension.

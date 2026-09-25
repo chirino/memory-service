@@ -1,3 +1,6 @@
+// Package mcp implements the MCP server command. It talks to Memory Service only
+// through the generated HTTP/OpenAPI client (internal/generated/apiclient), including
+// the embedded mode's in-process handler transport; it does not use gRPC.
 package mcp
 
 import (

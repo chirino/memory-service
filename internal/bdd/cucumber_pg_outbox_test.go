@@ -14,6 +14,10 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Broad datastore suites keep their default config; outbox event delivery is covered by
+// dedicated runners (TestFeaturesPgOutbox, TestFeaturesSQLiteOutbox,
+// TestFeaturesMongoOutbox). PostgreSQL is the only gRPC outbox suite; SQLite and Mongo
+// outbox coverage is REST-only.
 func TestFeaturesPgOutbox(t *testing.T) {
 	var missing []string
 	if !buildcaps.PostgreSQL {
@@ -67,4 +71,5 @@ func TestFeaturesPgOutbox(t *testing.T) {
 		"mockPrometheus": prom,
 		"grpcAddr":       grpcAddr,
 	})
+	runBDDFeaturesWithConcurrency(t, "pg-outbox-eviction", []string{filepath.Join("testdata", "features", "eviction-events-rest.feature")}, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, nil, 1)
 }

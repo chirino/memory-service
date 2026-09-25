@@ -53,6 +53,13 @@ def to_fastapi_response(response: httpx.Response) -> Response:
 
 
 class MemoryServiceProxy:
+    """Passthrough helpers for Memory Service agent APIs.
+
+    Checkpoint and chat apps should call these methods and wrap the result with
+    ``to_fastapi_response(...)`` instead of making ad-hoc
+    ``memory_service_request(...)`` calls.
+    """
+
     def __init__(
         self,
         *,

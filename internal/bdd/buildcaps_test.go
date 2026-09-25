@@ -15,6 +15,8 @@ func requireCapabilities(t *testing.T, missing ...string) {
 	t.Skipf("required build capabilities missing: %s", strings.Join(missing, ", "))
 }
 
+// sqliteTagFilter excludes @requires-sqlite-fts5 scenarios when the binary was built
+// without FTS5 and always excludes @requires-embedded scenarios from these runners.
 func sqliteTagFilter() string {
 	var filters []string
 	if !buildcaps.SQLiteFTS5 {

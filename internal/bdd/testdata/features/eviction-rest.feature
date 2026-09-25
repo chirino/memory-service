@@ -86,8 +86,8 @@ Feature: Data Eviction
       | count |
       | 1     |
 
-  # Serial required: this scenario runs a datastore-wide eviction sweep and verifies dangling soft lineage across logical child trees.
-  Scenario: Evicting a parent group preserves child groups and their forks
+  # Serial required: this scenario runs a datastore-wide eviction sweep and verifies descendant deletion across logical child trees.
+  Scenario: Evicting a parent group deletes child groups and their forks
     Given I have a conversation with title "Eviction lineage parent"
     And set "parentConversationId" to "${conversationId}"
     And set "parentGroupId" to "${conversationGroupId}"
@@ -97,7 +97,7 @@ Feature: Data Eviction
       {
         "channel": "HISTORY",
         "contentType": "history",
-        "content": [{"role": "USER", "text": "Delegate retained child work"}]
+        "content": [{"role": "USER", "text": "Delegate child work"}]
       }
       """
     And set "parentEntryId" to the json response field "id"
@@ -166,7 +166,13 @@ Feature: Data Eviction
       }
       """
     Then the response status should be 204
-    And "alice" should receive an SSE event with kind "conversation" and event "deleted"
+    And "alice" should receive conversation deletion events for:
+      | conversationId          |
+      | ${parentConversationId} |
+      | ${childConversationId}  |
+      | ${childForkId}          |
+      | ${nestedConversationId} |
+      | ${nestedForkId}         |
     And "alice" should not receive an SSE event with kind "conversation" and event "deleted" within 2 seconds
     When I execute SQL query:
       """
@@ -175,7 +181,7 @@ Feature: Data Eviction
       """
     Then the SQL result should match:
       | count |
-      | 2     |
+      | 0     |
     When I execute MongoDB query:
       """
       {
@@ -190,7 +196,7 @@ Feature: Data Eviction
       """
     Then the MongoDB result should match:
       | count |
-      | 2     |
+      | 0     |
     When I execute SQL query:
       """
       SELECT COUNT(*) AS count FROM tasks
@@ -199,7 +205,7 @@ Feature: Data Eviction
       """
     Then the SQL result should match:
       | count |
-      | 1     |
+      | 3     |
     When I execute MongoDB query:
       """
       {
@@ -215,39 +221,25 @@ Feature: Data Eviction
       """
     Then the MongoDB result should match:
       | count |
-      | 1     |
+      | 3     |
 
     When I call GET "/v1/conversations/${parentConversationId}"
     Then the response status should be 404
     When I call GET "/v1/conversations/${childConversationId}"
-    Then the response status should be 200
-    And the response body field "startedByConversationId" should be "${parentConversationId}"
-    And the response body field "startedByEntryId" should be "${parentEntryId}"
+    Then the response status should be 404
     When I call GET "/v1/conversations/${childForkId}"
-    Then the response status should be 200
-    And the response body field "startedByConversationId" should be "${parentConversationId}"
-    And the response body field "startedByEntryId" should be "${parentEntryId}"
-    And the response body field "forkedAtConversationId" should be "${childConversationId}"
+    Then the response status should be 404
     When I call GET "/v1/conversations/${nestedConversationId}"
-    Then the response status should be 200
-    And the response body field "startedByConversationId" should be "${childForkId}"
-    And the response body should not contain "startedByEntryId"
+    Then the response status should be 404
     When I call GET "/v1/conversations/${nestedForkId}"
-    Then the response status should be 200
-    And the response body field "startedByConversationId" should be "${childForkId}"
-    And the response body should not contain "startedByEntryId"
-    And the response body field "forkedAtConversationId" should be "${nestedConversationId}"
+    Then the response status should be 404
 
     When I call GET "/v1/conversations?ancestry=roots&mode=all"
     Then the response status should be 200
     And the response should contain 0 conversations
     When I call GET "/v1/conversations?ancestry=children&mode=all"
     Then the response status should be 200
-    And the response should contain 4 conversations
-    And the response body should contain "${childConversationId}"
-    And the response body should contain "${childForkId}"
-    And the response body should contain "${nestedConversationId}"
-    And the response body should contain "${nestedForkId}"
+    And the response should contain 0 conversations
 
   # Serial required: this scenario runs a datastore-wide eviction sweep that can hard-delete records created by other scenarios.
   Scenario: Evict with SSE progress stream via Accept header

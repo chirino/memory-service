@@ -533,7 +533,7 @@ Current implementation note: the SQLite store package now covers both REST and g
 | `internal/bdd/cucumber_sqlite_vec_test.go` | SQLite vector-search runner |
 | `internal/bdd/testdata/features-sqlite/*` | SQLite semantic-search BDD scenarios |
 | `site/src/pages/docs/configuration.mdx` | SQLite datastore and filesystem attachment docs |
-| `internal/FACTS.md` | Record SQLite/CGO and BDD harness facts as implementation lands |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Record SQLite/CGO and BDD harness facts as implementation lands |
 
 ## Verification
 

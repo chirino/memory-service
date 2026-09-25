@@ -59,7 +59,11 @@ public class MemoryServiceProxy {
         return s == null || s.isBlank() ? null : UUID.fromString(s);
     }
 
-    /** Stable entry-list options that avoid exposing generated-client parameter ordering. */
+    /**
+     * Stable entry-list options that avoid exposing generated-client parameter ordering. Mapped by
+     * hand onto the generated REST client; add a component here when the OpenAPI operation gains
+     * a query parameter.
+     */
     public record EntryListOptions(
             String afterCursor,
             String beforeCursor,
@@ -229,6 +233,9 @@ public class MemoryServiceProxy {
                 new EntryListOptions(afterCursor, null, null, limit, channel, epoch, forks));
     }
 
+    // Maps EntryListOptions positionally onto the generated client. Keep every
+    // listConversationEntries query parameter represented here when the OpenAPI operation changes.
+    // The trailing createdAtAfter/createdAtBefore/createdAt filters are currently passed as null.
     public ResponseEntity<?> listConversationEntries(
             String conversationId, EntryListOptions options) {
         return execute(

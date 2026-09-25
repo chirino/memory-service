@@ -161,6 +161,8 @@ public final class MemoryServiceClients {
         return false;
     }
 
+    // Use Netty's DomainSocketAddress, not java.net.UnixDomainSocketAddress: Reactor Netty's Linux
+    // epoll transport rejects the JDK type ("Unexpected SocketAddress implementation").
     static SocketAddress socketAddress(MemoryServiceEndpoint endpoint) {
         Assert.isTrue(endpoint.usesUnixSocket(), "endpoint must use a unix socket");
         return new DomainSocketAddress(endpoint.unixSocketPath());

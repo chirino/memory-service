@@ -83,7 +83,7 @@ Tests cover strict MSEH parsing, key rotation, canonical error payloads, typed c
 | Encryption | `internal/dataencryption/`, `internal/plugin/encrypt/`, `internal/plugin/attach/`, `internal/registry/` |
 | CLI/config/auth | `internal/cmd/`, `internal/config/`, `internal/security/` |
 | API contracts | `contracts/openapi/openapi.yml`, `internal/generated/`, `frontends/chat-frontend/src/client/` |
-| Documentation | `AGENTS.md`, `internal/FACTS.md`, `docs/`, `site/`, Java module `FACTS.md` files |
+| Documentation | `AGENTS.md`, `docs/`, `site/`, and other repository knowledge |
 
 ## Verification
 

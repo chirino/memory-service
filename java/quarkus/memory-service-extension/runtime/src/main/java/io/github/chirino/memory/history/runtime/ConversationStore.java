@@ -40,6 +40,9 @@ public class ConversationStore {
     @Inject ObjectMapper objectMapper;
     @Inject Instance<ToolAttachmentExtractor> toolAttachmentExtractorInstance;
 
+    // Also runs on background child-task threads while recording success/failure. Guard every
+    // SecurityIdentity/association access behind an active request context and fall back to
+    // SubAgentExecutionContext off-request.
     private SecurityIdentity resolveIdentity() {
         if (Arc.container().requestContext().isActive() && identityAssociation != null) {
             SecurityIdentity resolved = identityAssociation.getIdentity();

@@ -12,13 +12,13 @@ Enhancement docs use the naming convention `NNN-kebab-case-title.md` where NNN i
 - New/proposed docs live in `docs/enhancements/`.
 - Non-proposed docs move to `docs/enhancements/<status>/` where status is `implemented`, `partial`, or `superseded`.
 
-Check the highest existing number before creating a new one:
+Check the highest existing number before creating a new one (sort on file names, not paths, so the status subdirectories don't skew the order):
 
 ```bash
-find docs/enhancements -maxdepth 2 -name '*.md' | sort -n | tail -3
+find docs/enhancements -name '[0-9]*.md' -exec basename {} \; | sort -n | tail -5
 ```
 
-Current backlog gotcha: `docs/enhancements/` already contains two distinct proposed `085-*.md` files. When discussing or editing those, refer to them by filename/title, not number alone, until they are renumbered.
+Some numbers are shared by two docs (for example `090`, `091`, and `116`). Refer to those docs by file name, not number alone. The `4xx` numbers are a separate range; pick the next number in the main sequence unless told otherwise.
 
 ## Required Structure
 
@@ -72,16 +72,15 @@ For partial: `> **Status**: Partial — see [NNN](../implemented/NNN-name.md) fo
 
 ### 4. Verification Section (Always Include)
 
+List the exact commands for the modules the change touches (see the `build-test` skill). For example:
+
 ```markdown
 ## Verification
 
 \```bash
-# Compile
-./java/mvnw -f java/pom.xml compile
-
-# Run tests
-./java/mvnw -f java/pom.xml test -pl memory-service > test.log 2>&1
-# Search for failures using Grep tool on test.log
+go build ./...
+CGO_ENABLED=1 go test -race -tags='sqlite_fts5 auth_testfixtures' ./internal/bdd -run '^TestFeaturesSQLite$' -count=1 > test.log 2>&1
+./java/mvnw -f java/pom.xml -pl <module> -am compile
 \```
 ```
 
@@ -92,7 +91,7 @@ For partial: `> **Status**: Partial — see [NNN](../implemented/NNN-name.md) fo
 - **Tables**: Use markdown tables for field constraints, API parameters, file lists
 - **Cross-references**: Link to other enhancements with paths relative to the current doc, for example `[065](implemented/065-go-port.md)` from a proposed doc or `[017](../implemented/017-hide-conversation-groups.md)` from a partial doc
 - **Task checkboxes**: Use `- [ ]` for incomplete and `- [x]` for completed tasks
-- **Data compatibility stance**: DB schema/data changes must preserve existing data through migrations. Enhancement plans that change persisted structures should call out migration steps, compatibility risks, and upgrade validation. API cleanup can still remove pre-release surface area when requested, but persisted data transitions need an explicit migration path.
+- **Data compatibility stance**: plans that change persisted structures must describe the migration path, compatibility risks, and upgrade validation (see the data compatibility rule in `AGENTS.md`).
 - **OpenAPI specs**: Agent API is in `contracts/openapi/openapi.yml`, Admin API is in `contracts/openapi/openapi-admin.yml`
 - **Proto file**: gRPC definitions in `contracts/protobuf/memory/v1/memory_service.proto`
 
@@ -101,4 +100,5 @@ For partial: `> **Status**: Partial — see [NNN](../implemented/NNN-name.md) fo
 - Keep the Motivation section concrete — cite specific files, field names, or behaviors that are problematic.
 - Include Cucumber test scenarios in gherkin syntax so they can be directly adapted into `.feature` files.
 - The Files to Modify table helps scope the work — list every file that needs changes.
-- When the implementation diverges from the design, update the enhancement doc to reflect reality (per CLAUDE.md instructions).
+- Update the doc as each phase lands. When the implementation diverges from the design, change the doc to describe what was built.
+- The Files to Modify table should name the code, tests, docs, and skills that change. Don't plan updates to agent notes; record knowledge the way `AGENTS.md` describes.

@@ -413,6 +413,10 @@ func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) erro
 	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
 }
 
+// InWriteTx only records write intent; it does not open a MongoDB session
+// transaction, so multi-write flows (conversationPatch, outbox appends) are not
+// atomic on Mongo (the episodic store opens its own session transactions).
+// See WORKAROUNDS.md.
 func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
 	if !s.OutboxEnabled() {
 		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
@@ -812,6 +816,10 @@ func (s *MongoStore) createConversationAncestryDoc(ctx context.Context, convID, 
 	return doc, nil
 }
 
+// claimConversationAncestry is the first step of the publish order: ancestry is
+// claimed before the conversation document is inserted last. A duplicate claim is
+// accepted only when its lineage matches; a matching orphan left by a failed
+// publish is deleted and the claim retried once.
 func (s *MongoStore) claimConversationAncestry(ctx context.Context, requested conversationAncestryDoc) (*registrystore.ConversationDetail, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		if _, err := s.conversationAncestry().InsertOne(ctx, requested); err == nil {
@@ -1543,6 +1551,8 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 		}
 	}
 
+	// Known gap: Mongo does not yet apply the query title filter; the Postgres
+	// and SQLite stores do.
 	pipeline := buildPublicConversationListPipeline(userID, anchorValue, anchorID, limit, mode, ancestry, archived, metadataFilters, sort)
 	opts := buildConversationAggregateOptions(metadataFilters)
 
@@ -2928,6 +2938,8 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
+// Like normal root creation it must also write the ancestry self document, or
+// ancestry-backed context and entry-listing reads fail after the first sync.
 func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (convDoc, error) {
 	now := time.Now()
 	groupID := uuid.New().String()
@@ -4069,6 +4081,41 @@ func (s *MongoStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs
 		return nil, nil
 	}
 
+	groupIDs, err := registrystore.ExpandConversationGroupDeletion(groupIDs, func(frontier []uuid.UUID) ([]uuid.UUID, error) {
+		ids := make([]string, len(frontier))
+		for i, id := range frontier {
+			ids[i] = uuidToStr(id)
+		}
+		cur, err := s.conversations().Find(ctx, bson.M{"conversation_group_id": bson.M{"$in": ids}}, options.Find().SetProjection(bson.M{"_id": 1}))
+		if err != nil {
+			return nil, err
+		}
+		var parents []convDoc
+		if err := cur.All(ctx, &parents); err != nil {
+			return nil, err
+		}
+		parentIDs := make([]string, 0, len(parents))
+		for _, parent := range parents {
+			parentIDs = append(parentIDs, string(parent.ID))
+		}
+		cur, err = s.conversations().Find(ctx, bson.M{"started_by_conversation_id": bson.M{"$in": parentIDs}}, options.Find().SetProjection(bson.M{"conversation_group_id": 1}))
+		if err != nil {
+			return nil, err
+		}
+		var children []convDoc
+		if err := cur.All(ctx, &children); err != nil {
+			return nil, err
+		}
+		result := make([]uuid.UUID, 0, len(children))
+		for _, child := range children {
+			result = append(result, strToUUID(child.ConversationGroupID))
+		}
+		return result, nil
+	})
+	if err != nil {
+		return nil, err
+	}
+
 	strIDs := make([]string, len(groupIDs))
 	for i, id := range groupIDs {
 		strIDs[i] = uuidToStr(id)
@@ -4160,7 +4207,6 @@ func (s *MongoStore) CreateTask(ctx context.Context, taskType string, taskBody m
 
 	doc := bson.M{
 		"_id":           uuidToStr(uuid.New()),
-		"task_name":     taskName,
 		"task_type":     taskType,
 		"task_body":     taskBody,
 		"created_at":    time.Now(),
@@ -4168,7 +4214,10 @@ func (s *MongoStore) CreateTask(ctx context.Context, taskType string, taskBody m
 		"processing_at": nil,
 		"retry_count":   0,
 	}
+	// Unnamed tasks must omit task_name entirely: the sparse unique index still
+	// indexes explicit nulls, so a second null-named task would collide.
 	if taskName != nil {
+		doc["task_name"] = *taskName
 		res, err := s.db.Collection("tasks").UpdateOne(
 			ctx,
 			bson.M{"task_name": *taskName},

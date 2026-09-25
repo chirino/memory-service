@@ -31,6 +31,7 @@ func init() {
 		ctx.Step(`^"([^"]*)" is connected to the admin SSE event stream with query "([^"]*)"$`, e.userIsConnectedToAdminSSEStreamWithQuery)
 
 		// Event assertions
+		ctx.Step(`^"([^"]*)" should receive conversation deletion events for:$`, e.userShouldReceiveConversationDeletionEvents)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" within (\d+) seconds$`, e.userShouldReceiveSSEEvent)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)"$`, e.userShouldReceiveSSEEventDefault)
 		ctx.Step(`^"([^"]*)" should receive an SSE event with kind "([^"]*)" and event "([^"]*)" where data "([^"]*)" is "([^"]*)"$`, e.userShouldReceiveSSEEventWithDataField)
@@ -427,6 +428,46 @@ func (e *sseEventSteps) sseEventDataFieldShouldBe(field, expected string) error 
 	actual := fmt.Sprintf("%v", data[field])
 	if actual != expected {
 		return fmt.Errorf("SSE event data field %q: expected %q, got %q", field, expected, actual)
+	}
+	return nil
+}
+
+// Deletion batches may arrive in any group order. Check the complete set rather
+// than discarding events for other descendants while waiting for one specific ID.
+func (e *sseEventSteps) userShouldReceiveConversationDeletionEvents(userID string, table *godog.Table) error {
+	e.mu.Lock()
+	stream, ok := e.streams[userID]
+	e.mu.Unlock()
+	if !ok {
+		return fmt.Errorf("no SSE stream open for user %q", userID)
+	}
+	pending := make(map[string]bool)
+	for _, row := range table.Rows[1:] {
+		id, err := e.s.Expand(row.Cells[0].Value)
+		if err != nil {
+			return err
+		}
+		pending[id] = true
+	}
+	timeout := time.After(10 * time.Second)
+	for len(pending) > 0 {
+		select {
+		case event, open := <-stream.events:
+			if !open {
+				return fmt.Errorf("SSE stream closed with missing deletions: %v", pending)
+			}
+			if event["kind"] != "conversation" || event["event"] != "deleted" {
+				continue
+			}
+			data, _ := event["data"].(map[string]any)
+			id, _ := data["conversation"].(string)
+			if !pending[id] {
+				return fmt.Errorf("unexpected or duplicate conversation deletion %q for %q", id, userID)
+			}
+			delete(pending, id)
+		case <-timeout:
+			return fmt.Errorf("missing conversation deletion events for %q: %v", userID, pending)
+		}
 	}
 	return nil
 }

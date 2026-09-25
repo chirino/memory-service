@@ -244,7 +244,7 @@ Feature: PostgreSQL relay-assigned outbox cursor
 | `internal/bdd/testdata/features-pg-outbox/` | Update cursor-format and replay assertions for numeric opaque cursors |
 | `internal/bdd/steps_sse_events.go` | Replace PostgreSQL cursor-shape assertions if they currently require `<lsn>:<tx_seq>` |
 | `internal/bdd/steps_sse_events_grpc.go` | Same as SSE for gRPC cursor assertions |
-| `internal/FACTS.md` | Update the PostgreSQL outbox relay note after implementation |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update the PostgreSQL outbox relay note after implementation |
 
 ## Verification
 

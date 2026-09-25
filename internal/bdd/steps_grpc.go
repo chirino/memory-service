@@ -258,11 +258,11 @@ var bytesFieldValueRe = regexp.MustCompile(`(\w+):\s*"([^"]*)"`)
 //
 // For variable references:
 //
-//	conversation_id: "${conversationId}"  →  conversation_id: "${conversationId|uuid_to_hex_string}"
+//	entry_id: "${entryId}"  →  entry_id: "${entryId|uuid_to_hex_string}"
 //
 // For literal UUID strings:
 //
-//	conversation_id: "00000000-0000-..."  →  conversation_id: "\x00\x00..."
+//	entry_id: "00000000-0000-..."  →  entry_id: "\x00\x00..."
 //
 // Only applies to fields whose proto type is bytes.
 func injectUUIDPipeForBytesFields(text string, bytesFields map[string]bool) string {

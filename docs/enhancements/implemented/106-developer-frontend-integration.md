@@ -436,7 +436,7 @@ This is out of scope for this enhancement. File-based serving is simpler to impl
 | `internal/plugin/route/developer/developer.go` | New public static/config `/developer/*` route implementation |
 | `internal/plugin/route/developer/developer_test.go` | Unit tests for config, path resolution, headers, and fallback behavior |
 | `internal/bdd/testdata/features/developer-frontend-rest.feature` | BDD coverage for enabled/disabled route behavior and static/config serving |
-| `frontends/developer/FACTS.md` | Keep runtime config documentation aligned with the flat `/developer/config.json` shape |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Keep runtime config documentation aligned with the flat `/developer/config.json` shape |
 | `Dockerfile` | Build/copy `frontends/developer/dist` for containerized integrated serving |
 | `Taskfile.yml` | Add an explicit `dev:developer-frontend` build task |
 | `docs/configuration.mdx` | Document flags and integrated serving example |

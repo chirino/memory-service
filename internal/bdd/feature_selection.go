@@ -8,6 +8,7 @@ import (
 )
 
 var serialFeatureFiles = map[string]bool{
+	"eviction-events-rest.feature":             true,
 	"admin-rest.feature":                       true,
 	"admin-checkpoints-rest.feature":           true,
 	"admin-attachments-rest.feature":           true,

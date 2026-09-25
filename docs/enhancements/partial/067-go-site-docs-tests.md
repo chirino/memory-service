@@ -61,8 +61,7 @@ internal/sitebdd/
   ├── scenarios.go          ← JSON loading + .feature file generation to tempdir
   ├── steps_curl.go         ← curl parsing, HTTP execution, variable substitution
   ├── steps_checkpoint.go   ← build + lifecycle of checkpoint subprocess per scenario
-  ├── steps_openaimock.go   ← in-process OpenAI mock server (replaces WireMock)
-  └── FACTS.md
+  └── steps_openaimock.go   ← in-process OpenAI mock server (replaces WireMock)
 ```
 
 The Go runner:
@@ -439,7 +438,7 @@ Scenario: [quarkus] Getting Started Tutorial - checkpoint-01
       WireMock-compatible `NNN.json` files)
 - [x] Implement `site_test.go`: `TestSiteDocs` (Postgres + memory service + OpenAI mock
       startup, feature generation, godog runner with `Concurrency`)
-- [x] Add `internal/sitebdd/FACTS.md` with gotchas as they are discovered
+- [x] Document site test procedures and gotchas in the `site-tests` skill
 - [ ] Verify all existing Java site-test scenarios pass with the Go runner
 - [ ] Add `go test -tags=site_tests` step to CI pipeline (optional, skipped by default
       in PR builds; only on merge to main or with explicit label)
@@ -454,7 +453,7 @@ Scenario: [quarkus] Getting Started Tutorial - checkpoint-01
 | `internal/sitebdd/steps_curl.go` | **new** — curl parser + assertion step definitions |
 | `internal/sitebdd/steps_checkpoint.go` | **new** — checkpoint lifecycle godog step registrations |
 | `internal/sitebdd/mock_openai.go` | **new** — in-process OpenAI mock server + recording |
-| `internal/sitebdd/FACTS.md` | **new** — module-specific gotchas |
+| `.skills/site-tests/SKILL.md` | Running, fixture, and authoring procedures |
 
 No existing files require modification. The Java `site-tests/` Maven module is
 not removed; both suites can coexist during the transition period.

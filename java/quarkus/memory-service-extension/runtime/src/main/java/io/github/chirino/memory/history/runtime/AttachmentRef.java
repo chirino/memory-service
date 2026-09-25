@@ -9,6 +9,8 @@ package io.github.chirino.memory.history.runtime;
  */
 public record AttachmentRef(String id, String contentType, String name, String href) {
 
+    // BACKWARD COMPATIBILITY: remove in a future breaking release.
+    // Constructor shape from before the href component was added.
     public AttachmentRef(String id, String contentType, String name) {
         this(id, contentType, name, null);
     }

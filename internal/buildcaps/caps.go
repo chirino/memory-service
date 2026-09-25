@@ -1,3 +1,6 @@
+// Package buildcaps reports which optional modules were compiled into the binary.
+// Prefer these runtime booleans to skip capability-dependent tests and scenarios;
+// keep build tags only where code would not compile without the optional module.
 package buildcaps
 
 var (

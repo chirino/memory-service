@@ -36,6 +36,11 @@ public class ChatMemoryProcessor {
                         .build());
     }
 
+    /**
+     * Adds {@code MemoryService} to the combined Jandex index so the Quarkiverse {@code
+     * AiServicesProcessor} can find it, register it for reflection, and keep it unremovable when
+     * an AI service uses it as {@code chatMemoryProviderSupplier}.
+     */
     @BuildStep
     AdditionalIndexedClassesBuildItem indexSupplierClasses() {
         return new AdditionalIndexedClassesBuildItem(

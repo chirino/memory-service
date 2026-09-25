@@ -182,6 +182,9 @@ public class MemoryServiceProxy {
                 new EntryListOptions(afterCursor, null, null, limit, channel, epoch, forks));
     }
 
+    // Maps EntryListOptions positionally onto the generated client. Keep every
+    // listConversationEntries query parameter represented here when the OpenAPI operation changes.
+    // The trailing createdAtAfter/createdAtBefore/createdAt filters are currently passed as null.
     public Response listConversationEntries(String conversationId, EntryListOptions options) {
         return execute(
                 () ->
