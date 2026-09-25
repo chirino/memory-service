@@ -6,7 +6,7 @@
       "pinnedVersion": "3.14.1",
       "location": "java/pom.xml",
       "class": "user-defined",
-      "reason": "3.14.1 intentional project hold; do not update without a verified fix (see AGENTS.md)",
+      "reason": "3.15.x deletes generated sources and copied resources; incremental rebuilds drop META-INF/spring auto-config metadata, silently breaking downstream Spring Boot auto-configuration. Hold reason documented in java/pom.xml comment.",
       "introducedBy": "project",
       "reviewCondition": "explicit approval required"
     },
@@ -77,28 +77,15 @@
     },
     {
       "ecosystem": "npm",
-      "name": "vite",
-      "pinnedVersion": "8.1.5",
-      "location": "frontends/developer/package.json overrides (implicit, via range cap)",
-      "class": "temporary cooldown",
-      "reason": "8.3.1 published 2026-09-24 (1 day), inside 10-day cooldown window",
-      "introducedBy": "dependency-update",
-      "introducedAt": "2026-09-25",
-      "blockedVersion": "8.3.1",
-      "blockedPublishedAt": "2026-09-24T12:26:19Z",
-      "reviewAfter": "next dependency update"
-    },
-    {
-      "ecosystem": "npm",
       "name": "astro",
-      "pinnedVersion": "5.18.2",
+      "pinnedVersion": "5.x (range ^5.7.10 in site/package.json)",
       "location": "site/package.json",
-      "class": "temporary cooldown",
-      "reason": "astro 7.x upgrade backed out: build fails with breaking Sätteri markdown processor change requiring @astrojs/markdown-remark. Also 7.3.3+ are in cooldown.",
+      "class": "user-defined",
+      "reason": "astro 7.x upgrade backed out: build fails with breaking Sätteri markdown processor change — @astrojs/markdown-remark was removed from astro 7.x default markdown pipeline and the site's astro.config.mjs uses the old remarkPlugins API. Not a cooldown hold; this is a compatibility hold requiring site config migration.",
       "introducedBy": "dependency-update",
       "introducedAt": "2026-09-25",
       "blockedVersion": "7.x",
-      "reviewAfter": "when site markdown config is migrated to Sätteri/astro 7.x API",
+      "reviewAfter": "when site/astro.config.mjs is migrated to astro 7 Sätteri markdown API",
       "verification": "cd site && npm run build"
     },
     {
@@ -166,12 +153,14 @@
     {
       "ecosystem": "docker",
       "name": "registry.access.redhat.com/ubi9/openjdk-25",
-      "pinnedVersion": "1.24-3.1789566911",
+      "pinnedVersion": "1.24-3.1789373085",
       "location": "java/quarkus/examples/chat-quarkus/Dockerfile",
       "class": "temporary cooldown",
-      "reason": "1.24-3.1789566911 published 2026-09-16 (9 days); latest eligible is 1.24-3.1789373085 (Sep 14). Dockerfile updated to 3.1789373085.",
+      "reason": "Dockerfile uses 1.24-3.1789373085 (2026-09-14, 11 days); 1.24-3.1789566911 published 2026-09-16 (9 days) is inside 10-day cooldown",
       "introducedBy": "dependency-update",
       "introducedAt": "2026-09-25",
+      "blockedVersion": "1.24-3.1789566911",
+      "blockedPublishedAt": "2026-09-16",
       "reviewAfter": "next dependency update"
     },
     {
@@ -255,7 +244,7 @@
     {
       "ecosystem": "go",
       "name": "github.com/klauspost/compress",
-      "pinnedVersion": "v1.19.1",
+      "pinnedVersion": "v1.19.2",
       "location": "go.mod (transitive, selected by go mod tidy)",
       "class": "temporary cooldown",
       "reason": "v1.20.1 published 2026-09-25 (0 days), inside 10-day cooldown",
