@@ -1,0 +1,56 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: lc4j_messages_v1
+spec:
+  resource: entry
+  selector:
+    contentType: LC4J
+  rows: many
+  columns:
+    message_type: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+    tool_names: {type: string_array, nullable: false}
+    message:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    # AI, system, and tool-result messages carry `text`; user messages carry `contents`.
+    message_text(message) := message.text if {
+      is_string(message.text)
+    } else := text if {
+      parts := [part.text |
+        some part in message.contents
+        is_string(part.text)
+      ]
+      count(parts) > 0
+      text := concat("", parts)
+    } else := null
+
+    tool_names(message) := names if {
+      is_array(message.toolExecutionRequests)
+      names := [request.name |
+        some request in message.toolExecutionRequests
+        is_string(request.name)
+      ]
+    } else := [message.toolName] if {
+      is_string(message.toolName)
+    } else := []
+
+    output := [row |
+      some message in input.content
+      row := {
+        "message_type": field(message, "type"),
+        "text": message_text(message),
+        "tool_names": tool_names(message),
+        "message": message,
+      }
+    ]

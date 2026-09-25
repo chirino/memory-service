@@ -22,15 +22,21 @@ import (
 	"github.com/chirino/memory-service/internal/plugin/route/routetx"
 	registryembed "github.com/chirino/memory-service/internal/registry/embed"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
 	"github.com/chirino/memory-service/internal/service"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 	openapi_types "github.com/oapi-codegen/runtime/types"
 )
 
 func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+	putMemoryWithEvents(c, store, nil, nil, policy, cfg)
+}
+
+func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config) {
 	var req generatedapi.PutMemoryRequest
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -74,6 +80,7 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 
 	var responseStatus int
 	var responseBody interface{}
+	var events []registryeventbus.Event
 	// Resolve write kind, authorize, project, and persist — all inside one InWriteTx so the kind
 	// resolved for authz is the same kind projected and persisted. No second ResolveKindForWrite.
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
@@ -152,17 +159,26 @@ func putMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *epi
 		}
 		responseStatus = http.StatusOK
 		responseBody = toAPIMemoryWriteResult(result)
+		event := eventstream.MemoryWriteEvent("updated", "revised", result)
+		if result.Revision <= 1 {
+			event.Event, event.Data.(map[string]any)["change"] = "created", "created"
+		}
+		events, err = appendMemoryOutbox(ctx, memoryStore, event)
+		if err != nil {
+			return err
+		}
 		return nil
 	}); err != nil {
 		handleError(c, err)
 		return
 	}
+	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
 	c.JSON(responseStatus, responseBody)
 }
 
 // HandlePutMemory handles the generated public put-memory operation.
-func HandlePutMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
-	putMemory(c, store, policy, cfg)
+func HandlePutMemory(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config) {
+	putMemoryWithEvents(c, store, memoryStore, eventBus, policy, cfg)
 }
 
 // HandleGetMemory handles the generated public get-memory operation.
@@ -171,8 +187,8 @@ func HandleGetMemory(c *gin.Context, store registryepisodic.EpisodicStore, polic
 }
 
 // HandleUpdateMemory handles the generated public update-memory operation.
-func HandleUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
-	updateMemoryWithParams(c, store, policy, cfg, params)
+func HandleUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
+	updateMemoryWithParams(c, store, memoryStore, eventBus, policy, cfg, params)
 }
 
 // HandleSearchMemories handles the generated public memory-search operation.
@@ -286,7 +302,7 @@ func getMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, p
 	c.JSON(responseStatus, responseBody)
 }
 
-func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
+func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config, params generatedapi.UpdateMemoryParams) {
 	ns := params.Ns
 	key := params.Key
 	var req generatedapi.UpdateMemoryRequest
@@ -313,6 +329,7 @@ func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 	pc := policyContext(c)
 	responseStatus := 0
 	var responseBody interface{}
+	var events []registryeventbus.Event
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
 		if policy != nil {
 			// 1. Look up exact kind without loading value. Use ArchiveFilterExclude so archived rows
@@ -344,8 +361,19 @@ func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 			}
 		}
 		// 3. Archive (idempotent when no active row).
+		item, err := store.GetMemory(ctx, ns, key, registryepisodic.ArchiveFilterExclude)
+		if err != nil {
+			return err
+		}
 		if err := store.ArchiveMemory(ctx, ns, key, req.ExpectedRevision); err != nil {
 			return err
+		}
+		if item != nil {
+			item.ArchivedAt = ptrTime(time.Now().UTC())
+			events, err = appendMemoryOutbox(ctx, memoryStore, eventstream.MemoryChangedEvent("updated", "archived", item))
+			if err != nil {
+				return err
+			}
 		}
 		responseStatus = http.StatusNoContent
 		return nil
@@ -353,6 +381,7 @@ func updateMemoryWithParams(c *gin.Context, store registryepisodic.EpisodicStore
 		handleError(c, err)
 		return
 	}
+	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
 	if responseBody != nil {
 		c.JSON(responseStatus, responseBody)
 	} else {
@@ -1651,7 +1680,7 @@ func kindMigrationToAPI(ctx context.Context, store registryepisodic.EpisodicStor
 }
 
 // HandleAdminDeleteMemory exposes forced memory deletes for wrapper-native adapters.
-func HandleAdminDeleteMemory(c *gin.Context, store registryepisodic.EpisodicStore) {
+func HandleAdminDeleteMemory(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	if !ensureAdmin(c) {
 		return
 	}
@@ -1661,12 +1690,19 @@ func HandleAdminDeleteMemory(c *gin.Context, store registryepisodic.EpisodicStor
 		c.JSON(http.StatusBadRequest, gin.H{"error": "invalid memory ID"})
 		return
 	}
+	var events []registryeventbus.Event
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		return store.AdminForceDeleteMemory(ctx, memID)
+		if err := store.AdminForceDeleteMemory(ctx, memID); err != nil {
+			return err
+		}
+		var err error
+		events, err = appendMemoryOutbox(ctx, memoryStore, eventstream.MemoryDeletedEvent(memID, "hard_deleted"))
+		return err
 	}); err != nil {
 		handleError(c, err)
 		return
 	}
+	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
 	c.Status(http.StatusNoContent)
 }
 
@@ -2754,7 +2790,7 @@ func queryBool(c *gin.Context, key string, def bool) bool {
 // Admin writes are authorized by admin role/scope/justification and intentionally
 // bypass episodic OPA authz (policy is unused on purpose); kind projection uses only
 // the persisted namespace/key/value/index inputs.
-func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config) {
 	if !ensureAdmin(c) {
 		return
 	}
@@ -2797,6 +2833,7 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		kindSel = *req.Kind
 	}
 	var result *registryepisodic.MemoryWriteResult
+	var events []registryeventbus.Event
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
 		policyAttrs, resolvedKind, err := resolveKindProjection(ctx, store, kindSel, req.Namespace, req.Key, req.Value, index)
 		if err != nil {
@@ -2815,16 +2852,22 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		if err != nil {
 			return err
 		}
-		return nil
+		event := eventstream.MemoryWriteEvent("updated", "revised", result)
+		if result.Revision <= 1 {
+			event.Event, event.Data.(map[string]any)["change"] = "created", "created"
+		}
+		events, err = appendMemoryOutbox(ctx, memoryStore, event)
+		return err
 	}); err != nil {
 		handleError(c, err)
 		return
 	}
+	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
 	c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
 }
 
 // HandleAdminUpdateMemory handles PATCH /admin/v1/memories for admin clients
-func HandleAdminUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
+func HandleAdminUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStore, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, policy *episodic.PolicyEngine, cfg *config.Config) {
 	if !ensureAdmin(c) {
 		return
 	}
@@ -2858,11 +2901,49 @@ func HandleAdminUpdateMemory(c *gin.Context, store registryepisodic.EpisodicStor
 	// Admin memory updates are authorized by admin role/scope/justification
 	// before this handler. They intentionally bypass user OPA authz because
 	// archive is an administrative operation across namespaces.
+	var events []registryeventbus.Event
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		return store.ArchiveMemory(ctx, params.Ns, params.Key, req.ExpectedRevision)
+		item, err := store.GetMemory(ctx, params.Ns, params.Key, registryepisodic.ArchiveFilterExclude)
+		if err != nil {
+			return err
+		}
+		if err := store.ArchiveMemory(ctx, params.Ns, params.Key, req.ExpectedRevision); err != nil {
+			return err
+		}
+		if item != nil {
+			item.ArchivedAt = ptrTime(time.Now().UTC())
+			events, err = appendMemoryOutbox(ctx, memoryStore, eventstream.MemoryChangedEvent("updated", "archived", item))
+		}
+		return err
 	}); err != nil {
 		handleError(c, err)
 		return
 	}
+	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
 	c.Status(http.StatusNoContent)
 }
+
+func appendMemoryOutbox(ctx context.Context, memoryStore registrystore.MemoryStore, events ...registryeventbus.Event) ([]registryeventbus.Event, error) {
+	if memoryStore == nil {
+		return events, nil
+	}
+	appended, used, err := eventstream.AppendOutboxEvents(ctx, memoryStore, events...)
+	if err != nil {
+		return nil, err
+	}
+	if used {
+		return appended, nil
+	}
+	return events, nil
+}
+
+func publishMemoryEvents(ctx context.Context, memoryStore registrystore.MemoryStore, eventBus registryeventbus.EventBus, events []registryeventbus.Event) {
+	if memoryStore == nil || eventBus == nil || len(events) == 0 {
+		return
+	}
+	if err := eventstream.PublishEvents(ctx, memoryStore, eventBus, events...); err != nil {
+		log.Warn("failed to publish memory event", "err", err)
+	}
+}
+
+func ptrTime(value time.Time) *time.Time { return &value }

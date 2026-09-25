@@ -1,18 +1,18 @@
 ---
-status: proposed
+status: implemented
 ---
 
 # Enhancement 091: Mongo Transactional Event Outbox
 
-> **Status**: Proposed.
+> **Status**: Implemented — outbox-enabled writes use MongoDB session transactions and a change-stream relay supplies ordered live and replay cursors.
 
 ## Summary
 
-Upgrade the MongoDB event outbox path added by [090](090-event-outbox.md) from best-effort writes to transactional, replay-capable delivery by using `mongo.Session` transactions for business writes plus outbox inserts, and a change-stream relay for commit-ordered tail publication.
+Upgrade the MongoDB event outbox path added by [090](../090-event-outbox.md) from best-effort writes to transactional, replay-capable delivery by using `mongo.Session` transactions for business writes plus outbox inserts, and a change-stream relay for commit-ordered tail publication.
 
 ## Motivation
 
-Enhancement [090](090-event-outbox.md) intentionally left MongoDB in a staged state:
+Enhancement [090](../090-event-outbox.md) intentionally left MongoDB in a staged state:
 
 - mutation handlers already call the shared `AppendOutboxEvents(...)` path, so the write call sites are future-safe
 - Mongo outbox rows/documents are persisted, but `MongoStore.InWriteTx` is still intent-only
@@ -27,17 +27,22 @@ That is the right intermediate state, but it is not the end state. Without sessi
 1. Make Mongo business mutations and outbox writes commit atomically.
 2. Make Mongo replay use a durable, commit-ordered cursor.
 3. Make live tail publish from the same cursor space used by replay.
-4. Preserve the existing shared handler contract introduced in [090](090-event-outbox.md).
+4. Preserve the existing shared handler contract introduced in [090](../090-event-outbox.md).
 
-### Current State
+### Implemented State
 
-Today, Mongo uses:
+Mongo now uses:
 
-- `MongoStore.InWriteTx(...)` as an intent marker only
-- `AppendOutboxEvents(...)` to insert `outbox_events` documents directly
-- `ListOutboxEvents(...)` returning `ErrOutboxReplayUnsupported`
+- `MongoStore.InWriteTx(...)` with `mongo.Session.WithTransaction` whenever the outbox is enabled
+- the transaction session carried by `context.Context` for business collection and `outbox_events` writes
+- startup topology validation that requires a replica set or mongos when the outbox is enabled
+- a change-stream relay that stores its durable resume token and assigns a stable event sequence inside one transaction
+- opaque `mongo:<base64url BSON>` cursors: change-stream tokens for live rows and stable relay-generated anchors for committed rows recovered outside retained stream history
+- `ListOutboxEvents(...)` paging materialized events in relay order and reporting evicted cursor anchors as stale
+- request-path publication suppression so live subscribers receive only relay cursors
+- a durable published sequence that makes every relay retry the oldest unpublished event before a later event can be published
 
-That means Mongo is structurally aligned with the relational stores, but it does not yet provide the atomicity or replay guarantees that the outbox API advertises elsewhere.
+The mutation, outbox insert, relay checkpoint, replay materialization, and live publication now share one resumable cursor space.
 
 ### Target State
 
@@ -50,8 +55,9 @@ Mongo should move to a two-part implementation:
 
 2. **Change-stream tail + replay path**
    - a Mongo change stream on `outbox_events` becomes the authoritative source for live tail
-   - the public replay cursor is the change-stream resume token, encoded as an opaque string
-   - replay queries must bridge from stored outbox documents to the resume token space so `after=<cursor>` and tail publication share one cursor contract
+   - public replay cursors are opaque BSON anchors encoded as strings
+   - live inserts use their change-stream resume token, while startup/history-loss recovery assigns a stable BSON anchor to committed unmaterialized rows
+   - replay queries resolve either form through the stored outbox document, while a separate state token resumes the change stream
 
 ### Transaction Scope
 
@@ -82,19 +88,23 @@ But its behavior changes:
 
 - inside `InWriteTx`, inserts must use the active session transaction
 - returned cursors should no longer be raw document `_id` values once replay is enabled
-- the write path should return a temporary internal handle if needed, but the published/tail cursor must come from the change stream resume token
+- the write path returns no public cursor before commit; the relay assigns the public cursor during materialization
 
 ### Cursor Contract
 
-Mongo cursors must be opaque resume tokens, not counters and not ObjectIDs.
+Mongo cursors must be opaque BSON anchors, not counters and not raw ObjectIDs.
 
 | Source | Acceptable | Why |
 |---|---|---|
 | Change-stream resume token | Yes | Commit-ordered and resumable |
+| Stable recovery anchor | Yes | Preserves ordered replay when the original stream token is unavailable |
 | ObjectID hex string | No | Insert identity, not authoritative replay position |
 | Synthetic numeric sequence | No | Adds coordination complexity and still diverges from commit order |
 
-The implementation may persist the last observed resume token alongside each outbox document or maintain a relay checkpoint table/collection, but the externally visible cursor must remain a change-stream token.
+The relay persists the last observed resume token in its state collection. Each outbox
+document stores its distinct public BSON cursor. Recovered cursors include the document
+identity inside an opaque BSON value, while ordering remains the relay-assigned event
+sequence.
 
 ### Replay Strategy
 
@@ -119,7 +129,9 @@ in the same space.
 
 - if the Mongo transaction aborts, no outbox documents must remain
 - if the relay loses its change stream, consumers should receive the same `invalidate` semantics used elsewhere
-- if resume token retention is lost, reconnect with an old cursor should produce `invalidate`, not silent gaps
+- if resume token retention is lost, publish `invalidate`, open a fresh stream before scanning, and materialize every committed row still lacking a sequence
+- if materialization succeeds but publication fails, do not advance the durable published sequence; any relay may retry, and duplicate delivery is allowed
+- retention may delete only rows whose event sequence is at or below the durable published sequence; it retains unmaterialized and unpublished rows, including when relay state is absent
 
 ## Testing
 
@@ -158,16 +170,16 @@ Feature: Mongo transactional outbox
 
 ## Tasks
 
-- [ ] Add Mongo session-backed write scope to `MongoStore.InWriteTx(...)`
-- [ ] Make Mongo store methods use session-bound collection handles from context
-- [ ] Make `AppendOutboxEvents(...)` participate in the active Mongo transaction
-- [ ] Introduce a Mongo outbox relay based on change streams
-- [ ] Define the external Mongo cursor format as an opaque encoded resume token
-- [ ] Implement Mongo replay reads backed by the same cursor space as the relay
-- [ ] Replace `ErrOutboxReplayUnsupported` for Mongo once replay is truly available
-- [ ] Add Mongo BDD coverage for replay, stale cursors, and rollback safety
-- [ ] Add unit/integration tests for session rollback and relay resume behavior
-- [ ] Update [090](090-event-outbox.md) once Mongo transactional replay lands
+- [x] Add Mongo session-backed write scope to `MongoStore.InWriteTx(...)`
+- [x] Make Mongo store methods use the active session context
+- [x] Make `AppendOutboxEvents(...)` participate in the active Mongo transaction
+- [x] Introduce a Mongo outbox relay based on change streams
+- [x] Define the external Mongo cursor format as an opaque encoded resume token
+- [x] Implement Mongo replay reads backed by the same cursor space as the relay
+- [x] Replace `ErrOutboxReplayUnsupported` for Mongo once replay is truly available
+- [x] Add Mongo BDD replay coverage and replica-set integration coverage for stale cursors and rollback safety
+- [x] Add unit/integration tests for session rollback and relay resume behavior
+- [x] Update [090](../090-event-outbox.md) once Mongo transactional replay lands
 
 ## Files to Modify
 
@@ -193,13 +205,14 @@ Feature: Mongo transactional outbox
 go build ./...
 
 # Mongo BDD replay coverage
-go test ./internal/bdd -run 'TestFeaturesMongo/(sse-events-rest|sse-events-grpc)' -count=1 > test-mongo.log 2>&1
+go test -tags='sqlite_fts5 auth_testfixtures' ./internal/bdd -run TestFeaturesMongoOutbox -count=1 > test-mongo.log 2>&1
+go test ./internal/plugin/store/mongo -run TestMongoOutboxTransactionRelayReplayAndStaleCursor -count=1
 # Search for failures using Grep tool on test-mongo.log
 ```
 
 ## Non-Goals
 
-- changing the REST/gRPC outbox API shape introduced in [090](090-event-outbox.md)
+- changing the REST/gRPC outbox API shape introduced in [090](../090-event-outbox.md)
 - adding exactly-once consumer tracking on the server side
 - redesigning non-Mongo datastores
 
@@ -213,7 +226,8 @@ Because replay is an integrity feature, not just a convenience feature. A Mongo 
 
 Because `_id` is document identity, not the authoritative commit resume position. The outbox cursor must be the same thing the relay uses to continue after reconnect or failover, and for Mongo that is the resume token.
 
-## Open Questions
+## Resolved Questions
 
-- Should the relay persist its own checkpoint separately from per-document cursor metadata, or is per-document cursor materialization enough for replay windows?
-- Do we want Mongo replay available only on replica sets, with startup validation that rejects standalone deployments when outbox replay is enabled?
+- The relay persists one checkpoint resume token and also materializes the token on each replayable outbox document.
+- The relay retries a failed event-sequence materialization before it reads the next change, so it cannot checkpoint past an unmaterialized event.
+- Outbox-enabled MongoDB startup requires a replica set or mongos; standalone deployments are rejected.

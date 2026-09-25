@@ -35,11 +35,6 @@ func TestSiteDocs(t *testing.T) {
 	globalScenarioUUIDRegistry.Reset()
 	globalCheckpointPathRegistry.Reset()
 	t.Cleanup(func() {
-		// Cancel the wave coordinator first so any goroutines waiting in
-		// Enter or WaitForCurlPhase unblock immediately. This prevents a
-		// deadlock when the test suite exits early (timeout, -run filter,
-		// or scenario failure that skips ctx.After cleanup).
-		globalScenarioWaveCoordinator.Cancel()
 		killAllActiveCheckpoints("suite cleanup")
 	})
 
@@ -54,30 +49,35 @@ func TestSiteDocs(t *testing.T) {
 	scenarios, err := loadScenarios(scenariosFile)
 	require.NoError(t, err, "load scenarios")
 	assignScenarioWaves(scenarios, siteScenarioConcurrency())
+	tagFilter := strings.TrimSpace(os.Getenv("GODOG_TAGS"))
+	scheduled, err := scheduledScenarioData(scenarios, tagFilter)
+	require.NoError(t, err, "parse GODOG_TAGS")
+	if len(scheduled) == 0 {
+		t.Skipf("no scenarios matched GODOG_TAGS=%q", tagFilter)
+		return
+	}
 
 	// Java checkpoint docs depend on local 999-SNAPSHOT artifacts. Install them
-	// once up front so parallel checkpoint builds do not fail to resolve
-	// 999-SNAPSHOT dependencies.
-	ensureJavaCheckpointArtifacts(t, projectRoot, scenarios)
+	// once up front so parallel scenario builds can resolve dependencies reliably.
+	ensureJavaCheckpointArtifacts(t, projectRoot, scheduled)
 
 	// Python checkpoint docs depend on locally-built wheels (memory-service-langchain).
 	// Build them once up front so uv sync can find them.
-	ensurePythonPackages(t, projectRoot, scenarios)
+	ensurePythonPackages(t, projectRoot, scheduled)
 
 	if len(scenarios) == 0 {
 		t.Skip("no scenarios found in test-scenarios.json")
 		return
 	}
 
-	tagFilter := strings.TrimSpace(os.Getenv("GODOG_TAGS"))
-	scheduledScenarios, err := countScheduledScenarios(scenarios, tagFilter)
-	require.NoError(t, err, "parse GODOG_TAGS")
-	if scheduledScenarios == 0 {
-		t.Skipf("no scenarios matched GODOG_TAGS=%q", tagFilter)
-		return
-	}
-
 	globalScenarioWaveCoordinator.Reset(scenarios, tagFilter)
+	needsClickHouse, err := hasScheduledClickHouseScenario(scenarios, tagFilter)
+	require.NoError(t, err, "select ClickHouse documentation scenarios")
+	var clickHouse *siteClickHouse
+	if needsClickHouse {
+		clickHouse = startSiteClickHouse(t)
+		t.Logf("ClickHouse: %s", clickHouse.address)
+	}
 
 	t.Logf("Loaded %d scenario(s) from %s", len(scenarios), scenariosFile)
 
@@ -102,10 +102,6 @@ func TestSiteDocs(t *testing.T) {
 	// Start shared Postgres + in-process memory service
 	dbURL := testpg.StartPostgres(t)
 
-	// The shared TCP and UDS servers both trust the mock OIDC issuer and must
-	// allow audience "memory-service", which mock_jwt.go puts on every token.
-	// They select the "dek" encryption provider explicitly because setting
-	// EncryptionKey alone keeps the default "plain" provider.
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting // allows X-Client-ID header in BDD tests
 	cfg.OIDCIssuer = mock.URL()   // enables JWT validation using mock JWKS
@@ -217,10 +213,12 @@ func TestSiteDocs(t *testing.T) {
 				MemServiceURL:        memServiceURL,
 				MemServiceUnixSocket: udsSocketPath,
 				Mock:                 mock,
+				ClickHouse:           clickHouse,
 				t:                    t,
 			}
 			registerCheckpointSteps(sc, s)
 			registerCurlSteps(sc, s)
+			registerClickHouseSteps(sc, s)
 		},
 	}.Run()
 
@@ -282,9 +280,6 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 	}
 
 	mvnw := filepath.Join(projectRoot, "java", "mvnw")
-	// Use "clean install": OpenAPI/proto models removed from the contracts can
-	// leave stale generated sources in module target/ directories, which break
-	// later checkpoint builds.
 	args := []string{
 		"-B", "-T", "1C",
 		"-f", filepath.Join(projectRoot, "java", "pom.xml"),

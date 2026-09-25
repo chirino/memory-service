@@ -292,8 +292,12 @@ func TestSQLiteTombstoneInvalidatesInflightKindMigration(t *testing.T) {
 	}))
 
 	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
-		count, err := store.TombstoneDeletedMemories(txCtx, 10)
-		require.Equal(t, int64(1), count)
+		lifecycle := store.(registryepisodic.BackgroundMemoryLifecycleStore)
+		changes, err := lifecycle.TombstoneDeletedMemoriesWithChanges(txCtx, 10)
+		require.Len(t, changes, 1)
+		require.Equal(t, memoryID, changes[0].ID)
+		require.Equal(t, "default/v1", changes[0].MemoryKind)
+		require.Equal(t, candidate.Revision+1, changes[0].Revision)
 		return err
 	}))
 	require.ErrorIs(t, store.InWriteTx(ctx, func(txCtx context.Context) error {

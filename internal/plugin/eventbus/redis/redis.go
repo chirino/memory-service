@@ -145,14 +145,16 @@ type redisBus struct {
 // wireEvent is used for Redis serialization, including routing metadata that is
 // excluded from the public Event JSON tags.
 type wireEvent struct {
-	Event               string    `json:"event"`
-	Kind                string    `json:"kind"`
-	Data                any       `json:"data"`
-	ConversationGroupID uuid.UUID `json:"conversationGroupId,omitempty"`
-	UserIDs             []string  `json:"userIds,omitempty"`
-	Broadcast           bool      `json:"broadcast,omitempty"`
-	AdminOnly           bool      `json:"adminOnly,omitempty"`
-	Internal            bool      `json:"internal,omitempty"`
+	Event               string     `json:"event"`
+	Kind                string     `json:"kind"`
+	Data                any        `json:"data"`
+	OutboxCursor        string     `json:"cursor,omitempty"`
+	OccurredAt          *time.Time `json:"occurredAt,omitempty"`
+	ConversationGroupID uuid.UUID  `json:"conversationGroupId,omitempty"`
+	UserIDs             []string   `json:"userIds,omitempty"`
+	Broadcast           bool       `json:"broadcast,omitempty"`
+	AdminOnly           bool       `json:"adminOnly,omitempty"`
+	Internal            bool       `json:"internal,omitempty"`
 }
 
 func toWire(e registryeventbus.Event) wireEvent {
@@ -160,6 +162,8 @@ func toWire(e registryeventbus.Event) wireEvent {
 		Event:               e.Event,
 		Kind:                e.Kind,
 		Data:                e.Data,
+		OutboxCursor:        e.OutboxCursor,
+		OccurredAt:          e.OccurredAt,
 		ConversationGroupID: e.ConversationGroupID,
 		UserIDs:             e.UserIDs,
 		Broadcast:           e.Broadcast,
@@ -173,6 +177,8 @@ func fromWire(w wireEvent) registryeventbus.Event {
 		Event:               w.Event,
 		Kind:                w.Kind,
 		Data:                w.Data,
+		OutboxCursor:        w.OutboxCursor,
+		OccurredAt:          w.OccurredAt,
 		ConversationGroupID: w.ConversationGroupID,
 		UserIDs:             w.UserIDs,
 		Broadcast:           w.Broadcast,
@@ -183,6 +189,9 @@ func fromWire(w wireEvent) registryeventbus.Event {
 
 // Publish queues an event for Redis publication.
 func (r *redisBus) Publish(ctx context.Context, event registryeventbus.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
 	select {
 	case r.outbound <- event:
 	default:
@@ -193,6 +202,13 @@ func (r *redisBus) Publish(ctx context.Context, event registryeventbus.Event) er
 		}
 	}
 	return nil
+}
+
+func (r *redisBus) PublishDurable(ctx context.Context, event registryeventbus.Event) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return r.publishBatch(ctx, []registryeventbus.Event{event})
 }
 
 // Subscribe returns a channel that receives routed events.

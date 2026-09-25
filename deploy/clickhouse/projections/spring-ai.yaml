@@ -1,0 +1,27 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: spring_ai_messages_v1
+spec:
+  resource: entry
+  selector:
+    contentType: SpringAI
+  rows: many
+  columns:
+    role: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+  projectionRego: |
+    package memoryservice.analytics
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    output := [row |
+      some message in input.content
+      row := {
+        "role": field(message, "role"),
+        "text": field(message, "text"),
+      }
+    ]

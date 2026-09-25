@@ -1,0 +1,5 @@
+services:
+  memory-service:
+    environment:
+      MEMORY_SERVICE_OIDC_ISSUER: ""
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: ""

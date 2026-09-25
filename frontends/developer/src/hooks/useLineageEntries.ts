@@ -2,7 +2,7 @@ import { useMemo } from "react";
 import { useInfiniteQuery } from "@tanstack/react-query";
 import { adminGetEntries } from "@/api/generated/sdk.gen";
 import { adminGetEntriesQueryKey } from "@/api/generated/@tanstack/react-query.gen";
-import type { ConversationForkPoint, Entry } from "@/api/generated/types.gen";
+import type { AdminEntry as Entry, ConversationForkPoint } from "@/api/generated/types.gen";
 import type { ForkOption } from "@/lib/conversation";
 
 export type { ForkOption };

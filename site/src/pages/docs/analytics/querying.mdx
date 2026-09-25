@@ -1,0 +1,370 @@
+---
+layout: ../../../layouts/DocsLayout.astro
+title: Query analytics data
+description: Analyze conversation activity, lifecycle trends, and content types in ClickHouse.
+---
+
+import TestScenario from "../../../components/TestScenario.astro";
+import SqlTest from "../../../components/SqlTest.astro";
+import AnalyticsFixture from "../../../components/AnalyticsFixture.astro";
+import fixture from "../../../fixtures/analytics/querying.json";
+
+<TestScenario description="Query ClickHouse analytics" fixture={fixture}>
+
+<AnalyticsFixture fixture={fixture} />
+
+Run these examples with the local Compose ClickHouse client:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client \
+  --user memory_service_analytics \
+  --password memory-service-analytics
+```
+
+Prefix table names with the configured database. The repository examples use `memory_service`.
+
+## Find the available relations
+
+List processor-owned tables, generated views, and user projections:
+
+<SqlTest
+  query={`SELECT name, engine
+FROM system.tables
+WHERE database = 'memory_service'
+ORDER BY name;`}
+  columns={["name", "engine"]}
+  minRows={1}
+/>
+
+List registered projections and their selectors:
+
+<SqlTest
+  query={`SELECT
+  projection_name,
+  selector,
+  table_name,
+  state,
+  updated_at
+FROM memory_service.projection_registry FINAL
+ORDER BY projection_name;`}
+  columns={["projection_name", "selector", "table_name", "state", "updated_at"]}
+  minRows={1}
+/>
+
+Use a `*_current` view for dashboards and current-state reports. These views return the latest non-deleted row for each resource, or every row of the latest version for a [multi-row projection](/docs/analytics/projections/#write-several-rows-per-resource). Use a `*_all` view when you also need the latest tombstone. Query a physical table when you need retained version rows.
+
+## Find the most active conversations
+
+Rank current conversations by entry count and show how long each conversation remained active:
+
+<SqlTest
+  query={`WITH entry_activity AS (
+  SELECT
+    exporter_id,
+    conversation_id,
+    count() AS entry_count,
+    min(created_at) AS first_entry_at,
+    max(created_at) AS last_entry_at
+  FROM memory_service.entries_current
+  GROUP BY exporter_id, conversation_id
+)
+SELECT
+  c.resource_id AS conversation_id,
+  a.entry_count,
+  dateDiff('second', a.first_entry_at, a.last_entry_at) AS active_seconds,
+  a.last_entry_at
+FROM memory_service.conversations_current AS c
+INNER JOIN entry_activity AS a
+  ON c.exporter_id = a.exporter_id
+ AND c.resource_id = a.conversation_id
+WHERE c.is_archived = 0
+ORDER BY a.entry_count DESC, a.last_entry_at DESC
+LIMIT 20;`}
+  columns={["conversation_id", "entry_count", "active_seconds", "last_entry_at"]}
+  minRows={1}
+/>
+
+The processor preserves Memory Service resource IDs. Use `conversation_id` with the Memory Service API when you need the authoritative conversation.
+
+## Chart creation and deletion trends
+
+Build a daily activity series from lifecycle events:
+
+<SqlTest
+  query={`SELECT
+  toDate(occurred_at) AS day,
+  countIf(resource_kind = 'conversation' AND action = 'created') AS conversations_created,
+  countIf(resource_kind = 'entry' AND action = 'created') AS entries_created,
+  countIf(resource_kind = 'memory' AND action = 'created') AS memories_created,
+  countIf(action = 'deleted') AS resources_deleted
+FROM memory_service.lifecycle_events_current
+WHERE occurred_at >= now() - INTERVAL 30 DAY
+GROUP BY day
+ORDER BY day;`}
+  columns={["day", "conversations_created", "entries_created", "memories_created", "resources_deleted"]}
+  minRows={1}
+/>
+
+Lifecycle retention limits the available time range. Configure enough retention for the reporting window that you query.
+
+## Estimate processor delay from ClickHouse
+
+Compare the source occurrence time with the time when the processor observed each event:
+
+<SqlTest
+  query={`SELECT
+  toStartOfHour(occurred_at) AS hour,
+  resource_kind,
+  count() AS events,
+  quantileTDigest(0.50)(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS p50_delay_ms,
+  quantileTDigest(0.95)(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS p95_delay_ms,
+  max(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS max_delay_ms
+FROM memory_service.lifecycle_events_current
+WHERE occurred_at >= now() - INTERVAL 24 HOUR
+GROUP BY hour, resource_kind
+ORDER BY hour, resource_kind;`}
+  columns={["hour", "resource_kind", "events", "p50_delay_ms", "p95_delay_ms", "max_delay_ms"]}
+  minRows={1}
+/>
+
+A rising delay shows that the processor is falling behind the source event stream. This query measures events that ClickHouse has already received. `observed_at` is the time when the processor opened the event's batch, so the estimate has up to one configured batch window of error.
+
+Inspect the newest received event when you need one current value:
+
+<SqlTest
+  query={`SELECT
+  occurred_at AS newest_event_occurred_at,
+  observed_at AS newest_event_observed_at,
+  greatest(0, dateDiff('second', occurred_at, observed_at)) AS estimated_delivery_delay_seconds,
+  dateDiff('second', observed_at, now()) AS seconds_since_last_observation
+FROM memory_service.lifecycle_events_current
+ORDER BY observed_at DESC, ingest_version DESC
+LIMIT 1;`}
+  columns={[
+    "newest_event_occurred_at",
+    "newest_event_observed_at",
+    "estimated_delivery_delay_seconds",
+    "seconds_since_last_observation",
+  ]}
+  minRows={1}
+/>
+
+`estimated_delivery_delay_seconds` approximates the last event's source-to-processor delay. `seconds_since_last_observation` shows how long ClickHouse has received no event. Neither value proves that the processor has reached the main database's current high-water cursor. An idle database and a disconnected event stream look the same from ClickHouse because both produce no new rows.
+
+For monitoring, the processor exposes `memory_service_clickhouse_processor_source_lag_seconds`. The metric is also the age of the latest accepted event, so it has the same idle-database limitation. `/readyz` confirms that the processor owns its lease and has an active subscription. An authoritative backlog check requires comparing the processor's saved cursor with the event stream's current high-water cursor; the current processor does not publish that comparison as SQL or a metric.
+
+## Compare conversation depth by cohort
+
+Group conversations by creation week, then compare their entry counts and active durations:
+
+<SqlTest
+  query={`WITH conversation_activity AS (
+  SELECT
+    exporter_id,
+    conversation_id,
+    count() AS entry_count,
+    min(created_at) AS first_entry_at,
+    max(created_at) AS last_entry_at
+  FROM memory_service.entries_current
+  GROUP BY exporter_id, conversation_id
+)
+SELECT
+  toStartOfWeek(c.created_at) AS cohort_week,
+  count() AS conversations,
+  round(avg(a.entry_count), 1) AS average_entries,
+  quantileTDigest(0.50)(a.entry_count) AS median_entries,
+  quantileTDigest(0.95)(a.entry_count) AS p95_entries,
+  quantileTDigest(0.50)(
+    dateDiff('second', a.first_entry_at, a.last_entry_at)
+  ) AS median_active_seconds
+FROM memory_service.conversations_current AS c
+INNER JOIN conversation_activity AS a
+  ON c.exporter_id = a.exporter_id
+ AND c.resource_id = a.conversation_id
+GROUP BY cohort_week
+ORDER BY cohort_week;`}
+  columns={[
+    "cohort_week",
+    "conversations",
+    "average_entries",
+    "median_entries",
+    "p95_entries",
+    "median_active_seconds",
+  ]}
+  minRows={1}
+/>
+
+This query includes conversations with at least one current entry. Use a `LEFT JOIN` when the report must also count empty conversations.
+
+## Find the busiest content types
+
+Lifecycle events retain the entry `contentType` without storing the original content in metadata mode:
+
+<SqlTest
+  query={`SELECT
+  if(content_type = '', 'unspecified', content_type) AS content_type,
+  count() AS entries,
+  uniqExact(conversation_id) AS conversations,
+  max(occurred_at) AS last_seen_at
+FROM memory_service.lifecycle_events_current
+WHERE resource_kind = 'entry'
+  AND action = 'created'
+  AND occurred_at >= now() - INTERVAL 30 DAY
+GROUP BY content_type
+ORDER BY entries DESC, content_type;`}
+  columns={["content_type", "entries", "conversations", "last_seen_at"]}
+  minRows={1}
+/>
+
+Use this breakdown to decide which entry types need typed projections. Create those tables with the [projection guide](/docs/analytics/projections/).
+
+## Query the bundled example-app projections
+
+The container image includes individual projection files under `/etc/memory-service/clickhouse/projections`. They cover the entry content types and memory kinds used by the Java, Python, and TypeScript examples. The repository's `compose.yaml` enables the entire directory.
+
+For another deployment, set projected mode and load the bundled projection directory:
+
+```bash
+MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=projected
+MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=/etc/memory-service/clickhouse/projections
+```
+
+Restart the processor after changing these settings. Existing resources require a [projection replay](/docs/analytics/clickhouse/operations/#replay-projections); new resources are projected as the processor receives their events.
+
+Compare projected history entries with the richer LangChain4j history format:
+
+<SqlTest
+  query={`SELECT
+  content_type,
+  count() AS entries,
+  sum(event_count) AS events,
+  sum(attachment_count) AS attachments,
+  sum(tool_call_count) AS tool_calls,
+  max(observed_at) AS latest_observed_at
+FROM (
+  SELECT
+    'history' AS content_type,
+    event_count,
+    attachment_count,
+    toUInt64(0) AS tool_call_count,
+    observed_at
+  FROM memory_service.history_v1_current
+  UNION ALL
+  SELECT
+    'history/lc4j' AS content_type,
+    event_count,
+    attachment_count,
+    tool_call_count,
+    observed_at
+  FROM memory_service.history_lc4j_v1_current
+)
+GROUP BY content_type
+ORDER BY entries DESC, content_type;`}
+  columns={["content_type", "entries", "events", "attachments", "tool_calls", "latest_observed_at"]}
+  minRows={1}
+/>
+
+The history projections store typed analytics fields rather than the original content JSON. Both include `role`, `text`, event and attachment counts, event types, tool names, and attachment content types. The LC4J history projection also counts response, thinking, tool-call, tool-result, and completion events. Use the projected `resource_id` with the Memory Service API when you need the authoritative entry.
+
+## Analyze tool calls and token usage
+
+The history event projections write one row for each recorded event. Count tool calls across the LangChain4j and Vercel AI history formats:
+
+<SqlTest
+  query={`SELECT
+  tool_name,
+  count() AS calls,
+  uniqExact(resource_id) AS entries,
+  max(observed_at) AS latest_call_at
+FROM (
+  SELECT tool_name, resource_id, observed_at
+  FROM memory_service.history_lc4j_events_v1_current
+  WHERE event_type = 'BeforeToolExecution'
+  UNION ALL
+  SELECT tool_name, resource_id, observed_at
+  FROM memory_service.history_vercelai_events_v1_current
+  WHERE event_type = 'BeforeToolExecution'
+)
+GROUP BY tool_name
+ORDER BY calls DESC, tool_name;`}
+  columns={["tool_name", "calls", "entries", "latest_call_at"]}
+  minRows={1}
+/>
+
+Sum token usage by model from completion events:
+
+<SqlTest
+  query={`SELECT
+  model_name,
+  count() AS responses,
+  sum(input_tokens) AS input_tokens,
+  sum(output_tokens) AS output_tokens
+FROM (
+  SELECT model_name, input_tokens, output_tokens
+  FROM memory_service.history_lc4j_events_v1_current
+  WHERE event_type = 'ChatCompleted'
+  UNION ALL
+  SELECT model_name, input_tokens, output_tokens
+  FROM memory_service.history_vercelai_events_v1_current
+  WHERE event_type = 'ChatCompleted'
+)
+GROUP BY model_name
+ORDER BY input_tokens DESC;`}
+  columns={["model_name", "responses", "input_tokens", "output_tokens"]}
+  minRows={1}
+/>
+
+Filter on `ChatCompleted` before summing. Vercel AI step events also carry usage, so summing every event counts the same tokens more than once.
+
+## Break down chat memory by message role
+
+The chat memory projections write one row for each message. Compare message roles across frameworks:
+
+<SqlTest
+  query={`SELECT
+  framework,
+  role,
+  count() AS messages,
+  uniqExact(resource_id) AS entries
+FROM (
+  SELECT 'Spring AI' AS framework, role, resource_id
+  FROM memory_service.spring_ai_messages_v1_current
+  UNION ALL
+  SELECT 'Vercel AI' AS framework, role, resource_id
+  FROM memory_service.vercelai_messages_v1_current
+  UNION ALL
+  SELECT 'LangChain4j' AS framework, message_type AS role, resource_id
+  FROM memory_service.lc4j_messages_v1_current
+)
+GROUP BY framework, role
+ORDER BY framework, messages DESC, role;`}
+  columns={["framework", "role", "messages", "entries"]}
+  minRows={1}
+/>
+
+Order by `resource_id, row_index` to read the messages of each entry in their original order.
+
+## Find projection failures
+
+Group recent projection failures without exposing source payloads:
+
+<SqlTest
+  query={`SELECT
+  projection_name,
+  error_code,
+  count() AS failed_resources,
+  sum(attempt_count) AS attempts,
+  max(last_seen_at) AS latest_failure_at
+FROM memory_service.projection_failures FINAL
+WHERE last_seen_at >= now() - INTERVAL 24 HOUR
+GROUP BY projection_name, error_code
+ORDER BY latest_failure_at DESC;`}
+  columns={["projection_name", "error_code", "failed_resources", "attempts", "latest_failure_at"]}
+  minRows={1}
+/>
+
+Use the error code to correct the manifest or source data. Then set a new `--projection-replay-id` to rescan retained source records.
+
+For retention and hard-delete behavior, see [Operate the ClickHouse processor](/docs/analytics/clickhouse/operations/).
+
+</TestScenario>

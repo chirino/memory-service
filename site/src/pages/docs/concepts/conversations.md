@@ -194,7 +194,7 @@ curl -X POST http://localhost:8080/v1/conversations/{conversationId}/entries \
 - **`metadata`**: Uses the same top-level patch semantics (set/preserve/remove keys). A top-level `null` or empty object is a no-op.
 - **`archived`**: Archives or unarchives the conversation.
 
-**Atomicity**: On **PostgreSQL** and **SQLite**, the entry write and conversation patch are committed in a single transaction and are always consistent. On **MongoDB**, the entry write and patch are currently separate operations (see [WORKAROUNDS.md](https://github.com/chirino/memory-service/blob/main/WORKAROUNDS.md#mongodb-inwritetx-is-intent-only-non-transactional) for details).
+**Atomicity**: PostgreSQL, SQLite, and MongoDB commit the entry write and conversation patch in one datastore transaction. MongoDB deployments therefore require a replica set or mongos.
 
 ## Conversation Properties
 
@@ -221,7 +221,7 @@ The fork remains a branch of that child and does not become a separate child.
 ## Best Practices
 
 1. **Use metadata for agent state** — store job status, task IDs, or routing keys so you can filter without fetching individual conversations.
-2. **Use `conversationPatch` on append** — on PostgreSQL and SQLite, this keeps metadata transitions and entry writes atomic and avoids separate PATCH calls that can race. MongoDB currently applies the two operations separately.
+2. **Use `conversationPatch` on append** — this keeps metadata transitions and entry writes atomic and avoids separate PATCH calls that can race.
 3. **Handle pagination** — use `limit` and `afterCursor` for large conversation lists.
 
 ## Next Steps

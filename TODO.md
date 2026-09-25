@@ -10,7 +10,6 @@
 * Focus the MCP tool surface more on memories than conversations.
 * Provide a way to designate stable vs unstable features/apis.
 * Add reliable webhook/Kafka consumers or connectors on top of the implemented outbox-backed event streams.
-* Enhancement 091 Mongo follow-up: implement [091-mongo-outbox-transactions.md](docs/enhancements/091-mongo-outbox-transactions.md) so `MongoStore.InWriteTx` uses `mongo.Session` / `WithTransaction` and Mongo outbox replay uses change-stream resume tokens instead of best-effort ObjectID cursors.
 * Define how memory policy changes that alter selected indexed attributes trigger schema or reindex migrations.
 * Implement the sub agent flows for all the other frameworks.
 ## Better Demo / Usecases

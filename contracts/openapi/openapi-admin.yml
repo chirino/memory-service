@@ -601,7 +601,7 @@ paths:
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Entry'
+                $ref: '#/components/schemas/AdminEntry'
         '404':
           $ref: '#/components/responses/NotFound'
         default:
@@ -1071,7 +1071,7 @@ paths:
                   data:
                     type: array
                     items:
-                      $ref: '#/components/schemas/Entry'
+                      $ref: '#/components/schemas/AdminEntry'
                   afterCursor:
                     type: string
                     format: uuid
@@ -1373,7 +1373,16 @@ paths:
             type: string
             enum: [summary, full]
             default: summary
-          description: Event payload detail level.
+          description: With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
+        - name: initial_state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [none, current]
+            default: none
+          description: >-
+            With `current`, emits a snapshot phase containing the current full resources, then replays changes committed after the snapshot boundary and continues live. Requires `detail=full`, an enabled outbox, and no `after` cursor.
         - name: entry_channels
           in: query
           required: false
@@ -1477,6 +1486,12 @@ paths:
           description: Authentication required.
         '403':
           description: Admin role required.
+        '409':
+          description: Checkpoint is currently owned by a leased processor.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
       security:
         - BearerAuth: []
         - ApiKeyAuth: []
@@ -2122,7 +2137,7 @@ components:
           description: Structured non-sensitive error details.
     AdminCheckpoint:
       type: object
-      required: [clientId, contentType, value, updatedAt]
+      required: [clientId, contentType, value, revision, updatedAt]
       properties:
         clientId:
           type: string
@@ -2130,6 +2145,9 @@ components:
           type: string
         value:
           description: Processor-defined JSON payload for this client checkpoint. Stored encrypted at rest.
+        revision:
+          type: string
+          description: Opaque revision used for compare-and-swap updates through the gRPC checkpoint service.
         updatedAt:
           type: string
           format: date-time
@@ -2495,29 +2513,43 @@ components:
       properties:
         id:
           type: string
+          readOnly: true
           description: Unique identifier for the conversation.
         title:
           type: string
           nullable: true
         ownerUserId:
           type: string
+          readOnly: true
         createdAt:
           type: string
           format: date-time
+          readOnly: true
         updatedAt:
           type: string
           format: date-time
+          readOnly: true
         archived:
           type: boolean
+          readOnly: true
           description: Synthetic archive flag derived from the internal archived timestamp.
         lastMessagePreview:
           type: string
           nullable: true
+          readOnly: true
         accessLevel:
-          $ref: '#/components/schemas/AccessLevel'
+          allOf:
+            - $ref: '#/components/schemas/AccessLevel'
+          readOnly: true
         clientId:
           type: string
           nullable: true
+          readOnly: true
+        conversationGroupId:
+          type: string
+          format: uuid
+          readOnly: true
+          description: Internal conversation group used for fork-tree routing and analytics joins.
         agentId:
           type: string
           nullable: true
@@ -2529,45 +2561,69 @@ components:
         startedByConversationId:
           type: string
           nullable: true
+          readOnly: true
           description: Parent conversation that started this logical conversation tree. Fork branches inherit this value.
         startedByEntryId:
           type: string
           format: uuid
           nullable: true
+          readOnly: true
           description: Parent entry that started this logical conversation tree. Fork branches inherit this value.
     AdminChildConversationSummary:
       type: object
       properties:
         id:
           type: string
+          readOnly: true
           description: Unique identifier for the child conversation.
         title:
           type: string
           nullable: true
         ownerUserId:
           type: string
+          readOnly: true
+        clientId:
+          type: string
+          nullable: true
+          readOnly: true
+        conversationGroupId:
+          type: string
+          format: uuid
+          readOnly: true
+          description: Internal conversation group used for fork-tree routing and analytics joins.
+        agentId:
+          type: string
+          nullable: true
         createdAt:
           type: string
           format: date-time
+          readOnly: true
         updatedAt:
           type: string
           format: date-time
+          readOnly: true
         archived:
           type: boolean
+          readOnly: true
           description: Synthetic archive flag derived from the internal archived timestamp.
         lastMessagePreview:
           type: string
           nullable: true
+          readOnly: true
         accessLevel:
-          $ref: '#/components/schemas/AccessLevel'
+          allOf:
+            - $ref: '#/components/schemas/AccessLevel'
+          readOnly: true
         startedByConversationId:
           type: string
           nullable: true
+          readOnly: true
           description: Parent conversation that started this logical child conversation tree.
         startedByEntryId:
           type: string
           format: uuid
           nullable: true
+          readOnly: true
           description: Parent entry that started this logical child conversation tree.
     AdminConversation:
       allOf:
@@ -2578,21 +2634,29 @@ components:
               type: string
               format: uuid
               nullable: true
+              readOnly: true
               description: >-
                 First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
             forkedAtConversationId:
               type: string
               nullable: true
+              readOnly: true
               description: Conversation ID from which this conversation was forked.
             startedByConversationId:
               type: string
               nullable: true
+              readOnly: true
               description: Parent conversation that started this logical conversation tree. Fork branches inherit this value.
             startedByEntryId:
               type: string
               format: uuid
               nullable: true
+              readOnly: true
               description: Parent entry that started this logical conversation tree. Fork branches inherit this value.
+            hasResponseInProgress:
+              type: boolean
+              readOnly: true
+              description: True while the service is recording a resumable response for this conversation.
     AdminActionRequest:
       type: object
       properties:
@@ -2629,7 +2693,7 @@ components:
         - history
         - context
         - journal
-    Entry:
+    AdminEntry:
       type: object
       required:
         - id
@@ -2646,7 +2710,17 @@ components:
         conversationId:
           type: string
           description: Unique identifier for the conversation this entry belongs to.
+        conversationGroupId:
+          type: string
+          format: uuid
+          description: Internal conversation group used for fork-tree routing and analytics joins.
         userId:
+          type: string
+          nullable: true
+        clientId:
+          type: string
+          nullable: true
+        agentId:
           type: string
           nullable: true
         channel:
@@ -2673,6 +2747,13 @@ components:
         createdAt:
           type: string
           format: date-time
+        indexedContent:
+          type: string
+          nullable: true
+        indexedAt:
+          type: string
+          format: date-time
+          nullable: true
     ConversationMembership:
       type: object
       properties:
@@ -2806,7 +2887,7 @@ components:
           nullable: true
         entry:
           allOf:
-            - $ref: '#/components/schemas/Entry'
+            - $ref: '#/components/schemas/AdminEntry'
           description: The matched entry. Only included when includeEntry is true in the request.
     EvictRequest:
       type: object

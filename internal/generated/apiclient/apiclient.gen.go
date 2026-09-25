@@ -210,6 +210,24 @@ func (e AdminSubscribeEventsParamsDetail) Valid() bool {
 	}
 }
 
+// Defines values for AdminSubscribeEventsParamsInitialState.
+const (
+	AdminSubscribeEventsParamsInitialStateCurrent AdminSubscribeEventsParamsInitialState = "current"
+	AdminSubscribeEventsParamsInitialStateNone    AdminSubscribeEventsParamsInitialState = "none"
+)
+
+// Valid indicates whether the value is a known member of the AdminSubscribeEventsParamsInitialState enum.
+func (e AdminSubscribeEventsParamsInitialState) Valid() bool {
+	switch e {
+	case AdminSubscribeEventsParamsInitialStateCurrent:
+		return true
+	case AdminSubscribeEventsParamsInitialStateNone:
+		return true
+	default:
+		return false
+	}
+}
+
 // Defines values for DownloadAttachmentByTokenParamsDisposition.
 const (
 	DownloadAttachmentByTokenParamsDispositionAttachment DownloadAttachmentByTokenParamsDisposition = "attachment"
@@ -649,7 +667,6 @@ type ChildConversationSummary struct {
 
 // Conversation defines model for Conversation.
 type Conversation struct {
-	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
 
 	// AgentId Optional logical agent associated with this conversation.
@@ -664,6 +681,9 @@ type Conversation struct {
 
 	// ForkedAtEntryId First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
 	ForkedAtEntryId *openapi_types.UUID `json:"forkedAtEntryId,omitempty"`
+
+	// HasResponseInProgress True while the service is recording a resumable response for this conversation.
+	HasResponseInProgress *bool `json:"hasResponseInProgress,omitempty"`
 
 	// Id Unique identifier for the conversation.
 	Id                 *string `json:"id,omitempty"`
@@ -720,6 +740,16 @@ type ConversationForkSummary struct {
 	Title           *string             `json:"title,omitempty"`
 }
 
+// ConversationInput Fields supplied by an agent application when creating a conversation.
+type ConversationInput struct {
+	// AgentId Optional logical agent associated with this conversation.
+	AgentId *string `json:"agentId,omitempty"`
+
+	// Metadata Arbitrary key-value metadata stored on the conversation.
+	Metadata *map[string]interface{} `json:"metadata,omitempty"`
+	Title    *string                 `json:"title,omitempty"`
+}
+
 // ConversationMembership defines model for ConversationMembership.
 type ConversationMembership struct {
 	// AccessLevel Access level of a user for a conversation.
@@ -733,8 +763,10 @@ type ConversationMembership struct {
 
 // ConversationSummary defines model for ConversationSummary.
 type ConversationSummary struct {
-	// AccessLevel Access level of a user for a conversation.
 	AccessLevel *AccessLevel `json:"accessLevel,omitempty"`
+
+	// AgentId Optional logical agent associated with this conversation.
+	AgentId *string `json:"agentId,omitempty"`
 
 	// Archived Synthetic archive flag derived from the internal archived timestamp.
 	Archived  *bool      `json:"archived,omitempty"`
@@ -759,11 +791,13 @@ type ConversationSummary struct {
 
 // CreateConversationRequest defines model for CreateConversationRequest.
 type CreateConversationRequest struct {
-	// AgentId Optional logical agent to associate with the new conversation.
+	// AgentId Optional logical agent associated with this conversation.
 	AgentId *string `json:"agentId,omitempty"`
 
 	// Id Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
-	Id       *string                 `json:"id,omitempty"`
+	Id *string `json:"id,omitempty"`
+
+	// Metadata Arbitrary key-value metadata stored on the conversation.
 	Metadata *map[string]interface{} `json:"metadata,omitempty"`
 	Title    *string                 `json:"title,omitempty"`
 }
@@ -859,6 +893,9 @@ type CreateOwnershipTransferRequest struct {
 
 // Entry defines model for Entry.
 type Entry struct {
+	// AgentId Logical agent associated with the entry.
+	AgentId *string `json:"agentId,omitempty"`
+
 	// Channel Logical channel of the entry within the conversation.
 	Channel Channel `json:"channel"`
 
@@ -903,7 +940,11 @@ type Entry struct {
 	Epoch *int64 `json:"epoch,omitempty"`
 
 	// Id Unique identifier for the entry.
-	Id openapi_types.UUID `json:"id"`
+	Id        openapi_types.UUID `json:"id"`
+	IndexedAt *time.Time         `json:"indexedAt,omitempty"`
+
+	// IndexedContent Searchable text supplied by the application for this history entry.
+	IndexedContent *string `json:"indexedContent,omitempty"`
 
 	// Seq Optional client-assigned sequence number, unique within the conversation.
 	// Default listing uses seq only as a createdAt tie-breaker, with entries
@@ -1291,8 +1332,11 @@ type AdminSubscribeEventsParams struct {
 	// After Replay events after the provided durable cursor. Requires the outbox feature to be enabled.
 	After *string `form:"after,omitempty" json:"after,omitempty"`
 
-	// Detail Event payload detail level.
+	// Detail With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
 	Detail *AdminSubscribeEventsParamsDetail `form:"detail,omitempty" json:"detail,omitempty"`
+
+	// InitialState With `current`, emits a snapshot phase containing the current full resources, then replays changes committed after the snapshot boundary and continues live. Requires `detail=full`, an enabled outbox, and no `after` cursor.
+	InitialState *AdminSubscribeEventsParamsInitialState `form:"initial_state,omitempty" json:"initial_state,omitempty"`
 
 	// EntryChannels Comma-separated entry channels to deliver for entry events. Defaults to history.
 	EntryChannels *string `form:"entry_channels,omitempty" json:"entry_channels,omitempty"`
@@ -1306,6 +1350,9 @@ type AdminSubscribeEventsParams struct {
 
 // AdminSubscribeEventsParamsDetail defines parameters for AdminSubscribeEvents.
 type AdminSubscribeEventsParamsDetail string
+
+// AdminSubscribeEventsParamsInitialState defines parameters for AdminSubscribeEvents.
+type AdminSubscribeEventsParamsInitialState string
 
 // UploadAttachmentMultipartBody defines parameters for UploadAttachment.
 type UploadAttachmentMultipartBody struct {
@@ -2205,7 +2252,8 @@ type ClientInterface interface {
 	// hints — clients should refetch the affected resource on receipt.
 	//
 	// The response is `text/event-stream`. Each message is a JSON object:
-	// `{"event":"<action>","kind":"<resource>","data":{...}}`
+	// `{"event":"<action>","kind":"<resource>","change":"<lifecycle-change>","data":{...}}`.
+	// With `detail=full`, `data` is the corresponding agent OpenAPI resource.
 	//
 	// Corresponds with GET /v1/events (the `SubscribeEvents` operationId).
 	SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error)
@@ -3107,7 +3155,8 @@ func (c *Client) DeleteConversationResponse(ctx context.Context, conversationId 
 // hints — clients should refetch the affected resource on receipt.
 //
 // The response is `text/event-stream`. Each message is a JSON object:
-// `{"event":"<action>","kind":"<resource>","data":{...}}`
+// `{"event":"<action>","kind":"<resource>","change":"<lifecycle-change>","data":{...}}`.
+// With `detail=full`, `data` is the corresponding agent OpenAPI resource.
 //
 // Corresponds with GET /v1/events (the `SubscribeEvents` operationId).
 func (c *Client) SubscribeEvents(ctx context.Context, params *SubscribeEventsParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
@@ -3486,6 +3535,18 @@ func NewAdminSubscribeEventsRequest(server string, params *AdminSubscribeEventsP
 		if params.Detail != nil {
 
 			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "detail", *params.Detail, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
+				return nil, err
+			} else {
+				for _, qp := range strings.Split(queryFrag, "&") {
+					rawQueryFragments = append(rawQueryFragments, qp)
+				}
+			}
+
+		}
+
+		if params.InitialState != nil {
+
+			if queryFrag, err := runtime.StyleParamWithOptions("form", true, "initial_state", *params.InitialState, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationQuery, Type: "string", Format: ""}); err != nil {
 				return nil, err
 			} else {
 				for _, qp := range strings.Split(queryFrag, "&") {
@@ -6195,7 +6256,8 @@ type ClientWithResponsesInterface interface {
 	// hints — clients should refetch the affected resource on receipt.
 	//
 	// The response is `text/event-stream`. Each message is a JSON object:
-	// `{"event":"<action>","kind":"<resource>","data":{...}}`
+	// `{"event":"<action>","kind":"<resource>","change":"<lifecycle-change>","data":{...}}`.
+	// With `detail=full`, `data` is the corresponding agent OpenAPI resource.
 	//
 	// Returns a wrapper object for the known response body format(s).
 	//
@@ -9004,7 +9066,8 @@ func (c *ClientWithResponses) DeleteConversationResponseWithResponse(ctx context
 // hints — clients should refetch the affected resource on receipt.
 //
 // The response is `text/event-stream`. Each message is a JSON object:
-// `{"event":"<action>","kind":"<resource>","data":{...}}`
+// `{"event":"<action>","kind":"<resource>","change":"<lifecycle-change>","data":{...}}`.
+// With `detail=full`, `data` is the corresponding agent OpenAPI resource.
 //
 // Returns a wrapper object for the known response body format(s).
 //

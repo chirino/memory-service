@@ -1,0 +1,56 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: vercelai_messages_v1
+spec:
+  resource: entry
+  selector:
+    contentType: vercelai
+  rows: many
+  columns:
+    role: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+    tool_names: {type: string_array, nullable: false}
+    message:
+      type: json
+      nullable: false
+      clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
+  projectionRego: |
+    package memoryservice.analytics
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    # Model message content is either a string or an array of typed parts.
+    message_text(message) := message.content if {
+      is_string(message.content)
+    } else := text if {
+      is_array(message.content)
+      parts := [part.text |
+        some part in message.content
+        part.type == "text"
+        is_string(part.text)
+      ]
+      count(parts) > 0
+      text := concat("", parts)
+    } else := null
+
+    tool_names(message) := names if {
+      is_array(message.content)
+      names := [part.toolName |
+        some part in message.content
+        is_string(part.toolName)
+      ]
+    } else := []
+
+    output := [row |
+      some message in input.content
+      row := {
+        "role": field(message, "role"),
+        "text": message_text(message),
+        "tool_names": tool_names(message),
+        "message": message,
+      }
+    ]

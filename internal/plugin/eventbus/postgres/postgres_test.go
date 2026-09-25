@@ -52,6 +52,32 @@ func TestPostgresBusPublishesRecoveryInvalidateAfterPublishFailure(t *testing.T)
 	require.Equal(t, "pubsub recovery", postgresEventReason(invalidate))
 }
 
+func TestPostgresWirePreservesDurableMetadata(t *testing.T) {
+	t.Parallel()
+	occurred := time.Unix(123, 456).UTC()
+	event := registryeventbus.Event{Event: "created", Kind: "entry", OutboxCursor: "mongo:cursor", OccurredAt: &occurred}
+	roundTrip := fromWire(toWire(event))
+	require.Equal(t, event.OutboxCursor, roundTrip.OutboxCursor)
+	require.Equal(t, event.OccurredAt, roundTrip.OccurredAt)
+}
+
+func TestPostgresBusPreservesDurableMetadataAcrossNodes(t *testing.T) {
+	ctx := testPostgresBusContext(t)
+	dsn := testpg.StartPostgres(t)
+	busA := mustLoadPostgresBus(t, ctx, dsn)
+	defer busA.Close()
+	busB := mustLoadPostgresBus(t, ctx, dsn)
+	defer busB.Close()
+	subCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	events, err := busB.Subscribe(subCtx, "")
+	require.NoError(t, err)
+	occurred := time.Unix(123, 456).UTC()
+	require.NoError(t, busA.PublishDurable(ctx, registryeventbus.Event{Event: "created", Kind: "entry", Broadcast: true, OutboxCursor: "mongo:cursor", OccurredAt: &occurred}))
+	received := waitForPostgresEvent(t, events, 10*time.Second, func(event registryeventbus.Event) bool { return event.OutboxCursor == "mongo:cursor" })
+	require.Equal(t, occurred, received.OccurredAt.UTC())
+}
+
 func TestPostgresBusPublishesRecoveryInvalidateAfterSubscriptionLoss(t *testing.T) {
 	ctx := testPostgresBusContext(t)
 	dsn := testpg.StartPostgres(t)

@@ -5,12 +5,14 @@ package postgres
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"strconv"
 	"testing"
 	"time"
 
 	"github.com/chirino/memory-service/internal/config"
 	localbus "github.com/chirino/memory-service/internal/plugin/eventbus/local"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/testutil/testpg"
@@ -19,6 +21,28 @@ import (
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/stretchr/testify/require"
 )
+
+type durableFailingPostgresEventBus struct {
+	publishCalls        int
+	durablePublishCalls int
+	err                 error
+}
+
+func (b *durableFailingPostgresEventBus) Publish(context.Context, registryeventbus.Event) error {
+	b.publishCalls++
+	return nil
+}
+
+func (b *durableFailingPostgresEventBus) PublishDurable(context.Context, registryeventbus.Event) error {
+	b.durablePublishCalls++
+	return b.err
+}
+
+func (*durableFailingPostgresEventBus) Subscribe(context.Context, string) (<-chan registryeventbus.Event, error) {
+	return make(chan registryeventbus.Event), nil
+}
+
+func (*durableFailingPostgresEventBus) Close() error { return nil }
 
 func setupPostgresOutboxStore(t *testing.T) (*PostgresStore, context.Context) {
 	t.Helper()
@@ -116,6 +140,28 @@ func TestPostgresOutboxReplayUsesCommitOrder(t *testing.T) {
 	require.NoError(t, err)
 	require.Greater(t, firstSeq, int64(0))
 	require.Greater(t, secondSeq, firstSeq)
+}
+
+func TestPostgresOutboxRelayDoesNotAdvancePastDurablePublishFailure(t *testing.T) {
+	store, ctx := setupPostgresOutboxStore(t)
+	createdAt := time.Now().UTC()
+	payload := json.RawMessage(`{"user":"user-1"}`)
+	var txSeq int64
+	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
+		if _, err := store.AppendOutboxEvents(txCtx, []registrystore.OutboxWrite{{Event: "created", Kind: "membership", Data: payload, CreatedAt: createdAt}}); err != nil {
+			return err
+		}
+		return store.dbFor(txCtx).Raw("SELECT max(tx_seq) FROM outbox_events").Scan(&txSeq).Error
+	}))
+
+	want := errors.New("cross-node transport unavailable")
+	bus := &durableFailingPostgresEventBus{err: want}
+	relay := &postgresOutboxRelay{store: store, bus: bus}
+	next, err := relay.materializeAndPublishBatch(ctx, 0, []relayOutboxRecord{{TxSeq: txSeq, Event: "created", Kind: "membership", Data: payload, CreatedAt: createdAt}})
+	require.ErrorIs(t, err, want)
+	require.Zero(t, next, "the relay watermark must remain before the failed event")
+	require.Zero(t, bus.publishCalls, "durable relays must not use the asynchronous enqueue path")
+	require.Equal(t, 1, bus.durablePublishCalls)
 }
 
 func TestExplainOutboxRelaySetupErrorWalLevel(t *testing.T) {

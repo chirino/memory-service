@@ -1689,7 +1689,8 @@ paths:
         hints — clients should refetch the affected resource on receipt.
 
         The response is `text/event-stream`. Each message is a JSON object:
-        `{"event":"<action>","kind":"<resource>","data":{...}}`
+        `{"event":"<action>","kind":"<resource>","change":"<lifecycle-change>","data":{...}}`.
+        With `detail=full`, `data` is the corresponding agent OpenAPI resource.
       tags:
         - Events
       security:
@@ -1791,7 +1792,16 @@ paths:
             type: string
             enum: [summary, full]
             default: summary
-          description: Event payload detail level.
+          description: With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
+        - name: initial_state
+          in: query
+          required: false
+          schema:
+            type: string
+            enum: [none, current]
+            default: none
+          description: >-
+            With `current`, emits a snapshot phase containing the current full resources, then replays changes committed after the snapshot boundary and continues live. Requires `detail=full`, an enabled outbox, and no `after` cursor.
         - name: entry_channels
           in: query
           required: false
@@ -1998,44 +2008,66 @@ components:
         - manager
         - writer
         - reader
-    ConversationSummary:
+    ConversationInput:
       type: object
+      description: Fields supplied by an agent application when creating a conversation.
       properties:
-        id:
-          type: string
-          description: Unique identifier for the conversation.
         title:
           type: string
           nullable: true
-        ownerUserId:
-          type: string
-        createdAt:
-          type: string
-          format: date-time
-        updatedAt:
-          type: string
-          format: date-time
-        lastMessagePreview:
+          maxLength: 500
+        agentId:
           type: string
           nullable: true
-        accessLevel:
-          $ref: '#/components/schemas/AccessLevel'
-        startedByConversationId:
-          type: string
-          nullable: true
-          description: Parent conversation that started this logical conversation tree. Fork branches inherit this value.
-        startedByEntryId:
-          type: string
-          format: uuid
-          nullable: true
-          description: Parent entry that started this logical conversation tree. Fork branches inherit this value.
-        archived:
-          type: boolean
-          description: Synthetic archive flag derived from the internal archived timestamp.
+          maxLength: 255
+          description: Optional logical agent associated with this conversation.
         metadata:
           type: object
           additionalProperties: true
           description: Arbitrary key-value metadata stored on the conversation.
+    ConversationSummary:
+      allOf:
+        - $ref: '#/components/schemas/ConversationInput'
+        - type: object
+          properties:
+            id:
+              type: string
+              readOnly: true
+              description: Unique identifier for the conversation.
+            ownerUserId:
+              type: string
+              readOnly: true
+            createdAt:
+              type: string
+              format: date-time
+              readOnly: true
+            updatedAt:
+              type: string
+              format: date-time
+              readOnly: true
+            lastMessagePreview:
+              type: string
+              nullable: true
+              readOnly: true
+            accessLevel:
+              allOf:
+                - $ref: '#/components/schemas/AccessLevel'
+              readOnly: true
+            startedByConversationId:
+              type: string
+              nullable: true
+              readOnly: true
+              description: Parent conversation that started this logical conversation tree. Fork branches inherit this value.
+            startedByEntryId:
+              type: string
+              format: uuid
+              nullable: true
+              readOnly: true
+              description: Parent entry that started this logical conversation tree. Fork branches inherit this value.
+            archived:
+              type: boolean
+              readOnly: true
+              description: Synthetic archive flag derived from the internal archived timestamp.
       example:
         id: "550e8400-e29b-41d4-a716-446655440000"
         title: "Brainstorming UI for memory service"
@@ -2094,29 +2126,33 @@ components:
         - $ref: '#/components/schemas/ConversationSummary'
         - type: object
           properties:
-            agentId:
-              type: string
-              nullable: true
-              description: Optional logical agent associated with this conversation.
             forkedAtEntryId:
               type: string
               format: uuid
               nullable: true
+              readOnly: true
               description: >-
                 First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
             forkedAtConversationId:
               type: string
               nullable: true
+              readOnly: true
               description: Conversation ID from which this conversation was forked.
             startedByConversationId:
               type: string
               nullable: true
+              readOnly: true
               description: Parent conversation that started this logical conversation tree. Fork branches inherit this value.
             startedByEntryId:
               type: string
               format: uuid
               nullable: true
+              readOnly: true
               description: Parent entry that started this logical conversation tree. Fork branches inherit this value.
+            hasResponseInProgress:
+              type: boolean
+              readOnly: true
+              description: True while the service is recording a resumable response for this conversation.
           example:
             id: "550e8400-e29b-41d4-a716-446655440000"
             title: "Brainstorming UI for memory service"
@@ -2128,25 +2164,15 @@ components:
             forkedAtEntryId: null
             forkedAtConversationId: null
     CreateConversationRequest:
-      type: object
-      properties:
-        id:
-          type: string
-          nullable: true
-          description: >-
-            Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
-        title:
-          type: string
-          nullable: true
-          maxLength: 500
-        agentId:
-          type: string
-          nullable: true
-          maxLength: 255
-          description: Optional logical agent to associate with the new conversation.
-        metadata:
-          type: object
-          additionalProperties: true
+      allOf:
+        - $ref: '#/components/schemas/ConversationInput'
+        - type: object
+          properties:
+            id:
+              type: string
+              nullable: true
+              description: >-
+                Optional client-supplied conversation ID. When provided, the server creates the conversation with exactly this ID instead of generating one. Useful for agents that need a deterministic conversation ID derived from an external thread identifier.
       example:
         title: "Chat with support bot"
         metadata:
@@ -2387,7 +2413,8 @@ components:
           format: date-time
           nullable: true
         usage:
-          $ref: '#/components/schemas/MemoryUsage'
+          allOf:
+            - $ref: '#/components/schemas/MemoryUsage'
         archived:
           type: boolean
           description: Synthetic archive flag derived from the internal archived timestamp.
@@ -2676,6 +2703,10 @@ components:
             Human user this entry is associated with.
             For history entries authored by a user, this is the sender.
             For agent entries, this is the user the agent is responding to.
+        agentId:
+          type: string
+          nullable: true
+          description: Logical agent associated with the entry.
         channel:
           $ref: '#/components/schemas/Channel'
         epoch:
@@ -2733,6 +2764,14 @@ components:
         createdAt:
           type: string
           format: date-time
+        indexedContent:
+          type: string
+          nullable: true
+          description: Searchable text supplied by the application for this history entry.
+        indexedAt:
+          type: string
+          format: date-time
+          nullable: true
       example:
         id: "6ba7b810-9dad-11d1-80b4-00c04fd430c8"
         conversationId: "550e8400-e29b-41d4-a716-446655440000"

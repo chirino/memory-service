@@ -1,0 +1,62 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: history_lc4j_events_v1
+spec:
+  resource: entry
+  selector:
+    contentType: history/lc4j
+  rows: many
+  columns:
+    role: {type: string, nullable: true}
+    event_type: {type: string, nullable: true}
+    text: {type: string, nullable: true}
+    tool_call_id: {type: string, nullable: true}
+    tool_name: {type: string, nullable: true}
+    tool_input: {type: json_string, nullable: true}
+    tool_output: {type: json_string, nullable: true}
+    model_name: {type: string, nullable: true}
+    finish_reason: {type: string, nullable: true}
+    input_tokens: {type: uint64, nullable: true}
+    output_tokens: {type: uint64, nullable: true}
+    total_tokens: {type: uint64, nullable: true}
+  projectionRego: |
+    package memoryservice.analytics
+
+    item := input.content[0]
+
+    field(value, key) := result if {
+      is_object(value)
+      result := object.get(value, key, null)
+    } else := null
+
+    # LangChain4j stores tool arguments and results as strings that usually contain JSON.
+    decoded(value) := json.unmarshal(value) if {
+      is_string(value)
+      json.is_valid(value)
+    } else := value
+
+    # Partial responses carry `chunk`; partial thinking carries `text`.
+    event_text(event) := event.chunk if {
+      is_string(event.chunk)
+    } else := field(event, "text")
+
+    output := [row |
+      some event in field(item, "events")
+      metadata := field(event, "metadata")
+      usage := field(metadata, "tokenUsage")
+      row := {
+        "role": field(item, "role"),
+        "event_type": field(event, "eventType"),
+        "text": event_text(event),
+        "tool_call_id": field(event, "id"),
+        "tool_name": field(event, "toolName"),
+        "tool_input": decoded(field(event, "arguments")),
+        "tool_output": decoded(field(event, "output")),
+        "model_name": field(metadata, "modelName"),
+        "finish_reason": field(metadata, "finishReason"),
+        "input_tokens": field(usage, "inputTokenCount"),
+        "output_tokens": field(usage, "outputTokenCount"),
+        "total_tokens": field(usage, "totalTokenCount"),
+      }
+    ]

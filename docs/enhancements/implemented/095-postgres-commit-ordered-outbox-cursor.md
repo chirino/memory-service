@@ -308,7 +308,7 @@ Target behavior:
 
 - SQLite may keep write-path cursor assignment because `seq` is commit-ordered there
 - PostgreSQL must persist rows on the write path but assign the final cursor only in the relay
-- Mongo remains governed by [091](../091-mongo-outbox-transactions.md)
+- Mongo uses the change-stream resume-token relay completed in [091](091-mongo-outbox-transactions.md).
 
 This likely requires splitting:
 

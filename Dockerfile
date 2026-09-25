@@ -36,6 +36,7 @@ WORKDIR /app
 COPY --from=builder --chown=10001:10001 /memory-service /memory-service
 COPY --from=frontend-builder --chown=10001:10001 /build/dist /app/memory-service-developer
 COPY --chown=10001:10001 deploy/episodic-policies/ /etc/memory-service/policies/
+COPY --chown=10001:10001 deploy/clickhouse/projections/ /etc/memory-service/clickhouse/projections/
 ENV MEMORY_SERVICE_DEVELOPER_FRONTEND_DIR=/app/memory-service-developer
 ENV MEMORY_SERVICE_POLICY_IMPORT_PATH=/etc/memory-service/policies/
 ENV MEMORY_SERVICE_TEMP_DIR=/var/lib/memory-service/tmp

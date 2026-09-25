@@ -12,6 +12,7 @@ import (
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/model"
+	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
@@ -29,21 +30,23 @@ const (
 )
 
 func writeAdminSSEEvent(c *gin.Context, event registryeventbus.Event) {
-	data, _ := json.Marshal(event)
+	data, _ := eventstream.MarshalDeliveryJSON(event)
 	fmt.Fprintf(c.Writer, "data: %s\n\n", data)
 	c.Writer.Flush()
 }
 
-func writeAdminSSEPhaseEvent(c *gin.Context, phase string) {
+func writeAdminSSEPhaseEvent(c *gin.Context, phase string, cursor ...string) {
+	highWater := ""
+	if len(cursor) > 0 {
+		highWater = cursor[0]
+	}
 	writeAdminSSEEvent(c, registryeventbus.Event{
-		Event: "phase",
-		Kind:  "stream",
-		Data:  map[string]string{"phase": phase},
+		Event: "phase", Kind: "stream", Data: map[string]string{"phase": phase}, OutboxCursor: highWater,
 	})
 }
 
 // HandleAdminSSEEvents streams all (non-internal) events to an admin user via SSE.
-func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus registryeventbus.EventBus, cfg *config.Config) {
+func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, bus registryeventbus.EventBus, cfg *config.Config) {
 	justification := strings.TrimSpace(c.Query("justification"))
 	if justification == "" {
 		justification = strings.TrimSpace(c.GetHeader("X-Justification"))
@@ -63,6 +66,28 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 		c.JSON(http.StatusBadRequest, gin.H{"error": "detail must be one of: summary, full"})
 		return
 	}
+	initialState := strings.TrimSpace(c.DefaultQuery("initial_state", "none"))
+	if initialState == "" {
+		initialState = "none"
+	}
+	if initialState != "none" && initialState != "current" {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "initial_state must be one of: none, current"})
+		return
+	}
+	if initialState == "current" {
+		if detail != "full" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "initial_state=current requires detail=full"})
+			return
+		}
+		if after != "" {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "initial_state=current cannot be combined with after"})
+			return
+		}
+		if !cfg.OutboxEnabled {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "initial_state=current requires the event outbox to be enabled"})
+			return
+		}
+	}
 
 	outbox, _ := store.(registrystore.EventOutboxStore)
 	if after != "" && outbox == nil {
@@ -80,6 +105,16 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 				return
 			}
 			c.JSON(http.StatusInternalServerError, gin.H{"error": "failed to initialize event replay"})
+			return
+		}
+	}
+	if initialState == "current" {
+		if outbox == nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "initial_state=current is not supported by the configured datastore"})
+			return
+		}
+		if err := eventstream.ReplaySupported(c.Request.Context(), store, outbox); err != nil {
+			c.JSON(http.StatusNotImplemented, gin.H{"error": "initial_state=current is not supported by the configured datastore"})
 			return
 		}
 	}
@@ -131,6 +166,7 @@ func HandleAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, bus r
 		}
 	}()
 	resumeCursor := after
+	initialStatePending := initialState == "current"
 	replayChecked := after != ""
 	replayAvailable := after != ""
 
@@ -162,10 +198,36 @@ streamLoop:
 			security.SetOperationTerminalError(c, "subscribe_failed", err)
 			return
 		}
+		if initialStatePending {
+			highWaterStore, ok := store.(registrystore.OutboxHighWaterStore)
+			if !ok {
+				security.SetOperationTerminalError(c, "snapshot_unsupported", registrystore.ErrOutboxReplayUnsupported)
+				return
+			}
+			var highWater string
+			if err := store.InReadTx(c.Request.Context(), func(txCtx context.Context) error {
+				var err error
+				highWater, err = highWaterStore.CurrentOutboxCursor(txCtx)
+				return err
+			}); err != nil {
+				security.SetOperationTerminalError(c, "snapshot_boundary_failed", err)
+				return
+			}
+			writeAdminSSEPhaseEvent(c, "snapshot", highWater)
+			if err := eventstream.StreamAdminCurrentState(c.Request.Context(), store, episodicStore, kindsFilter, nil, entryFilter, func(event registryeventbus.Event) error {
+				writeAdminSSEEvent(c, event)
+				return nil
+			}); err != nil {
+				security.SetOperationTerminalError(c, "snapshot_failed", err)
+				return
+			}
+			resumeCursor = highWater
+			initialStatePending = false
+		}
 
 		if resumeCursor != "" {
 			writeAdminSSEPhaseEvent(c, "replay")
-			outcome, replayErr := replayAdminSSEEvents(c, store, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, entryFilter, entryLoader, &lastCursor)
+			outcome, replayErr := replayAdminSSEEvents(c, store, episodicStore, detail, outbox, sub, resumeCursor, replayBatchSize(cfg), kindsFilter, entryFilter, entryLoader, &lastCursor)
 			switch outcome {
 			case replayOutcomeClosed:
 				if replayErr != nil {
@@ -244,18 +306,23 @@ streamLoop:
 					continue
 				}
 
+				enriched, ok, err := enrichAdminEvent(c.Request.Context(), store, episodicStore, detail, event)
+				if err != nil {
+					security.SetOperationTerminalError(c, "event_enrichment_failed", err)
+					return
+				}
+				if ok {
+					writeAdminSSEEvent(c, enriched)
+				}
 				if event.OutboxCursor != "" {
 					lastCursor = event.OutboxCursor
-				}
-				if enriched, ok := enrichAdminEvent(c.Request.Context(), store, detail, event); ok {
-					writeAdminSSEEvent(c, enriched)
 				}
 			}
 		}
 	}
 }
 
-func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayOutcome, error) {
+func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, detail string, outbox registrystore.EventOutboxStore, sub <-chan registryeventbus.Event, after string, batchSize int, kindsFilter map[string]bool, entryFilter eventstream.EntryEventFilter, entryLoader eventstream.EntryDetailLoader, lastCursor *string) (replayOutcome, error) {
 	query := registrystore.OutboxQuery{
 		AfterCursor: after,
 		Limit:       batchSize,
@@ -291,13 +358,13 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 			cursor = replayEvent.Cursor
 			if replayEvent.Cursor != "" {
 				seen[replayEvent.Cursor] = struct{}{}
-				*lastCursor = replayEvent.Cursor
 			}
 			event := registryeventbus.Event{
 				Event:        replayEvent.Event,
 				Kind:         replayEvent.Kind,
 				Data:         json.RawMessage(replayEvent.Data),
 				OutboxCursor: replayEvent.Cursor,
+				OccurredAt:   adminSSETimePtr(replayEvent.CreatedAt),
 			}
 			matches, err := entryFilter.Matches(c.Request.Context(), event, entryLoader)
 			if err != nil {
@@ -305,11 +372,17 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				continue
 			}
 			if !matches {
+				*lastCursor = replayEvent.Cursor
 				continue
 			}
-			if enriched, ok := enrichAdminEvent(c.Request.Context(), store, detail, event); ok {
+			enriched, ok, enrichErr := enrichAdminEvent(c.Request.Context(), store, episodicStore, detail, event)
+			if enrichErr != nil {
+				return replayOutcomeClosed, enrichErr
+			}
+			if ok {
 				writeAdminSSEEvent(c, enriched)
 			}
+			*lastCursor = replayEvent.Cursor
 		}
 		if !page.HasMore || cursor == "" {
 			break
@@ -329,7 +402,6 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				if _, ok := seen[event.OutboxCursor]; ok {
 					continue
 				}
-				*lastCursor = event.OutboxCursor
 			}
 			if len(kindsFilter) > 0 && !kindsFilter[event.Kind] {
 				continue
@@ -340,10 +412,18 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 				continue
 			}
 			if !matches {
+				*lastCursor = event.OutboxCursor
 				continue
 			}
-			if enriched, ok := enrichAdminEvent(c.Request.Context(), store, detail, event); ok {
+			enriched, ok, enrichErr := enrichAdminEvent(c.Request.Context(), store, episodicStore, detail, event)
+			if enrichErr != nil {
+				return replayOutcomeClosed, enrichErr
+			}
+			if ok {
 				writeAdminSSEEvent(c, enriched)
+			}
+			if event.OutboxCursor != "" {
+				*lastCursor = event.OutboxCursor
 			}
 		default:
 			return replayOutcomeContinue, nil
@@ -351,51 +431,76 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, detai
 	}
 }
 
-func enrichAdminEvent(ctx context.Context, store registrystore.MemoryStore, detail string, event registryeventbus.Event) (registryeventbus.Event, bool) {
+func enrichAdminEvent(ctx context.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
 	if detail != "full" || event.Kind == "stream" {
-		return event, true
+		return event, true, nil
 	}
 	data, ok := decodeAdminEventData(event.Data)
 	if !ok {
-		return event, true
+		return event, true, nil
 	}
+	event.Change = eventstream.EventChange(event.Data)
 	switch event.Kind {
 	case "conversation":
 		conversationID, ok := decodeAdminConversationIDField(data, "conversation")
 		if !ok {
-			return event, true
+			return event, true, nil
 		}
 		conv, err := readAdminConversationDetail(ctx, store, conversationID)
 		if err != nil {
-			return event, false
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
 		}
-		raw, err := json.Marshal(conv)
-		if err != nil {
-			return event, true
+		if conv == nil {
+			return event, true, nil
 		}
-		event.Data = json.RawMessage(raw)
-		return event, true
+		event.Data = eventstream.AdminConversationResource(conv)
+		return event, true, nil
 	case "entry":
 		conversationID, ok := decodeAdminConversationIDField(data, "conversation")
 		if !ok {
-			return event, true
+			return event, true, nil
 		}
 		entryID, ok := decodeAdminUUIDField(data, "entry")
 		if !ok {
-			return event, true
+			return event, true, nil
 		}
 		entry, err := readAdminEntryDetail(ctx, store, conversationID, entryID)
 		if err != nil {
-			return event, false
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
 		}
-		raw, err := json.Marshal(entry)
+		event.Data = eventstream.AdminEntryResource(entry)
+		return event, true, nil
+	case "memory":
+		if episodicStore == nil {
+			return event, true, nil
+		}
+		memoryID, ok := decodeAdminUUIDField(data, "memory")
+		if !ok {
+			return event, true, nil
+		}
+		item, err := readAdminMemoryDetail(ctx, episodicStore, memoryID)
 		if err != nil {
-			return event, true
+			var notFound *registrystore.NotFoundError
+			if errors.As(err, &notFound) {
+				return event, true, nil
+			}
+			return event, false, err
 		}
-		event.Data = json.RawMessage(raw)
-		return event, true
+		if item == nil {
+			return event, true, nil
+		}
+		event.Data = eventstream.AdminMemoryResource(item)
+		return event, true, nil
 	default:
-		return event, true
+		return event, true, nil
 	}
 }
 
@@ -427,13 +532,23 @@ func readAdminEntryDetail(ctx context.Context, store registrystore.MemoryStore, 
 		return nil, err
 	}
 	if result == nil {
-		return nil, fmt.Errorf("entry not found")
+		return nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
 	}
 	if len(result.Data) == 1 && result.Data[0].ID == entryID {
 		entry := result.Data[0]
 		return &entry, nil
 	}
-	return nil, fmt.Errorf("entry not found")
+	return nil, &registrystore.NotFoundError{Resource: "entry", ID: entryID.String()}
+}
+
+func readAdminMemoryDetail(ctx context.Context, store registryepisodic.EpisodicStore, memoryID uuid.UUID) (*registryepisodic.MemoryItem, error) {
+	var item *registryepisodic.MemoryItem
+	err := store.InReadTx(ctx, func(txCtx context.Context) error {
+		var err error
+		item, err = store.AdminGetMemoryByID(txCtx, memoryID)
+		return err
+	})
+	return item, err
 }
 
 func decodeAdminEventData(data any) (map[string]any, bool) {
@@ -496,3 +611,5 @@ func adminMapKeys(items map[string]bool) []string {
 	}
 	return keys
 }
+
+func adminSSETimePtr(value time.Time) *time.Time { return &value }

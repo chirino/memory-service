@@ -114,6 +114,7 @@ playwright-report/
 /.cursor/
 /.codex/
 /docs/
+/AGENTS.md
 /Taskfile.yml
 /prometheus.yml
 /build.log

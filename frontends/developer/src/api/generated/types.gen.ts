@@ -32,6 +32,10 @@ export type AdminCheckpoint = {
    * Processor-defined JSON payload for this client checkpoint. Stored encrypted at rest.
    */
   value: unknown;
+  /**
+   * Opaque revision used for compare-and-swap updates through the gRPC checkpoint service.
+   */
+  revision: string;
   updatedAt: string;
 };
 
@@ -280,18 +284,22 @@ export type AdminConversationSummary = {
   /**
    * Unique identifier for the conversation.
    */
-  id?: string;
+  readonly id?: string;
   title?: string;
-  ownerUserId?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  readonly ownerUserId?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
   /**
    * Synthetic archive flag derived from the internal archived timestamp.
    */
-  archived?: boolean;
-  lastMessagePreview?: string;
-  accessLevel?: AccessLevel;
-  clientId?: string;
+  readonly archived?: boolean;
+  readonly lastMessagePreview?: string;
+  readonly accessLevel?: AccessLevel;
+  readonly clientId?: string;
+  /**
+   * Internal conversation group used for fork-tree routing and analytics joins.
+   */
+  readonly conversationGroupId?: string;
   agentId?: string;
   /**
    * Arbitrary key-value metadata stored on the conversation.
@@ -302,55 +310,65 @@ export type AdminConversationSummary = {
   /**
    * Parent conversation that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByConversationId?: string;
+  readonly startedByConversationId?: string;
   /**
    * Parent entry that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByEntryId?: string;
+  readonly startedByEntryId?: string;
 };
 
 export type AdminChildConversationSummary = {
   /**
    * Unique identifier for the child conversation.
    */
-  id?: string;
+  readonly id?: string;
   title?: string;
-  ownerUserId?: string;
-  createdAt?: string;
-  updatedAt?: string;
+  readonly ownerUserId?: string;
+  readonly clientId?: string;
+  /**
+   * Internal conversation group used for fork-tree routing and analytics joins.
+   */
+  readonly conversationGroupId?: string;
+  agentId?: string;
+  readonly createdAt?: string;
+  readonly updatedAt?: string;
   /**
    * Synthetic archive flag derived from the internal archived timestamp.
    */
-  archived?: boolean;
-  lastMessagePreview?: string;
-  accessLevel?: AccessLevel;
+  readonly archived?: boolean;
+  readonly lastMessagePreview?: string;
+  readonly accessLevel?: AccessLevel;
   /**
    * Parent conversation that started this logical child conversation tree.
    */
-  startedByConversationId?: string;
+  readonly startedByConversationId?: string;
   /**
    * Parent entry that started this logical child conversation tree.
    */
-  startedByEntryId?: string;
+  readonly startedByEntryId?: string;
 };
 
 export type AdminConversation = AdminConversationSummary & {
   /**
    * First parent entry excluded by this fork. Valid fork anchors are history entries and journal entries visible to the same authenticated client; context entries cannot be fork anchors. Null for root conversations and blank-slate forks that inherit no parent entries.
    */
-  forkedAtEntryId?: string;
+  readonly forkedAtEntryId?: string;
   /**
    * Conversation ID from which this conversation was forked.
    */
-  forkedAtConversationId?: string;
+  readonly forkedAtConversationId?: string;
   /**
    * Parent conversation that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByConversationId?: string;
+  readonly startedByConversationId?: string;
   /**
    * Parent entry that started this logical conversation tree. Fork branches inherit this value.
    */
-  startedByEntryId?: string;
+  readonly startedByEntryId?: string;
+  /**
+   * True while the service is recording a resumable response for this conversation.
+   */
+  readonly hasResponseInProgress?: boolean;
 };
 
 export type AdminActionRequest = {
@@ -382,7 +400,7 @@ export type AdminUpdateConversationRequest = AdminActionRequest & {
  */
 export type Channel = "history" | "context" | "journal";
 
-export type Entry = {
+export type AdminEntry = {
   /**
    * Unique identifier for the entry.
    */
@@ -391,7 +409,13 @@ export type Entry = {
    * Unique identifier for the conversation this entry belongs to.
    */
   conversationId: string;
+  /**
+   * Internal conversation group used for fork-tree routing and analytics joins.
+   */
+  conversationGroupId?: string;
   userId?: string;
+  clientId?: string;
+  agentId?: string;
   channel: Channel;
   epoch?: number;
   /**
@@ -405,6 +429,8 @@ export type Entry = {
    */
   seq?: number;
   createdAt: string;
+  indexedContent?: string;
+  indexedAt?: string;
 };
 
 export type ConversationMembership = {
@@ -506,7 +532,7 @@ export type SearchResult = {
   /**
    * The matched entry. Only included when includeEntry is true in the request.
    */
-  entry?: Entry;
+  entry?: AdminEntry;
 };
 
 export type EvictRequest = {
@@ -727,6 +753,24 @@ export type UpdateMemoryRequest = {
    */
   expected_revision?: number;
 };
+
+export type AdminConversationSummaryWritable = {
+  title?: string;
+  agentId?: string;
+  /**
+   * Arbitrary key-value metadata stored on the conversation.
+   */
+  metadata?: {
+    [key: string]: unknown;
+  };
+};
+
+export type AdminChildConversationSummaryWritable = {
+  title?: string;
+  agentId?: string;
+};
+
+export type AdminConversationWritable = AdminConversationSummaryWritable;
 
 /**
  * Start of time range (ISO 8601 timestamp). Defaults to 1 hour ago.
@@ -1275,7 +1319,7 @@ export type AdminGetEntryResponses = {
   /**
    * Entry details.
    */
-  200: Entry;
+  200: AdminEntry;
 };
 
 export type AdminGetEntryResponse = AdminGetEntryResponses[keyof AdminGetEntryResponses];
@@ -1654,7 +1698,7 @@ export type AdminGetEntriesResponses = {
    * Entries.
    */
   200: {
-    data?: Array<Entry>;
+    data?: Array<AdminEntry>;
     /**
      * Pass as afterCursor to fetch the adjacent newer page. Null when no newer entries exist.
      */
@@ -1881,9 +1925,13 @@ export type AdminSubscribeEventsData = {
      */
     after?: string;
     /**
-     * Event payload detail level.
+     * With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
      */
     detail?: "summary" | "full";
+    /**
+     * With `current`, emits a snapshot phase containing the current full resources, then replays changes committed after the snapshot boundary and continues live. Requires `detail=full`, an enabled outbox, and no `after` cursor.
+     */
+    initial_state?: "none" | "current";
     /**
      * Comma-separated entry channels to deliver for entry events. Defaults to history.
      */
@@ -1985,6 +2033,10 @@ export type AdminPutCheckpointErrors = {
    * Admin role required.
    */
   403: unknown;
+  /**
+   * Checkpoint is currently owned by a leased processor.
+   */
+  409: ErrorResponse;
 };
 
 export type AdminPutCheckpointError = AdminPutCheckpointErrors[keyof AdminPutCheckpointErrors];

@@ -50,6 +50,24 @@ const navigation: NavSection[] = [
     ],
   },
   {
+    title: "Analytics",
+    href: "/docs/analytics/",
+    collapsible: true,
+    items: [
+      { label: "Overview", href: "/docs/analytics/" },
+      {
+        label: "ClickHouse",
+        href: "/docs/analytics/clickhouse/",
+        items: [
+          { label: "Configuration", href: "/docs/analytics/clickhouse/configuration/" },
+          { label: "Operations", href: "/docs/analytics/clickhouse/operations/" },
+        ],
+      },
+      { label: "Projections", href: "/docs/analytics/projections/" },
+      { label: "Querying analytics data", href: "/docs/analytics/querying/" },
+    ],
+  },
+  {
     title: "Java - Quarkus",
     href: "/docs/quarkus/",
     collapsible: true,

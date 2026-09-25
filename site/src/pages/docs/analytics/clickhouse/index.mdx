@@ -1,0 +1,77 @@
+---
+layout: ../../../../layouts/DocsLayout.astro
+title: ClickHouse quickstart
+description: Start the ClickHouse analytics processor and verify an exported Memory Service record.
+---
+
+This guide starts the repository's ClickHouse server and metadata-mode processor. You will create a conversation and verify that its analytics row reaches ClickHouse.
+
+## Start the Docker Compose services
+
+From the repository root, start the stack:
+
+```bash
+docker compose up -d --wait
+```
+
+The Compose stack starts:
+
+- a pinned ClickHouse server with native TCP on host port `9002` and HTTP on host port `8123`
+- the `clickhouse-processor` in `metadata` mode
+- the `memory_service` ClickHouse database and the `memory_service_analytics` user
+
+Check that the processor is ready:
+
+```bash
+docker compose ps clickhouse clickhouse-processor
+```
+
+Both services must report a healthy state.
+
+## Write and verify a record
+
+Read the current conversation count:
+
+```bash
+docker compose exec -T clickhouse clickhouse-client \
+  --user memory_service_analytics \
+  --password memory-service-analytics \
+  --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'"
+```
+
+Create a conversation:
+
+```bash
+curl -fsS -X POST http://localhost:8082/v1/conversations \
+  -H 'Content-Type: application/json' \
+  -H 'X-API-Key: agent-api-key-1' \
+  -H 'X-User-ID: analytics-quickstart' \
+  --data '{"title":"ClickHouse analytics quickstart"}'
+```
+
+Run the count query again. The count increases after the processor writes the batch and advances its checkpoint.
+
+## Run against an external ClickHouse service
+
+Run the processor as a separate process or container. The client identity must have the Memory Service `admin` role because the processor reads full resources and current-state snapshots from the admin event stream.
+
+```bash
+memory-service process clickhouse \
+  --endpoint memory-service:8080 \
+  --client-id primary-analytics \
+  --api-key "$MEMORY_SERVICE_ANALYTICS_API_KEY" \
+  --clickhouse-address clickhouse.example:9440 \
+  --clickhouse-tls \
+  --clickhouse-username memory_service_analytics \
+  --clickhouse-password-file /run/secrets/clickhouse-password
+```
+
+Native TCP is the default protocol. Set `--clickhouse-protocol=http` for an HTTP or HTTPS endpoint. Non-loopback ClickHouse connections require TLS unless you set the development-only `--allow-insecure-clickhouse` acknowledgment.
+
+Use `--schema-mode=manage` to create and update processor-owned objects. Use `validate` when another deployment system owns schema changes.
+
+## Continue with projected data
+
+The admin event stream sends full resources to the processor. Metadata mode filters those resources before writing ClickHouse rows. To store approved content fields, [create an analytics projection](/docs/analytics/projections/). Then use the [query guide](/docs/analytics/querying/) to inspect its table.
+
+For all processor options, see the [ClickHouse processor configuration reference](/docs/analytics/clickhouse/configuration/).

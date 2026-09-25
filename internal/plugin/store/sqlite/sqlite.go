@@ -112,6 +112,19 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 			return fmt.Errorf("migration: failed to add created_at_unix_ms column: %w", err)
 		}
 	}
+	for _, migration := range []struct {
+		column string
+		sql    string
+	}{
+		{"revision", `ALTER TABLE admin_checkpoints ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
+		{"lease_token_hash", `ALTER TABLE admin_checkpoints ADD COLUMN lease_token_hash BLOB`},
+		{"lease_generation", `ALTER TABLE admin_checkpoints ADD COLUMN lease_generation INTEGER NOT NULL DEFAULT 0`},
+		{"lease_expires_at", `ALTER TABLE admin_checkpoints ADD COLUMN lease_expires_at DATETIME`},
+	} {
+		if _, err := handle.sqlDB.ExecContext(ctx, migration.sql); err != nil && !isSQLiteDuplicateColumnError(err) {
+			return fmt.Errorf("migration: failed to add admin_checkpoints.%s column: %w", migration.column, err)
+		}
+	}
 	if err := backfillSQLiteEntryCreatedAtUnixMS(ctx, handle.sqlDB); err != nil {
 		return err
 	}

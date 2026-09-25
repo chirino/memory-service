@@ -102,6 +102,8 @@ func AppendOutboxEvents(ctx context.Context, store registrystore.MemoryStore, ev
 	published := make([]registryeventbus.Event, 0, len(events))
 	for i, event := range events {
 		event.OutboxCursor = appended[i].Cursor
+		occurredAt := appended[i].CreatedAt.UTC()
+		event.OccurredAt = &occurredAt
 		published = append(published, event)
 	}
 	return published, true, nil

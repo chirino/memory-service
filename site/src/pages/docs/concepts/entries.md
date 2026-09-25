@@ -85,7 +85,7 @@ curl -X POST http://localhost:8080/v1/conversations/{conversationId}/entries \
 
 `metadata` uses top-level merge-patch semantics: absent keys are left unchanged, keys set to `null` are removed, and each non-null value replaces the complete value at that top-level key. Nested objects are not merged recursively. A top-level `null` or empty object is a no-op. `title` replaces the current title when provided; setting `title` to JSON `null` clears the title. The same `conversationPatch` field is also accepted on the sync endpoint (`POST .../entries/sync`).
 
-**Atomicity**: On **PostgreSQL** and **SQLite**, the entry write and conversation patch are committed in a single transaction. On **MongoDB**, the entry write and patch are currently separate operations (see [WORKAROUNDS.md](https://github.com/chirino/memory-service/blob/main/WORKAROUNDS.md#mongodb-inwritetx-is-intent-only-non-transactional) for details).
+**Atomicity**: On PostgreSQL, SQLite, and MongoDB, the entry write and conversation patch are committed in one datastore transaction. MongoDB deployments therefore require a replica set or mongos.
 
 Response:
 
