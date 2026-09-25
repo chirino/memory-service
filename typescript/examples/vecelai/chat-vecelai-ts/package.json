@@ -9,18 +9,22 @@
     "prettier": "prettier -w \"src/**/*.{ts,tsx,js}\""
   },
   "dependencies": {
-    "@ai-sdk/openai": "^2.0.115",
+    "@ai-sdk/openai": "2.0.127",
     "@chirino/memory-service-vercelai": "file:../../../vercelai",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
-    "ai": "^5.0.220",
-    "express": "^4.22.2"
+    "ai": "5.0.255",
+    "express": "^4.22.3"
   },
   "devDependencies": {
     "@types/express": "^5.0.6",
     "@types/node": "^22.20.1",
     "prettier": "^3.9.6",
-    "tsx": "^4.23.1",
+    "tsx": "4.23.2",
     "typescript": "^5.9.3"
+  },
+  "overrides": {
+    "undici": "7.29.1",
+    "qs": "6.16.0"
   }
 }
