@@ -8,10 +8,8 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/chirino/memory-service/internal/knowledge"
-	_ "github.com/chirino/memory-service/internal/plugin/attach/pgstore"
 	"github.com/chirino/memory-service/internal/plugin/store/postgres"
 	_ "github.com/chirino/memory-service/internal/plugin/vector/pgvector"
-	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -22,6 +20,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"go.opentelemetry.io/otel/sdk/trace/tracetest"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // G1 — TestGORMQueryProducesChildSpan
@@ -78,6 +77,8 @@ func TestGORMQueryProducesChildSpan(t *testing.T) {
 
 	require.NotNil(t, gormSpan, "expected a db span from GORM")
 	require.Equal(t, traceID, gormSpan.SpanContext.TraceID().String())
+	require.Equal(t, trace.SpanKindClient, gormSpan.SpanKind, "GORM span kind must be client")
+	require.Equal(t, parentSpanID, gormSpan.Parent.SpanID().String(), "GORM span parent must match inbound span ID")
 }
 
 // G2 — TestGORMNoSpanWithoutParent
@@ -189,6 +190,8 @@ func TestGORMNoQueryVariables(t *testing.T) {
 	require.NotEmpty(t, spans, "expected spans from GORM operations")
 
 	for _, span := range spans {
+		require.Equal(t, trace.SpanKindClient, span.SpanKind, "GORM span kind must be client")
+		require.Equal(t, parentSpanID, span.Parent.SpanID().String(), "GORM span parent must match inbound span ID")
 		for _, attr := range span.Attributes {
 			require.NotContains(t, attr.Value.AsString(), secretParam,
 				"span attribute %s must not contain query bind parameter value", attr.Key)
@@ -197,7 +200,9 @@ func TestGORMNoQueryVariables(t *testing.T) {
 }
 
 // G5 — TestGORMTracingAllPostgresHandles
-// Exercises the remaining 4 PostgreSQL GORM handles: episodic store, pgvector, pgstore (attachments), and knowledge store.
+// Exercises 3 of the 4 in-scope PostgreSQL GORM handles: episodic store, pgvector, and knowledge
+// store. The fourth handle (main memory store, internal/plugin/store/postgres/postgres.go) is
+// covered separately by TestGORMQueryProducesChildSpan.
 func TestGORMTracingAllPostgresHandles(t *testing.T) {
 	dbURL := testpg.StartPostgres(t)
 
@@ -228,13 +233,7 @@ func TestGORMTracingAllPostgresHandles(t *testing.T) {
 	vecStore, err := vecLoader(loaderCtx)
 	require.NoError(t, err)
 
-	// 3. pgstore attachment
-	attLoader, err := registryattach.Select("postgres")
-	require.NoError(t, err)
-	attStore, err := attLoader(loaderCtx)
-	require.NoError(t, err)
-
-	// 4. Knowledge store
+	// 3. Knowledge store
 	knowStore, err := knowledge.OpenPostgresKnowledgeStore(loaderCtx, dbURL)
 	require.NoError(t, err)
 
@@ -253,21 +252,20 @@ func TestGORMTracingAllPostgresHandles(t *testing.T) {
 	err = vecStore.DeleteByConversationGroupID(reqCtx, uuid.New())
 	require.NoError(t, err)
 
-	// Exercise attachment store
-	_, err = attStore.Retrieve(reqCtx, "nonexistent-attachment")
-	require.Error(t, err) // Expected not found error, but GORM executed
-
 	// Exercise knowledge store
 	_, err = knowStore.ListUsersWithEmbeddings(reqCtx)
 	require.NoError(t, err)
 
 	_ = harness.Provider.ForceFlush(context.Background())
 	spans := harness.Exporter.GetSpans()
-	// At least 4 spans, one from each handle operation
-	require.GreaterOrEqual(t, len(spans), 4, "expected at least 4 spans, one from each postgres handle")
+	// At least 3 spans — one per handle is the minimum; a handle may emit more depending on
+	// how many SQL statements the operation executes internally.
+	require.GreaterOrEqual(t, len(spans), 3, "expected at least 3 spans, one from each postgres handle")
 
 	for _, span := range spans {
 		require.Equal(t, traceID, span.SpanContext.TraceID().String())
+		require.Equal(t, trace.SpanKindClient, span.SpanKind, "span kind must be client")
+		require.Equal(t, parentSpanID, span.Parent.SpanID().String(), "span parent must match inbound span ID")
 	}
 }
 

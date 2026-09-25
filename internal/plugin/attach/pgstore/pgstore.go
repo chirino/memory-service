@@ -14,11 +14,9 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	registryattach "github.com/chirino/memory-service/internal/registry/attach"
 	"github.com/chirino/memory-service/internal/tempfiles"
-	internaltracing "github.com/chirino/memory-service/internal/tracing"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 	"gorm.io/gorm/logger"
-	"gorm.io/plugin/opentelemetry/tracing"
 )
 
 const pgLargeObjectChunkSize = 8192
@@ -38,14 +36,6 @@ func load(ctx context.Context) (registryattach.AttachmentStore, error) {
 	db, err := gorm.Open(postgres.Open(cfg.DBURL), &gorm.Config{Logger: logger.Discard})
 	if err != nil {
 		return nil, fmt.Errorf("pgstore: %w", err)
-	}
-	tp := internaltracing.ProviderFromContextOrNoop(ctx)
-	if err := db.Use(tracing.NewPlugin(
-		tracing.WithTracerProvider(tp),
-		tracing.WithoutMetrics(),
-		tracing.WithoutQueryVariables(),
-	)); err != nil {
-		return nil, fmt.Errorf("pgstore: register otelgorm plugin: %w", err)
 	}
 	return &PgAttachmentStore{db: db, tempDir: cfg.ResolvedTempDir()}, nil
 }

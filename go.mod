@@ -58,6 +58,7 @@ require (
 	gorm.io/driver/postgres v1.6.1
 	gorm.io/driver/sqlite v1.6.0
 	gorm.io/gorm v1.31.2
+	gorm.io/plugin/opentelemetry v0.1.16
 	gotest.tools/gotestsum v1.13.0
 )
 
@@ -319,7 +320,6 @@ require (
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gorm.io/driver/clickhouse v0.7.0 // indirect
 	gorm.io/driver/mysql v1.5.7 // indirect
-	gorm.io/plugin/opentelemetry v0.1.16 // indirect
 	mvdan.cc/sh/moreinterp v0.0.0-20260120230322-19def062a997 // indirect
 	mvdan.cc/sh/v3 v3.13.2-0.20260613075524-2255122b577b // indirect
 	sigs.k8s.io/yaml v1.6.0 // indirect

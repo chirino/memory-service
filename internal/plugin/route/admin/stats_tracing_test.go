@@ -121,6 +121,25 @@ func TestPrometheusStatsChildSpanRecorded(t *testing.T) {
 
 	require.NotNil(t, clientSpan, "expected a SpanKindClient span for the outbound Prometheus call")
 	require.Equal(t, traceID, clientSpan.SpanContext.TraceID().String())
+	require.Equal(t, trace.SpanKindClient, clientSpan.SpanKind, "span kind must be client")
+
+	// Find the server span to verify the client span is a child of the server span
+	var serverSpan *tracetest.SpanStub
+	for i := range spans {
+		if spans[i].SpanKind == trace.SpanKindServer {
+			serverSpan = &spans[i]
+			break
+		}
+	}
+	if serverSpan != nil {
+		require.Equal(t, serverSpan.SpanContext.SpanID().String(), clientSpan.Parent.SpanID().String(),
+			"outbound HTTP client span must be a child of the server span")
+		require.Equal(t, parentSpanID, serverSpan.Parent.SpanID().String(),
+			"server span parent must match inbound span ID")
+	} else {
+		require.Equal(t, parentSpanID, clientSpan.Parent.SpanID().String(),
+			"client span parent must match inbound span ID")
+	}
 }
 
 // P3 — TestPrometheusStatsNoSpanWithoutParent
@@ -198,21 +217,18 @@ func TestPrometheusStatsUnsampledParent(t *testing.T) {
 // P5 — TestPrometheusStatsErrorSpanStatus
 // Assert that when the fake Prometheus server returns HTTP 500, the recorded SpanKindClient span has StatusCode == codes.Error.
 func TestPrometheusStatsErrorSpanStatus(t *testing.T) {
-	downstream := testutil.NewDownstreamRecorderWithBody(`{"status":"error","error":"internal server error"}`)
-	t.Cleanup(downstream.Close)
-	// We want status 500
-	downstream.Server.Config.Handler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		downstream.ReceivedHeaders = append(downstream.ReceivedHeaders, r.Header.Clone())
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(http.StatusInternalServerError)
 		_, _ = w.Write([]byte(`{"status":"error","error":"internal server error"}`))
-	})
+	}))
+	t.Cleanup(server.Close)
 
 	harness := testutil.NewTestHarness()
 	t.Cleanup(func() { _ = harness.Shutdown(context.Background()) })
 
 	cfg := &config.Config{
-		PrometheusURL: downstream.Server.URL,
+		PrometheusURL: server.URL,
 	}
 
 	router := setupAdminStatsRouter(harness, cfg)
@@ -227,6 +243,7 @@ func TestPrometheusStatsErrorSpanStatus(t *testing.T) {
 
 	router.ServeHTTP(rec, req)
 
+	require.Equal(t, http.StatusServiceUnavailable, rec.Code)
 	_ = harness.Provider.ForceFlush(context.Background())
 	spans := harness.Exporter.GetSpans()
 
@@ -239,5 +256,24 @@ func TestPrometheusStatsErrorSpanStatus(t *testing.T) {
 	}
 
 	require.NotNil(t, clientSpan, "expected a SpanKindClient span for outbound Prometheus call")
+	require.Equal(t, trace.SpanKindClient, clientSpan.SpanKind, "span kind must be client")
 	require.Equal(t, codes.Error, clientSpan.Status.Code, "client span should have error status on HTTP 500")
+
+	// Find the server span to verify parent-child hierarchy
+	var serverSpan *tracetest.SpanStub
+	for i := range spans {
+		if spans[i].SpanKind == trace.SpanKindServer {
+			serverSpan = &spans[i]
+			break
+		}
+	}
+	if serverSpan != nil {
+		require.Equal(t, serverSpan.SpanContext.SpanID().String(), clientSpan.Parent.SpanID().String(),
+			"outbound HTTP client span must be a child of the server span")
+		require.Equal(t, parentSpanID, serverSpan.Parent.SpanID().String(),
+			"server span parent must match inbound span ID")
+	} else {
+		require.Equal(t, parentSpanID, clientSpan.Parent.SpanID().String(),
+			"client span parent must match inbound span ID")
+	}
 }

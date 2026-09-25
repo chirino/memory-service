@@ -184,7 +184,7 @@ func buildInboundPropagator() propagation.TextMapPropagator {
 }
 
 // buildOutboundPropagator constructs the propagator used by outbound clients
-// (OpenAI, Qdrant, Infinispan, episodicQdrant, attachment source-URL).
+// (OpenAI, Qdrant, Infinispan, episodicQdrant, attachment source-URL, Prometheus stats).
 // It honours OTEL_PROPAGATORS (via the same autoprop base as inbound) and strips
 // the baggage key so internal baggage is never forwarded to third-party services.
 // Inject is gated by ParticipatingPropagator so untraced requests inject nothing.

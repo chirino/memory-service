@@ -58,10 +58,14 @@ The change covers:
 - gRPC streaming server path via `tracing.GRPCStreamServerInterceptor` at position 1.
 - Outbound clients and datastores: OpenAI embedder, Infinispan vector HTTP client, Qdrant
   vector gRPC client, episodic Qdrant gRPC client, source-URL attachment download HTTP client,
-  Prometheus stats HTTP client, and all PostgreSQL GORM datastores.
+  Prometheus stats HTTP client, and PostgreSQL GORM datastores (main store, episodic memory store,
+  pgvector, and knowledge store).
 
-Other outbound callers (Vault, AWS KMS, Redis, S3, Infinispan/Redis cache, and encryption
-plugins) are out of scope.
+Other outbound callers (Vault, AWS KMS, Redis, S3, Infinispan/Redis cache, encryption plugins,
+and SQLite) are out of scope. The PostgreSQL attachment large-object store
+(`internal/plugin/attach/pgstore`) is also out of scope: its write path calls `lo_put` once
+per 8 KB chunk, so otelgorm would emit one client span per chunk rather than one per operation;
+a single-operation span requires a different instrumentation approach and is deferred.
 
 ### TracerProvider
 
