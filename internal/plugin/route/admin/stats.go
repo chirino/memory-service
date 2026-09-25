@@ -18,7 +18,9 @@ import (
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/security"
+	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/gin-gonic/gin"
+	"go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp"
 )
 
 const (
@@ -233,7 +235,21 @@ func (h *prometheusStatsHandler) queryRange(ctx context.Context, promQL, start, 
 	if err != nil {
 		return nil, fmt.Errorf("build Prometheus request: %w", err)
 	}
-	resp, err := h.httpClient.Do(req)
+	tp := tracing.ProviderFromContextOrNoop(ctx)
+	prop := tracing.OutboundPropagatorFromContext(ctx)
+	transport := h.httpClient.Transport
+	if transport == nil {
+		transport = http.DefaultTransport
+	}
+	client := &http.Client{
+		Timeout: h.httpClient.Timeout,
+		Transport: otelhttp.NewTransport(
+			transport,
+			otelhttp.WithTracerProvider(tp),
+			otelhttp.WithPropagators(prop),
+		),
+	}
+	resp, err := client.Do(req)
 	if err != nil {
 		return nil, prometheusProviderError(fmt.Errorf("could not connect to metrics provider: %w", err), 0, "request_failed", "")
 	}

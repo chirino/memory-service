@@ -184,7 +184,7 @@ func buildInboundPropagator() propagation.TextMapPropagator {
 }
 
 // buildOutboundPropagator constructs the propagator used by outbound clients
-// (OpenAI, Qdrant, Infinispan, episodicQdrant, attachment source-URL).
+// (OpenAI, Qdrant, Infinispan, episodicQdrant, attachment source-URL, Prometheus stats).
 // It honours OTEL_PROPAGATORS (via the same autoprop base as inbound) and strips
 // the baggage key so internal baggage is never forwarded to third-party services.
 // Inject is gated by ParticipatingPropagator so untraced requests inject nothing.
@@ -445,7 +445,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 	// Set up knowledge clustering (if enabled). Clustering runs inside the
 	// BackgroundIndexer after each embedding batch — no separate goroutine.
 	if cfg.KnowledgeClusteringEnabled && cfg.DatastoreType == "postgres" && cfg.DBURL != "" && cfg.VectorType == "pgvector" && vectorStore != nil && vectorStore.IsEnabled() {
-		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(cfg.DBURL)
+		knowledgeStore, err := knowledge.OpenPostgresKnowledgeStore(ctx, cfg.DBURL)
 		if err != nil {
 			log.Warn("Knowledge clustering: failed to open store", "err", err)
 		} else {
