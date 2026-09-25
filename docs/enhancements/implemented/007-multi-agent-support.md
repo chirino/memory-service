@@ -6,6 +6,8 @@ status: implemented
 
 > **Status**: Implemented.
 
+> **Note**: This is the older agent-scoped memory design. It is not the design for parent/child agent conversations or conversation-lineage APIs.
+
 ## Problem Summary
 The memory-service currently assumes a single agent per conversation. All
 agent-generated ChatMemory is stored in the `memory` channel with no notion of

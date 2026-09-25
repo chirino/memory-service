@@ -160,6 +160,9 @@ func (p *postgresBus) Publish(ctx context.Context, event registryeventbus.Event)
 }
 
 // Subscribe delegates to the local bus and tracks user-scoped interest.
+// It must not return until the refreshed LISTEN channel set is active
+// (waitForSubscription); otherwise the caller races a stale broadcast-only
+// LISTEN loop and can miss the recovery invalidation.
 func (p *postgresBus) Subscribe(ctx context.Context, userID string) (<-chan registryeventbus.Event, error) {
 	ch, err := p.local.Subscribe(ctx, userID)
 	if err != nil {

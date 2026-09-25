@@ -646,6 +646,9 @@ func newConfiguredRouter(
 	opts routerOptions,
 ) (*gin.Engine, error) {
 	router := newGinRouter()
+	// gin.New() trusts every proxy until SetTrustedProxies is called, so both branches
+	// must call it even with no CIDRs configured; otherwise ClientIP honors spoofed
+	// X-Forwarded-For/X-Real-IP headers.
 	if opts.includePublic {
 		trustedProxies, err := parseTrustedProxyCIDRs(opts.trustedProxies)
 		if err != nil {

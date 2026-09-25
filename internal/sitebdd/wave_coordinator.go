@@ -9,6 +9,13 @@ import (
 
 var globalScenarioWaveCoordinator = newScenarioWaveCoordinator()
 
+// scenarioWaveCoordinator admits scenarios in waves of up to
+// siteScenarioConcurrency() members (preassigned as @wave_N tags by
+// assignScenarioWaves). Wave members build and start their checkpoints
+// concurrently; the first curl step of each member waits until every admitted
+// member is running or has exited, and the next wave cannot start building
+// until the current wave drains. This keeps curl traffic from overlapping
+// checkpoint build/start work.
 type scenarioWaveCoordinator struct {
 	mu            sync.Mutex
 	cond          *sync.Cond

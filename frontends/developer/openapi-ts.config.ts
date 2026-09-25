@@ -12,6 +12,9 @@ export default defineConfig({
     '@hey-api/sdk',
     {
       name: '@tanstack/react-query',
+      // Admin SSE operations (adminEvict, adminSubscribeEvents) use client.sse.*,
+      // so no React Query hooks are generated for them; call the raw SDK
+      // functions for streaming instead.
       '~hooks': {
         operations: {
           isMutation: (operation) => {

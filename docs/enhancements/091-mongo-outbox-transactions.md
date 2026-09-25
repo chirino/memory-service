@@ -183,7 +183,7 @@ Feature: Mongo transactional outbox
 | `internal/grpc/server.go` | Enable Mongo replay for gRPC once the store supports it |
 | `internal/bdd/testdata/features/` | Add Mongo outbox replay scenarios |
 | `internal/bdd/` | Add Mongo replay/rollback step coverage |
-| `internal/FACTS.md` | Update the Mongo outbox staging rule after implementation |
+| `internal/plugin/store/mongo/mongo.go`, `WORKAROUNDS.md` | Update the `InWriteTx` comment and the Mongo workaround entry after implementation |
 | `WORKAROUNDS.md` | Remove any temporary Mongo outbox workaround notes if no longer needed |
 
 ## Verification

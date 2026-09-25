@@ -1883,6 +1883,12 @@ func (s *EntriesServer) appendEntries(ctx context.Context, conversationID string
 		AgentID:  agentIDPtr,
 		Epoch:    epoch,
 	}
+	// Single-entry sequenced appends attempt the normal insert first; only after a
+	// duplicate-sequence conflict (or NotFound when the request carries an archived
+	// patch) do they load the stored entry at that sequence and return it when every
+	// persisted field matches, even if it is no longer the tail. Don't add a
+	// read-before-write or current-tail requirement, and don't extend this to
+	// multi-entry batches.
 	retryEligible := len(appendEntries) == 1 && appendEntries[0].store.Seq != nil
 
 	var eventsToPublish []registryeventbus.Event
@@ -6256,6 +6262,8 @@ func (s *ResponseRecorderServer) Record(stream pb.ResponseRecorderService_Record
 	var convUUID string
 	var recorder *internalresumer.Recorder
 	var cancelStream <-chan struct{}
+	// Once a recorder exists, any stream error (including client cancel/deadline)
+	// must complete it so the conversation's locator/cache registration is removed.
 	defer func() {
 		if retErr == nil || recorder == nil || convID == "" {
 			return
@@ -6839,6 +6847,9 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 			kindsFilter[k] = true
 		}
 	}
+	// conversation_ids only narrows the stream and never grants access: admin scope
+	// uses it to filter the all-events stream, while user scope still applies
+	// membership filtering first.
 	conversationFilter := make(map[string]bool)
 	for _, raw := range req.GetConversationIds() {
 		id, err := requiredConversationID(raw)
@@ -7457,6 +7468,10 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 	}
 }
 
+// grpcFullEventData renders detail=full payloads as the internal model JSON
+// (model.Entry / ConversationDetail), not proto messages, so `json:"-"` fields such
+// as ClientID stay omitted. The summary conversation_group is kept as
+// conversationGroupId so event processors can still correlate by group.
 func grpcFullEventData(entity any, summary map[string]any) any {
 	raw, err := json.Marshal(entity)
 	if err != nil {

@@ -174,7 +174,6 @@ Unit tests should cover the unix-socket query builder directly, because that is 
 | `java/spring/examples/**/MemoryServiceProxyController.java` | Update examples to use the options object. |
 | `site/src/pages/docs/quarkus/*.mdx` | Update Quarkus Java snippets. |
 | `site/src/pages/docs/spring/*.mdx` | Update Spring Java snippets. |
-| `java/quarkus/FACTS.md` and `java/spring/FACTS.md` | Record the generated-client wrapper rule after implementation. |
 
 ## Verification
 
@@ -217,4 +216,4 @@ Questions to answer:
 | Does the generated API remain ergonomic for examples and docs? | If generated builders are noisy or generator-specific, handwritten framework helpers may still be clearer. |
 | How would the unix-socket adapter interact with generated builders? | If the adapter still reflects over positional generated methods, the runtime failure mode remains. |
 
-The preferred outcome is to configure generation so the stable API is generated consistently. If the generator cannot provide a source-compatible builder/request-object surface for the Java clients, implement the handwritten options objects described above and document the generator limitation in `java/quarkus/FACTS.md` and `java/spring/FACTS.md`.
+The preferred outcome is to configure generation so the stable API is generated consistently. If the generator cannot provide a source-compatible builder/request-object surface for the Java clients, implement the handwritten options objects described above and document the generator limitation in a comment on those options objects.

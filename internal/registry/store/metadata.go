@@ -323,6 +323,8 @@ func ParseMetadataFilterQuery(rawQuery string) ([]ConversationMetadataPredicate,
 		return predicates, nil
 	}
 
+	// BACKWARD COMPATIBILITY: remove in a future breaking release.
+	// Legacy single-filter metadata[key]=value syntax (equality only).
 	if hasLegacy {
 		var predicates []ConversationMetadataPredicate
 		for _, rawKey := range legacyParams {

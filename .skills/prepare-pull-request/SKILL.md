@@ -1,6 +1,6 @@
 ---
 name: prepare-pull-request
-description: Prepare Memory Service changes for pull request submission. Use whenever Codex is asked to create, open, submit, publish, or ready a pull request, or to perform final PR preflight. Require `task generate` before the final PR commit so generated sources and repository-wide formatting are included.
+description: Prepare Memory Service changes for pull request submission. Use whenever you are asked to create, open, submit, publish, or ready a pull request, or to perform final PR preflight. Require `task generate` before the final PR commit so generated sources and repository-wide formatting are included.
 ---
 
 # Prepare Pull Request

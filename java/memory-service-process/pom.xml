@@ -14,6 +14,9 @@
   <name>Memory Service - Managed Process</name>
   <description>Resolve, extract, start, probe, and stop a local Memory Service process</description>
 
+  <!-- This module must stay JDK-only at runtime: no framework, gRPC, or Netty dependencies.
+       It is embedded by Quarkus, Spring, and plain Java apps alike; the enforcer rule below
+       fails the build if a non-test dependency is added. -->
   <dependencies>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -24,6 +27,32 @@
 
   <build>
     <plugins>
+      <plugin>
+        <artifactId>maven-enforcer-plugin</artifactId>
+        <version>3.6.3</version>
+        <executions>
+          <!-- The managed-process API is JDK-only at runtime; only test-scope dependencies are allowed. -->
+          <execution>
+            <id>jdk-only-runtime</id>
+            <goals>
+              <goal>enforce</goal>
+            </goals>
+            <configuration>
+              <rules>
+                <bannedDependencies>
+                  <excludes>
+                    <exclude>*:*:*:*:compile</exclude>
+                    <exclude>*:*:*:*:runtime</exclude>
+                    <exclude>*:*:*:*:provided</exclude>
+                    <exclude>*:*:*:*:system</exclude>
+                  </excludes>
+                  <message>memory-service-process must stay JDK-only at runtime: keep framework, gRPC, and Netty dependencies out of this module.</message>
+                </bannedDependencies>
+              </rules>
+            </configuration>
+          </execution>
+        </executions>
+      </plugin>
       <plugin>
         <artifactId>maven-jar-plugin</artifactId>
         <version>3.5.1</version>

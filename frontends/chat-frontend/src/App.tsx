@@ -119,6 +119,8 @@ function App() {
   useEventStream();
   const streamingConversations = useStreamingConversations();
 
+  // Keep the server order from GET /v1/conversations; a client-side sort would
+  // drift from the server's pagination order.
   const conversationsQuery = useQuery<ConversationSummary[], Error, ConversationSummary[]>({
     queryKey: ["conversations", archiveFilter],
     queryFn: async (): Promise<ConversationSummary[]> => {
@@ -140,6 +142,9 @@ function App() {
   const auth = useAuth();
   const currentUser = auth.user;
   const currentUserId = currentUser?.userId ?? null;
+  // New-chat IDs exist client-side before the first message persists the
+  // conversation. Gate getConversation/children queries on this check (the same
+  // one chat-panel uses) or the agent app logs 404s for brand-new chats.
   const isResolvedSelectedConversation = Boolean(
     selectedConversationId && resolvedConversationIds.has(selectedConversationId),
   );
@@ -154,6 +159,9 @@ function App() {
     },
   });
 
+  // Profile-context endpoints are optional agent-app features. Hide "Manage
+  // memory" only when GET /v1/profile-context returns 404; successful empty
+  // profiles still show it.
   const profileContextAvailabilityQuery = useQuery<ProfileContextResponse>({
     queryKey: ["profile-context"],
     queryFn: getProfileContext,

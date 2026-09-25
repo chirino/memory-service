@@ -135,7 +135,7 @@ Feature: Response recording manager naming across examples
 - [x] Update all Spring/Quarkus/Python examples and doc-checkpoint code to new names.
 - [x] Update all affected site docs/snippets/prose to new names.
 - [x] Run targeted compile/tests for changed modules and site docs tests.
-- [x] Update module `FACTS.md` entries after implementation to reflect final canonical names.
+- [x] Update repository knowledge after implementation to reflect final canonical names.
 
 ## Files to Modify
 
@@ -163,7 +163,7 @@ Feature: Response recording manager naming across examples
 | `site/src/pages/docs/python-langchain/**` | Replace `MemoryServiceResponseResumer` references |
 | `site/src/pages/docs/python-langgraph/**` | Replace `MemoryServiceResponseResumer` references |
 | `site/src/pages/docs/concepts/**` and `site/src/pages/docs/configuration.mdx` | Replace generic "response resumer" terminology |
-| `spring/FACTS.md`, `quarkus/FACTS.md`, `python/FACTS.md` | Update canonical naming facts after implementation |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update canonical naming facts after implementation |
 
 ## Verification
 

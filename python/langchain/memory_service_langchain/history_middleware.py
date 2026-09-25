@@ -67,6 +67,9 @@ class MemoryServiceHistoryMiddleware(AgentMiddleware):
             authorization = None
         else:
             authorization = self.authorization_getter()
+        # LangChain model/middleware work can hop threads where ContextVar request
+        # auth is missing; without this fallback, appends intermittently get 403
+        # under concurrent load.
         if not authorization and conversation_id:
             authorization = get_conversation_authorization(conversation_id)
         return authorization

@@ -221,6 +221,9 @@ func (s *Server) waitUntilReady(ctx context.Context) error {
 	return lastErr
 }
 
+// adminAccessToken returns alice's token for the Keycloak admin API used to provision
+// scenario users; deploy/keycloak/memory-service-realm.json grants alice the
+// realm-management realm-admin role.
 func (s *Server) adminAccessToken(ctx context.Context) (string, error) {
 	token, err := s.AccessToken(ctx, "alice", "alice")
 	if err != nil {

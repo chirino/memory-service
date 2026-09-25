@@ -443,6 +443,9 @@ func (s *PostgresStore) createConversationWithID(ctx context.Context, userID str
 		UpdatedAt:               now,
 	}
 
+	// Concurrent creates of the same conversation ID must use ON CONFLICT DO NOTHING
+	// rather than catching 23505: a failed statement aborts the surrounding Postgres
+	// transaction, so the reload below would fail with 25P02.
 	createResult := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&conv)
 	if createResult.Error != nil {
 		logDuplicateKey("createConversationWithID:createConversation", createResult.Error,
@@ -2162,6 +2165,8 @@ func (s *PostgresStore) SyncAgentEntry(ctx context.Context, userID string, conve
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
+// Like normal root creation it must also write the ancestry self row, or
+// ancestry-backed context and entry-listing reads fail after the first sync.
 func (s *PostgresStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (model.Conversation, error) {
 	db, err := s.writeDBFor(ctx, "auto-create conversation")
 	if err != nil {

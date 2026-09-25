@@ -1,3 +1,6 @@
+// Normalizes canonical rich events ({ eventType, ... }) and raw LangChain
+// envelopes ({ event, data }) into ChatEvent, so live streams and replayed
+// history/lc entries render the same way.
 import type { ChatEvent } from "@/components/conversation";
 
 type JsonRecord = Record<string, unknown>;
@@ -13,6 +16,7 @@ function asString(value: unknown): string | undefined {
   return typeof value === "string" ? value : undefined;
 }
 
+// Replayed tool calls may store their args under `arguments` instead of `input`.
 function getToolArgs(record: JsonRecord): unknown {
   if ("input" in record && record.input !== undefined) {
     return record.input;

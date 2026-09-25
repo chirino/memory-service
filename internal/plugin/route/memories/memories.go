@@ -846,6 +846,9 @@ func toAPIMemoryEventItem(e registryepisodic.MemoryEvent) generatedapi.MemoryEve
 	}
 }
 
+// ensureAdmin must be called by every /admin/v1/memories write handler. The generated
+// proxy permission/scope checks alone let non-OIDC fixture users reach admin writes
+// when no OIDC scope gate is configured.
 func ensureAdmin(c *gin.Context) bool {
 	security.RequireAdminRole()(c)
 	return !c.IsAborted()
@@ -1884,6 +1887,8 @@ func kindVersionList(ctx context.Context, store registryepisodic.EpisodicStore, 
 // resolveKindSortFieldType looks up the declared attribute type for a sort field
 // using the shared ResolveSortFieldType helper across all selected schema versions.
 // Defect 7 fix: family/empty selectors now resolve against all matching versions.
+// Call inside a routetx.EpisodicRead/EpisodicWrite scope; the SQLite store panics
+// on dbFor outside a scope.
 func resolveKindSortFieldType(ctx context.Context, store registryepisodic.EpisodicStore, memoryKind, field string) (string, error) {
 	if store == nil {
 		return "", nil
@@ -1900,6 +1905,8 @@ func resolveKindSortFieldType(ctx context.Context, store registryepisodic.Episod
 // rewrites condition values (timestamp canonicalization, numeric normalization, type-check).
 // Returns a new AttributeFilter with normalized values for use in store queries.
 // Policy-injected filters are NOT passed here.
+// Call inside a routetx.EpisodicRead/EpisodicWrite scope; the SQLite store panics
+// on dbFor outside a scope.
 func validateAndNormalizeCallerFilter(ctx context.Context, store registryepisodic.EpisodicStore, memoryKind string, callerFilter registryepisodic.AttributeFilter) (registryepisodic.AttributeFilter, error) {
 	if store == nil || callerFilter.Empty() {
 		return callerFilter, nil
@@ -2743,7 +2750,10 @@ func queryBool(c *gin.Context, key string, def bool) bool {
 	return def
 }
 
-// HandleAdminPutMemory handles PUT /admin/v1/memories for admin clients
+// HandleAdminPutMemory handles PUT /admin/v1/memories for admin clients.
+// Admin writes are authorized by admin role/scope/justification and intentionally
+// bypass episodic OPA authz (policy is unused on purpose); kind projection uses only
+// the persisted namespace/key/value/index inputs.
 func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, policy *episodic.PolicyEngine, cfg *config.Config) {
 	if !ensureAdmin(c) {
 		return

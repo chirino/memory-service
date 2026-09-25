@@ -26,6 +26,8 @@ export function useEventStream() {
         case "conversation":
           queryClient.invalidateQueries({ queryKey: ["conversations"] });
           if (msg.event === "created") {
+            // created payloads lack startedByConversationId, so the parent is
+            // unknown: invalidate the whole sidebar-children family.
             queryClient.invalidateQueries({ queryKey: ["conversation-sidebar-children"] });
           }
           if (msg.data?.conversation) {
@@ -35,6 +37,8 @@ export function useEventStream() {
           }
           break;
         case "entry":
+          // Target the conversation-path-messages family used by chat-panel;
+          // there is no standalone entries query key.
           if (msg.data?.conversation) {
             queryClient.invalidateQueries({
               queryKey: ["conversation-path-messages", msg.data.conversation],

@@ -243,6 +243,10 @@ public class GrpcResponseRecordingManager implements ResponseRecordingManager {
                 String conversationId) {
             this.service = service;
             this.conversationId = conversationId;
+            // Open the record stream eagerly so the channel is ready before the first token. If
+            // that fails (seen as CI-only UDS flakes before the first SSE chunk), record() and
+            // complete() retry via ensureStarted(). The server registers the in-progress response
+            // only when the first message carrying conversationId arrives.
             startStream();
         }
 

@@ -499,7 +499,7 @@ Feature: gRPC admin episodic memory exploration
 | `internal/bdd/testdata/features/memories-rest.feature` | Add REST scenarios for admin memory exploration. |
 | `internal/bdd/testdata/features-grpc/*.feature` | Add gRPC scenarios for `AdminMemoriesService`. |
 | `site/src/pages/docs/concepts/memories.md` | Document admin memory exploration separately from user memory APIs. |
-| `internal/FACTS.md` | Update implementation facts if route prefixes, role split, or audit behavior diverge from this proposal. |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update implementation facts if route prefixes, role split, or audit behavior diverge from this proposal. |
 
 ## Verification
 

@@ -140,7 +140,13 @@ curl -sSfX GET http://localhost:9090/v1/conversations/53d23c96-6b29-4fbb-879d-db
 
 To let users see all conversations they can access, expose `GET /v1/conversations`:
 
-<CodeFromFile file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py" lang="python" lines="99-107" />
+<CodeFromFile
+  file="python/examples/langgraph/doc-checkpoints/03-with-history/app.py"
+  lang="python"
+  match="async def list_conversations"
+  before={1}
+  after={8}
+/>
 
 **What changed**: `GET /v1/conversations` is added, forwarding `mode`, `afterCursor`, `limit`, and `query` parameters to `proxy.list_conversations()`.
 

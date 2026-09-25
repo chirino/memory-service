@@ -405,6 +405,10 @@ func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) erro
 	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
 }
 
+// InWriteTx only records write intent; it does not open a MongoDB session
+// transaction, so multi-write flows (conversationPatch, outbox appends) are not
+// atomic on Mongo (the episodic store opens its own session transactions).
+// See WORKAROUNDS.md.
 func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 }
@@ -790,6 +794,10 @@ func (s *MongoStore) createConversationAncestryDoc(ctx context.Context, convID, 
 	return doc, nil
 }
 
+// claimConversationAncestry is the first step of the publish order: ancestry is
+// claimed before the conversation document is inserted last. A duplicate claim is
+// accepted only when its lineage matches; a matching orphan left by a failed
+// publish is deleted and the claim retried once.
 func (s *MongoStore) claimConversationAncestry(ctx context.Context, requested conversationAncestryDoc) (*registrystore.ConversationDetail, error) {
 	for attempt := 0; attempt < 2; attempt++ {
 		if _, err := s.conversationAncestry().InsertOne(ctx, requested); err == nil {
@@ -1521,6 +1529,8 @@ func (s *MongoStore) ListConversations(ctx context.Context, userID string, query
 		}
 	}
 
+	// Known gap: Mongo does not yet apply the query title filter; the Postgres
+	// and SQLite stores do.
 	pipeline := buildPublicConversationListPipeline(userID, anchorValue, anchorID, limit, mode, ancestry, archived, metadataFilters, sort)
 	opts := buildConversationAggregateOptions(metadataFilters)
 
@@ -2906,6 +2916,8 @@ func (s *MongoStore) SyncAgentEntry(ctx context.Context, userID string, conversa
 }
 
 // autoCreateConversation creates a conversation with a given ID for sync auto-creation.
+// Like normal root creation it must also write the ancestry self document, or
+// ancestry-backed context and entry-listing reads fail after the first sync.
 func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, clientID string, conversationID string, agentID *string) (convDoc, error) {
 	now := time.Now()
 	groupID := uuid.New().String()
@@ -4180,6 +4192,8 @@ func (s *MongoStore) CreateTask(ctx context.Context, taskType string, taskBody m
 		"processing_at": nil,
 		"retry_count":   0,
 	}
+	// Unnamed tasks must omit task_name entirely: the sparse unique index still
+	// indexes explicit nulls, so a second null-named task would collide.
 	if taskName != nil {
 		doc["task_name"] = *taskName
 		res, err := s.db.Collection("tasks").UpdateOne(

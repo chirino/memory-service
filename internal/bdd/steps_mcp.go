@@ -120,6 +120,9 @@ func (m *mcpSteps) memoryServiceMCPRemoteIsRunningAgainstTheScenarioServerWithAP
 	return m.memoryServiceMCPRemoteIsRunningAgainstTheScenarioServerWithAPIKeyAndBearerToken(apiKey, "")
 }
 
+// startProcess launches the MCP server the way agents do (`go run <projectDir> mcp ...`
+// speaking newline-delimited JSON-RPC over stdio). Keep MCP scenarios on this path
+// rather than calling tool handlers in-process.
 func (m *mcpSteps) startProcess(args []string, extraEnv []string) error {
 	m.close()
 

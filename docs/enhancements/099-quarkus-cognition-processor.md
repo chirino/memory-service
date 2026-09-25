@@ -607,7 +607,6 @@ Feature: Quarkus cognition processor
 | `java/quarkus/cognition-processor-quarkus/src/main/resources/prompts/*.md` | Stable system/user prompt templates loaded by AiServices |
 | `java/quarkus/cognition-processor-quarkus/src/test/java/.../*.java` | Unit and Quarkus integration tests, including a stubbed LangChain4j model and a cucumber runner |
 | `compose.yaml` | Replace the existing cognition processor service with the Quarkus image |
-| `java/quarkus/FACTS.md` | Record any module-specific gotchas discovered during implementation |
 
 ## Verification
 

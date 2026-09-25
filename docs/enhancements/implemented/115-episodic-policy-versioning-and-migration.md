@@ -416,7 +416,7 @@ Feature: Immutable memory schema versions
 - [x] Add schema-aware filter validation and one-field typed sorting to agent/admin REST and gRPC attribute searches. Schema selector (`memory_kind`) and one-field typed `sort` added to `SearchMemoriesRequest`/`AdminSearchMemoriesRequest` in OpenAPI, proto, all three store implementations, REST handlers, and gRPC handlers. BDD scenarios cover ascending sort with missing values last and sort+semantic rejection.
 - [x] Version-2 reset invariant: `memory_kind NOT NULL` in all stores; version-1 and unversioned existing datastores are rejected; `legacy/v1` seed and constant removed; migration source/target must both exist and differ; stores reject empty kind.
 - [x] Add Cucumber coverage for schema and migration admin endpoints, fixed `default/v1` resolution, family-only write rejection, Rego list redaction, and populated migration completion (`internal/bdd/testdata/features/memory-kind-rest.feature`).
-- [x] Update `internal/FACTS.md` with schema/migration invariants and new entries for `GetMemoryRowKind` (archived-aware, 4-arg signature), `KindIntersection` typed result, `AdminList kind+filter`, authz-before-404, SQLite tx scope, and filter validation tx scope.
+- [x] Update repository knowledge with schema/migration invariants and new entries for `GetMemoryRowKind` (archived-aware, 4-arg signature), `KindIntersection` typed result, `AdminList kind+filter`, authz-before-404, SQLite tx scope, and filter validation tx scope.
 - [x] Add `GetMemoryRowKind(ctx, namespace, key string, archived ArchiveFilter) (kind string, found bool, err error)` to `EpisodicStore` interface and all three stores; use it in REST/gRPC `GetMemory`/`UpdateMemory` for kind-aware authz inside a single write tx (no content before authz, no race). `ArchiveFilterExclude` used on update paths so archived rows return not-found.
 - [x] Replace `KindSelectorDisjoint` sentinel string with `KindIntersection{Selector string; Empty bool}` typed struct; `ValidateKindSelector` validates format-only before intersection; agent/admin search (REST + gRPC) return 200 empty / empty gRPC response on `ki.Empty=true` without a store query. `AdminList` uses `ki.Empty` check from direct validation only (no user policy intersection on admin list paths).
 - [x] `AdminListMemories` REST and gRPC: kind selector and attribute filter now applied; all three stores implement them; BDD scenarios for exact, family, omitted, and admin search parity.
@@ -461,7 +461,7 @@ Feature: Immutable memory schema versions
 | `internal/bdd/testdata/` | Cover immutable versions, selectors, migration, compatibility, and failures |
 | `site/src/pages/docs/concepts/memories.md` | Document schema versions, fixed write resolution, searches, and online migration |
 | `site/src/pages/docs/concepts/admin-apis.mdx` | Replace mutable policy-bundle documentation |
-| `internal/FACTS.md` | Record the implemented schema and migration invariants |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Record the implemented schema and migration invariants |
 
 ## Verification
 

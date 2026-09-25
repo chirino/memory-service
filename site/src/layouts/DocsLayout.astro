@@ -126,6 +126,8 @@ const fullTitle = title === siteTitle || !title ? siteTitle : `${title} | ${site
         return html;
       }
 
+      // Shiki emits JSON fences as inline-colored spans without stable token
+      // classes, so JSON is retokenized here and global.css owns the palette.
       function restyleJsonBlocks() {
         document.querySelectorAll('pre[data-language="json"] code').forEach((code) => {
           const lineNodes = Array.from(code.querySelectorAll(":scope > span.line"));

@@ -65,6 +65,9 @@
         <version>3.5.1</version>
         <configuration>
           <archive>
+            <!-- Keep this name stable. Each provider class lives in a platform-specific package so
+                 the aggregate memory-service-binaries dependency stays valid on the module path
+                 without split packages. -->
             <manifestEntries>
               <Automatic-Module-Name>io.github.chirino.memoryservice.binary.linux.arm64</Automatic-Module-Name>
             </manifestEntries>

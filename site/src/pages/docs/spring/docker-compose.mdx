@@ -6,6 +6,7 @@ description: Automatic memory-service container startup for development and test
 
 import { Code } from "astro:components";
 import { PROJECT_VERSION } from "../../../config";
+import CodeFromFile from "../../../components/CodeFromFile.astro";
 
 Spring Boot 3.1+ includes built-in Docker Compose support that can automatically start and configure services defined in a `compose.yaml` file. This makes it easy to run Memory Service and its dependencies during development.
 
@@ -32,118 +33,11 @@ Add the Docker Compose dependency to your `pom.xml`:
 `}
 />
 
-Place a `compose.yaml` file in your project root (Spring Boot auto-detects it):
+Place a `compose.yaml` file in your project root (Spring Boot auto-detects it). The `chat-spring` example ships this one:
 
-```yaml
-services:
-  postgres:
-    image: pgvector/pgvector:pg18
-    environment:
-      POSTGRES_DB: memory_service
-      POSTGRES_USER: postgres
-      POSTGRES_PASSWORD: postgres
-    ports:
-      - "55432:5432"
-    volumes:
-      - ../../../../deploy/keycloak/postgres-init-keycloak.sql:/docker-entrypoint-initdb.d/postgres-init-keycloak.sql:ro
-    tmpfs:
-      - /var/lib/postgresql
-    healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U postgres"]
-      interval: 5s
-      timeout: 5s
-      retries: 10
+<CodeFromFile file="java/spring/examples/chat-spring/compose.yaml" lang="yaml" />
 
-  keycloak:
-    image: quay.io/keycloak/keycloak:26.6.3
-    command: ["start-dev", "--import-realm"]
-    environment:
-      KC_BOOTSTRAP_ADMIN_USERNAME: admin
-      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
-      KC_DB: postgres
-      KC_DB_URL_HOST: postgres
-      KC_DB_URL_DATABASE: keycloak
-      KC_DB_USERNAME: keycloak
-      KC_DB_PASSWORD: keycloak
-      KC_HTTP_RELATIVE_PATH: /
-      KC_HEALTH_ENABLED: "true"
-      KC_HOSTNAME: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}
-      KC_HOSTNAME_BACKCHANNEL_DYNAMIC: "true"
-    volumes:
-      - ../../../../deploy/keycloak/memory-service-realm.json:/opt/keycloak/data/import/memory-service-realm.json:ro
-    depends_on:
-      postgres:
-        condition: service_healthy
-    ports:
-      - "8081:8080"
-    healthcheck:
-      test:
-        [
-          "CMD-SHELL",
-          "exec 3<>/dev/tcp/localhost/9000 && printf 'GET /health/ready HTTP/1.1\\r\\nHost: localhost\\r\\nConnection: close\\r\\n\\r\\n' >&3 && cat <&3 | grep -q 'UP'",
-        ]
-      interval: 10s
-      timeout: 5s
-      retries: 15
-      start_period: 30s
-
-  memory-service:
-    image: ghcr.io/chirino/memory-service:latest
-    environment:
-      MEMORY_SERVICE_API_KEYS_AGENT: agent-api-key-1,agent-api-key-2
-      # Browser-visible local developer-console credential. Never use in production.
-      MEMORY_SERVICE_API_KEYS_DEVELOPER_FRONTEND: developer-frontend-api-key
-      MEMORY_SERVICE_HOST: 0.0.0.0
-      MEMORY_SERVICE_PLAIN_TEXT: "true"
-      MEMORY_SERVICE_TLS: "false"
-      MEMORY_SERVICE_ALLOW_NON_LOOPBACK_PLAINTEXT: "true"
-
-      # ── Self-contained storage ─────
-      MEMORY_SERVICE_DB_KIND: sqlite
-      MEMORY_SERVICE_DB_URL: file:/tmp/memory-service-dev/memory-service.db
-      MEMORY_SERVICE_DB_MIGRATE_AT_START: "true"
-      MEMORY_SERVICE_CACHE_KIND: local
-      MEMORY_SERVICE_MANAGEMENT_ON_MAIN_LISTENER: "true"
-      MEMORY_SERVICE_VECTOR_KIND: sqlite
-      MEMORY_SERVICE_EMBEDDING_KIND: local
-      MEMORY_SERVICE_ATTACHMENTS_KIND: fs
-      MEMORY_SERVICE_ATTACHMENTS_FS_DIR: /tmp/memory-service-dev/attachments
-      MEMORY_SERVICE_TEMP_DIR: /tmp/memory-service-dev/tmp
-
-      # ── Authentication & authorization ─────────────────────────
-      MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
-      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
-      MEMORY_SERVICE_OIDC_ALLOWED_CLIENTS: memory-service-client,frontend,developer-frontend
-      MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
-      MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
-      MEMORY_SERVICE_ROLES_AUDITOR_OIDC_ROLE: auditor
-      MEMORY_SERVICE_ROLES_ADMIN_CLIENTS: developer_frontend
-      MEMORY_SERVICE_ROLES_INDEXER_CLIENTS: agent
-
-      # ── Developer Frontend ─────────────────────────────────────
-      MEMORY_SERVICE_DEVELOPER_FRONTEND_ENABLED: "true"
-      MEMORY_SERVICE_DEVELOPER_FRONTEND_CLIENT_ID: developer_frontend
-      MEMORY_SERVICE_DEVELOPER_FRONTEND_AUTH_MODE: api-key
-      MEMORY_SERVICE_DEVELOPER_FRONTEND_API_KEY: developer-frontend-api-key
-      MEMORY_SERVICE_BASE_URL: "http://localhost:8082"
-      MEMORY_SERVICE_CORS_ENABLED: "true"
-      MEMORY_SERVICE_CORS_ORIGINS: "http://localhost:3000"
-
-      # ── Encryption ─────────────────────────────────────────────
-      # Well-known development key; replace with a secure key in production.
-      MEMORY_SERVICE_ENCRYPTION_KIND: dek
-      MEMORY_SERVICE_ENCRYPTION_DEK_KEY: ${MEMORY_SERVICE_ENCRYPTION_DEK_KEY:-0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef}
-    depends_on:
-      keycloak:
-        condition: service_healthy
-    ports:
-      - "8082:8080"
-    healthcheck:
-      test: ["CMD-SHELL", "curl -f http://localhost:8080/ready || exit 1"]
-      interval: 10s
-      timeout: 5s
-      retries: 12
-```
+The relative volume paths and the `build` section refer to this repository's layout. When you copy the file into your own project, point the volumes at your own Keycloak realm and database init script, and remove the `build` section so Compose uses the published image.
 
 This configuration uses **self-contained storage** for the memory service (SQLite, local cache, filesystem attachments). The integrated developer console at `http://localhost:8082/developer` skips OAuth and uses its dedicated API-key admin client. Keycloak remains available for the Spring chat application's end-user login flow.
 

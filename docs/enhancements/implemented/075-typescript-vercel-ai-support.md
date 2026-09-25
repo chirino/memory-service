@@ -195,7 +195,7 @@ As with existing docs, each page must include `<TestScenario>` and `<CurlTest>` 
 
 ### Site-test Fit
 
-Follow existing `site/FACTS.md` guidance:
+Follow the existing site-test guidance (see the `site-tests` skill):
 
 1. Checkpoints are independent runnable apps.
 2. Use unique conversation UUIDs across all curl scenarios.

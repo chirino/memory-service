@@ -86,7 +86,7 @@ In scope:
 - Spring, Quarkus, Python, and TypeScript example/tutorial terminology
 - Client-framework comments and helper descriptions
 - Site docs prose and related SiteBDD capture metadata
-- Repo guidance docs (`AGENTS.md`, framework `FACTS.md`, `site/FACTS.md`, `internal/sitebdd/FACTS.md`, `TODO.md`)
+- Repo guidance docs (`AGENTS.md`, per-module agent notes, `TODO.md`)
 - Internal BDD feature naming where the feature is recorder-specific
 
 Out of scope:
@@ -146,7 +146,7 @@ Feature: Response recording terminology is consistent across frameworks and docs
 |---|---|
 | `TODO.md` | Replace the stale umbrella rename note with the canonical terminology guidance or remove it once implemented |
 | `AGENTS.md` | Keep repo-wide terminology guidance aligned with the final naming split |
-| `java/spring/FACTS.md`, `java/quarkus/FACTS.md`, `python/FACTS.md`, `typescript/FACTS.md`, `site/FACTS.md`, `internal/sitebdd/FACTS.md` | Update facts and examples to use the canonical lifecycle vs recorder distinction |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update facts and examples to use the canonical lifecycle vs recorder distinction |
 | `java/spring/memory-service-spring-boot-autoconfigure/src/main/java/io/github/chirino/memoryservice/history/*.java` | Replace lingering `resumer` wording in comments/docstrings/local names where the type is `ResponseRecordingManager` |
 | `java/quarkus/memory-service-extension/runtime/src/main/java/io/github/chirino/memory/history/runtime/*.java` | Replace lingering `resumer` wording in comments/docstrings/local names where the type is `ResponseRecordingManager` |
 | `java/spring/examples/**/README.md`, `java/quarkus/examples/**/README.md`, `python/examples/**/README.md`, `typescript/examples/vecelai/doc-checkpoints/**/README.md` | Update visible feature naming from "Response Resumption" to "Response Recording and Resumption" |
@@ -194,4 +194,4 @@ wt exec -- bash -lc 'rm -f site/dist/test-scenarios.json && cd site && npm run b
 - The cleanup touched active runtime comments, example READMEs, Python checkpoint app titles, site guide prose, SiteBDD capture metadata, and the recorder-specific SQLite-local BDD feature filename.
 - TypeScript checkpoint behavior was covered by the SiteBDD run rather than a standalone `npm run build`, because the code changes in this pass were limited to docs/facts/metadata while SiteBDD still exercised the relevant checkpoint apps.
 - Verification passed with the redirected-log commands above.
-- The site build inside the devcontainer required `npm install` in `site/` first to restore Rollup's optional native dependency, matching the existing note in `site/FACTS.md`.
+- The site build inside the devcontainer required `npm install` in `site/` first to restore Rollup's optional native dependency.

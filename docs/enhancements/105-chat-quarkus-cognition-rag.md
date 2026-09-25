@@ -587,7 +587,6 @@ Add a `@QuarkusTest` that replaces the chat model with `TestChatModel` and asser
 | `java/quarkus/examples/chat-quarkus/README.md`                                                     | Document local cognition processor workflow and expected behavior.              |
 | `deploy/episodic-policies/cognition/`                                                              | Memory-kind manifest and safe cognition attribute projection imported from the shared policy root. |
 | `site/src/pages/docs/`                                                                             | Optional follow-up docs if this becomes a published guide.                      |
-| `java/quarkus/FACTS.md`                                                                            | Keep any discovered Quarkus LangChain4j retrieval gotchas current.              |
 
 ## Verification
 

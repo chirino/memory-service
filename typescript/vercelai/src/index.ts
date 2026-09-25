@@ -106,6 +106,8 @@ function normalizeMemoryServiceConfig(
   };
 }
 
+// The only place that reads MEMORY_SERVICE_* env vars; everything else takes an
+// explicit MemoryServiceConfig.
 export function memoryServiceConfigFromEnv(
   overrides: Partial<MemoryServiceConfig> = {},
 ): MemoryServiceConfig {
@@ -250,6 +252,8 @@ export async function withProxy(
   await relayResponse(res, await call(proxy));
 }
 
+// Add Memory Service API passthrough helpers here (plain fetch via
+// memoryServiceRequest) rather than introducing a generated REST client.
 export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
   return {
     getConversation(conversationId: string): Promise<Response> {

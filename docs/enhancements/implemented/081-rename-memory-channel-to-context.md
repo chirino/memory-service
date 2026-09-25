@@ -155,7 +155,7 @@ Feature: Context channel naming
 - [x] Update Go server model constants, validation, enum mapping, and sync/list logic to use `context`.
 - [x] Update Spring, Quarkus, and Python integrations to read/write `context`.
 - [x] Update BDD steps, REST/gRPC feature files, and docs-test curl fixtures to use `context`.
-- [x] Update affected `FACTS.md` files after implementation to record the canonical channel name.
+- [x] Update affected repository knowledge after implementation to record the canonical channel name.
 - [x] Run targeted build/test/doc verification for all changed modules.
 
 ## Implementation Notes
@@ -187,7 +187,7 @@ Feature: Context channel naming
 | `internal/bdd/steps_entries.go` and `internal/bdd/testdata/features*.feature` | Rename BDD steps/scenarios/fixtures from memory-channel wording to context-channel wording |
 | `internal/sitebdd/testdata/curl-examples/**` | Update generated curl example payloads/assertions that mention the old channel |
 | `site/src/pages/docs/**` | Replace conversation-channel documentation and examples with `context` terminology |
-| `internal/FACTS.md`, `python/FACTS.md`, `java/quarkus/FACTS.md`, `java/spring/FACTS.md` | Update module facts if they mention the old canonical channel name |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update module facts if they mention the old canonical channel name |
 
 ## Verification
 

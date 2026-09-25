@@ -88,6 +88,8 @@ def extract_stream_text(event: Any) -> str:
 
 
 def to_sse_chunk(payload: Any) -> str:
+    # Must end with real "\n\n", not escaped backslash sequences, or the
+    # frontend's incremental SSE parser buffers until the stream ends.
     return f"data: {json.dumps(payload, separators=(',', ':'))}\n\n"
 
 
@@ -144,6 +146,9 @@ def chunk_to_json_log(chunk: Any) -> str:
 
 
 def extract_stream_tokens(event: Any) -> list[str]:
+    # Providers emit different chunk shapes (content_blocks, content lists,
+    # nested text/value/delta). Missing one yields empty tokens and the stream
+    # looks non-streaming.
     message: Any = event[0] if isinstance(event, tuple) and event else event
     tokens: list[str] = []
     blocks = getattr(message, "content_blocks", None)
@@ -257,6 +262,9 @@ async def stream_chunks_as_sse(
                     )
                 response_text_parts.append(token)
                 if stream_mode == "events":
+                    # Canonical names (PartialResponse, PartialThinking,
+                    # ChatCompleted) without a Java-style "...Event" suffix, so
+                    # frontend rich-event renderers need no translation.
                     yield to_sse_chunk({"eventType": "PartialResponse", "chunk": token})
                 else:
                     yield to_sse_chunk({"token": token})

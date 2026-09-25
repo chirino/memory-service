@@ -112,11 +112,17 @@ type ConversationDetail struct {
 	HasResponseInProgress bool `json:"hasResponseInProgress,omitempty"`
 }
 
+// UnarchiveConversationResult reports an unarchive attempt. Changed is true only
+// for the caller that performed the transition; an already-active conversation is
+// a successful no-op, and only the transition winner emits the update event.
 type UnarchiveConversationResult struct {
 	ConversationGroupID uuid.UUID
 	Changed             bool
 }
 
+// ArchiveConversationResult reports an archive attempt. Changed is true only for
+// the caller that performed the transition; an already-archived conversation is a
+// successful no-op, and only the transition winner emits the update event.
 type ArchiveConversationResult struct {
 	ConversationGroupID uuid.UUID
 	Changed             bool
@@ -366,6 +372,8 @@ type MemoryStore interface {
 	GetConversation(ctx context.Context, userID string, conversationID string) (*ConversationDetail, error)
 	UpdateConversation(ctx context.Context, userID string, conversationID string, title *string, metadataPatch MetadataPatch) (*ConversationDetail, error)
 	ArchiveConversation(ctx context.Context, userID string, conversationID string) error
+	// ArchiveConversationIfNeeded and UnarchiveConversationIfNeeded are idempotent;
+	// see the result types for the Changed/event contract.
 	ArchiveConversationIfNeeded(ctx context.Context, userID string, conversationID string) (ArchiveConversationResult, error)
 	UnarchiveConversation(ctx context.Context, userID string, conversationID string) error
 	UnarchiveConversationIfNeeded(ctx context.Context, userID string, conversationID string) (UnarchiveConversationResult, error)

@@ -19,6 +19,12 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.UUID;
 
+/**
+ * Unix-domain-socket stand-in for the generated REST client interfaces. Each generated method is
+ * mapped by hand to its HTTP method, path, and positional query parameters. When a contract
+ * operation's parameters change, update the mapping here too, or UDS-only requests silently drop
+ * or mis-order query parameters.
+ */
 final class UnixSocketRestClientFactory {
 
     private UnixSocketRestClientFactory() {}
@@ -98,6 +104,7 @@ final class UnixSocketRestClientFactory {
                                 null);
                 case "getConversation" ->
                         json("GET", path("/v1/conversations/%s", args[0]), null, null, method);
+                // Positional args must follow the generated listConversationEntries signature.
                 case "listConversationEntries" ->
                         json(
                                 "GET",
