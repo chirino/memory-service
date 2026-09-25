@@ -10,6 +10,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc/metadata"
 )
 
 func TestLocalUnixSocketIdentityForHTTPAndGRPC(t *testing.T) {
@@ -20,8 +21,12 @@ func TestLocalUnixSocketIdentityForHTTPAndGRPC(t *testing.T) {
 	resolver, err := NewTokenResolver(&cfg)
 	require.NoError(t, err)
 
+	// With the default (empty) trusted-client allowlist, X-User-ID / x-user-id must
+	// not replace the local socket identity.
+	asserter := NewUserIDAsserter(cfg.TrustedUserIDClients)
 	router := gin.New()
 	router.Use(AuthMiddleware(resolver))
+	router.Use(asserter.HTTPMiddleware())
 	router.GET("/identity", func(c *gin.Context) {
 		id := GetIdentity(c)
 		require.Equal(t, "alice", id.UserID)
@@ -31,13 +36,17 @@ func TestLocalUnixSocketIdentityForHTTPAndGRPC(t *testing.T) {
 	})
 	router.GET("/admin", RequireAdminRole(), func(c *gin.Context) { c.Status(http.StatusNoContent) })
 	recorder := httptest.NewRecorder()
-	router.ServeHTTP(recorder, httptest.NewRequest(http.MethodGet, "/identity", nil))
+	identityReq := httptest.NewRequest(http.MethodGet, "/identity", nil)
+	identityReq.Header.Set(HeaderUserID, "mallory")
+	router.ServeHTTP(recorder, identityReq)
 	require.Equal(t, http.StatusNoContent, recorder.Code)
 	adminRecorder := httptest.NewRecorder()
 	router.ServeHTTP(adminRecorder, httptest.NewRequest(http.MethodGet, "/admin", nil))
 	require.Equal(t, http.StatusForbidden, adminRecorder.Code)
 
-	ctx := resolveGRPCIdentity(context.Background(), resolver)
+	grpcCtx := metadata.NewIncomingContext(context.Background(), metadata.Pairs(GRPCMetadataUserID, "mallory"))
+	ctx, err := asserter.ApplyGRPCContext(resolveGRPCIdentity(grpcCtx, resolver))
+	require.NoError(t, err)
 	id := IdentityFromContext(ctx)
 	require.NotNil(t, id)
 	require.Equal(t, "alice", id.UserID)

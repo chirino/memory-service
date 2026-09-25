@@ -8,6 +8,8 @@ import io.quarkiverse.langchain4j.RegisterAiService;
 import io.quarkiverse.langchain4j.runtime.aiservice.ChatEvent;
 import io.smallrye.mutiny.Multi;
 
+// Keep the sub-agent tool off this child service's tool list: a separate conversation ID avoids
+// memory collisions but does not stop unbounded delegation loops.
 @RegisterAiService(tools = WebSearchTool.class)
 public interface SubAgent {
 

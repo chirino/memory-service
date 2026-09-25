@@ -91,6 +91,7 @@ public class SubAgentToolProviderFactory {
                                     mode,
                                     childAgentId != null ? childAgentId : definition.childAgentId(),
                                     definition.maxConcurrency(),
+                                    // Capture auth here, before child work is offloaded.
                                     resolveUserId(),
                                     resolveBearerToken(),
                                     invoker)));
@@ -231,6 +232,10 @@ public class SubAgentToolProviderFactory {
         return "{\"error\":\"" + escapeJson(message) + "\"}";
     }
 
+    // Tool calls are the parent-facing entrypoint and run on the active request before child work
+    // is offloaded. Capture the user ID and bearer token here and hand them to the task manager
+    // (SubAgentExecutionContext); otherwise child memory/history calls run unauthenticated and
+    // get 401 missing Authorization header.
     private String resolveUserId() {
         SubAgentExecutionContext.State state = SubAgentExecutionContext.current();
         if (state != null && state.userId() != null && !state.userId().isBlank()) {

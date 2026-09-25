@@ -27,6 +27,8 @@ type SignedURLOptions struct {
 // AttachmentStore defines the interface for file storage backends.
 type AttachmentStore interface {
 	// Store writes file data and returns storage key, size, and SHA256.
+	// maxSize < 0 means the caller already enforced the logical plaintext limit;
+	// the encrypting wrapper passes -1 so ciphertext has no encrypted-size ceiling.
 	Store(ctx context.Context, data io.Reader, maxSize int64, contentType string) (*FileStoreResult, error)
 	// Retrieve returns a reader for the stored file.
 	Retrieve(ctx context.Context, storageKey string) (io.ReadCloser, error)

@@ -1,5 +1,6 @@
 # yaml-language-server: $schema=https://taskfile.dev/schema.json
 # install task from: https://taskfile.dev/docs/installation
+# Task runs commands with sh: use POSIX redirection (>/dev/null 2>&1), not &> or 2&>1.
 version: '3'
 
 dotenv: ['.env']
@@ -65,6 +66,8 @@ tasks:
   generate:go:
     internal: true
     cmds:
+      # Keep this scoped to the repo-root directive: ./... would walk frontend
+      # node_modules (created by the generate deps) and build-tag-only packages.
       - go generate .
 
   generate:chat-frontend:
@@ -179,11 +182,14 @@ tasks:
       - |
         CGO_ENABLED=1 go run gotest.tools/gotestsum --format {{.GOTESTSUM_FMT | default .DEFAULT_GOTESTSUM_FMT}} -- -race -tags='sqlite_fts5 auth_testfixtures' -run 'TestFeaturesSQLite/(conversation-metadata-rest|admin-conversation-metadata-rest|metadata-and-conversation-patch-grpc)$' ./internal/bdd/ {{.CLI_ARGS}}
 
+  # Do not run test:java and test:site concurrently in one worktree: both clean and
+  # build the Java targets and race on target/ and generated sources.
   test:java:
     desc: Test java
     cmds:
       - ./java/mvnw -T 1C -f java/pom.xml clean test {{.CLI_ARGS}}
 
+  # See test:java: never run concurrently with it in the same worktree.
   test:site:
     desc: Test site examples
     env:
@@ -665,3 +671,13 @@ tasks:
       - task: loadtest:bench
       - task: loadtest:correctness
       - task: loadtest:report
+
+  detect-secrets:
+    desc: Update the secrets baseline and audit findings interactively
+    interactive: true
+    preconditions:
+      - sh: command -v detect-secrets >/dev/null 2>&1
+        msg: detect-secrets is required
+    cmds:
+      - detect-secrets scan --update .secrets.baseline
+      - detect-secrets audit .secrets.baseline

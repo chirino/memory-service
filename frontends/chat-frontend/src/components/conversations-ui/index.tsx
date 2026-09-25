@@ -119,10 +119,6 @@ function formatMessageTime(createdAt?: string): string {
   });
 }
 
-/**
- * Fetches a signed download URL for a server-stored attachment.
- * For external URLs (no attachment ID), returns the href directly.
- */
 type AttachmentDisposition = "inline" | "attachment";
 
 function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisposition): string {
@@ -130,6 +126,8 @@ function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisp
   return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
 }
 
+// Every URL assigned to window.open, <img src>, or a download anchor goes
+// through here: only http: and https: are allowed.
 function safeAttachmentUrl(rawUrl: string | undefined): string | undefined {
   if (!rawUrl) return undefined;
   try {
@@ -143,6 +141,14 @@ function safeAttachmentUrl(rawUrl: string | undefined): string | undefined {
   }
 }
 
+/**
+ * Fetches a signed download URL for a server-stored attachment.
+ * For external URLs (no attachment ID), returns the href directly.
+ * Stored attachments go through attachmentId and
+ * GET /v1/attachments/{id}/download-url because the app authenticates with
+ * bearer headers, not cookies, so authenticated content URLs cannot be used
+ * directly in <img> or <a>.
+ */
 async function fetchSignedDownloadUrl(
   attachment: ChatAttachment,
   disposition: AttachmentDisposition,
@@ -164,6 +170,7 @@ async function fetchSignedDownloadUrl(
 
 /**
  * Returns true if the attachment is an image based on its contentType.
+ * SVG is excluded from inline previews because it can carry script.
  */
 function isImageAttachment(attachment: ChatAttachment): boolean {
   const contentType = attachment.contentType?.toLowerCase().split(";")[0]?.trim();

@@ -45,7 +45,6 @@ Files changed:
 | `site/src/pages/docs/python-langgraph/memories.mdx` | Updated imports + explanation text |
 | `site/src/pages/docs/python-langgraph/client-configuration.mdx` | Updated package name + import |
 | `site/src/pages/docs/concepts/memories.md` | Updated package name + import |
-| `python/FACTS.md` | Updated package layout description |
 | Enhancement docs (069, 079, 081, 083, 068) | Updated paths for accuracy |
 
 ### Phase 2: Package metadata

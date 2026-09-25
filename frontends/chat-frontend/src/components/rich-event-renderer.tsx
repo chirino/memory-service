@@ -59,7 +59,9 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
   let currentThinkingBuffer = "";
 
   // Build a lookup of completed tool executions by id so we can merge them
-  // with their corresponding BeforeToolExecution events.
+  // with their corresponding BeforeToolExecution events. The merged card shows
+  // the matching ToolExecuted output and falls back to the BeforeToolExecution
+  // args when ToolExecuted carries none.
   const completedTools = new Map<string, { toolName: string; input?: unknown; output?: unknown }>();
   const consumedToolExecutedIds = new Set<string>();
   for (const event of events) {
@@ -127,6 +129,7 @@ function groupAdjacentTextEvents(events: ChatEvent[]): EventGroup[] {
         });
         break;
       case "ContentFetched":
+        // Intentionally not rendered: retrieval context stays hidden.
         break;
       case "IntermediateResponse":
         // Intermediate responses are typically text-like

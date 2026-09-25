@@ -563,7 +563,7 @@ Populate groups with many sibling branches and deep ancestry, then confirm:
 | `docs/datastore-reset.md` | Document the schema-110 reset requirement for deployments. |
 | `docs/release-notes.md` | Call out the reset-required schema squash and ancestry closure change. |
 | `docs/enhancements/implemented/034-forked-entry-retrieval.md` | Mark the group-load retrieval design as superseded by this enhancement after implementation. |
-| `AGENTS.md` and `internal/FACTS.md` | Record the new ancestry source of truth and reset requirement after implementation. |
+| `AGENTS.md` | Record the new ancestry source of truth and reset requirement after implementation. |
 
 ## Verification
 

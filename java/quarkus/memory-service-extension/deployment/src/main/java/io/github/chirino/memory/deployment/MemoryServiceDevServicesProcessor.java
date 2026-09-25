@@ -102,9 +102,9 @@ public class MemoryServiceDevServicesProcessor {
 
     /**
      * Produces a MemoryServiceDevServicesConfigBuildItem by extracting memory-service
-     * configuration from dev services results. This follows the pattern of
-     * KeycloakDevServicesConfigBuildItem and allows other extensions to consume
-     * the memory-service configuration.
+     * configuration from dev services results so other extensions can consume it.
+     * (Keycloak's former KeycloakDevServicesConfigBuildItem no longer exists on Quarkus 3.35+;
+     * dependent dev services use {@code dependsOnConfig(...)} instead.)
      */
     @BuildStep(onlyIf = {IsDevServicesSupportedByLaunchMode.class, DevServicesConfig.Enabled.class})
     MemoryServiceDevServicesConfigBuildItem produceMemoryServiceConfig(
@@ -281,6 +281,9 @@ public class MemoryServiceDevServicesProcessor {
                                     public Startable get() {
                                         GenericContainer<?> container;
                                         if (fixedPort != null) {
+                                            // withFixedExposedPort only adds a port binding, not
+                                            // an exposed container port. Keep withExposedPorts or
+                                            // the /ready wait reports the port as not exposed.
                                             container =
                                                     new FixedHostPortGenericContainer<>(imageName)
                                                             .withExposedPorts(MEMORY_SERVICE_PORT)
@@ -342,6 +345,9 @@ public class MemoryServiceDevServicesProcessor {
                                                         .forStatusCode(200)
                                                         .withStartupTimeout(Duration.ofMinutes(2)));
 
+                                        // Return the container unstarted: dependsOnConfig
+                                        // callbacks below must be able to mutate its env first.
+                                        // Starting it inside this supplier would skip them.
                                         StartableContainer<GenericContainer<?>> startable =
                                                 new StartableContainer<>(
                                                         container,
@@ -419,6 +425,16 @@ public class MemoryServiceDevServicesProcessor {
         }
     }
 
+    /**
+     * Default container environment. The dev service is self-contained: SQLite, local cache,
+     * SQLite vectors, local embeddings, and filesystem attachments under /tmp/memory-service-dev.
+     * Do not add datasource, Redis, Infinispan, or Mongo extension dependencies to back it.
+     *
+     * <p>The container URL is plain HTTP, so it binds 0.0.0.0 with plaintext explicitly selected
+     * and acknowledged; hardened startup also needs management routes allowed on the main
+     * listener. The DEK is a well-known development-only key. {@code
+     * memory-service.devservices.env.*} is applied afterwards and can override any of these.
+     */
     static void configureDefaultEnvironment(GenericContainer<?> container, String effectiveApiKey) {
         container
                 .withEnv("MEMORY_SERVICE_API_KEYS_AGENT", effectiveApiKey)

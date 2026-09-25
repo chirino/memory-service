@@ -223,6 +223,9 @@ public class MemoryServiceChatMemoryStore implements ChatMemoryStore {
         return conversationsApiBuilder.withBearerAuth(bearerToken).build(ConversationsApi.class);
     }
 
+    // Sub-agent memory loads run on background child-task threads. Check the request context
+    // before Instance.get(), or the request-scoped SecurityIdentity lookup fails before the
+    // SubAgentExecutionContext fallback runs.
     private SecurityIdentity resolveSecurityIdentity() {
         if (!Arc.container().requestContext().isActive()) {
             return null;

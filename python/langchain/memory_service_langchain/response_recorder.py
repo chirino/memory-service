@@ -61,6 +61,8 @@ class GrpcResponseRecorder(BaseResponseRecorder):
         self._channel: grpc.Channel | None = None
         self._stub: memory_service_pb2_grpc.ResponseRecorderServiceStub | None = None
         self._thread: threading.Thread | None = None
+        # Start the Record stream eagerly so resume-check sees the in-progress
+        # response before the first token is emitted.
         self._ensure_started()
 
     def _iter_requests(self) -> Iterator[memory_service_pb2.RecordRequest]:
@@ -113,6 +115,8 @@ class GrpcResponseRecorder(BaseResponseRecorder):
             self._finished.set()
             return
         try:
+            # No per-call deadline: long generations would outlive it, ending the
+            # stream without a final complete and leaving the recording in-progress.
             response = stub.Record(
                 self._iter_requests(),
                 metadata=self._metadata,

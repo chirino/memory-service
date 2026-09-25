@@ -268,6 +268,10 @@ func normalizeJSONNumber(number json.Number) (normalizedJSONNumber, bool) {
 	return normalizedJSONNumber{negative: negative, digits: digits, exponent: exponent}, true
 }
 
+// matchExistingEntriesWithAttachmentIdentity matches a retried history append
+// whose attachment IDs differ from the stored entries. Appending clones an
+// already-linked same-group attachment, so IDs count as equal only when both
+// records resolve to the same storage key.
 func (r SequencedAppendRequest) matchExistingEntriesWithAttachmentIdentity(ctx context.Context, store MemoryStore, stored []model.Entry) ([]model.Entry, bool, error) {
 	matched, eligible := r.MatchExistingEntriesIgnoringContent(stored)
 	if !eligible {

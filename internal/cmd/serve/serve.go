@@ -769,6 +769,8 @@ func authorizationFlags(cfg *config.Config) []cli.Flag {
 			Destination: &cfg.IndexerOIDCRole,
 			Usage:       "OIDC role name that maps to indexer permissions",
 		},
+		// urfave/cli v3 replaces a nil slice Destination with an empty slice even when
+		// the flag is unset, so post-parse defaults must treat nil and empty as unset.
 		&cli.StringSliceFlag{
 			Name:        "oidc-role-claim",
 			Category:    "Authorization:",

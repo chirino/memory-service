@@ -21,8 +21,11 @@ import (
 )
 
 type sharedHandle struct {
-	db          *gorm.DB
-	sqlDB       *sql.DB
+	db    *gorm.DB
+	sqlDB *sql.DB
+	// writeMu serializes write scopes only within this process. The runtime DSN
+	// does not set _txlock=immediate, so separate processes sharing one file can
+	// hit busy/locked errors on read-to-write upgrades; use PostgreSQL for that.
 	writeMu     sync.Mutex
 	fts5Enabled bool
 	vecEnabled  bool
@@ -114,6 +117,8 @@ func openSharedHandle(cfg *config.Config) (*sharedHandle, error) {
 		return nil, fmt.Errorf("sqlite: underlying db: %w", err)
 	}
 
+	// Keep a small multi-connection pool: a single physical connection would
+	// deadlock request-scoped store transactions against vector-store local ones.
 	sqlDB.SetMaxOpenConns(8)
 	sqlDB.SetMaxIdleConns(4)
 

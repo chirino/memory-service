@@ -67,14 +67,9 @@ if err := tx.Where("id = ? AND user_id = ?", id, companyID).Take(&row).Error; er
 
 ## Repo Notes
 
-- The noisy log pattern in this repo comes from optional lookups implemented with `Take(...)` and then translated from `gorm.ErrRecordNotFound`.
-- When reviewing `internal/store/gormstore`, inspect helper methods first. A single helper often drives many log lines.
+- GORM stores live in `internal/plugin/store/postgres` and `internal/plugin/store/sqlite`. Inside route-scoped transactions, get the handle with `dbFor(ctx)` / `writeDBFor(ctx, ...)`, not `s.db`.
+- Example of the optional single-row pattern: `internal/plugin/store/postgres/episodic_kind.go` (`Limit(1).Find(...)` plus `RowsAffected`).
 - Prefer consistent query shapes within one file. If a helper uses the optional-single-row pattern, keep nearby helpers aligned.
-
-Current local examples:
-
-- Optional single-row lookups: `internal/store/gormstore/qbo.go`
-- Required single-row lookups: `internal/store/gormstore/store.go`, `internal/store/gormstore/extensions.go`
 
 ## Review Checklist
 

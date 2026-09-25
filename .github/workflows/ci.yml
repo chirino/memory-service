@@ -560,6 +560,8 @@ jobs:
           stage_binary memory-service-linux-arm64 linux-arm64
           stage_binary memory-service-macos-arm64 macos-arm64
 
+      # Activates central-release alongside binary-jars (GPG signing and Central publishing
+      # disabled) so release-only Javadoc and source attachment stay covered before a release.
       - name: Build and test native binary JARs
         run: |
           ./java/mvnw -B -f java/pom.xml \

@@ -410,6 +410,8 @@ public final class MemoryServiceProcess implements AutoCloseable {
             defaultEnvironment.put(PLAIN_TEXT, "true");
             defaultEnvironment.put(TLS, "false");
             defaultEnvironment.put("MEMORY_SERVICE_DB_KIND", "sqlite");
+            // Plain absolute filesystem path. Do not prefix it with sqlite://: the server would
+            // treat the whole value as a literal path.
             defaultEnvironment.put(DB_URL, this.stateDirectory.resolve("memory.db").toString());
             defaultEnvironment.put(
                     UNIX_SOCKET, this.stateDirectory.resolve("memory.sock").toString());

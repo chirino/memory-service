@@ -15,6 +15,7 @@ import {
 import { useEffect, useState } from "react";
 import { Streamdown } from "streamdown";
 import { getAuthHeaders } from "@/api/client";
+import { isInlineImageContentType, safeAttachmentUrl } from "@/lib/attachment-urls";
 import { cn } from "@/lib/utils";
 import { JsonHighlight } from "./JsonHighlight";
 import type { ContentRendererProps } from "./index";
@@ -119,19 +120,6 @@ type AttachmentDisposition = "inline" | "attachment";
 function attachmentDownloadUrl(attachmentId: string, disposition: AttachmentDisposition): string {
   const params = new URLSearchParams({ disposition });
   return `/v1/attachments/${encodeURIComponent(attachmentId)}/download-url?${params.toString()}`;
-}
-
-function safeAttachmentUrl(rawUrl: string | undefined): string | undefined {
-  if (!rawUrl) return undefined;
-  try {
-    const parsed = new URL(rawUrl, window.location.origin);
-    if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
-      return undefined;
-    }
-    return parsed.toString();
-  } catch {
-    return undefined;
-  }
 }
 
 /**
@@ -262,8 +250,7 @@ function AttachmentPreview({ attachment, isUserMessage }: { attachment: Attachme
  * Returns true if the attachment is an image based on its contentType.
  */
 function isImageAttachment(attachment: Attachment): boolean {
-  const contentType = attachment.contentType?.toLowerCase().split(";")[0]?.trim();
-  return contentType?.split("/")[0] === "image" && contentType !== "image/svg+xml";
+  return isInlineImageContentType(attachment.contentType);
 }
 
 /**

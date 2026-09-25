@@ -738,9 +738,10 @@ type EpisodicStore interface {
 	// (namespace, key) that satisfies the archive filter, without loading or decrypting
 	// the value.  Returns ("", false, nil) if no matching row exists.
 	//
-	// For write-path authz (PutMemory, ArchiveMemory) pass ArchiveFilterExclude
-	// so only the active row is checked.  For read-path authz (GetMemory) pass the
-	// caller's requested archive filter so the row authorized matches the row read.
+	// For write-path authz (ArchiveMemory) pass ArchiveFilterExclude so only the
+	// active row is checked; PutMemory uses GetMemoryPredecessor instead. For
+	// read-path authz (GetMemory) pass the caller's requested archive filter so the
+	// row authorized matches the row read.
 	GetMemoryRowKind(ctx context.Context, namespace []string, key string, archived ArchiveFilter) (kind string, found bool, err error)
 
 	// GetMemoryPredecessor returns the active row identity used for optimistic

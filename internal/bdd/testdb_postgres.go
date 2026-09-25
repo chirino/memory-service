@@ -221,6 +221,8 @@ func (p *PostgresTestDB) DeleteAllTasks(ctx context.Context) error {
 	return err
 }
 
+// Task helpers use Go-side UTC timestamps for created_at/retry_at and comparisons.
+// Mixing database NOW() with Go-side assertions is flaky under container clock skew.
 func (p *PostgresTestDB) CreateTask(ctx context.Context, id, taskType, body string) error {
 	conn, err := p.conn(ctx)
 	if err != nil {

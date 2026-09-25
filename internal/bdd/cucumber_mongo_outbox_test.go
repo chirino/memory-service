@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// REST-only outbox coverage; see TestFeaturesPgOutbox for the outbox runner matrix.
 func TestFeaturesMongoOutbox(t *testing.T) {
 	var missing []string
 	if !buildcaps.MongoDB {

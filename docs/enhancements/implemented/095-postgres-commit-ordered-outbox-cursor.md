@@ -388,7 +388,7 @@ Feature: PostgreSQL commit-ordered outbox replay
 | `internal/plugin/route/admin/events.go` | Same as agent replay path for admin SSE |
 | `internal/grpc/server.go` | Consume the new PostgreSQL cursor format and relay-backed replay semantics |
 | `internal/bdd/` | Add PostgreSQL concurrent replay coverage |
-| `internal/FACTS.md` | Update the PostgreSQL outbox implementation gap note after implementation |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Update the PostgreSQL outbox implementation gap note after implementation |
 | `WORKAROUNDS.md` | Remove the PostgreSQL row-cursor workaround after implementation |
 
 ## Verification

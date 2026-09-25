@@ -21,6 +21,8 @@ type ConversationAncestrySegment struct {
 // is non-empty, it copies the parent's already-materialized closure, increments
 // depths, records the direct fork anchor on the copied parent self row, and
 // applies the exclusive boundary to the ancestor segment that owns the anchor.
+// SQL and Mongo stores must both build ancestry through this helper so the
+// inherited-anchor and blank-segment rules stay identical across datastores.
 func BuildConversationAncestrySegments(convID string, parentRows []ConversationAncestrySegment, forkedAtEntryID *uuid.UUID, anchorOwnerDepth *int) ([]ConversationAncestrySegment, error) {
 	rows := []ConversationAncestrySegment{{
 		ConversationID: convID,

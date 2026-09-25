@@ -279,7 +279,6 @@ Feature: gRPC parity for cognition processors
 | `internal/plugin/store/*` | Store support for memory revisions, conditional writes, archive filters, checkpoints, TTL/index parity |
 | `internal/episodic/` | Policy context handling for effective user identity plus neutral admin memory attribute extraction |
 | `internal/bdd/testdata/features/` | gRPC parity BDD scenarios |
-| `internal/FACTS.md` | Record implementation gotchas discovered while adding gRPC parity |
 
 ## Verification
 

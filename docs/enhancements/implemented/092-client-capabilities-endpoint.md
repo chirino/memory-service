@@ -215,7 +215,7 @@ Feature: Client capabilities gRPC API
 - [x] Add BDD coverage for `200`, `403`, and `401` behavior
 - [x] Add gRPC BDD coverage for `OK`, `PERMISSION_DENIED`, and `UNAUTHENTICATED`
 - [x] Add a docs note describing the endpoint for authenticated callers
-- [x] Record the capabilities auth rule in `internal/FACTS.md`
+- [x] Record the capabilities auth rule in repository knowledge
 
 ## Files to Modify
 
@@ -235,7 +235,7 @@ Feature: Client capabilities gRPC API
 | `internal/bdd/testdata/features-grpc/capabilities-grpc.feature` | Add gRPC behavior coverage |
 | `frontends/chat-frontend/src/client/*` | Refresh generated TypeScript client bindings |
 | `site/src/pages/docs/configuration.mdx` | Document capability discovery for authenticated clients |
-| `internal/FACTS.md` | Record the capabilities auth rule |
+| Repository knowledge (tests, code comments, skills, `AGENTS.md`) | Record the capabilities auth rule |
 
 ## Verification
 

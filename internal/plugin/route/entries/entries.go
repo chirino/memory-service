@@ -383,6 +383,12 @@ func appendEntry(c *gin.Context, store registrystore.MemoryStore, eventBus regis
 		AgentID:  agentID,
 		Epoch:    req.Epoch,
 	}
+	// Single-entry sequenced appends attempt the normal insert first; only after a
+	// duplicate-sequence conflict (or NotFound when the request carries an archived
+	// patch) do they load the stored entry at that sequence and return it when every
+	// persisted field matches, even if it is no longer the tail. Don't add a
+	// read-before-write or current-tail requirement, and don't extend this to
+	// multi-entry batches.
 	retryEligible := len(entries) == 1 && entries[0].Seq != nil
 	writeErr := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		// Check if conversation exists before append — if not, AppendEntries will auto-create it

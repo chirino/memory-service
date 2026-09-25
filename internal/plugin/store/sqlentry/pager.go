@@ -1,3 +1,6 @@
+// Package sqlentry holds the shared PostgreSQL/SQLite bounded entry-listing logic.
+// Stores should go through RunBoundedQuery and ApplyEpochFilter instead of copying
+// the cursor, upToEntryId, fromSeq, and ordering predicates.
 package sqlentry
 
 import (

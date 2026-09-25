@@ -188,6 +188,8 @@ services:
       # ── Authentication & authorization ─────────────────────────
       MEMORY_SERVICE_OIDC_ISSUER: http://${KEYCLOAK_HOSTNAME:-localhost}:${KEYCLOAK_HOSTNAME_PORT:-8081}/realms/memory-service
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      # Every browser client that calls Memory Service must add the memory-service
+      # audience to its access tokens, or they are rejected here.
       MEMORY_SERVICE_OIDC_ALLOWED_AUDIENCES: memory-service
       MEMORY_SERVICE_OIDC_USER_ID_CLAIM: /preferred_username
       MEMORY_SERVICE_ROLES_ADMIN_OIDC_ROLE: admin
@@ -308,6 +310,8 @@ services:
         condition: service_healthy
 
   minio:
+    # Upstream minio/minio and minio/mc are no longer pullable; pgsty/* are drop-in
+    # community forks.
     image: pgsty/minio:latest
     command: ["server", "/data", "--console-address", ":9001"]
     environment:
@@ -326,6 +330,7 @@ services:
       start_period: 10s
 
   minio-init:
+    # pgsty/mc replaces the no-longer-pullable minio/mc and includes sh and mc.
     image: pgsty/mc:latest
     entrypoint: >
       /bin/sh -c "
@@ -373,6 +378,10 @@ services:
 
   cognition-processor:
     profiles: ["cognition"]
+    # With no checkpoint this image logs "starting from beginning" but sends a null gRPC
+    # after_cursor, which SubscribeEvents treats as tail-only, so events published before
+    # the first start are not replayed. Durable replay from the oldest retained event
+    # requires after_cursor "start"; nothing here overrides the image default.
     image: quay.io/rigazilla/cognitive-memory:cd-latest
     ports:
       - "8090:8090"

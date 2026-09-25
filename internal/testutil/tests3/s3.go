@@ -14,6 +14,9 @@ import (
 )
 
 const testBucket = "test-attachments"
+
+// Keep LocalStack pinned by digest; the moving latest tag has changed under CI and
+// broken container startup.
 const localstackImage = "localstack/localstack@sha256:1a27b99734456054146e284d1de44af5d72b9f66a62f8a1fd1e74dc328019ba8"
 
 // StartS3 starts a disposable LocalStack container, creates a test bucket,

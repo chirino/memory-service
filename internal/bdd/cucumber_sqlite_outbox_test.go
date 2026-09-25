@@ -8,6 +8,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 )
 
+// REST-only outbox coverage; see TestFeaturesPgOutbox for the outbox runner matrix.
 func TestFeaturesSQLiteOutbox(t *testing.T) {
 	if !buildcaps.SQLite {
 		requireCapabilities(t, "sqlite")

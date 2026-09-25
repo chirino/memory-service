@@ -85,6 +85,8 @@ func ClampPageSize(ctx context.Context, size int) int {
 type Config struct {
 	// Mode controls security behavior: "prod" (default) or "testing".
 	// In testing mode, X-Client-ID header is accepted and API key validation is relaxed.
+	// There is no flag or env var for it; tests and harnesses set ModeTesting in code,
+	// so production hardening checks key off cfg.Mode.
 	Mode string
 
 	// Database

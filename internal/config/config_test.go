@@ -8,6 +8,11 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+// Runtime mode has no flag or env var; only tests switch to ModeTesting in code.
+func TestDefaultConfig_ModeIsProd(t *testing.T) {
+	require.Equal(t, ModeProd, DefaultConfig().Mode)
+}
+
 func TestResolvedTempDir_DefaultsToOSTempDir(t *testing.T) {
 	var cfg Config
 	require.Equal(t, os.TempDir(), cfg.ResolvedTempDir())

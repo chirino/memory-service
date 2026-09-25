@@ -56,7 +56,8 @@ func TestSiteDocs(t *testing.T) {
 	assignScenarioWaves(scenarios, siteScenarioConcurrency())
 
 	// Java checkpoint docs depend on local 999-SNAPSHOT artifacts. Install them
-	// once up front so parallel scenario builds can resolve dependencies reliably.
+	// once up front so parallel checkpoint builds do not fail to resolve
+	// 999-SNAPSHOT dependencies.
 	ensureJavaCheckpointArtifacts(t, projectRoot, scenarios)
 
 	// Python checkpoint docs depend on locally-built wheels (memory-service-langchain).
@@ -101,6 +102,10 @@ func TestSiteDocs(t *testing.T) {
 	// Start shared Postgres + in-process memory service
 	dbURL := testpg.StartPostgres(t)
 
+	// The shared TCP and UDS servers both trust the mock OIDC issuer and must
+	// allow audience "memory-service", which mock_jwt.go puts on every token.
+	// They select the "dek" encryption provider explicitly because setting
+	// EncryptionKey alone keeps the default "plain" provider.
 	cfg := config.DefaultConfig()
 	cfg.Mode = config.ModeTesting // allows X-Client-ID header in BDD tests
 	cfg.OIDCIssuer = mock.URL()   // enables JWT validation using mock JWKS
@@ -277,6 +282,9 @@ func ensureJavaCheckpointArtifacts(t *testing.T, projectRoot string, scenarios [
 	}
 
 	mvnw := filepath.Join(projectRoot, "java", "mvnw")
+	// Use "clean install": OpenAPI/proto models removed from the contracts can
+	// leave stale generated sources in module target/ directories, which break
+	// later checkpoint builds.
 	args := []string{
 		"-B", "-T", "1C",
 		"-f", filepath.Join(projectRoot, "java", "pom.xml"),

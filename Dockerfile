@@ -16,9 +16,12 @@ RUN go mod download
 COPY . .
 ARG GO_BUILD_TAGS="sqlite_fts5 sqlite_json"
 ARG VERSION=""
+# The build context may lack usable .git metadata (git worktrees, trimmed contexts),
+# so VCS stamping stays disabled; otherwise go build fails with "error obtaining VCS status".
 RUN CGO_ENABLED=1 go build -buildvcs=false -tags "${GO_BUILD_TAGS}" -ldflags "-X main.Version=${VERSION}" -o /memory-service .
 
-# Runtime image
+# Runtime image. Keep it glibc-based: sqlite-vec does not compile cleanly against musl
+# without extra CFLAGS shims; the static musl build lives in Dockerfile.portable.
 FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
 RUN microdnf install -y --nodocs \
     curl-minimal \
