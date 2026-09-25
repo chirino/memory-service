@@ -433,7 +433,7 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.8.2.7
+    image: clickhouse/clickhouse-server:26.8.4.11
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
