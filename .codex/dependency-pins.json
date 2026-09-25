@@ -290,6 +290,91 @@
       "blockedVersion": "v4.4.1",
       "blockedPublishedAt": "2026-09-16T07:50:21Z",
       "reviewAfter": "next dependency update (after 2026-09-26)"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "langchain",
+      "pinnedVersion": "1.4.0",
+      "location": "python/uv.lock (--upgrade-package pin)",
+      "class": "temporary cooldown",
+      "reason": "1.4.1 published 2026-09-16 (9 days), 1.4.2 published 2026-09-18 (7 days); both inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.4.2",
+      "blockedPublishedAt": "2026-09-18T17:31:10Z",
+      "reviewAfter": "next dependency update (after 2026-09-28)"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "langchain-core",
+      "pinnedVersion": "1.6.3",
+      "location": "python/uv.lock (--upgrade-package pin)",
+      "class": "temporary cooldown",
+      "reason": "1.6.4 published 2026-09-21 (4 days), 1.6.5 published 2026-09-24 (1 day); both inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.6.5",
+      "blockedPublishedAt": "2026-09-24T18:11:04Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "langchain-openai",
+      "pinnedVersion": "1.6.2",
+      "location": "python/uv.lock (--upgrade-package pin)",
+      "class": "temporary cooldown",
+      "reason": "1.6.3 published 2026-09-21 (4 days), 1.6.4/1.6.5/1.6.6 all in cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.6.6",
+      "blockedPublishedAt": "2026-09-24T11:31:11Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "langgraph",
+      "pinnedVersion": "1.2.11",
+      "location": "python/uv.lock",
+      "class": "temporary cooldown",
+      "reason": "1.2.12 published 2026-09-21 (4 days), inside 10-day cooldown; 1.2.11 is current and eligible",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "1.2.12",
+      "blockedPublishedAt": "2026-09-21T14:43:28Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "uvicorn",
+      "pinnedVersion": "0.53.0",
+      "location": "python/uv.lock (--upgrade-package pin)",
+      "class": "temporary cooldown",
+      "reason": "0.54.0 published 2026-09-25 (0 days), inside 10-day cooldown",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-09-25",
+      "blockedVersion": "0.54.0",
+      "blockedPublishedAt": "2026-09-25T06:52:35Z",
+      "reviewAfter": "next dependency update"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "protobuf",
+      "pinnedVersion": "6.x (constrained by <7.0.0)",
+      "location": "python/langchain/pyproject.toml: protobuf>=6.31.1,<7.0.0",
+      "class": "user-defined",
+      "reason": "Major version constraint <7.0.0 in pyproject.toml prevents upgrade to protobuf 7.x; requires API compatibility audit before updating",
+      "introducedBy": "project",
+      "reviewCondition": "explicit migration to protobuf 7 API with compatibility testing"
+    },
+    {
+      "ecosystem": "pypi",
+      "name": "openai",
+      "pinnedVersion": "2.48.0",
+      "location": "python/uv.lock (transitive via langchain-openai, openai<3.0.0)",
+      "class": "user-defined",
+      "reason": "openai 3.x is a breaking major version; langchain-openai constrains openai<3.0.0; requires compatibility migration",
+      "introducedBy": "upstream-constraint",
+      "reviewCondition": "langchain-openai upgrades its openai constraint to support 3.x"
     }
   ]
 }
