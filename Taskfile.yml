@@ -671,3 +671,13 @@ tasks:
       - task: loadtest:bench
       - task: loadtest:correctness
       - task: loadtest:report
+
+  detect-secrets:
+    desc: Update the secrets baseline and audit findings interactively
+    interactive: true
+    preconditions:
+      - sh: command -v detect-secrets >/dev/null 2>&1
+        msg: detect-secrets is required
+    cmds:
+      - detect-secrets scan --update .secrets.baseline
+      - detect-secrets audit .secrets.baseline
