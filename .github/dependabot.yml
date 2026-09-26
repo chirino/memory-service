@@ -56,6 +56,7 @@ updates:
     directories:
       - "/site"
       - "/frontends/chat-frontend"
+      - "/frontends/developer"
       - "/typescript/vercelai"
       - "/typescript/examples/vecelai/chat-vecelai-ts"
       - "/typescript/examples/vecelai/doc-checkpoints/01-basic-chat"

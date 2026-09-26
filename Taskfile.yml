@@ -104,7 +104,7 @@ tasks:
     cmds:
       - task: generate:python
       - task: build:python:langchain
-      - docker run --rm -v "{{.TASKFILE_DIR}}:/workspace" -w /workspace/python {{.PYTHON_DOCKER_IMAGE}} sh -lc 'uv venv /tmp/memory-service-python && uv pip install --python /tmp/memory-service-python/bin/python ./langchain && /tmp/memory-service-python/bin/python -c "import memory_service_langchain"'
+      - docker run --rm -v "{{.TASKFILE_DIR}}:/workspace" -w /workspace/python {{.PYTHON_DOCKER_IMAGE}} uv run --frozen --package memory-service-langchain python -c "import memory_service_langchain"
 
   generate:site:
     internal: true
