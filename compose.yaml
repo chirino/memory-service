@@ -105,7 +105,7 @@ services:
       retries: 10
 
   infinispan:
-    image: quay.io/infinispan/server:16.2.3
+    image: quay.io/infinispan/server:16.3
     ports:
       - "11222:11222"
     environment:
@@ -118,7 +118,7 @@ services:
       retries: 10
 
   keycloak:
-    image: quay.io/keycloak/keycloak:26.7.3
+    image: quay.io/keycloak/keycloak:26.7.4
     command: ["start-dev", "--import-realm"]
     environment:
       KC_BOOTSTRAP_ADMIN_USERNAME: admin
@@ -433,7 +433,7 @@ services:
 
   clickhouse:
     profiles: ["langfuse"]
-    image: clickhouse/clickhouse-server:26.8.4.11
+    image: clickhouse/clickhouse-server:26.8.5.13
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
