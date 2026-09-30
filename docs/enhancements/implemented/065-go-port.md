@@ -462,7 +462,7 @@ The `ResponseRecorderService` gRPC streaming service stores in-progress LLM resp
 
 ### Logging
 
-Use `charmbracelet/log` for all structured logging. It auto-detects TTY vs. non-TTY and switches between styled (terminal) and JSON (pipe/file) output. Integrate as gin middleware for access logging.
+Use `charmbracelet/log` for structured logging. The output format defaults to text; set `--log-format=json` or `MEMORY_SERVICE_LOG_FORMAT=json` for one JSON object per line. Integrate as gin middleware for access logging.
 
 ```go
 import "github.com/charmbracelet/log"

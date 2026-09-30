@@ -29,6 +29,7 @@ Memory Service is configured through CLI flags or environment variables. Use the
 | <Cfg p="--temp-dir" e="MEMORY_SERVICE_TEMP_DIR" />                                         | path                                      | system temp dir | Directory for temporary files                                                  |
 | <Cfg p="--management-access-log" e="MEMORY_SERVICE_MANAGEMENT_ACCESS_LOG" />               | `true`, `false`                           | `false`         | Enable operational logging for `/health`, `/ready`, `/metrics`                 |
 | `MEMORY_SERVICE_LOG_LEVEL`                                                                 | `debug`, `info`, `warn`, `error`, `fatal` | `info`          | Server log level                                                               |
+| <Cfg p="--log-format" e="MEMORY_SERVICE_LOG_FORMAT" />                                     | `text`, `json`                            | `text`          | Log output format; `json` writes one JSON object per line                      |
 
 ### Rate limits
 
