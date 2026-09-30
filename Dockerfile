@@ -1,5 +1,5 @@
 # Build developer frontend
-FROM node:26.8.2-alpine@sha256:ef24c5053d50fdc3e4e56eb4e7ddb7861874ab0fdc797046ba897581deb8e868 AS frontend-builder
+FROM node:26.9.0-alpine@sha256:dbaa92e5758cbbcf85d65d5403fdb530fe3442cbe8c6dbfb7ef23365450d5070 AS frontend-builder
 WORKDIR /build
 COPY frontends/developer/package*.json ./
 RUN npm ci
@@ -7,7 +7,7 @@ COPY frontends/developer/ ./
 RUN npm run build
 
 # Build Go binary
-FROM registry.access.redhat.com/ubi9/go-toolset:9.8@sha256:5e68f09a652ac6627a83c57655e42e24575efb278b54336039c9308607fc6b21 AS builder
+FROM registry.access.redhat.com/ubi9/go-toolset:9.8@sha256:0a4666f7a4eb0644c97a73cba198eb268691b270d97831822689e7a2088f87be AS builder
 USER 0
 WORKDIR /src
 ENV GOTOOLCHAIN=auto
@@ -22,7 +22,7 @@ RUN CGO_ENABLED=1 go build -buildvcs=false -tags "${GO_BUILD_TAGS}" -ldflags "-X
 
 # Runtime image. Keep it glibc-based: sqlite-vec does not compile cleanly against musl
 # without extra CFLAGS shims; the static musl build lives in Dockerfile.portable.
-FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:7fbeae18dc9476399f565e68255f602a3374ea8614ba3d14843565131a13ff93
+FROM registry.access.redhat.com/ubi9/ubi-minimal:latest@sha256:1d7c5517a4a1a8e2688620b39ee980e82505ca1ab7ae5541b5463120ae9b3897
 RUN microdnf install -y --nodocs \
     curl-minimal \
     sqlite-libs \
