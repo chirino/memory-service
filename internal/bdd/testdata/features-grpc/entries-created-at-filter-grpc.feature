@@ -90,3 +90,29 @@ Feature: Entries CreatedAt Filtering gRPC API
     """
     Then the gRPC response should not have an error
     And the gRPC response should contain 2 entries
+
+  Scenario: Filter entries across the full protobuf timestamp range
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    created_at_after { seconds: -62135596800 }
+    created_at_before { seconds: 253402300799 nanos: 999999999 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 3 entries
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    created_at_eq { seconds: 253402300799 nanos: 999999999 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 0 entries
+    Given I am authenticated as admin user "alice"
+    When I send gRPC request "AdminEntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    created_at_after { seconds: -62135596800 }
+    created_at_before { seconds: 253402300799 nanos: 999999999 }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 3 entries

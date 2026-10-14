@@ -60,8 +60,8 @@ func TestSQLiteSchemaMemoryKindIndex(t *testing.T) {
 	t.Parallel()
 	src, err := os.ReadFile(sqliteSchemaPath)
 	require.NoError(t, err)
-	assert.Contains(t, string(src), "ON memories (memory_kind, created_at, id)",
-		"migration cursor index must match (memory_kind, created_at, id) ordering")
+	assert.Contains(t, string(src), "ON memories (memory_kind, created_at, created_at_ns, id)",
+		"migration cursor index must match (memory_kind, created_at, created_at_ns, id) ordering")
 }
 
 func TestSQLiteMigrationScanPlanUsesCursorIndexWithoutTemporarySort(t *testing.T) {
@@ -74,10 +74,10 @@ func TestSQLiteMigrationScanPlanUsesCursorIndexWithoutTemporarySort(t *testing.T
 	require.NoError(t, store.InReadTx(ctx, func(txCtx context.Context) error {
 		return concrete.dbFor(txCtx).Raw(`
 			EXPLAIN QUERY PLAN
-			SELECT id, created_at FROM memories
-			WHERE memory_kind = ? AND (created_at > ? OR (created_at = ? AND id > ?))
-			ORDER BY created_at ASC, id ASC LIMIT ?`,
-			"default/v1", time.Time{}, time.Time{}, "00000000-0000-0000-0000-000000000000", 50,
+			SELECT id, created_at, created_at_ns FROM memories
+			WHERE memory_kind = ? AND ((created_at,created_at_ns) > (?, ?) OR ((created_at,created_at_ns) = (?, ?) AND id > ?))
+			ORDER BY created_at ASC, created_at_ns ASC, id ASC LIMIT ?`,
+			"default/v1", time.Unix(0, 0), time.Unix(0, 0), "00000000-0000-0000-0000-000000000000", 50,
 		).Scan(&plan).Error
 	}))
 

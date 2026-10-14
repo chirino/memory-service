@@ -2,6 +2,7 @@ package sqlite
 
 import (
 	"context"
+	"database/sql"
 	"path/filepath"
 	"testing"
 	"time"
@@ -16,18 +17,20 @@ import (
 func TestEntryOrderAfterTimezoneUpgrade(t *testing.T) {
 	cfg := &config.Config{DatastoreType: "sqlite", DBURL: filepath.Join(t.TempDir(), "upgrade.db"), DatastoreMigrateAtStart: true, EncryptionDBDisabled: true}
 	ctx := config.WithContext(context.Background(), cfg)
-	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
-	loader, err := registrystore.Select("sqlite")
+	legacyDB, err := sql.Open("sqlite3", cfg.DBURL)
 	require.NoError(t, err)
-	store, err := loader(ctx)
+	_, err = legacyDB.Exec(legacyTextSchemaSQL)
 	require.NoError(t, err)
-	s := store.(*SQLiteStore)
-	var conv *registrystore.ConversationDetail
-	require.NoError(t, store.InWriteTx(ctx, func(tx context.Context) error {
-		var err error
-		conv, err = store.CreateConversation(tx, "alice", "client", "Upgrade", nil, nil, nil, nil)
-		return err
-	}))
+	groupID, convID := uuid.New(), uuid.NewString()
+	_, err = legacyDB.Exec(`INSERT INTO conversation_groups(id) VALUES (?);`, groupID.String())
+	require.NoError(t, err)
+	_, err = legacyDB.Exec(`INSERT INTO conversations(id,owner_user_id,client_id,conversation_group_id) VALUES (?, 'alice', 'client', ?)`, convID, groupID.String())
+	require.NoError(t, err)
+	_, err = legacyDB.Exec(`INSERT INTO conversation_ancestry(conversation_group_id,descendant_conversation_id,ancestor_conversation_id,depth) VALUES (?,?,?,0)`, groupID.String(), convID, convID)
+	require.NoError(t, err)
+	_, err = legacyDB.Exec(`INSERT INTO conversation_memberships(conversation_group_id,user_id,access_level) VALUES (?, 'alice', 'owner')`, groupID.String())
+	require.NoError(t, err)
+	conv := &registrystore.ConversationDetail{ConversationSummary: registrystore.ConversationSummary{ID: convID, ConversationGroupID: groupID}}
 	oldTime := time.Now().UTC().Add(-time.Minute).Truncate(time.Millisecond)
 	legacy := []model.Entry{
 		{ID: uuid.MustParse("ffffffff-ffff-ffff-ffff-ffffffffffff"), CreatedAt: oldTime.Add(100 * time.Nanosecond).In(time.FixedZone("UTC+0530", 19800))},
@@ -40,9 +43,18 @@ func TestEntryOrderAfterTimezoneUpgrade(t *testing.T) {
 		legacy[i].ContentType = "history"
 		legacy[i].Content = []byte(`[]`)
 	}
-	// Model legacy rows written before the numeric timestamp backfill.
-	require.NoError(t, store.InWriteTx(ctx, func(tx context.Context) error { return s.dbFor(tx).Create(&legacy).Error }))
+	for _, entry := range legacy {
+		_, err = legacyDB.Exec(`INSERT INTO entries(id,conversation_id,conversation_group_id,channel,content_type,content,created_at,created_at_unix_ms) VALUES (?,?,?,'history','history','[]',?,?)`, entry.ID.String(), conv.ID, groupID.String(), entry.CreatedAt, entry.CreatedAt.UnixMilli())
+		require.NoError(t, err)
+	}
+	require.NoError(t, legacyDB.Close())
 	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
+	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
+	loader, err := registrystore.Select("sqlite")
+	require.NoError(t, err)
+	store, err := loader(ctx)
+	require.NoError(t, err)
+	s := store.(*SQLiteStore)
 	var newer []model.Entry
 	require.NoError(t, store.InWriteTx(ctx, func(tx context.Context) error {
 		var err error
@@ -67,6 +79,13 @@ func TestEntryOrderAfterTimezoneUpgrade(t *testing.T) {
 		}))
 	}
 	t.Run("listing", func(t *testing.T) { check(t, conv.ID, registrystore.EntryListQuery{Limit: 10}, want) })
+	eq := legacy[0].CreatedAt
+	t.Run("exact-precision-filter", func(t *testing.T) {
+		check(t, conv.ID, registrystore.EntryListQuery{Limit: 10, CreatedAtFilter: &registrystore.CreatedAtFilter{Eq: &eq}}, legacy[:1])
+	})
+	t.Run("inclusive-precision-filter", func(t *testing.T) {
+		check(t, conv.ID, registrystore.EntryListQuery{Limit: 10, CreatedAtFilter: &registrystore.CreatedAtFilter{After: &eq, Before: &eq}}, legacy[:1])
+	})
 	t.Run("tail", func(t *testing.T) { check(t, conv.ID, registrystore.EntryListQuery{Limit: 2, Tail: true}, newer) })
 	after, before, upTo := legacy[0].ID.String(), newer[0].ID.String(), legacy[1].ID.String()
 	t.Run("after", func(t *testing.T) {

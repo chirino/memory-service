@@ -1,10 +1,10 @@
 # Workarounds
 
-## SQLite legacy entry timestamp precision
+## SQLite timestamp pairs
 
-- What: Entry ordering uses numeric Unix milliseconds and extracts a numeric sub-millisecond remainder from legacy `created_at` text.
-- Why: [SQLite date functions](https://www.sqlite.org/lang_datefunc.html) round fractional seconds to milliseconds, while older entries can retain nanoseconds. Comparing the text directly also orders timezone offsets incorrectly.
-- Proper fix: Complete [the numeric SQLite timestamp migration in #660](https://github.com/chirino/memory-service/issues/660), preserve legacy precision in the numeric representation, and remove the text-dependent ordering helpers.
+- What: SQLite stores each timestamp as integer Unix seconds in `*_at` and normalized nanoseconds in `*_at_ns`. SQLite-only GORM builders expand model writes and projections. Raw SQL supplies both columns and two adjacent placeholders for each timestamp argument. The driver expands that argument, validates the resulting parameter count, and merges paired result columns into UTC dates. Nullable raw SQL timestamps accept `*time.Time` and `sql.NullTime`. Nil pointers and invalid `sql.NullTime` values bind two NULL parameters. Named timestamp parameters are unsupported. Bound parameters must belong to the first statement in a SQL batch.
+- Why: go-sqlite3 binds dates as text and interprets integer DATETIME values as seconds or milliseconds. A single signed integer of Unix nanoseconds cannot represent all accepted API dates. Paired integers preserve the existing date range and nanosecond precision.
+- Proper fix: Add paired timestamp binding and result decoding to go-sqlite3 or GORM, then replace the local adapter.
 
 ## gRPC Java Unix socket authority
 

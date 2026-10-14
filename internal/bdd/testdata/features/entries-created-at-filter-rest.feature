@@ -111,3 +111,17 @@ Feature: Entries CreatedAt Filtering REST API
     And the response should contain 2 entries
     And entry at index 0 should have content "Entry 3"
     And entry at index 1 should have content "Fork Entry"
+
+  Scenario: Filter entries across the full RFC3339 date range
+    When I call GET "/v1/conversations/${conversationId}/entries?createdAtAfter=0001-01-01T00:00:00Z&createdAtBefore=9999-12-31T23:59:59.999999999Z"
+    Then the response code should be 200
+    And the response should contain 3 entries
+    And entry at index 0 should have content "Entry 1"
+    And entry at index 2 should have content "Entry 3"
+    When I call GET "/v1/conversations/${conversationId}/entries?createdAt=0001-01-01T00:00:00Z"
+    Then the response code should be 200
+    And the response should contain 0 entries
+    Given I am authenticated as admin user "alice"
+    When I call GET "/v1/admin/conversations/${conversationId}/entries?createdAtAfter=0001-01-01T00:00:00Z&createdAtBefore=9999-12-31T23:59:59.999999999Z"
+    Then the response code should be 200
+    And the response should contain 3 entries

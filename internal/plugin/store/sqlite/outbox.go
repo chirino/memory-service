@@ -125,7 +125,7 @@ func (s *SQLiteStore) EvictOutboxEventsBefore(ctx context.Context, before time.T
 	}
 	subquery := db.Model(&sqliteOutboxRow{}).
 		Select("seq").
-		Where("created_at < ?", before).
+		Where("(created_at, created_at_ns) < (?, ?)", before).
 		Order("seq ASC").
 		Limit(limit)
 	result := db.Where("seq IN (?)", subquery).Delete(&sqliteOutboxRow{})

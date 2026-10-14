@@ -103,7 +103,7 @@ func TestCheckpointLeaseFencesWritersAndUsesCAS(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEqual(t, updated.Revision, legacy.Revision)
 
-	require.NoError(t, handle.db.Exec(`UPDATE admin_checkpoints SET lease_expires_at = datetime('now', '-1 second'), lease_token_hash = ? WHERE client_id = ?`, []byte("expired"), "exporter").Error)
+	require.NoError(t, handle.db.Exec(`UPDATE admin_checkpoints SET lease_expires_at = unixepoch() - 1, lease_expires_at_ns = 0, lease_token_hash = ? WHERE client_id = ?`, []byte("expired"), "exporter").Error)
 	newLease, err := checkpointWrite(ctx, store, func(txCtx context.Context) (*registrystore.ClientCheckpointLease, error) {
 		return store.AdminAcquireCheckpointLease(txCtx, "exporter", tokenB, 30*time.Second)
 	})

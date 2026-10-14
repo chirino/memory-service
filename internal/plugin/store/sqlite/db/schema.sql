@@ -1,19 +1,23 @@
+-- Timestamp pairs store Unix seconds and normalized nanoseconds, decoded as UTC.
 PRAGMA foreign_keys = ON;
 
 CREATE TABLE IF NOT EXISTS schema_metadata (
     key TEXT PRIMARY KEY,
     value TEXT NOT NULL,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    updated_at INTEGER_SECONDS CHECK (updated_at IS NULL OR typeof(updated_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    updated_at_ns INTEGER CHECK ((updated_at IS NULL AND updated_at_ns IS NULL) OR (updated_at IS NOT NULL AND updated_at_ns IS NOT NULL AND typeof(updated_at_ns) = 'integer' AND updated_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0
 );
 
-INSERT INTO schema_metadata (key, value, updated_at)
-VALUES ('core_schema_version', '2', CURRENT_TIMESTAMP)
-ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
+INSERT INTO schema_metadata (key, value, updated_at, updated_at_ns)
+VALUES ('core_schema_version', '2', unixepoch(), 0)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = unixepoch(), updated_at_ns = 0;
 
 CREATE TABLE IF NOT EXISTS conversation_groups (
     id TEXT PRIMARY KEY,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived_at DATETIME
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    archived_at INTEGER_SECONDS CHECK (archived_at IS NULL OR typeof(archived_at) = 'integer'),
+    archived_at_ns INTEGER CHECK ((archived_at IS NULL AND archived_at_ns IS NULL) OR (archived_at IS NOT NULL AND archived_at_ns IS NOT NULL AND typeof(archived_at_ns) = 'integer' AND archived_at_ns BETWEEN 0 AND 999999999))
 );
 
 CREATE TABLE IF NOT EXISTS conversations (
@@ -29,18 +33,22 @@ CREATE TABLE IF NOT EXISTS conversations (
     -- Soft reference: the starting conversation may be hard-evicted independently.
     started_by_conversation_id TEXT,
     started_by_entry_id TEXT,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    vectorized_at DATETIME,
-    archived_at DATETIME
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    updated_at INTEGER_SECONDS CHECK (updated_at IS NULL OR typeof(updated_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    updated_at_ns INTEGER CHECK ((updated_at IS NULL AND updated_at_ns IS NULL) OR (updated_at IS NOT NULL AND updated_at_ns IS NOT NULL AND typeof(updated_at_ns) = 'integer' AND updated_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    vectorized_at INTEGER_SECONDS CHECK (vectorized_at IS NULL OR typeof(vectorized_at) = 'integer'),
+    vectorized_at_ns INTEGER CHECK ((vectorized_at IS NULL AND vectorized_at_ns IS NULL) OR (vectorized_at IS NOT NULL AND vectorized_at_ns IS NOT NULL AND typeof(vectorized_at_ns) = 'integer' AND vectorized_at_ns BETWEEN 0 AND 999999999)),
+    archived_at INTEGER_SECONDS CHECK (archived_at IS NULL OR typeof(archived_at) = 'integer'),
+    archived_at_ns INTEGER CHECK ((archived_at IS NULL AND archived_at_ns IS NULL) OR (archived_at IS NOT NULL AND archived_at_ns IS NOT NULL AND typeof(archived_at_ns) = 'integer' AND archived_at_ns BETWEEN 0 AND 999999999))
 );
 
 CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_group_id_id ON conversations(conversation_group_id, id);
-CREATE INDEX IF NOT EXISTS idx_conversations_created_at_id ON conversations(created_at, id);
-CREATE INDEX IF NOT EXISTS idx_conversations_updated_at_id ON conversations(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_created_at_id ON conversations(created_at, created_at_ns, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated_at_id ON conversations(updated_at, updated_at_ns, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(conversation_group_id);
-CREATE INDEX IF NOT EXISTS idx_conversations_not_archived ON conversations(archived_at) WHERE archived_at IS NULL;
-CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_not_archived ON conversations(archived_at, archived_at_ns) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, created_at_ns, id);
 CREATE INDEX IF NOT EXISTS idx_conversations_started_by_entry ON conversations(started_by_entry_id);
 
 CREATE TABLE IF NOT EXISTS conversation_ancestry (
@@ -84,7 +92,8 @@ CREATE TABLE IF NOT EXISTS conversation_memberships (
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
     user_id TEXT NOT NULL,
     access_level TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
     PRIMARY KEY (conversation_group_id, user_id)
 );
 
@@ -93,9 +102,9 @@ CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
 CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
     ON conversation_memberships(conversation_group_id);
 CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_archived
-    ON conversation_groups(archived_at) WHERE archived_at IS NULL;
+    ON conversation_groups(archived_at, archived_at_ns) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_conversation_groups_archived
-    ON conversation_groups(archived_at) WHERE archived_at IS NOT NULL;
+    ON conversation_groups(archived_at, archived_at_ns) WHERE archived_at IS NOT NULL;
 
 CREATE TABLE IF NOT EXISTS entries (
     append_batch BLOB,
@@ -111,39 +120,43 @@ CREATE TABLE IF NOT EXISTS entries (
     content_type TEXT NOT NULL,
     content BLOB NOT NULL,
     indexed_content TEXT,
-    indexed_at DATETIME,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_at_unix_ms INTEGER,
+    indexed_at INTEGER_SECONDS CHECK (indexed_at IS NULL OR typeof(indexed_at) = 'integer'),
+    indexed_at_ns INTEGER CHECK ((indexed_at IS NULL AND indexed_at_ns IS NULL) OR (indexed_at IS NOT NULL AND indexed_at_ns IS NOT NULL AND typeof(indexed_at_ns) = 'integer' AND indexed_at_ns BETWEEN 0 AND 999999999)),
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
     PRIMARY KEY (id, conversation_group_id)
 );
 
+CREATE INDEX IF NOT EXISTS idx_entries_created_at_id ON entries(created_at, created_at_ns, id);
+
 CREATE INDEX IF NOT EXISTS idx_entries_unindexed
-    ON entries(channel, created_at) WHERE indexed_content IS NULL;
+    ON entries(channel, created_at, created_at_ns) WHERE indexed_content IS NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
-    ON entries(indexed_at) WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
+    ON entries(indexed_at, indexed_at_ns) WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
-    ON entries(conversation_id, created_at);
+    ON entries(conversation_id, created_at, created_at_ns);
 CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
     ON entries(conversation_id, seq) WHERE seq IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
-    ON entries(conversation_group_id, created_at, seq, id);
+    ON entries(conversation_group_id, created_at, created_at_ns, seq, id);
 CREATE INDEX IF NOT EXISTS idx_entries_group_channel_created_seq_id
-    ON entries(conversation_group_id, channel, created_at, seq, id);
+    ON entries(conversation_group_id, channel, created_at, created_at_ns, seq, id);
 CREATE INDEX IF NOT EXISTS idx_entries_group_channel_seq_id
     ON entries(conversation_group_id, channel, seq, id) WHERE seq IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
-    ON entries(conversation_id, channel, created_at, seq, id);
+    ON entries(conversation_id, channel, created_at, created_at_ns, seq, id);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
-    ON entries(conversation_id, channel, client_id, epoch, created_at);
+    ON entries(conversation_id, channel, client_id, epoch, created_at, created_at_ns);
 CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_created_at
-    ON entries(conversation_id, channel, client_id, agent_id, epoch, created_at);
+    ON entries(conversation_id, channel, client_id, agent_id, epoch, created_at, created_at_ns);
 
 CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
     id TEXT PRIMARY KEY,
     conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
     from_user_id TEXT NOT NULL,
     to_user_id TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
     UNIQUE (conversation_group_id)
 );
 
@@ -157,14 +170,16 @@ CREATE TABLE IF NOT EXISTS tasks (
     task_name TEXT UNIQUE,
     task_type TEXT NOT NULL,
     task_body TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    retry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    retry_at INTEGER_SECONDS CHECK (retry_at IS NULL OR typeof(retry_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    retry_at_ns INTEGER CHECK ((retry_at IS NULL AND retry_at_ns IS NULL) OR (retry_at IS NOT NULL AND retry_at_ns IS NOT NULL AND typeof(retry_at_ns) = 'integer' AND retry_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
     last_error TEXT,
     retry_count INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_tasks_ready
-    ON tasks(task_type, retry_at);
+    ON tasks(task_type, retry_at, retry_at_ns);
 
 CREATE TABLE IF NOT EXISTS admin_checkpoints (
     client_id TEXT PRIMARY KEY,
@@ -173,8 +188,10 @@ CREATE TABLE IF NOT EXISTS admin_checkpoints (
 	 revision INTEGER NOT NULL DEFAULT 1,
 	 lease_token_hash BLOB,
 	 lease_generation INTEGER NOT NULL DEFAULT 0,
-	 lease_expires_at DATETIME,
-    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+	 lease_expires_at INTEGER_SECONDS CHECK (lease_expires_at IS NULL OR typeof(lease_expires_at) = 'integer'),
+	 lease_expires_at_ns INTEGER CHECK ((lease_expires_at IS NULL AND lease_expires_at_ns IS NULL) OR (lease_expires_at IS NOT NULL AND lease_expires_at_ns IS NOT NULL AND typeof(lease_expires_at_ns) = 'integer' AND lease_expires_at_ns BETWEEN 0 AND 999999999)),
+    updated_at INTEGER_SECONDS CHECK (updated_at IS NULL OR typeof(updated_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    updated_at_ns INTEGER CHECK ((updated_at IS NULL AND updated_at_ns IS NULL) OR (updated_at IS NOT NULL AND updated_at_ns IS NOT NULL AND typeof(updated_at_ns) = 'integer' AND updated_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS outbox_events (
@@ -182,11 +199,12 @@ CREATE TABLE IF NOT EXISTS outbox_events (
     event TEXT NOT NULL,
     kind TEXT NOT NULL,
     data TEXT NOT NULL,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
-    ON outbox_events(created_at);
+    ON outbox_events(created_at, created_at_ns);
 CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_seq
     ON outbox_events(kind, seq);
 
@@ -201,25 +219,28 @@ CREATE TABLE IF NOT EXISTS attachments (
     entry_id TEXT,
     status TEXT NOT NULL DEFAULT 'ready',
     source_url TEXT,
-    expires_at DATETIME,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    archived_at DATETIME
+    expires_at INTEGER_SECONDS CHECK (expires_at IS NULL OR typeof(expires_at) = 'integer'),
+    expires_at_ns INTEGER CHECK ((expires_at IS NULL AND expires_at_ns IS NULL) OR (expires_at IS NOT NULL AND expires_at_ns IS NOT NULL AND typeof(expires_at_ns) = 'integer' AND expires_at_ns BETWEEN 0 AND 999999999)),
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    archived_at INTEGER_SECONDS CHECK (archived_at IS NULL OR typeof(archived_at) = 'integer'),
+    archived_at_ns INTEGER CHECK ((archived_at IS NULL AND archived_at_ns IS NULL) OR (archived_at IS NOT NULL AND archived_at_ns IS NOT NULL AND typeof(archived_at_ns) = 'integer' AND archived_at_ns BETWEEN 0 AND 999999999))
 );
 
 CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
-    ON attachments(expires_at) WHERE expires_at IS NOT NULL;
+    ON attachments(expires_at, expires_at_ns) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
     ON attachments(entry_id) WHERE entry_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
     ON attachments(storage_key) WHERE storage_key IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_archived_at
-    ON attachments(archived_at) WHERE archived_at IS NOT NULL;
+    ON attachments(archived_at, archived_at_ns) WHERE archived_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_attachments_status
     ON attachments(status) WHERE status != 'ready';
 CREATE INDEX IF NOT EXISTS idx_attachments_user_id
     ON attachments(user_id);
 CREATE INDEX IF NOT EXISTS idx_attachments_created_at_id
-    ON attachments(created_at DESC, id DESC);
+    ON attachments(created_at DESC, created_at_ns DESC, id DESC);
 
 ------------------------------------------------------------
 -- Memory Schema Versions, Defaults, and Migrations (Enhancement 115)
@@ -231,7 +252,8 @@ CREATE TABLE IF NOT EXISTS memory_kind_versions (
     attribute_types TEXT NOT NULL DEFAULT '{}',
     attributes_rego TEXT,
     writable        INTEGER NOT NULL DEFAULT 1,
-    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0
 );
 
 -- Mutable per-family defaults were removed. Clean up the obsolete version-2 table.
@@ -249,9 +271,12 @@ CREATE TABLE IF NOT EXISTS memory_kind_migrations (
     vector_pending_count    INTEGER NOT NULL DEFAULT 0,
     retry_count             INTEGER NOT NULL DEFAULT 0,
     last_error_code         TEXT,
-    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    started_at              DATETIME,
-    completed_at            DATETIME,
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    started_at INTEGER_SECONDS CHECK (started_at IS NULL OR typeof(started_at) = 'integer'),
+    started_at_ns INTEGER CHECK ((started_at IS NULL AND started_at_ns IS NULL) OR (started_at IS NOT NULL AND started_at_ns IS NOT NULL AND typeof(started_at_ns) = 'integer' AND started_at_ns BETWEEN 0 AND 999999999)),
+    completed_at INTEGER_SECONDS CHECK (completed_at IS NULL OR typeof(completed_at) = 'integer'),
+    completed_at_ns INTEGER CHECK ((completed_at IS NULL AND completed_at_ns IS NULL) OR (completed_at IS NOT NULL AND completed_at_ns IS NOT NULL AND typeof(completed_at_ns) = 'integer' AND completed_at_ns BETWEEN 0 AND 999999999)),
     CHECK (source <> target),
     CHECK (state IN ('queued', 'running', 'canceling', 'succeeded', 'failed', 'canceled'))
 );
@@ -275,40 +300,45 @@ CREATE TABLE IF NOT EXISTS memories (
     kind INTEGER NOT NULL DEFAULT 0,
     revision INTEGER NOT NULL DEFAULT 1,
     deleted_reason INTEGER,
-    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    expires_at DATETIME,
-    archived_at DATETIME,
-    indexed_at DATETIME,
+    created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    created_at_ns INTEGER CHECK ((created_at IS NULL AND created_at_ns IS NULL) OR (created_at IS NOT NULL AND created_at_ns IS NOT NULL AND typeof(created_at_ns) = 'integer' AND created_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
+    expires_at INTEGER_SECONDS CHECK (expires_at IS NULL OR typeof(expires_at) = 'integer'),
+    expires_at_ns INTEGER CHECK ((expires_at IS NULL AND expires_at_ns IS NULL) OR (expires_at IS NOT NULL AND expires_at_ns IS NOT NULL AND typeof(expires_at_ns) = 'integer' AND expires_at_ns BETWEEN 0 AND 999999999)),
+    archived_at INTEGER_SECONDS CHECK (archived_at IS NULL OR typeof(archived_at) = 'integer'),
+    archived_at_ns INTEGER CHECK ((archived_at IS NULL AND archived_at_ns IS NULL) OR (archived_at IS NOT NULL AND archived_at_ns IS NOT NULL AND typeof(archived_at_ns) = 'integer' AND archived_at_ns BETWEEN 0 AND 999999999)),
+    indexed_at INTEGER_SECONDS CHECK (indexed_at IS NULL OR typeof(indexed_at) = 'integer'),
+    indexed_at_ns INTEGER CHECK ((indexed_at IS NULL AND indexed_at_ns IS NULL) OR (indexed_at IS NOT NULL AND indexed_at_ns IS NOT NULL AND typeof(indexed_at_ns) = 'integer' AND indexed_at_ns BETWEEN 0 AND 999999999)),
     memory_kind TEXT NOT NULL REFERENCES memory_kind_versions(name) DEFAULT 'default/v1'
 );
 
 CREATE INDEX IF NOT EXISTS idx_memories_active_lookup
-    ON memories(namespace, key, archived_at);
+    ON memories(namespace, key, archived_at, archived_at_ns);
 CREATE UNIQUE INDEX IF NOT EXISTS memories_active_idx
     ON memories(namespace, key) WHERE archived_at IS NULL;
 CREATE INDEX IF NOT EXISTS idx_memories_pending_index
-    ON memories(indexed_at, archived_at);
+    ON memories(indexed_at, indexed_at_ns, archived_at, archived_at_ns);
 CREATE INDEX IF NOT EXISTS idx_memories_expires_at
-    ON memories(expires_at) WHERE expires_at IS NOT NULL;
+    ON memories(expires_at, expires_at_ns) WHERE expires_at IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_memories_archived_at
-    ON memories(archived_at) WHERE archived_at IS NOT NULL;
+    ON memories(archived_at, archived_at_ns) WHERE archived_at IS NOT NULL;
 
 -- Index for migration scans and kind-filtered queries.
 CREATE INDEX IF NOT EXISTS memories_kind_version_idx
     ON memories (memory_kind, namespace, id);
 CREATE INDEX IF NOT EXISTS memories_kind_cursor_idx
-    ON memories (memory_kind, created_at, id);
+    ON memories (memory_kind, created_at, created_at_ns, id);
 
 CREATE TABLE IF NOT EXISTS memory_usage_stats (
     namespace TEXT NOT NULL,
     key TEXT NOT NULL,
     fetch_count INTEGER NOT NULL DEFAULT 0,
-    last_fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_fetched_at INTEGER_SECONDS CHECK (last_fetched_at IS NULL OR typeof(last_fetched_at) = 'integer') NOT NULL DEFAULT (unixepoch()),
+    last_fetched_at_ns INTEGER CHECK ((last_fetched_at IS NULL AND last_fetched_at_ns IS NULL) OR (last_fetched_at IS NOT NULL AND last_fetched_at_ns IS NOT NULL AND typeof(last_fetched_at_ns) = 'integer' AND last_fetched_at_ns BETWEEN 0 AND 999999999)) NOT NULL DEFAULT 0,
     PRIMARY KEY (namespace, key)
 );
 
 CREATE INDEX IF NOT EXISTS idx_memory_usage_last_fetched
-    ON memory_usage_stats(last_fetched_at DESC);
+    ON memory_usage_stats(last_fetched_at DESC, last_fetched_at_ns DESC);
 
 -- memory_vectors stores vector embeddings for episodic memories.
 -- memory_kind is NOT NULL: every indexed vector carries an explicit schema reference.

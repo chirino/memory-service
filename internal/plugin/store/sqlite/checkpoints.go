@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 package sqlite
 
 import (
@@ -86,20 +88,21 @@ func (s *SQLiteStore) AdminPutCheckpointCAS(ctx context.Context, write registrys
 	if err != nil {
 		return nil, err
 	}
+	now := time.Now()
 	result := s.writeDBFor(ctx, "sqlite store put checkpoint").Exec(`
-		INSERT INTO admin_checkpoints (client_id, content_type, value, revision, updated_at)
-		VALUES (?, ?, ?, 1, CURRENT_TIMESTAMP)
+		INSERT INTO admin_checkpoints (client_id, content_type, value, revision, updated_at, updated_at_ns)
+		VALUES (?, ?, ?, 1, ?, ?)
 		ON CONFLICT (client_id) DO UPDATE SET
 			content_type = excluded.content_type,
 			value = excluded.value,
 			revision = admin_checkpoints.revision + 1,
-			updated_at = CURRENT_TIMESTAMP
+			updated_at = excluded.updated_at, updated_at_ns = excluded.updated_at_ns
 		WHERE (? = 0 OR admin_checkpoints.revision = ?)
 		  AND (admin_checkpoints.lease_expires_at IS NULL
-		       OR admin_checkpoints.lease_expires_at <= CURRENT_TIMESTAMP
+		       OR (admin_checkpoints.lease_expires_at, admin_checkpoints.lease_expires_at_ns) <= (?, ?)
 		       OR (? = 1 AND admin_checkpoints.lease_token_hash = ?))`,
-		clientID, contentType, encryptedValue,
-		expectedRevision, expectedRevision, tokenProvided, tokenValue,
+		clientID, contentType, encryptedValue, now,
+		expectedRevision, expectedRevision, now, tokenProvided, tokenValue,
 	)
 	if result.Error != nil {
 		return nil, result.Error
@@ -134,20 +137,21 @@ func (s *SQLiteStore) sqliteUpdateCheckpointLease(ctx context.Context, operation
 	if err != nil {
 		return nil, err
 	}
-	seconds := int64(ttl / time.Second)
+	now := time.Now()
+	expiresAt := now.Add(ttl)
 	db := s.writeDBFor(ctx, "sqlite store update checkpoint lease")
 	var execErr error
 	var rows int64
 	if operation == "acquire" {
 		r := db.Exec(`UPDATE admin_checkpoints
 			SET lease_token_hash = ?, lease_generation = lease_generation + 1,
-			    lease_expires_at = datetime('now', '+' || ? || ' seconds')
-			WHERE client_id = ? AND (lease_expires_at IS NULL OR lease_expires_at <= CURRENT_TIMESTAMP)`, hex.EncodeToString(hash[:]), seconds, clientID)
+			    lease_expires_at = ?, lease_expires_at_ns = ?
+			WHERE client_id = ? AND (lease_expires_at IS NULL OR (lease_expires_at, lease_expires_at_ns) <= (?, ?))`, hex.EncodeToString(hash[:]), expiresAt, clientID, now)
 		execErr, rows = r.Error, r.RowsAffected
 	} else {
 		r := db.Exec(`UPDATE admin_checkpoints
-			SET lease_expires_at = datetime('now', '+' || ? || ' seconds')
-			WHERE client_id = ? AND lease_token_hash = ? AND lease_expires_at > CURRENT_TIMESTAMP`, seconds, clientID, hex.EncodeToString(hash[:]))
+			SET lease_expires_at = ?, lease_expires_at_ns = ?
+			WHERE client_id = ? AND lease_token_hash = ? AND (lease_expires_at, lease_expires_at_ns) > (?, ?)`, expiresAt, clientID, hex.EncodeToString(hash[:]), now)
 		execErr, rows = r.Error, r.RowsAffected
 	}
 	if execErr != nil {
@@ -160,7 +164,7 @@ func (s *SQLiteStore) sqliteUpdateCheckpointLease(ctx context.Context, operation
 		Generation uint64    `gorm:"column:lease_generation"`
 		ExpiresAt  time.Time `gorm:"column:lease_expires_at"`
 	}
-	if err := db.Raw(`SELECT lease_generation, lease_expires_at FROM admin_checkpoints WHERE client_id = ?`, clientID).Scan(&leaseRow).Error; err != nil {
+	if err := db.Raw(`SELECT lease_generation, lease_expires_at, lease_expires_at_ns FROM admin_checkpoints WHERE client_id = ?`, clientID).Scan(&leaseRow).Error; err != nil {
 		return nil, err
 	}
 	return &registrystore.ClientCheckpointLease{ClientID: clientID, Token: token, Generation: leaseRow.Generation, ExpiresAt: leaseRow.ExpiresAt.UTC()}, nil
@@ -171,7 +175,7 @@ func (s *SQLiteStore) AdminReleaseCheckpointLease(ctx context.Context, clientID,
 	if err != nil {
 		return err
 	}
-	result := s.writeDBFor(ctx, "sqlite store release checkpoint lease").Exec(`UPDATE admin_checkpoints SET lease_token_hash = NULL, lease_expires_at = NULL WHERE client_id = ? AND lease_token_hash = ?`, strings.TrimSpace(clientID), hex.EncodeToString(hash[:]))
+	result := s.writeDBFor(ctx, "sqlite store release checkpoint lease").Exec(`UPDATE admin_checkpoints SET lease_token_hash = NULL, lease_expires_at = NULL, lease_expires_at_ns = NULL WHERE client_id = ? AND lease_token_hash = ?`, strings.TrimSpace(clientID), hex.EncodeToString(hash[:]))
 	if result.Error != nil {
 		return result.Error
 	}

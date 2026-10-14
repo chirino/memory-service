@@ -19,6 +19,7 @@ import (
 	coreepisodic "github.com/chirino/memory-service/internal/episodic"
 	"github.com/chirino/memory-service/internal/model"
 	"github.com/chirino/memory-service/internal/plugin/store/sqlentry"
+	"github.com/chirino/memory-service/internal/plugin/store/sqlitecodec"
 	registrycache "github.com/chirino/memory-service/internal/registry/cache"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -81,7 +82,7 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	if err := sqliteRequireCurrentSchemaOrEmpty(ctx, handle.sqlDB); err != nil {
 		return err
 	}
-	if err := sqliteDropStartedByConversationForeignKey(ctx, handle.sqlDB); err != nil {
+	if err := migrateSQLiteTimestamps(ctx, handle.sqlDB); err != nil {
 		return err
 	}
 	// The schema creates memory_kind_versions before memories so fresh databases
@@ -101,20 +102,13 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 		return fmt.Errorf("migration: encode built-in default memory kind attributes: %w", err)
 	}
 	if _, err := handle.sqlDB.ExecContext(ctx,
-		`INSERT OR IGNORE INTO memory_kind_versions (name, attribute_types, attributes_rego, writable, created_at)
-		 VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)`,
+		`INSERT OR IGNORE INTO memory_kind_versions (name, attribute_types, attributes_rego, writable, created_at, created_at_ns)
+		 VALUES (?, ?, ?, ?, unixepoch(), 0)`,
 		defaultKind.Name, string(attributeTypes), *defaultKind.AttributesRego, defaultKind.Writable,
 	); err != nil {
 		return fmt.Errorf("migration: seed built-in default memory kind: %w", err)
 	}
-	// Schema reconciliation: ADD COLUMN IF NOT EXISTS is not supported in SQLite,
-	// so we attempt the ALTER and ignore "duplicate column name" errors.
-	if _, err := handle.sqlDB.ExecContext(ctx,
-		`ALTER TABLE entries ADD COLUMN created_at_unix_ms INTEGER`); err != nil {
-		if !isSQLiteDuplicateColumnError(err) {
-			return fmt.Errorf("migration: failed to add created_at_unix_ms column: %w", err)
-		}
-	}
+
 	for _, migration := range []struct {
 		column string
 		sql    string
@@ -122,28 +116,11 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 		{"revision", `ALTER TABLE admin_checkpoints ADD COLUMN revision INTEGER NOT NULL DEFAULT 1`},
 		{"lease_token_hash", `ALTER TABLE admin_checkpoints ADD COLUMN lease_token_hash BLOB`},
 		{"lease_generation", `ALTER TABLE admin_checkpoints ADD COLUMN lease_generation INTEGER NOT NULL DEFAULT 0`},
-		{"lease_expires_at", `ALTER TABLE admin_checkpoints ADD COLUMN lease_expires_at DATETIME`},
+		{"lease_expires_at", `ALTER TABLE admin_checkpoints ADD COLUMN lease_expires_at INTEGER_SECONDS CHECK (lease_expires_at IS NULL OR typeof(lease_expires_at) = 'integer')`},
+		{"lease_expires_at_ns", `ALTER TABLE admin_checkpoints ADD COLUMN lease_expires_at_ns INTEGER CHECK ((lease_expires_at IS NULL AND lease_expires_at_ns IS NULL) OR (lease_expires_at IS NOT NULL AND lease_expires_at_ns IS NOT NULL AND typeof(lease_expires_at_ns) = 'integer' AND lease_expires_at_ns BETWEEN 0 AND 999999999))`},
 	} {
 		if _, err := handle.sqlDB.ExecContext(ctx, migration.sql); err != nil && !isSQLiteDuplicateColumnError(err) {
 			return fmt.Errorf("migration: failed to add admin_checkpoints.%s column: %w", migration.column, err)
-		}
-	}
-	if err := backfillSQLiteEntryCreatedAtUnixMS(ctx, handle.sqlDB); err != nil {
-		return err
-	}
-	if _, err := handle.sqlDB.ExecContext(ctx,
-		`CREATE INDEX IF NOT EXISTS idx_entries_created_at_unix_ms ON entries(created_at_unix_ms)`); err != nil {
-		return fmt.Errorf("migration: failed to create idx_entries_created_at_unix_ms index: %w", err)
-	}
-	if _, err := handle.sqlDB.ExecContext(ctx, `CREATE INDEX IF NOT EXISTS idx_entries_group_created_at_unix_ms ON entries(conversation_group_id,created_at_unix_ms)`); err != nil {
-		return fmt.Errorf("migration: index append timestamp allocation: %w", err)
-	}
-	for _, statement := range []string{
-		`CREATE INDEX IF NOT EXISTS idx_entries_group_channel_unix_ms ON entries(conversation_group_id, channel, created_at_unix_ms)`,
-		`CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_unix_ms ON entries(conversation_id, channel, created_at_unix_ms)`,
-	} {
-		if _, err := handle.sqlDB.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migration: create numeric entry ordering index: %w", err)
 		}
 	}
 
@@ -153,158 +130,6 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 		}
 	}
 	log.Info("SQLite schema migration complete", "fts5Enabled", handle.fts5Enabled)
-	return nil
-}
-
-// sqliteDropStartedByConversationForeignKey reconciles schema-v2 databases
-// created while started_by_conversation_id was a cascading foreign key. The
-// lineage value is a soft reference and must survive deletion of its target.
-func sqliteDropStartedByConversationForeignKey(ctx context.Context, db *sql.DB) (returnErr error) {
-	rows, err := db.QueryContext(ctx, `PRAGMA foreign_key_list(conversations)`)
-	if err != nil {
-		return fmt.Errorf("migration: inspect conversation foreign keys: %w", err)
-	}
-	hasStartedByForeignKey := false
-	for rows.Next() {
-		var id, seq int
-		var table, from, to, onUpdate, onDelete, match string
-		if err := rows.Scan(&id, &seq, &table, &from, &to, &onUpdate, &onDelete, &match); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("migration: scan conversation foreign key: %w", err)
-		}
-		if from == "started_by_conversation_id" {
-			hasStartedByForeignKey = true
-		}
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return fmt.Errorf("migration: iterate conversation foreign keys: %w", err)
-	}
-	if err := rows.Close(); err != nil {
-		return fmt.Errorf("migration: close conversation foreign keys: %w", err)
-	}
-	if !hasStartedByForeignKey {
-		return nil
-	}
-
-	conn, err := db.Conn(ctx)
-	if err != nil {
-		return fmt.Errorf("migration: acquire connection for conversation lineage reconciliation: %w", err)
-	}
-	defer conn.Close()
-	if _, err := conn.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
-		return fmt.Errorf("migration: disable foreign keys for conversation lineage reconciliation: %w", err)
-	}
-	defer func() {
-		if _, err := conn.ExecContext(context.WithoutCancel(ctx), `PRAGMA foreign_keys = ON`); err != nil && returnErr == nil {
-			returnErr = fmt.Errorf("migration: re-enable foreign keys after conversation lineage reconciliation: %w", err)
-		}
-	}()
-
-	tx, err := conn.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("migration: begin conversation lineage reconciliation: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-	statements := []string{
-		`CREATE TABLE conversations_without_started_by_fk (
-			id TEXT PRIMARY KEY,
-			title BLOB,
-			owner_user_id TEXT NOT NULL,
-			client_id TEXT NOT NULL,
-			agent_id TEXT,
-			metadata TEXT NOT NULL DEFAULT '{}',
-			conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
-			started_by_conversation_id TEXT,
-			started_by_entry_id TEXT,
-			created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
-			vectorized_at DATETIME,
-			archived_at DATETIME
-		)`,
-		`INSERT INTO conversations_without_started_by_fk (
-			id, title, owner_user_id, client_id, agent_id, metadata,
-			conversation_group_id, started_by_conversation_id, started_by_entry_id,
-			created_at, updated_at, vectorized_at, archived_at
-		) SELECT
-			id, title, owner_user_id, client_id, agent_id, metadata,
-			conversation_group_id, started_by_conversation_id, started_by_entry_id,
-			created_at, updated_at, vectorized_at, archived_at
-		FROM conversations`,
-		`DROP TABLE conversations`,
-		`ALTER TABLE conversations_without_started_by_fk RENAME TO conversations`,
-		`CREATE UNIQUE INDEX idx_conversations_group_id_id ON conversations(conversation_group_id, id)`,
-	}
-	for _, statement := range statements {
-		if _, err := tx.ExecContext(ctx, statement); err != nil {
-			return fmt.Errorf("migration: reconcile started-by soft reference: %w", err)
-		}
-	}
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("migration: commit conversation lineage reconciliation: %w", err)
-	}
-	return nil
-}
-
-func backfillSQLiteEntryCreatedAtUnixMS(ctx context.Context, db *sql.DB) error {
-	tx, err := db.BeginTx(ctx, nil)
-	if err != nil {
-		return fmt.Errorf("migration: begin created_at_unix_ms backfill: %w", err)
-	}
-	defer func() { _ = tx.Rollback() }()
-
-	type pendingEntry struct {
-		rowID     int64
-		createdAt time.Time
-	}
-	for {
-		rows, err := tx.QueryContext(ctx, `
-			SELECT rowid, created_at
-			FROM entries
-			WHERE created_at_unix_ms IS NULL
-			LIMIT 1000
-		`)
-		if err != nil {
-			return fmt.Errorf("migration: query entries for created_at_unix_ms backfill: %w", err)
-		}
-
-		batch := make([]pendingEntry, 0, 1000)
-		for rows.Next() {
-			var entry pendingEntry
-			if err := rows.Scan(&entry.rowID, &entry.createdAt); err != nil {
-				_ = rows.Close()
-				return fmt.Errorf("migration: scan entry for created_at_unix_ms backfill: %w", err)
-			}
-			if entry.createdAt.IsZero() {
-				_ = rows.Close()
-				return fmt.Errorf("migration: entry rowid %d has invalid created_at", entry.rowID)
-			}
-			batch = append(batch, entry)
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return fmt.Errorf("migration: iterate entries for created_at_unix_ms backfill: %w", err)
-		}
-		if err := rows.Close(); err != nil {
-			return fmt.Errorf("migration: close created_at_unix_ms backfill rows: %w", err)
-		}
-		if len(batch) == 0 {
-			break
-		}
-
-		for _, entry := range batch {
-			if _, err := tx.ExecContext(ctx,
-				`UPDATE entries SET created_at_unix_ms = ? WHERE rowid = ? AND created_at_unix_ms IS NULL`,
-				entry.createdAt.UTC().UnixMilli(), entry.rowID,
-			); err != nil {
-				return fmt.Errorf("migration: backfill created_at_unix_ms for entry rowid %d: %w", entry.rowID, err)
-			}
-		}
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("migration: commit created_at_unix_ms backfill: %w", err)
-	}
 	return nil
 }
 
@@ -586,7 +411,7 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 			)
 			return nil, fmt.Errorf("failed to create conversation group: %w", err)
 		}
-		if err := db.Where("conversation_group_id = ?", parentConv.ConversationGroupID).Order("created_at ASC").Find(&membershipsToCopy).Error; err != nil {
+		if err := db.Where("conversation_group_id = ?", parentConv.ConversationGroupID).Order("created_at ASC, created_at_ns ASC").Find(&membershipsToCopy).Error; err != nil {
 			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
 		}
 	} else {
@@ -731,7 +556,7 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 				Table("conversations c").
 				Joins("JOIN conversation_memberships cm ON cm.conversation_group_id = c.conversation_group_id AND cm.user_id = ?", userID).
 				Where("c.id = ?", *afterCursor).
-				Select("c.id, c.created_at").
+				Select("c.id, c.created_at, c.created_at_ns").
 				Limit(1).
 				Find(&cr).Error
 			if err != nil {
@@ -791,10 +616,10 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 			Where("ca_direct.ancestor_conversation_id IS NULL").
 			Select(selectColumns)
 	case model.ListModeLatestFork:
-		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
+		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.updated_at_ns DESC, c.created_at DESC, c.created_at_ns DESC, c.id DESC) AS group_rank")
 		tx = s.dbFor(ctx).
 			Table("(?) AS ranked", ranked).
-			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
+			Select("id, title, owner_user_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, created_at_ns, updated_at, updated_at_ns, archived_at, archived_at_ns, access_level").
 			Where("group_rank = 1")
 		if sort.Field == registrystore.ConversationSortUpdatedAt {
 			sortColumn = "ranked.updated_at"
@@ -813,7 +638,7 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		direction = "ASC"
 	}
 	if anchorValue != nil && anchorID != nil {
-		tx = tx.Where(fmt.Sprintf("(%s %s ? OR (%s = ? AND %s %s ?))", sortColumn, comparison, sortColumn, idColumn, comparison), *anchorValue, *anchorValue, *anchorID)
+		tx = tx.Where(fmt.Sprintf("(%s %s (?, ?) OR (%s = (?, ?) AND %s %s ?))", sqlitecodec.Pair(sortColumn), comparison, sqlitecodec.Pair(sortColumn), idColumn, comparison), *anchorValue, *anchorValue, *anchorID)
 	}
 
 	queryLimit := requestedLimit + 1
@@ -827,7 +652,7 @@ func (s *SQLiteStore) ListConversations(ctx context.Context, userID string, quer
 		}
 	}
 
-	tx = tx.Order(fmt.Sprintf("%s %s, %s %s", sortColumn, direction, idColumn, direction)).Limit(queryLimit)
+	tx = tx.Order(sqlitecodec.Order(sortColumn, direction) + fmt.Sprintf(", %s %s", idColumn, direction)).Limit(queryLimit)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
@@ -1130,9 +955,9 @@ func (s *SQLiteStore) ListMemberships(ctx context.Context, userID string, conver
 		return nil, nil, err
 	}
 
-	tx := s.dbFor(ctx).Where("conversation_group_id = ?", groupID).Order("created_at ASC")
+	tx := s.dbFor(ctx).Where("conversation_group_id = ?", groupID).Order("created_at ASC, created_at_ns ASC")
 	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM conversation_memberships WHERE conversation_group_id = ? AND user_id = ?)", groupID, *afterCursor)
+		tx = tx.Where("(created_at, created_at_ns) > (SELECT created_at, created_at_ns FROM conversation_memberships WHERE conversation_group_id = ? AND user_id = ?)", groupID, *afterCursor)
 	}
 	tx = tx.Limit(limit + 1)
 
@@ -1265,7 +1090,7 @@ func (s *SQLiteStore) listForks(ctx context.Context, userID string, conversation
 	}
 	db := s.dbFor(ctx)
 	var convs []model.Conversation
-	if err := db.Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC, id ASC").Find(&convs).Error; err != nil {
+	if err := db.Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC, created_at_ns ASC, id ASC").Find(&convs).Error; err != nil {
 		return nil, err
 	}
 	var directRows []model.ConversationAncestry
@@ -1375,7 +1200,7 @@ func (s *SQLiteStore) ListChildConversations(ctx context.Context, userID string,
 // --- Ownership Transfers ---
 
 func (s *SQLiteStore) ListPendingTransfers(ctx context.Context, userID string, role string, afterCursor *string, limit int) ([]registrystore.OwnershipTransferDto, *string, error) {
-	tx := s.dbFor(ctx).Table("conversation_ownership_transfers").Order("created_at ASC")
+	tx := s.dbFor(ctx).Table("conversation_ownership_transfers").Order("created_at ASC, created_at_ns ASC")
 
 	switch role {
 	case "sender":
@@ -1387,7 +1212,7 @@ func (s *SQLiteStore) ListPendingTransfers(ctx context.Context, userID string, r
 	}
 
 	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM conversation_ownership_transfers WHERE id = ?)", *afterCursor)
+		tx = tx.Where("(created_at, created_at_ns) > (SELECT created_at, created_at_ns FROM conversation_ownership_transfers WHERE id = ?)", *afterCursor)
 	}
 	tx = tx.Limit(limit + 1)
 
@@ -1990,7 +1815,7 @@ func (s *SQLiteStore) appendEntries(ctx context.Context, userID string, conversa
 
 	// Serialize allocation for the conversation group, including native forks.
 	var latest model.Entry
-	if err := db.Select("created_at").Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at_unix_ms DESC").Limit(1).Find(&latest).Error; err != nil {
+	if err := db.Select("created_at, created_at_ns").Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at DESC, created_at_ns DESC").Limit(1).Find(&latest).Error; err != nil {
 		return nil, err
 	}
 	now := registrystore.NextAppendTime(time.Now(), latest.CreatedAt)
@@ -2046,10 +1871,7 @@ func (s *SQLiteStore) appendEntries(ctx context.Context, userID string, conversa
 			}
 			return nil, fmt.Errorf("failed to append entry: %w", err)
 		}
-		if err := db.Exec("UPDATE entries SET created_at_unix_ms = ? WHERE id = ? AND conversation_group_id = ?",
-			entry.CreatedAt.UTC().UnixMilli(), entry.ID.String(), entry.ConversationGroupID.String()).Error; err != nil {
-			return nil, fmt.Errorf("failed to set created_at_unix_ms: %w", err)
-		}
+
 		entry.Content = req.Content // return unencrypted
 		result[i] = entry
 	}
@@ -2227,7 +2049,7 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 	}
 
 	var latestCreated model.Entry
-	if err := db.Select("created_at").Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at_unix_ms DESC").Limit(1).Find(&latestCreated).Error; err != nil {
+	if err := db.Select("created_at, created_at_ns").Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at DESC, created_at_ns DESC").Limit(1).Find(&latestCreated).Error; err != nil {
 		return nil, err
 	}
 	now := registrystore.NextAppendTime(time.Now(), latestCreated.CreatedAt)
@@ -2257,10 +2079,7 @@ func (s *SQLiteStore) SyncAgentEntry(ctx context.Context, userID string, convers
 		}
 		return nil, fmt.Errorf("failed to sync entry: %w", err)
 	}
-	if err := db.Exec("UPDATE entries SET created_at_unix_ms = ? WHERE id = ? AND conversation_group_id = ?",
-		newEntry.CreatedAt.UTC().UnixMilli(), newEntry.ID.String(), newEntry.ConversationGroupID.String()).Error; err != nil {
-		return nil, fmt.Errorf("failed to set created_at_unix_ms on sync entry: %w", err)
-	}
+
 	newEntry.Content = appendContent
 	s.warmEntriesCache(ctx, conv, ancestry, clientID, valueOrEmpty(agentID))
 	return &registrystore.SyncResult{Entry: &newEntry, Epoch: &epochToUse, NoOp: false, EpochIncremented: epochIncremented}, nil
@@ -2421,7 +2240,7 @@ func (s *SQLiteStore) FindEntriesPendingVectorIndexing(ctx context.Context, limi
 
 func (s *SQLiteStore) SetIndexedAt(ctx context.Context, entryID uuid.UUID, conversationGroupID uuid.UUID, indexedAt time.Time) error {
 	result := s.writeDBFor(ctx, "sqlite store set indexed at").Exec(
-		"UPDATE entries SET indexed_at = ? WHERE id = ? AND conversation_group_id = ?",
+		"UPDATE entries SET indexed_at = ?, indexed_at_ns = ? WHERE id = ? AND conversation_group_id = ?",
 		indexedAt, entryID, conversationGroupID,
 	)
 	return result.Error
@@ -2667,10 +2486,10 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 		base = base.Where("c.owner_user_id = ?", *query.UserID)
 	}
 	if query.ArchivedAfter != nil {
-		base = base.Where("c.archived_at >= ?", *query.ArchivedAfter)
+		base = base.Where("(c.archived_at, c.archived_at_ns) >= (?, ?)", *query.ArchivedAfter)
 	}
 	if query.ArchivedBefore != nil {
-		base = base.Where("c.archived_at < ?", *query.ArchivedBefore)
+		base = base.Where("(c.archived_at, c.archived_at_ns) < (?, ?)", *query.ArchivedBefore)
 	}
 	switch query.Ancestry {
 	case model.ConversationAncestryChildren:
@@ -2696,7 +2515,7 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 			err := s.dbFor(ctx).
 				Table("conversations c").
 				Where("c.id = ?", *query.AfterCursor).
-				Select("c.id, c.created_at").
+				Select("c.id, c.created_at, c.created_at_ns").
 				Limit(1).
 				Find(&cr).Error
 			if err != nil {
@@ -2734,10 +2553,10 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 			Where("ca_direct.ancestor_conversation_id IS NULL").
 			Select(selectColumns)
 	case model.ListModeLatestFork:
-		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.created_at DESC, c.id DESC) AS group_rank")
+		ranked := base.Select(selectColumns + ", ROW_NUMBER() OVER (PARTITION BY c.conversation_group_id ORDER BY c.updated_at DESC, c.updated_at_ns DESC, c.created_at DESC, c.created_at_ns DESC, c.id DESC) AS group_rank")
 		tx = s.dbFor(ctx).
 			Table("(?) AS ranked", ranked).
-			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, updated_at, archived_at, access_level").
+			Select("id, title, owner_user_id, client_id, agent_id, metadata, conversation_group_id, forked_at_entry_id, forked_at_conversation_id, started_by_conversation_id, started_by_entry_id, created_at, created_at_ns, updated_at, updated_at_ns, archived_at, archived_at_ns, access_level").
 			Where("group_rank = 1")
 		if query.Sort.Field == registrystore.ConversationSortUpdatedAt {
 			sortColumn = "ranked.updated_at"
@@ -2756,9 +2575,9 @@ func (s *SQLiteStore) AdminListConversations(ctx context.Context, query registry
 		direction = "ASC"
 	}
 	if anchorValue != nil && anchorID != nil {
-		tx = tx.Where(fmt.Sprintf("(%s %s ? OR (%s = ? AND %s %s ?))", sortColumn, comparison, sortColumn, idColumn, comparison), *anchorValue, *anchorValue, *anchorID)
+		tx = tx.Where(fmt.Sprintf("(%s %s (?, ?) OR (%s = (?, ?) AND %s %s ?))", sqlitecodec.Pair(sortColumn), comparison, sqlitecodec.Pair(sortColumn), idColumn, comparison), *anchorValue, *anchorValue, *anchorID)
 	}
-	tx = tx.Order(fmt.Sprintf("%s %s, %s %s", sortColumn, direction, idColumn, direction)).Limit(query.Limit + 1)
+	tx = tx.Order(sqlitecodec.Order(sortColumn, direction) + fmt.Sprintf(", %s %s", idColumn, direction)).Limit(query.Limit + 1)
 
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
@@ -3023,9 +2842,9 @@ func (s *SQLiteStore) AdminListMemberships(ctx context.Context, conversationID s
 		return nil, nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(conversationID)}
 	}
 
-	tx := s.dbFor(ctx).Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC")
+	tx := s.dbFor(ctx).Where("conversation_group_id = ?", conv.ConversationGroupID).Order("created_at ASC, created_at_ns ASC")
 	if afterCursor != nil {
-		tx = tx.Where("created_at > (SELECT created_at FROM conversation_memberships WHERE conversation_group_id = ? AND user_id = ?)", conv.ConversationGroupID, *afterCursor)
+		tx = tx.Where("(created_at, created_at_ns) > (SELECT created_at, created_at_ns FROM conversation_memberships WHERE conversation_group_id = ? AND user_id = ?)", conv.ConversationGroupID, *afterCursor)
 	}
 	tx = tx.Limit(limit + 1)
 
@@ -3178,7 +2997,7 @@ func (s *SQLiteStore) AdminListAttachments(ctx context.Context, query registryst
 	case "unlinked":
 		tx = tx.Where("a.entry_id IS NULL")
 	case "expired":
-		tx = tx.Where("a.expires_at IS NOT NULL AND a.expires_at < ?", time.Now())
+		tx = tx.Where("a.expires_at IS NOT NULL AND (a.expires_at, a.expires_at_ns) < (?, ?)", time.Now())
 	case "", "all":
 		// no-op
 	default:
@@ -3186,7 +3005,7 @@ func (s *SQLiteStore) AdminListAttachments(ctx context.Context, query registryst
 	}
 
 	if query.AfterCursor != nil {
-		tx = tx.Where("a.created_at > (SELECT created_at FROM attachments WHERE id = ?)", *query.AfterCursor)
+		tx = tx.Where("(a.created_at, a.created_at_ns) > (SELECT created_at, created_at_ns FROM attachments WHERE id = ?)", *query.AfterCursor)
 	}
 
 	type row struct {
@@ -3194,7 +3013,7 @@ func (s *SQLiteStore) AdminListAttachments(ctx context.Context, query registryst
 		RefCount int64 `gorm:"column:ref_count"`
 	}
 	var rows []row
-	if err := tx.Order("a.created_at ASC, a.id ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
+	if err := tx.Order("a.created_at ASC, a.created_at_ns ASC, a.id ASC").Limit(limit + 1).Scan(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("admin list attachments failed: %w", err)
 	}
 
@@ -3260,7 +3079,7 @@ func (s *SQLiteStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Tim
 	var ids []uuid.UUID
 	err := s.dbFor(ctx).
 		Model(&model.ConversationGroup{}).
-		Where("archived_at IS NOT NULL AND archived_at < ?", cutoff).
+		Where("archived_at IS NOT NULL AND (archived_at, archived_at_ns) < (?, ?)", cutoff).
 		Limit(limit).
 		Pluck("id", &ids).Error
 	return ids, err
@@ -3270,7 +3089,7 @@ func (s *SQLiteStore) CountEvictableGroups(ctx context.Context, cutoff time.Time
 	var count int64
 	err := s.dbFor(ctx).
 		Model(&model.ConversationGroup{}).
-		Where("archived_at IS NOT NULL AND archived_at < ?", cutoff).
+		Where("archived_at IS NOT NULL AND (archived_at, archived_at_ns) < (?, ?)", cutoff).
 		Count(&count).Error
 	return count, err
 }
@@ -3300,7 +3119,7 @@ func (s *SQLiteStore) LoadDeletedConversationGroups(ctx context.Context, groupID
 		Model(&model.Conversation{}).
 		Select("conversation_group_id, id").
 		Where("conversation_group_id IN ?", groupIDs).
-		Order("created_at ASC, id ASC").
+		Order("created_at ASC, created_at_ns ASC, id ASC").
 		Scan(&conversations).Error; err != nil {
 		return nil, err
 	}
@@ -3308,7 +3127,7 @@ func (s *SQLiteStore) LoadDeletedConversationGroups(ctx context.Context, groupID
 	var memberships []model.ConversationMembership
 	if err := s.dbFor(ctx).
 		Where("conversation_group_id IN ?", groupIDs).
-		Order("created_at ASC, user_id ASC").
+		Order("created_at ASC, created_at_ns ASC, user_id ASC").
 		Find(&memberships).Error; err != nil {
 		return nil, err
 	}
@@ -3375,8 +3194,8 @@ func (s *SQLiteStore) ClaimReadyTasks(ctx context.Context, limit int) ([]model.T
 
 	var tasks []model.Task
 	if err := tx.
-		Where("retry_at <= ?", now).
-		Order("retry_at ASC, created_at ASC").
+		Where("(retry_at, retry_at_ns) <= (?, ?)", now).
+		Order("retry_at ASC, retry_at_ns ASC, created_at ASC, created_at_ns ASC").
 		Limit(limit).
 		Find(&tasks).Error; err != nil {
 		return nil, err
@@ -3464,7 +3283,7 @@ func valueOrEmpty(ptr *string) string {
 	return *ptr
 }
 
-const conversationSelectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, ca_direct.forked_at_entry_id, ca_direct.ancestor_conversation_id AS forked_at_conversation_id, (SELECT lineage.started_by_conversation_id FROM conversations lineage WHERE lineage.conversation_group_id = c.conversation_group_id AND lineage.started_by_conversation_id IS NOT NULL LIMIT 1) AS started_by_conversation_id, (SELECT lineage.started_by_entry_id FROM conversations lineage WHERE lineage.conversation_group_id = c.conversation_group_id AND lineage.started_by_conversation_id IS NOT NULL LIMIT 1) AS started_by_entry_id, c.created_at, c.updated_at, c.archived_at"
+const conversationSelectColumns = "c.id, c.title, c.owner_user_id, c.client_id, c.agent_id, c.metadata, c.conversation_group_id, ca_direct.forked_at_entry_id, ca_direct.ancestor_conversation_id AS forked_at_conversation_id, (SELECT lineage.started_by_conversation_id FROM conversations lineage WHERE lineage.conversation_group_id = c.conversation_group_id AND lineage.started_by_conversation_id IS NOT NULL LIMIT 1) AS started_by_conversation_id, (SELECT lineage.started_by_entry_id FROM conversations lineage WHERE lineage.conversation_group_id = c.conversation_group_id AND lineage.started_by_conversation_id IS NOT NULL LIMIT 1) AS started_by_entry_id, c.created_at, c.created_at_ns, c.updated_at, c.updated_at_ns, c.archived_at, c.archived_at_ns"
 
 func joinDirectConversationAncestry(tx *gorm.DB) *gorm.DB {
 	return tx.Joins("LEFT JOIN conversation_ancestry ca_direct ON ca_direct.conversation_group_id = c.conversation_group_id AND ca_direct.descendant_conversation_id = c.id AND ca_direct.depth = 1")
@@ -3589,9 +3408,9 @@ func (s *SQLiteStore) listChildConversationsForBase(ctx context.Context, tx *gor
 		AccessLevel             model.AccessLevel      `gorm:"column:access_level"`
 	}
 	if afterCursor != nil {
-		tx = tx.Where("(c.created_at, c.id) > ((SELECT created_at FROM conversations WHERE id = ?), ?)", *afterCursor, *afterCursor)
+		tx = tx.Where("(c.created_at, c.created_at_ns, c.id) > (SELECT created_at, created_at_ns, ? FROM conversations WHERE id = ?)", *afterCursor, *afterCursor)
 	}
-	tx = tx.Order("c.created_at ASC, c.id ASC").Limit(limit + 1)
+	tx = tx.Order("c.created_at ASC, c.created_at_ns ASC, c.id ASC").Limit(limit + 1)
 	var rows []row
 	if err := tx.Scan(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("failed to list child conversations: %w", err)
@@ -3833,8 +3652,8 @@ func visibleAncestryEntrySQL(entryAlias, ancestryAlias, boundaryAlias string) st
 		)
 	)`, ancestryAlias,
 		ancestryAlias,
-		sqlentry.SQLiteEntryTimeSQL(entryAlias), sqlentry.SQLiteEntryTimeSQL(boundaryAlias),
-		sqlentry.SQLiteEntryTimeSQL(entryAlias), sqlentry.SQLiteEntryTimeSQL(boundaryAlias),
+		sqlitecodec.Pair(entryAlias+".created_at"), sqlitecodec.Pair(boundaryAlias+".created_at"),
+		sqlitecodec.Pair(entryAlias+".created_at"), sqlitecodec.Pair(boundaryAlias+".created_at"),
 		entryAlias, boundaryAlias, entryAlias, boundaryAlias,
 		boundaryAlias,
 		entryAlias,
@@ -3949,7 +3768,6 @@ func (s *SQLiteStore) runBoundedSQLQuery(ctx context.Context, base *gorm.DB, fro
 		EntryIDValue:    sqlentry.UUIDStringValue,
 		ScanErr:         scanErr,
 		CreatedAtFilter: createdAtFilter,
-		SQLite:          true,
 	})
 }
 
@@ -4085,7 +3903,7 @@ func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []for
 		var anchor model.Entry
 		result := s.dbFor(ctx).
 			Where("id = ?", *beforeEntryID).
-			Select("id, conversation_id, channel, created_at, seq").
+			Select("id, conversation_id, channel, created_at, created_at_ns, seq").
 			Limit(1).Find(&anchor)
 		if result.Error != nil {
 			return nil, nil, nil, result.Error
@@ -4143,7 +3961,7 @@ func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []for
 			var stopAt model.Entry
 			stopResult := s.dbFor(ctx).
 				Where("id = ?", seg.StopAtEntryID).
-				Select("id, created_at, seq").
+				Select("id, created_at, created_at_ns, seq").
 				Limit(1).Find(&stopAt)
 			if stopResult.Error != nil {
 				return nil, nil, nil, stopResult.Error
@@ -4195,7 +4013,7 @@ func (s *SQLiteStore) boundedHistoryBackward(ctx context.Context, ancestry []for
 
 func (s *SQLiteStore) entryOrderKey(ctx context.Context, entryID uuid.UUID) (model.Entry, error) {
 	var entry model.Entry
-	result := s.dbFor(ctx).Where("id = ?", entryID).Select("id, created_at, seq").Limit(1).Find(&entry)
+	result := s.dbFor(ctx).Where("id = ?", entryID).Select("id, created_at, created_at_ns, seq").Limit(1).Find(&entry)
 	if result.Error != nil {
 		return model.Entry{}, result.Error
 	}

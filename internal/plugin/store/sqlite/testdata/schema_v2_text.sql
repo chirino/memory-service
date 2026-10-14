@@ -1,0 +1,328 @@
+PRAGMA foreign_keys = ON;
+
+CREATE TABLE IF NOT EXISTS schema_metadata (
+    key TEXT PRIMARY KEY,
+    value TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+INSERT INTO schema_metadata (key, value, updated_at)
+VALUES ('core_schema_version', '2', CURRENT_TIMESTAMP)
+ON CONFLICT(key) DO UPDATE SET value = excluded.value, updated_at = CURRENT_TIMESTAMP;
+
+CREATE TABLE IF NOT EXISTS conversation_groups (
+    id TEXT PRIMARY KEY,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at DATETIME
+);
+
+CREATE TABLE IF NOT EXISTS conversations (
+    id TEXT PRIMARY KEY,
+    title BLOB,
+    owner_user_id TEXT NOT NULL,
+    client_id TEXT NOT NULL,
+    agent_id TEXT,
+    metadata TEXT NOT NULL DEFAULT '{}',
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    -- Canonical logical lineage lives on the original conversation in a fork group.
+    -- Reads project it onto every branch without copying these columns to fork rows.
+    -- Soft reference: the starting conversation may be hard-evicted independently.
+    started_by_conversation_id TEXT,
+    started_by_entry_id TEXT,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    vectorized_at DATETIME,
+    archived_at DATETIME
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS idx_conversations_group_id_id ON conversations(conversation_group_id, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_created_at_id ON conversations(created_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_updated_at_id ON conversations(updated_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_group ON conversations(conversation_group_id);
+CREATE INDEX IF NOT EXISTS idx_conversations_not_archived ON conversations(archived_at) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversations_started_by_conversation ON conversations(started_by_conversation_id, created_at, id);
+CREATE INDEX IF NOT EXISTS idx_conversations_started_by_entry ON conversations(started_by_entry_id);
+
+CREATE TABLE IF NOT EXISTS conversation_ancestry (
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    descendant_conversation_id TEXT NOT NULL,
+    ancestor_conversation_id TEXT NOT NULL,
+    depth INTEGER NOT NULL CHECK (depth >= 0),
+    before_entry_id TEXT,
+    forked_at_entry_id TEXT,
+    PRIMARY KEY (conversation_group_id, descendant_conversation_id, ancestor_conversation_id),
+    UNIQUE (conversation_group_id, descendant_conversation_id, depth),
+    FOREIGN KEY (conversation_group_id, descendant_conversation_id)
+        REFERENCES conversations(conversation_group_id, id) ON DELETE CASCADE,
+    FOREIGN KEY (conversation_group_id, ancestor_conversation_id)
+        REFERENCES conversations(conversation_group_id, id) ON DELETE CASCADE,
+    CHECK (
+        (
+            depth = 0
+            AND descendant_conversation_id = ancestor_conversation_id
+            AND before_entry_id IS NULL
+            AND forked_at_entry_id IS NULL
+        )
+        OR
+        (
+            depth = 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+        )
+        OR
+        (
+            depth > 1
+            AND descendant_conversation_id <> ancestor_conversation_id
+            AND forked_at_entry_id IS NULL
+        )
+    )
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_ancestry_ancestor
+    ON conversation_ancestry(conversation_group_id, ancestor_conversation_id, depth, descendant_conversation_id);
+
+CREATE TABLE IF NOT EXISTS conversation_memberships (
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL,
+    access_level TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (conversation_group_id, user_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_conversation_memberships_user
+    ON conversation_memberships(user_id, conversation_group_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_memberships_group
+    ON conversation_memberships(conversation_group_id);
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_not_archived
+    ON conversation_groups(archived_at) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_conversation_groups_archived
+    ON conversation_groups(archived_at) WHERE archived_at IS NOT NULL;
+
+CREATE TABLE IF NOT EXISTS entries (
+    append_batch BLOB,
+    id TEXT NOT NULL,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    user_id TEXT,
+    client_id TEXT,
+    agent_id TEXT,
+    channel TEXT NOT NULL,
+    epoch INTEGER CHECK (channel = 'context' OR epoch IS NULL),
+    seq INTEGER CHECK (seq IS NULL OR (seq >= 0 AND seq <= 4294967295)),
+    content_type TEXT NOT NULL,
+    content BLOB NOT NULL,
+    indexed_content TEXT,
+    indexed_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_at_unix_ms INTEGER,
+    PRIMARY KEY (id, conversation_group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_entries_unindexed
+    ON entries(channel, created_at) WHERE indexed_content IS NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_pending_vector_indexing
+    ON entries(indexed_at) WHERE indexed_content IS NOT NULL AND indexed_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_created_at
+    ON entries(conversation_id, created_at);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_entries_conversation_seq
+    ON entries(conversation_id, seq) WHERE seq IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_group_created_seq_id
+    ON entries(conversation_group_id, created_at, seq, id);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_created_seq_id
+    ON entries(conversation_group_id, channel, created_at, seq, id);
+CREATE INDEX IF NOT EXISTS idx_entries_group_channel_seq_id
+    ON entries(conversation_group_id, channel, seq, id) WHERE seq IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
+    ON entries(conversation_id, channel, created_at, seq, id);
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_epoch_created_at
+    ON entries(conversation_id, channel, client_id, epoch, created_at);
+CREATE INDEX IF NOT EXISTS idx_entries_conversation_channel_client_agent_epoch_created_at
+    ON entries(conversation_id, channel, client_id, agent_id, epoch, created_at);
+
+CREATE TABLE IF NOT EXISTS conversation_ownership_transfers (
+    id TEXT PRIMARY KEY,
+    conversation_group_id TEXT NOT NULL REFERENCES conversation_groups(id) ON DELETE CASCADE,
+    from_user_id TEXT NOT NULL,
+    to_user_id TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE (conversation_group_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_ownership_transfers_to_user
+    ON conversation_ownership_transfers(to_user_id);
+CREATE INDEX IF NOT EXISTS idx_ownership_transfers_from_user
+    ON conversation_ownership_transfers(from_user_id);
+
+CREATE TABLE IF NOT EXISTS tasks (
+    id TEXT PRIMARY KEY,
+    task_name TEXT UNIQUE,
+    task_type TEXT NOT NULL,
+    task_body TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    retry_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_error TEXT,
+    retry_count INTEGER NOT NULL DEFAULT 0
+);
+
+CREATE INDEX IF NOT EXISTS idx_tasks_ready
+    ON tasks(task_type, retry_at);
+
+CREATE TABLE IF NOT EXISTS admin_checkpoints (
+    client_id TEXT PRIMARY KEY,
+    content_type TEXT NOT NULL,
+    value BLOB NOT NULL,
+	 revision INTEGER NOT NULL DEFAULT 1,
+	 lease_token_hash BLOB,
+	 lease_generation INTEGER NOT NULL DEFAULT 0,
+	 lease_expires_at DATETIME,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE IF NOT EXISTS outbox_events (
+    seq INTEGER PRIMARY KEY AUTOINCREMENT,
+    event TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    data TEXT NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE INDEX IF NOT EXISTS idx_outbox_events_created_at
+    ON outbox_events(created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_seq
+    ON outbox_events(kind, seq);
+
+CREATE TABLE IF NOT EXISTS attachments (
+    id TEXT PRIMARY KEY,
+    storage_key TEXT,
+    filename TEXT,
+    content_type TEXT NOT NULL,
+    size INTEGER,
+    sha256 TEXT,
+    user_id TEXT NOT NULL,
+    entry_id TEXT,
+    status TEXT NOT NULL DEFAULT 'ready',
+    source_url TEXT,
+    expires_at DATETIME,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    archived_at DATETIME
+);
+
+CREATE INDEX IF NOT EXISTS idx_attachments_expires_at
+    ON attachments(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_entry_id
+    ON attachments(entry_id) WHERE entry_id IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_storage_key
+    ON attachments(storage_key) WHERE storage_key IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_archived_at
+    ON attachments(archived_at) WHERE archived_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_attachments_status
+    ON attachments(status) WHERE status != 'ready';
+CREATE INDEX IF NOT EXISTS idx_attachments_user_id
+    ON attachments(user_id);
+CREATE INDEX IF NOT EXISTS idx_attachments_created_at_id
+    ON attachments(created_at DESC, id DESC);
+
+------------------------------------------------------------
+-- Memory Schema Versions, Defaults, and Migrations (Enhancement 115)
+-- Defined BEFORE memories and memory_vectors so FK references resolve on fresh boot.
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS memory_kind_versions (
+    name            TEXT PRIMARY KEY,
+    attribute_types TEXT NOT NULL DEFAULT '{}',
+    attributes_rego TEXT,
+    writable        INTEGER NOT NULL DEFAULT 1,
+    created_at      DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Mutable per-family defaults were removed. Clean up the obsolete version-2 table.
+DROP TABLE IF EXISTS memory_kind_defaults;
+
+CREATE TABLE IF NOT EXISTS memory_kind_migrations (
+    id                      TEXT PRIMARY KEY,
+    source                  TEXT NOT NULL REFERENCES memory_kind_versions(name),
+    target                  TEXT NOT NULL REFERENCES memory_kind_versions(name),
+    namespace_prefix        TEXT,    -- serialized namespace array JSON (NULL = no prefix restriction)
+    state                   TEXT NOT NULL,
+    cancel_requested        INTEGER NOT NULL DEFAULT 0,
+    migrated_count          INTEGER NOT NULL DEFAULT 0,
+    skipped_tombstone_count INTEGER NOT NULL DEFAULT 0,
+    vector_pending_count    INTEGER NOT NULL DEFAULT 0,
+    retry_count             INTEGER NOT NULL DEFAULT 0,
+    last_error_code         TEXT,
+    created_at              DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    started_at              DATETIME,
+    completed_at            DATETIME,
+    CHECK (source <> target),
+    CHECK (state IN ('queued', 'running', 'canceling', 'succeeded', 'failed', 'canceled'))
+);
+
+-- Partial unique index: at most one active migration per source version.
+CREATE UNIQUE INDEX IF NOT EXISTS memory_kind_migrations_active_source_idx
+    ON memory_kind_migrations (source)
+    WHERE state IN ('queued', 'running', 'canceling');
+
+------------------------------------------------------------
+-- Namespaced Episodic Memory
+------------------------------------------------------------
+
+CREATE TABLE IF NOT EXISTS memories (
+    id TEXT PRIMARY KEY,
+    namespace TEXT NOT NULL,
+    key TEXT NOT NULL,
+    value_encrypted BLOB,
+    policy_attributes TEXT,
+    indexed_content TEXT,
+    kind INTEGER NOT NULL DEFAULT 0,
+    revision INTEGER NOT NULL DEFAULT 1,
+    deleted_reason INTEGER,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_at DATETIME,
+    archived_at DATETIME,
+    indexed_at DATETIME,
+    memory_kind TEXT NOT NULL REFERENCES memory_kind_versions(name) DEFAULT 'default/v1'
+);
+
+CREATE INDEX IF NOT EXISTS idx_memories_active_lookup
+    ON memories(namespace, key, archived_at);
+CREATE UNIQUE INDEX IF NOT EXISTS memories_active_idx
+    ON memories(namespace, key) WHERE archived_at IS NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_pending_index
+    ON memories(indexed_at, archived_at);
+CREATE INDEX IF NOT EXISTS idx_memories_expires_at
+    ON memories(expires_at) WHERE expires_at IS NOT NULL;
+CREATE INDEX IF NOT EXISTS idx_memories_archived_at
+    ON memories(archived_at) WHERE archived_at IS NOT NULL;
+
+-- Index for migration scans and kind-filtered queries.
+CREATE INDEX IF NOT EXISTS memories_kind_version_idx
+    ON memories (memory_kind, namespace, id);
+CREATE INDEX IF NOT EXISTS memories_kind_cursor_idx
+    ON memories (memory_kind, created_at, id);
+
+CREATE TABLE IF NOT EXISTS memory_usage_stats (
+    namespace TEXT NOT NULL,
+    key TEXT NOT NULL,
+    fetch_count INTEGER NOT NULL DEFAULT 0,
+    last_fetched_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (namespace, key)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_usage_last_fetched
+    ON memory_usage_stats(last_fetched_at DESC);
+
+-- memory_vectors stores vector embeddings for episodic memories.
+-- memory_kind is NOT NULL: every indexed vector carries an explicit schema reference.
+-- memory_revision is positive and always compared exactly with the primary row.
+CREATE TABLE IF NOT EXISTS memory_vectors (
+    memory_id TEXT NOT NULL,
+    field_name TEXT NOT NULL,
+    namespace TEXT NOT NULL,
+    policy_attributes TEXT,
+    embedding BLOB NOT NULL,
+    memory_kind TEXT NOT NULL,  -- canonical schema name at time of indexing
+    memory_revision INTEGER NOT NULL CHECK (memory_revision > 0), -- exact primary revision at indexing
+    PRIMARY KEY (memory_id, field_name)
+);
+
+CREATE INDEX IF NOT EXISTS idx_memory_vectors_namespace
+    ON memory_vectors(namespace);

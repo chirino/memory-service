@@ -63,7 +63,6 @@ func TestBoundedHistoryTailMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
 		}).Error)
 	}
 
-	require.NoError(t, backfillSQLiteEntryCreatedAtUnixMS(ctx, handle.sqlDB))
 	materialized := int64(0)
 	callbackName := fmt.Sprintf("test:count-bounded-pagination-%s", t.Name())
 	require.NoError(t, handle.db.Callback().Query().After("gorm:query").Register(callbackName, func(db *gorm.DB) {
@@ -129,7 +128,6 @@ func TestBoundedGroupContextMaterializesOnlyLimitPlusOneEntries(t *testing.T) {
 		}).Error)
 	}
 
-	require.NoError(t, backfillSQLiteEntryCreatedAtUnixMS(ctx, handle.sqlDB))
 	materialized := int64(0)
 	callbackName := fmt.Sprintf("test:count-bounded-group-context-%s", t.Name())
 	require.NoError(t, handle.db.Callback().Query().After("gorm:query").Register(callbackName, func(db *gorm.DB) {

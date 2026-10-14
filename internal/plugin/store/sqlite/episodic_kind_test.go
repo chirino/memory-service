@@ -276,7 +276,7 @@ func TestSQLiteTombstoneInvalidatesInflightKindMigration(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		return db.Exec("UPDATE memories SET indexed_at = ? WHERE id = ?", time.Now().UTC(), memoryID.String()).Error
+		return db.Exec("UPDATE memories SET indexed_at = ?, indexed_at_ns = ? WHERE id = ?", time.Now().UTC(), memoryID.String()).Error
 	}))
 
 	var candidate registryepisodic.MigrationCandidate
@@ -464,11 +464,11 @@ func TestSQLiteMigrationCursorUsesCreatedAtBeforeUUID(t *testing.T) {
 		if err != nil {
 			return err
 		}
-		if err := db.Exec("UPDATE memories SET id = ?, created_at = ? WHERE key = ?",
+		if err := db.Exec("UPDATE memories SET id = ?, created_at = ?, created_at_ns = ? WHERE key = ?",
 			"ffffffff-ffff-4fff-8fff-ffffffffffff", time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), "earlier-high-id").Error; err != nil {
 			return err
 		}
-		return db.Exec("UPDATE memories SET id = ?, created_at = ? WHERE key = ?",
+		return db.Exec("UPDATE memories SET id = ?, created_at = ?, created_at_ns = ? WHERE key = ?",
 			"00000000-0000-4000-8000-000000000001", time.Date(2026, 1, 1, 0, 0, 1, 0, time.UTC), "later-low-id").Error
 	}))
 
@@ -565,7 +565,7 @@ func TestMigrationVerificationSweepWithTombstones(t *testing.T) {
 		}
 		for _, id := range tombstoneIDs {
 			if err := db.Exec(
-				"UPDATE memories SET value_encrypted = NULL, archived_at = ? WHERE id = ?",
+				"UPDATE memories SET value_encrypted = NULL, archived_at = ?, archived_at_ns = ? WHERE id = ?",
 				time.Now().UTC(), id.String(),
 			).Error; err != nil {
 				return err

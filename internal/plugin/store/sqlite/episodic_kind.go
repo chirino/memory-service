@@ -31,8 +31,8 @@ func (e *sqliteEpisodicStore) CreateMemoryKindVersion(ctx context.Context, versi
 		regoVal = *version.AttributesRego
 	}
 	res := db.Exec(
-		`INSERT OR IGNORE INTO memory_kind_versions (name, attribute_types, attributes_rego, writable, created_at)
-		 VALUES (?, ?, ?, ?, ?)`,
+		`INSERT OR IGNORE INTO memory_kind_versions (name, attribute_types, attributes_rego, writable, created_at, created_at_ns)
+		 VALUES (?, ?, ?, ?, ?, ?)`,
 		version.Name, string(attrTypesJSON), regoVal, version.Writable, version.CreatedAt,
 	)
 	if res.Error != nil {
@@ -167,7 +167,7 @@ func (e *sqliteEpisodicStore) GetMemoryKindMigration(ctx context.Context, id uui
 // ListMemoryKindMigrations lists migrations, optionally filtered by state.
 func (e *sqliteEpisodicStore) ListMemoryKindMigrations(ctx context.Context, state string) ([]model.MemoryKindMigration, error) {
 	db := e.dbFor(ctx)
-	q := db.Table("memory_kind_migrations").Order("created_at DESC")
+	q := db.Table("memory_kind_migrations").Order("created_at DESC, created_at_ns DESC")
 	if state != "" {
 		q = q.Where("state = ?", state)
 	}
@@ -251,7 +251,7 @@ func (e *sqliteEpisodicStore) UpdateMemoryKindMigrationSucceeded(ctx context.Con
 	res := db.Exec(
 		`UPDATE memory_kind_migrations SET
 		   state = 'succeeded',
-		   completed_at = ?,
+		   completed_at = ?, completed_at_ns = ?,
 		   skipped_tombstone_count = ?
 		 WHERE id = ? AND state = 'running' AND cancel_requested = 0`,
 		completedAt, absoluteSkippedTombstoneCount, id,
@@ -284,7 +284,7 @@ func (e *sqliteEpisodicStore) UpdateMemoryKindMigrationCounters(ctx context.Cont
 func (e *sqliteEpisodicStore) UpdateMemoryKindMigrationStateFailed(ctx context.Context, id uuid.UUID, errorCode string, completedAt time.Time) error {
 	db := e.writeDBFor(ctx, "UpdateMemoryKindMigrationStateFailed")
 	return db.Exec(
-		`UPDATE memory_kind_migrations SET state = 'failed', last_error_code = ?, completed_at = ? WHERE id = ?`,
+		`UPDATE memory_kind_migrations SET state = 'failed', last_error_code = ?, completed_at = ?, completed_at_ns = ? WHERE id = ?`,
 		errorCode, completedAt, id,
 	).Error
 }
@@ -326,7 +326,7 @@ func (e *sqliteEpisodicStore) ResolveKindForWrite(ctx context.Context, sel strin
 func (e *sqliteEpisodicStore) SetMemoryKindIndexedAtCAS(ctx context.Context, memoryID uuid.UUID, expectedKind string, expectedRevision int64, indexedAt time.Time) error {
 	db := e.writeDBFor(ctx, "SetMemoryKindIndexedAtCAS")
 	res := db.Exec(
-		`UPDATE memories SET indexed_at = ?
+		`UPDATE memories SET indexed_at = ?, indexed_at_ns = ?
 		 WHERE id = ? AND revision = ? AND memory_kind = ?`,
 		indexedAt, memoryID, expectedRevision, expectedKind,
 	)
@@ -368,8 +368,11 @@ func (e *sqliteEpisodicStore) FindMemoriesToMigrateByKind(ctx context.Context, s
 	db := e.dbFor(ctx)
 	schemaWhere := "memory_kind = ?"
 	args := []interface{}{sourceKind}
-	whereClause := schemaWhere + " AND (created_at > ? OR (created_at = ? AND id > ?))"
-	args = append(args, afterCreatedAt, afterCreatedAt, afterID.String())
+	whereClause := schemaWhere
+	if !afterCreatedAt.IsZero() {
+		whereClause += " AND ((created_at, created_at_ns) > (?, ?) OR ((created_at, created_at_ns) = (?, ?) AND id > ?))"
+		args = append(args, afterCreatedAt, afterCreatedAt, afterID.String())
+	}
 	if len(namespacePrefix) > 0 {
 		encoded, err := episodic.EncodeNamespace(namespacePrefix, 0)
 		if err != nil {
@@ -390,7 +393,7 @@ func (e *sqliteEpisodicStore) FindMemoriesToMigrateByKind(ctx context.Context, s
 		CreatedAt        time.Time `gorm:"column:created_at"`
 	}
 	var rows []scanRow
-	if err := db.Raw("SELECT id, namespace, key, value_encrypted, policy_attributes, indexed_content, memory_kind, revision, created_at FROM memories WHERE "+whereClause+" ORDER BY created_at ASC, id ASC LIMIT ?", append(args, limit)...).Scan(&rows).Error; err != nil {
+	if err := db.Raw("SELECT id, namespace, key, value_encrypted, policy_attributes, indexed_content, memory_kind, revision, created_at, created_at_ns FROM memories WHERE "+whereClause+" ORDER BY created_at ASC, created_at_ns ASC, id ASC LIMIT ?", append(args, limit)...).Scan(&rows).Error; err != nil {
 		return nil, err
 	}
 	out := make([]registryepisodic.MigrationCandidate, 0, len(rows))
@@ -433,7 +436,7 @@ func (e *sqliteEpisodicStore) MigrateOneMemoryKindCAS(ctx context.Context, id uu
 	schemaCondition := "memory_kind = ?"
 	args := []interface{}{string(attrJSON), newSchema, id.String(), expectedRevision, expectedKind}
 	res := db.Exec(
-		"UPDATE memories SET policy_attributes = ?, memory_kind = ?, indexed_at = NULL, revision = revision + 1 WHERE id = ? AND revision = ? AND "+schemaCondition,
+		"UPDATE memories SET policy_attributes = ?, memory_kind = ?, indexed_at = NULL, indexed_at_ns = NULL, revision = revision + 1 WHERE id = ? AND revision = ? AND "+schemaCondition,
 		args...,
 	)
 	if res.Error != nil {

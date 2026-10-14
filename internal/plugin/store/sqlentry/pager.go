@@ -6,6 +6,7 @@ package sqlentry
 import (
 	"context"
 	"fmt"
+	"time"
 
 	"github.com/chirino/memory-service/internal/model"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -43,50 +44,28 @@ type BoundedQuery struct {
 	EntryIDValue     EntryIDValueFunc
 	ScanErr          string
 	CreatedAtFilter  *registrystore.CreatedAtFilter
-	// SQLite signals that ApplyCreatedAtFilter should use the integer
-	// created_at_unix_ms column instead of the DATETIME text column.
-	SQLite bool
 }
 
 // ApplyCreatedAtFilter appends timestamp predicates to base.
-// When sqlite is true the integer companion column created_at_unix_ms is used
-// (milliseconds since Unix epoch) so that timezone-offset-bearing DATETIME text
-// values compare as instants rather than strings.
-func ApplyCreatedAtFilter(base *gorm.DB, filter *registrystore.CreatedAtFilter, alias string, sqlite bool) *gorm.DB {
+func ApplyCreatedAtFilter(base *gorm.DB, filter *registrystore.CreatedAtFilter, alias string) *gorm.DB {
 	if filter == nil || base == nil {
 		return base
 	}
-	if sqlite {
-		col := "created_at_unix_ms"
-		if alias != "" {
-			col = alias + ".created_at_unix_ms"
+
+	col, placeholder, values := entryTimeBound(base, alias, model.Entry{})
+	add := func(op string, t *time.Time) {
+		if t != nil {
+			_, _, values = entryTimeBound(base, alias, model.Entry{CreatedAt: *t})
+			base = base.Where(col+op+placeholder, values...)
 		}
-		if filter.Eq != nil {
-			base = base.Where(col+" = ?", filter.Eq.UTC().UnixMilli())
-		} else {
-			if filter.After != nil {
-				base = base.Where(col+" >= ?", filter.After.UTC().UnixMilli())
-			}
-			if filter.Before != nil {
-				base = base.Where(col+" <= ?", filter.Before.UTC().UnixMilli())
-			}
-		}
-		return base
-	}
-	col := "created_at"
-	if alias != "" {
-		col = alias + ".created_at"
 	}
 	if filter.Eq != nil {
-		base = base.Where(col+" = ?", *filter.Eq)
+		add(" = ", filter.Eq)
 	} else {
-		if filter.After != nil {
-			base = base.Where(col+" >= ?", *filter.After)
-		}
-		if filter.Before != nil {
-			base = base.Where(col+" <= ?", *filter.Before)
-		}
+		add(" >= ", filter.After)
+		add(" <= ", filter.Before)
 	}
+
 	return base
 }
 
@@ -126,7 +105,7 @@ func RunBoundedQuery(ctx context.Context, query BoundedQuery) ([]model.Entry, *s
 		base = base.Where("e.seq IS NOT NULL AND e.seq >= ?", *query.FromSeq)
 	}
 	if query.CreatedAtFilter != nil {
-		base = ApplyCreatedAtFilter(base, query.CreatedAtFilter, "e", query.SQLite)
+		base = ApplyCreatedAtFilter(base, query.CreatedAtFilter, "e")
 	}
 	lookup := func(entryID string) (model.Entry, bool, error) {
 		var entry model.Entry

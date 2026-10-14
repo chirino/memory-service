@@ -5,6 +5,7 @@ package sqlite
 import (
 	"context"
 	"database/sql"
+	_ "embed"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -76,14 +77,17 @@ func TestSQLiteMigratorCreatesCoreTablesWithoutOptionalExtensions(t *testing.T) 
 	}
 }
 
-func TestSQLiteMigratorBackfillsEntryCreatedAtUnixMS(t *testing.T) {
+//go:embed testdata/schema_v2_text.sql
+var legacyTextSchemaSQL string
+
+func TestSQLiteMigratorBackfillsEntryCreatedAtNanoseconds(t *testing.T) {
 	t.Parallel()
 
 	dbPath := filepath.Join(t.TempDir(), "memory.db")
 	legacy, err := sql.Open("sqlite3", dbPath)
 	require.NoError(t, err)
-	legacySchema := strings.Replace(schemaSQL, "    created_at_unix_ms INTEGER,\n", "", 1)
-	require.NotEqual(t, schemaSQL, legacySchema)
+	legacySchema := strings.Replace(legacyTextSchemaSQL, "    created_at_unix_ms INTEGER,\n", "", 1)
+	require.NotEqual(t, legacyTextSchemaSQL, legacySchema)
 	_, err = legacy.Exec(legacySchema)
 	require.NoError(t, err)
 
@@ -110,20 +114,22 @@ func TestSQLiteMigratorBackfillsEntryCreatedAtUnixMS(t *testing.T) {
 
 	db, _, err := SharedDB(ctx)
 	require.NoError(t, err)
-	var unixMS int64
+	var seconds, nanos int64
 	require.NoError(t, db.Raw(
-		"SELECT created_at_unix_ms FROM entries WHERE id = ?",
+		"SELECT CAST(created_at AS INTEGER) AS raw_seconds, CAST(created_at_ns AS INTEGER) AS raw_nanos FROM entries WHERE id = ?",
 		"entry-1",
-	).Scan(&unixMS).Error)
-	require.Equal(t, createdAt.UnixMilli(), unixMS)
+	).Row().Scan(&seconds, &nanos))
+	require.Equal(t, createdAt.Unix(), seconds)
+	require.Equal(t, int64(createdAt.Nanosecond()), nanos)
 
 	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
-	var unixMSAfterSecondMigration int64
+	var secondsAfterSecondMigration, nanosAfterSecondMigration int64
 	require.NoError(t, db.Raw(
-		"SELECT created_at_unix_ms FROM entries WHERE id = ?",
+		"SELECT CAST(created_at AS INTEGER) AS raw_seconds, CAST(created_at_ns AS INTEGER) AS raw_nanos FROM entries WHERE id = ?",
 		"entry-1",
-	).Scan(&unixMSAfterSecondMigration).Error)
-	require.Equal(t, unixMS, unixMSAfterSecondMigration)
+	).Row().Scan(&secondsAfterSecondMigration, &nanosAfterSecondMigration))
+	require.Equal(t, seconds, secondsAfterSecondMigration)
+	require.Equal(t, nanos, nanosAfterSecondMigration)
 }
 
 func TestSQLiteMigratorMakesStartedByConversationASoftReference(t *testing.T) {
@@ -134,12 +140,12 @@ func TestSQLiteMigratorMakesStartedByConversationASoftReference(t *testing.T) {
 	require.NoError(t, err)
 	legacy.SetMaxOpenConns(1)
 	legacySchema := strings.Replace(
-		schemaSQL,
+		legacyTextSchemaSQL,
 		"started_by_conversation_id TEXT,",
 		"started_by_conversation_id TEXT REFERENCES conversations(id) ON DELETE CASCADE,",
 		1,
 	)
-	require.NotEqual(t, schemaSQL, legacySchema)
+	require.NotEqual(t, legacyTextSchemaSQL, legacySchema)
 	_, err = legacy.Exec(legacySchema)
 	require.NoError(t, err)
 	_, err = legacy.Exec(`

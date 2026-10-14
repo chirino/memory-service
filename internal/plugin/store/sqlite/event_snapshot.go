@@ -1,3 +1,5 @@
+//go:build !nosqlite
+
 package sqlite
 
 import (
@@ -16,10 +18,10 @@ func (s *SQLiteStore) AdminListEventSnapshotConversations(ctx context.Context, a
 	}
 	q := s.dbFor(ctx).Model(&model.Conversation{})
 	if after != nil {
-		q = q.Where("created_at > ? OR (created_at = ? AND id > ?)", after.CreatedAt, after.CreatedAt, after.ID)
+		q = q.Where("(created_at, created_at_ns) > (?, ?) OR ((created_at, created_at_ns) = (?, ?) AND id > ?)", after.CreatedAt, after.CreatedAt, after.ID)
 	}
 	var rows []model.Conversation
-	if err := q.Order("created_at ASC, id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
+	if err := q.Order("created_at ASC, created_at_ns ASC, id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return nil, nil, fmt.Errorf("list event snapshot conversations: %w", err)
 	}
 	hasMore := len(rows) > limit

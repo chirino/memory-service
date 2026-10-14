@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/chirino/memory-service/internal/model"
+	"github.com/chirino/memory-service/internal/plugin/store/sqlitecodec"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/require"
 	"gorm.io/driver/sqlite"
@@ -64,8 +65,9 @@ func TestBoundedEntriesFromBaseRejectsZeroLimit(t *testing.T) {
 
 func setupPagerTestEntries(t *testing.T) (*gorm.DB, []model.Entry) {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	db, err := gorm.Open(sqlite.Dialector{DriverName: sqlitecodec.DriverName, DSN: ":memory:"}, &gorm.Config{})
 	require.NoError(t, err)
+	sqlitecodec.Install(db)
 	require.NoError(t, db.Exec(`
 		CREATE TABLE entries (
 			append_batch BLOB,
@@ -81,9 +83,8 @@ func setupPagerTestEntries(t *testing.T) (*gorm.DB, []model.Entry) {
 			content_type TEXT NOT NULL,
 			content BLOB NOT NULL,
 			indexed_content TEXT,
-			indexed_at DATETIME,
-			created_at DATETIME NOT NULL,
-			created_at_unix_ms INTEGER,
+			indexed_at INTEGER_SECONDS, indexed_at_ns INTEGER,
+			created_at INTEGER_SECONDS NOT NULL, created_at_ns INTEGER NOT NULL,
 			PRIMARY KEY (id, conversation_group_id)
 		)
 	`).Error)
@@ -96,9 +97,7 @@ func setupPagerTestEntries(t *testing.T) (*gorm.DB, []model.Entry) {
 		pagerTestEntry(groupID, baseTime.Add(2*time.Second)),
 	}
 	require.NoError(t, db.Create(&entries).Error)
-	for _, entry := range entries {
-		require.NoError(t, db.Exec("UPDATE entries SET created_at_unix_ms = ? WHERE id = ?", entry.CreatedAt.UnixMilli(), entry.ID.String()).Error)
-	}
+
 	return db, entries
 }
 

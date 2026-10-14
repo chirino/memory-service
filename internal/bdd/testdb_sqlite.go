@@ -8,8 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"github.com/chirino/memory-service/internal/plugin/store/sqlitecodec"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
-	_ "github.com/mattn/go-sqlite3"
 )
 
 // SQLiteTestDB implements cucumber.TestDB for SQLite.
@@ -22,7 +22,7 @@ type SQLiteTestDB struct {
 var _ cucumber.TestDB = (*SQLiteTestDB)(nil)
 
 func (s *SQLiteTestDB) conn(ctx context.Context) (*sql.DB, error) {
-	db, err := sql.Open("sqlite3", s.DBURL)
+	db, err := sql.Open(sqlitecodec.DriverName, s.DBURL)
 	if err != nil {
 		return nil, err
 	}
@@ -88,11 +88,11 @@ func (s *SQLiteTestDB) SetConversationEntriesCreatedAt(ctx context.Context, conv
 
 	_, err = db.ExecContext(ctx,
 		`UPDATE entries
-		 SET created_at = ?, created_at_unix_ms = ?
+		 SET created_at = ?, created_at_ns = ?
 		 WHERE conversation_group_id = (
 		   SELECT conversation_group_id FROM conversations WHERE id = ?
 		 )`,
-		createdAt, createdAt.UTC().UnixMilli(), conversationID)
+		createdAt, conversationID)
 	if err != nil {
 		return fmt.Errorf("failed to set conversation entry timestamps for %s: %w", conversationID, err)
 	}
@@ -108,9 +108,9 @@ func (s *SQLiteTestDB) SetEntryCreatedAt(ctx context.Context, entryID string, cr
 
 	_, err = db.ExecContext(ctx,
 		`UPDATE entries
-		 SET created_at = ?, created_at_unix_ms = ?
+		 SET created_at = ?, created_at_ns = ?
 		 WHERE id = ?`,
-		createdAt, createdAt.UTC().UnixMilli(), entryID)
+		createdAt, entryID)
 	if err != nil {
 		return fmt.Errorf("failed to set entry timestamp for %s: %w", entryID, err)
 	}
@@ -124,7 +124,7 @@ func (s *SQLiteTestDB) SetConversationTimestamps(ctx context.Context, conversati
 	}
 	defer db.Close()
 
-	if _, err := db.ExecContext(ctx, `UPDATE conversations SET created_at = ?, updated_at = ? WHERE id = ?`, createdAt, updatedAt, conversationID); err != nil {
+	if _, err := db.ExecContext(ctx, `UPDATE conversations SET created_at = ?, created_at_ns = ?, updated_at = ?, updated_at_ns = ? WHERE id = ?`, createdAt, updatedAt, conversationID); err != nil {
 		return fmt.Errorf("failed to set conversation timestamps for %s: %w", conversationID, err)
 	}
 	return nil
@@ -181,12 +181,12 @@ func (s *SQLiteTestDB) ArchiveConversation(ctx context.Context, conversationID s
 
 	archivedAt := time.Now().AddDate(0, 0, -days)
 	if _, err := db.ExecContext(ctx,
-		`UPDATE conversation_groups SET archived_at = ? WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = ?)`,
+		`UPDATE conversation_groups SET archived_at = ?, archived_at_ns = ? WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = ?)`,
 		archivedAt, conversationID); err != nil {
 		return fmt.Errorf("failed to archive conversation group: %w", err)
 	}
 	if _, err := db.ExecContext(ctx,
-		`UPDATE conversations SET archived_at = ? WHERE id = ?`,
+		`UPDATE conversations SET archived_at = ?, archived_at_ns = ? WHERE id = ?`,
 		archivedAt, conversationID); err != nil {
 		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
@@ -202,7 +202,7 @@ func (s *SQLiteTestDB) ArchiveConversationOnly(ctx context.Context, conversation
 
 	archivedAt := time.Now().AddDate(0, 0, -days)
 	if _, err := db.ExecContext(ctx,
-		`UPDATE conversations SET archived_at = ? WHERE id = ?`,
+		`UPDATE conversations SET archived_at = ?, archived_at_ns = ? WHERE id = ?`,
 		archivedAt, conversationID); err != nil {
 		return fmt.Errorf("failed to archive conversation: %w", err)
 	}
@@ -227,7 +227,7 @@ func (s *SQLiteTestDB) CreateTask(ctx context.Context, id, taskType, body string
 	defer db.Close()
 	now := time.Now().UTC()
 	_, err = db.ExecContext(ctx,
-		"INSERT INTO tasks (id, task_type, task_body, created_at, retry_at, retry_count) VALUES (?, ?, ?, ?, ?, 0)",
+		"INSERT INTO tasks (id, task_type, task_body, created_at, created_at_ns, retry_at, retry_at_ns, retry_count) VALUES (?, ?, ?, ?, ?, ?, ?, 0)",
 		id, taskType, body, now, now)
 	return err
 }
@@ -240,8 +240,8 @@ func (s *SQLiteTestDB) CreateFailedTask(ctx context.Context, id, taskType, body 
 	defer db.Close()
 	now := time.Now().UTC()
 	_, err = db.ExecContext(ctx,
-		`INSERT INTO tasks (id, task_type, task_body, created_at, retry_at, retry_count, last_error)
-		 VALUES (?, ?, ?, ?, ?, 1, 'previous failure')`,
+		`INSERT INTO tasks (id, task_type, task_body, created_at, created_at_ns, retry_at, retry_at_ns, retry_count, last_error)
+		 VALUES (?, ?, ?, ?, ?, ?, ?, 1, 'previous failure')`,
 		id, taskType, body, now, now.Add(-time.Hour))
 	return err
 }
@@ -264,7 +264,7 @@ func (s *SQLiteTestDB) ClaimReadyTasks(ctx context.Context, limit int) ([]cucumb
 
 	now := time.Now().UTC()
 	rows, err := tx.QueryContext(ctx,
-		"SELECT id, task_type, task_body FROM tasks WHERE retry_at <= ? ORDER BY created_at LIMIT ?",
+		"SELECT id, task_type, task_body FROM tasks WHERE (retry_at,retry_at_ns) <= (?, ?) ORDER BY created_at,created_at_ns LIMIT ?",
 		now, limit)
 	if err != nil {
 		return nil, err
@@ -287,7 +287,7 @@ func (s *SQLiteTestDB) ClaimReadyTasks(ctx context.Context, limit int) ([]cucumb
 
 	retryAt := now.Add(5 * time.Minute)
 	for _, id := range ids {
-		if _, err := tx.ExecContext(ctx, "UPDATE tasks SET retry_at = ? WHERE id = ?", retryAt, id); err != nil {
+		if _, err := tx.ExecContext(ctx, "UPDATE tasks SET retry_at = ?, retry_at_ns = ? WHERE id = ?", retryAt, id); err != nil {
 			return nil, err
 		}
 	}
@@ -314,7 +314,7 @@ func (s *SQLiteTestDB) FailTask(ctx context.Context, id, errMsg string) error {
 	}
 	defer db.Close()
 	_, err = db.ExecContext(ctx,
-		"UPDATE tasks SET retry_count = retry_count + 1, retry_at = ?, last_error = ? WHERE id = ?",
+		"UPDATE tasks SET retry_count = retry_count + 1, retry_at = ?, retry_at_ns = ?, last_error = ? WHERE id = ?",
 		time.Now().UTC().Add(30*time.Second), errMsg, id)
 	return err
 }
@@ -328,7 +328,7 @@ func (s *SQLiteTestDB) GetTask(ctx context.Context, id string) (*cucumber.TaskRo
 
 	var t cucumber.TaskRow
 	if err := db.QueryRowContext(ctx,
-		"SELECT id, task_type, retry_at, retry_count, last_error FROM tasks WHERE id = ?", id).
+		"SELECT id, task_type, retry_at, retry_at_ns, retry_count, last_error FROM tasks WHERE id = ?", id).
 		Scan(&t.ID, &t.TaskType, &t.RetryAt, &t.RetryCount, &t.LastError); err != nil {
 		return nil, err
 	}

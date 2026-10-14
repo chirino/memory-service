@@ -216,7 +216,7 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 			SELECT *
 			FROM memories
 			WHERE namespace = ? AND key = ? AND archived_at IS NULL
-			ORDER BY created_at DESC, id DESC
+			ORDER BY created_at DESC, created_at_ns DESC, id DESC
 			LIMIT 1`,
 			nsEncoded, req.Key,
 		).Scan(&active).Error; err != nil {
@@ -257,14 +257,14 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		case expected != nil:
 			result = tx.Exec(`
 				UPDATE memories
-				SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
+				SET archived_at = ?, archived_at_ns = ?, indexed_at = NULL, indexed_at_ns = NULL, deleted_reason = ?, revision = revision + 1
 				WHERE id = ? AND revision = ? AND archived_at IS NULL`,
 				now, deletedReason, expected.ID.String(), expected.Revision,
 			)
 		default:
 			result = tx.Exec(`
 				UPDATE memories
-				SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
+				SET archived_at = ?, archived_at_ns = ?, indexed_at = NULL, indexed_at_ns = NULL, deleted_reason = ?, revision = revision + 1
 				WHERE namespace = ? AND key = ? AND archived_at IS NULL`,
 				now, deletedReason, nsEncoded, req.Key,
 			)
@@ -332,7 +332,7 @@ func (e *sqliteEpisodicStore) GetMemoryRowKind(ctx context.Context, namespace []
 	args := []interface{}{nsEncoded, key}
 	var kind string
 	result := e.dbFor(ctx).Raw(
-		`SELECT memory_kind FROM memories WHERE `+whereClause+` ORDER BY created_at DESC, id DESC LIMIT 1`,
+		`SELECT memory_kind FROM memories WHERE `+whereClause+` ORDER BY created_at DESC, created_at_ns DESC, id DESC LIMIT 1`,
 		args...,
 	).Scan(&kind)
 	if result.Error != nil {
@@ -358,7 +358,7 @@ func (e *sqliteEpisodicStore) GetMemoryPredecessor(ctx context.Context, namespac
 		SELECT id, revision, memory_kind
 		FROM memories
 		WHERE namespace = ? AND key = ? AND archived_at IS NULL
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, created_at_ns DESC, id DESC
 		LIMIT 1`, nsEncoded, key).Scan(&row)
 	if result.Error != nil {
 		return nil, fmt.Errorf("get memory predecessor: %w", result.Error)
@@ -380,7 +380,7 @@ func (e *sqliteEpisodicStore) GetMemory(ctx context.Context, namespace []string,
 		SELECT *
 		FROM memories
 		WHERE namespace = ? AND key = ? AND `+sqliteMemoryArchiveWhere("memories", archived)+`
-		ORDER BY created_at DESC, id DESC
+		ORDER BY created_at DESC, created_at_ns DESC, id DESC
 		LIMIT 1`,
 		nsEncoded, key,
 	).Scan(&rows)
@@ -426,19 +426,23 @@ func (e *sqliteEpisodicStore) IncrementMemoryLoads(ctx context.Context, keys []r
 	values := make([]string, 0, len(unique))
 	args := make([]interface{}, 0, len(unique)*3)
 	for _, item := range unique {
-		values = append(values, "(?, ?, 1, ?)")
+		values = append(values, "(?, ?, 1, ?, ?)")
 		args = append(args, item.namespace, item.key, fetchedAt)
 	}
 
 	query := `
-		INSERT INTO memory_usage_stats (namespace, key, fetch_count, last_fetched_at)
+		INSERT INTO memory_usage_stats (namespace, key, fetch_count, last_fetched_at, last_fetched_at_ns)
 		VALUES ` + strings.Join(values, ",") + `
 		ON CONFLICT (namespace, key) DO UPDATE
 		SET fetch_count = memory_usage_stats.fetch_count + EXCLUDED.fetch_count,
 			last_fetched_at = CASE
-				WHEN memory_usage_stats.last_fetched_at >= EXCLUDED.last_fetched_at THEN memory_usage_stats.last_fetched_at
+				WHEN (memory_usage_stats.last_fetched_at,memory_usage_stats.last_fetched_at_ns) >= (EXCLUDED.last_fetched_at,EXCLUDED.last_fetched_at_ns) THEN memory_usage_stats.last_fetched_at
 				ELSE EXCLUDED.last_fetched_at
-			END`
+            END,
+            last_fetched_at_ns = CASE
+                WHEN (memory_usage_stats.last_fetched_at,memory_usage_stats.last_fetched_at_ns) >= (EXCLUDED.last_fetched_at,EXCLUDED.last_fetched_at_ns) THEN memory_usage_stats.last_fetched_at_ns
+                ELSE EXCLUDED.last_fetched_at_ns
+            END`
 
 	return e.writeDBFor(ctx, "sqlite episodic store increment memory loads").Exec(query, args...).Error
 }
@@ -484,9 +488,9 @@ func (e *sqliteEpisodicStore) ListTopMemoryUsage(ctx context.Context, req regist
 
 	switch req.Sort {
 	case registryepisodic.MemoryUsageSortLastFetchedAt:
-		q = q.Order("last_fetched_at DESC, fetch_count DESC")
+		q = q.Order("last_fetched_at DESC, last_fetched_at_ns DESC, fetch_count DESC")
 	default:
-		q = q.Order("fetch_count DESC, last_fetched_at DESC")
+		q = q.Order("fetch_count DESC, last_fetched_at DESC, last_fetched_at_ns DESC")
 	}
 	q = q.Limit(limit)
 
@@ -528,7 +532,7 @@ func (e *sqliteEpisodicStore) ArchiveMemory(ctx context.Context, namespace []str
 	}
 	result := e.writeDBFor(ctx, "sqlite episodic store delete memory").Exec(`
 		UPDATE memories
-		SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
+		SET archived_at = ?, archived_at_ns = ?, indexed_at = NULL, indexed_at_ns = NULL, deleted_reason = ?, revision = revision + 1
 		WHERE `+where,
 		args...,
 	)
@@ -554,15 +558,16 @@ func (e *sqliteEpisodicStore) SearchMemories(ctx context.Context, sq registryepi
 		Select("m.*").
 		Joins(`
 			JOIN (
-				SELECT namespace, key, MAX(created_at) AS max_created_at
-					FROM memories AS candidate
+				SELECT namespace, key, created_at AS max_created_at, created_at_ns AS max_created_at_ns
+					FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY namespace,key ORDER BY created_at DESC,created_at_ns DESC) AS timestamp_rank FROM memories AS candidate
 					WHERE (namespace = ? OR namespace LIKE ?)
 					  AND `+archiveWhere+`
-				GROUP BY namespace, key
+				) WHERE timestamp_rank = 1
+				GROUP BY namespace, key, created_at, created_at_ns
 			) latest
 			ON m.namespace = latest.namespace
 			AND m.key = latest.key
-			AND m.created_at = latest.max_created_at`,
+			AND (m.created_at,m.created_at_ns) = (latest.max_created_at,latest.max_created_at_ns)`,
 			nsEncoded, episodic.NamespacePrefixPattern(nsEncoded),
 		).
 		Where(sqliteMemoryArchiveWhere("m", sq.Archived)).
@@ -591,11 +596,11 @@ func (e *sqliteEpisodicStore) SearchMemories(ctx context.Context, sq registryepi
 		// SQLite: NULLS LAST is only valid on newer versions; use CASE for portability.
 		sortExpr := sqliteAttrSortExpr(field, sq.Sort.Type)
 		q = q.Order(fmt.Sprintf(
-			`CASE WHEN json_extract(policy_attributes, '$."%s"') IS NULL THEN 1 ELSE 0 END, %s %s, m.created_at DESC, m.id DESC`,
+			`CASE WHEN json_extract(policy_attributes, '$."%s"') IS NULL THEN 1 ELSE 0 END, %s %s, m.created_at DESC, m.created_at_ns DESC, m.id DESC`,
 			field, sortExpr, dir,
 		))
 	} else {
-		q = q.Order("m.created_at DESC, m.id DESC")
+		q = q.Order("m.created_at DESC, m.created_at_ns DESC, m.id DESC")
 	}
 
 	var rows []memoryRow
@@ -628,28 +633,30 @@ func (e *sqliteEpisodicStore) ListNamespaces(ctx context.Context, req registryep
 		}
 		q = q.Joins(`
 			JOIN (
-				SELECT namespace, key, MAX(created_at) AS max_created_at
-					FROM memories AS candidate
+				SELECT namespace, key, created_at AS max_created_at, created_at_ns AS max_created_at_ns
+					FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY namespace,key ORDER BY created_at DESC,created_at_ns DESC) AS timestamp_rank FROM memories AS candidate
 					WHERE (namespace = ? OR namespace LIKE ?)
 					  AND `+archiveWhere+`
-				GROUP BY namespace, key
+				) WHERE timestamp_rank = 1
+				GROUP BY namespace, key, created_at, created_at_ns
 			) latest
 			ON m.namespace = latest.namespace
 			AND m.key = latest.key
-			AND m.created_at = latest.max_created_at`,
+			AND (m.created_at,m.created_at_ns) = (latest.max_created_at,latest.max_created_at_ns)`,
 			nsEncoded, episodic.NamespacePrefixPattern(nsEncoded),
 		)
 	} else {
 		q = q.Joins(`
 			JOIN (
-				SELECT namespace, key, MAX(created_at) AS max_created_at
-					FROM memories AS candidate
+				SELECT namespace, key, created_at AS max_created_at, created_at_ns AS max_created_at_ns
+					FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY namespace,key ORDER BY created_at DESC,created_at_ns DESC) AS timestamp_rank FROM memories AS candidate
 					WHERE ` + archiveWhere + `
-				GROUP BY namespace, key
+				) WHERE timestamp_rank = 1
+				GROUP BY namespace, key, created_at, created_at_ns
 			) latest
 			ON m.namespace = latest.namespace
 			AND m.key = latest.key
-			AND m.created_at = latest.max_created_at`)
+			AND (m.created_at,m.created_at_ns) = (latest.max_created_at,latest.max_created_at_ns)`)
 	}
 	q = q.Where(sqliteMemoryArchiveWhere("m", req.Archived))
 	if req.MemoryKind != "" {
@@ -727,7 +734,7 @@ func (e *sqliteEpisodicStore) FindMemoriesPendingIndexing(ctx context.Context, l
 // SetMemoryIndexedAt marks a memory as indexed.
 func (e *sqliteEpisodicStore) SetMemoryIndexedAt(ctx context.Context, memoryID uuid.UUID, indexedAt time.Time) error {
 	return e.writeDBFor(ctx, "sqlite episodic store set indexed at").Exec(
-		"UPDATE memories SET indexed_at = ? WHERE id = ?", indexedAt, memoryID,
+		"UPDATE memories SET indexed_at = ?, indexed_at_ns = ? WHERE id = ?", indexedAt, memoryID,
 	).Error
 }
 
@@ -896,9 +903,9 @@ func (e *sqliteEpisodicStore) ExpireMemoriesWithChanges(ctx context.Context) ([]
 	var changes []registryepisodic.MemoryLifecycleChange
 	result := e.writeDBFor(ctx, "sqlite episodic store expire memories").Raw(`
 		UPDATE memories
-		SET archived_at = ?, indexed_at = NULL, deleted_reason = ?, revision = revision + 1
-		WHERE expires_at <= ? AND archived_at IS NULL
-		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`,
+		SET archived_at = ?, archived_at_ns = ?, indexed_at = NULL, indexed_at_ns = NULL, deleted_reason = ?, revision = revision + 1
+		WHERE (expires_at, expires_at_ns) <= (?, ?) AND archived_at IS NULL
+		RETURNING id, memory_kind, revision, created_at, created_at_ns, expires_at, expires_at_ns, archived_at, archived_at_ns`,
 		now, deletedReason, now,
 	).Scan(&changes)
 	return changes, result.Error
@@ -912,7 +919,7 @@ func (e *sqliteEpisodicStore) HardDeleteEvictableUpdates(ctx context.Context, li
 		WHERE id IN (
 			SELECT id FROM memories
 			WHERE deleted_reason = 0 AND indexed_at IS NOT NULL
-			ORDER BY archived_at ASC
+			ORDER BY archived_at ASC, archived_at_ns ASC
 			LIMIT ?
 		)`, limit)
 	return result.RowsAffected, result.Error
@@ -932,14 +939,14 @@ func (e *sqliteEpisodicStore) TombstoneDeletedMemoriesWithChanges(ctx context.Co
 		SET value_encrypted = NULL,
 		    policy_attributes = '{}',
 		    revision = revision + 1,
-		    indexed_at = NULL
+		    indexed_at = NULL, indexed_at_ns = NULL
 		WHERE id IN (
 			SELECT id FROM memories
 			WHERE deleted_reason IN (1, 2) AND indexed_at IS NOT NULL AND value_encrypted IS NOT NULL
-			ORDER BY archived_at ASC
+			ORDER BY archived_at ASC, archived_at_ns ASC
 			LIMIT ?
 		)
-		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`, limit).Scan(&changes)
+		RETURNING id, memory_kind, revision, created_at, created_at_ns, expires_at, expires_at_ns, archived_at, archived_at_ns`, limit).Scan(&changes)
 	return changes, result.Error
 }
 
@@ -956,11 +963,11 @@ func (e *sqliteEpisodicStore) HardDeleteExpiredTombstonesWithChanges(ctx context
 		DELETE FROM memories
 		WHERE id IN (
 			SELECT id FROM memories
-			WHERE deleted_reason IN (1, 2) AND value_encrypted IS NULL AND archived_at <= ?
-			ORDER BY archived_at ASC
+			WHERE deleted_reason IN (1, 2) AND value_encrypted IS NULL AND (archived_at, archived_at_ns) <= (?, ?)
+			ORDER BY archived_at ASC, archived_at_ns ASC
 			LIMIT ?
 		)
-		RETURNING id, memory_kind, revision, created_at, expires_at, archived_at`, olderThan, limit).Scan(&changes)
+		RETURNING id, memory_kind, revision, created_at, created_at_ns, expires_at, expires_at_ns, archived_at, archived_at_ns`, olderThan, limit).Scan(&changes)
 	return changes, result.Error
 }
 
@@ -1033,8 +1040,8 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 		parts = append(parts, `
 			SELECT id, namespace, key,
 				CASE kind WHEN 0 THEN 'add' ELSE 'update' END AS event_kind,
-				created_at AS occurred_at,
-				value_encrypted, policy_attributes, expires_at,
+				created_at AS occurred_at, created_at_ns AS occurred_at_ns,
+				value_encrypted, policy_attributes, expires_at, expires_at_ns,
 				memory_kind
 			FROM memories WHERE kind IN (`+ph+`)`)
 		args = append(args, writeKinds...)
@@ -1044,8 +1051,8 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 		parts = append(parts, `
 			SELECT id, namespace, key,
 				'update' AS event_kind,
-				archived_at AS occurred_at,
-				value_encrypted, policy_attributes, expires_at,
+				archived_at AS occurred_at, archived_at_ns AS occurred_at_ns,
+				value_encrypted, policy_attributes, expires_at, expires_at_ns,
 				memory_kind
 			FROM memories WHERE deleted_reason = 1`)
 	}
@@ -1053,8 +1060,8 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 		parts = append(parts, `
 			SELECT id, namespace, key,
 				'expired' AS event_kind,
-				archived_at AS occurred_at,
-				CAST(NULL AS BLOB) AS value_encrypted, CAST(NULL AS TEXT) AS policy_attributes, expires_at,
+				archived_at AS occurred_at, archived_at_ns AS occurred_at_ns,
+				CAST(NULL AS BLOB) AS value_encrypted, CAST(NULL AS TEXT) AS policy_attributes, expires_at, expires_at_ns,
 				memory_kind
 			FROM memories WHERE deleted_reason = 2`)
 	}
@@ -1068,15 +1075,15 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 	var outerArgs []interface{}
 
 	if !cursorOccurredAt.IsZero() {
-		outerWhere += " AND (e.occurred_at > ? OR (e.occurred_at = ? AND e.id > ?))"
+		outerWhere += " AND ((e.occurred_at, e.occurred_at_ns) > (?, ?) OR ((e.occurred_at, e.occurred_at_ns) = (?, ?) AND e.id > ?))"
 		outerArgs = append(outerArgs, cursorOccurredAt, cursorOccurredAt, cursorID)
 	}
 	if req.After != nil {
-		outerWhere += " AND e.occurred_at > ?"
+		outerWhere += " AND (e.occurred_at, e.occurred_at_ns) > (?, ?)"
 		outerArgs = append(outerArgs, req.After)
 	}
 	if req.Before != nil {
-		outerWhere += " AND e.occurred_at < ?"
+		outerWhere += " AND (e.occurred_at, e.occurred_at_ns) < (?, ?)"
 		outerArgs = append(outerArgs, req.Before)
 	}
 	if req.MemoryKind != "" {
@@ -1094,10 +1101,10 @@ func (e *sqliteEpisodicStore) ListMemoryEvents(ctx context.Context, req registry
 	}
 
 	finalSQL := fmt.Sprintf(`
-		SELECT e.id, e.namespace, e.key, e.event_kind, e.occurred_at, e.value_encrypted, e.policy_attributes, e.expires_at, e.memory_kind
+		SELECT e.id, e.namespace, e.key, e.event_kind, e.occurred_at, e.occurred_at_ns, e.value_encrypted, e.policy_attributes, e.expires_at, e.expires_at_ns, e.memory_kind
 		FROM (%s) e
 		WHERE %s%s
-		ORDER BY e.occurred_at ASC, e.id ASC
+		ORDER BY e.occurred_at ASC, e.occurred_at_ns ASC, e.id ASC
 		LIMIT ?`, union, outerWhere, nsFilter)
 
 	// Assemble all args: inner args, outer args, ns args, limit.
@@ -1227,17 +1234,17 @@ func (e *sqliteEpisodicStore) AdminListEventSnapshotMemories(ctx context.Context
 		q = q.Where("m.key LIKE ?", query.KeyPrefix+"%")
 	}
 	if query.CreatedAfter != nil {
-		q = q.Where("m.created_at >= ?", *query.CreatedAfter)
+		q = q.Where("(m.created_at, m.created_at_ns) >= (?, ?)", *query.CreatedAfter)
 	}
 	if query.CreatedBefore != nil {
-		q = q.Where("m.created_at <= ?", *query.CreatedBefore)
+		q = q.Where("(m.created_at, m.created_at_ns) <= (?, ?)", *query.CreatedBefore)
 	}
 	if query.ExpiresBefore != nil {
-		q = q.Where("m.expires_at IS NOT NULL AND m.expires_at <= ?", *query.ExpiresBefore)
+		q = q.Where("m.expires_at IS NOT NULL AND (m.expires_at, m.expires_at_ns) <= (?, ?)", *query.ExpiresBefore)
 	}
 	if query.AfterCursor != "" {
 		if cur, ok := decodeAdminMemoryCursor(query.AfterCursor); ok {
-			q = q.Where("(m.created_at < ? OR (m.created_at = ? AND m.id < ?))", cur.CreatedAt, cur.CreatedAt, cur.ID)
+			q = q.Where("((m.created_at, m.created_at_ns) < (?, ?) OR ((m.created_at, m.created_at_ns) = (?, ?) AND m.id < ?))", cur.CreatedAt, cur.CreatedAt, cur.ID)
 		}
 	}
 	if query.MemoryKind != "" {
@@ -1255,7 +1262,7 @@ func (e *sqliteEpisodicStore) AdminListEventSnapshotMemories(ctx context.Context
 		}
 	}
 	var rows []memoryRow
-	if err := q.Order("m.created_at DESC, m.id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
+	if err := q.Order("m.created_at DESC, m.created_at_ns DESC, m.id DESC").Limit(limit + 1).Find(&rows).Error; err != nil {
 		return registryepisodic.AdminMemoryPage{}, fmt.Errorf("admin list memories: %w", err)
 	}
 	return e.adminRowsToPage(rows, limit)
@@ -1299,11 +1306,11 @@ func (e *sqliteEpisodicStore) AdminSearchMemories(ctx context.Context, query reg
 		// SQLite: NULLS LAST via CASE; COLLATE BINARY for deterministic string ordering.
 		sortExpr := sqliteAttrSortExpr(field, query.Sort.Type)
 		q = q.Order(fmt.Sprintf(
-			`CASE WHEN json_extract(policy_attributes, '$."%s"') IS NULL THEN 1 ELSE 0 END, %s %s, m.created_at DESC, m.id DESC`,
+			`CASE WHEN json_extract(policy_attributes, '$."%s"') IS NULL THEN 1 ELSE 0 END, %s %s, m.created_at DESC, m.created_at_ns DESC, m.id DESC`,
 			field, sortExpr, dir,
 		))
 	} else {
-		q = q.Order("m.created_at DESC, m.id DESC")
+		q = q.Order("m.created_at DESC, m.created_at_ns DESC, m.id DESC")
 	}
 	var rows []memoryRow
 	if err := q.Limit(limit).Find(&rows).Error; err != nil {
@@ -1363,28 +1370,30 @@ func (e *sqliteEpisodicStore) adminLatestMemoryQuery(ctx context.Context, namesp
 		}
 		q = q.Joins(`
 			JOIN (
-				SELECT namespace, key, MAX(created_at) AS max_created_at
-				FROM memories AS candidate
+				SELECT namespace, key, created_at AS max_created_at, created_at_ns AS max_created_at_ns
+				FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY namespace,key ORDER BY created_at DESC,created_at_ns DESC) AS timestamp_rank FROM memories AS candidate
 				WHERE (namespace = ? OR namespace LIKE ?)
 				  AND `+archiveWhere+`
-				GROUP BY namespace, key
+				) WHERE timestamp_rank = 1
+				GROUP BY namespace, key, created_at, created_at_ns
 			) latest
 			ON m.namespace = latest.namespace
 			AND m.key = latest.key
-			AND m.created_at = latest.max_created_at`,
+			AND (m.created_at,m.created_at_ns) = (latest.max_created_at,latest.max_created_at_ns)`,
 			nsEncoded, episodic.NamespacePrefixPattern(nsEncoded),
 		)
 	} else {
 		q = q.Joins(`
 			JOIN (
-				SELECT namespace, key, MAX(created_at) AS max_created_at
-				FROM memories AS candidate
+				SELECT namespace, key, created_at AS max_created_at, created_at_ns AS max_created_at_ns
+				FROM (SELECT *, DENSE_RANK() OVER (PARTITION BY namespace,key ORDER BY created_at DESC,created_at_ns DESC) AS timestamp_rank FROM memories AS candidate
 				WHERE ` + archiveWhere + `
-				GROUP BY namespace, key
+				) WHERE timestamp_rank = 1
+				GROUP BY namespace, key, created_at, created_at_ns
 			) latest
 			ON m.namespace = latest.namespace
 			AND m.key = latest.key
-			AND m.created_at = latest.max_created_at`)
+			AND (m.created_at,m.created_at_ns) = (latest.max_created_at,latest.max_created_at_ns)`)
 	}
 	return q, nil
 }

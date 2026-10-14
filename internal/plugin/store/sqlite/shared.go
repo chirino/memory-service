@@ -14,6 +14,7 @@ import (
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/plugin/store/sqlitecodec"
 	"github.com/chirino/memory-service/internal/txscope"
 	gormsqlite "gorm.io/driver/sqlite"
 	"gorm.io/gorm"
@@ -104,7 +105,7 @@ func openSharedHandle(cfg *config.Config) (*sharedHandle, error) {
 	initSQLiteVectorExtension()
 
 	db, err := gorm.Open(gormsqlite.Dialector{
-		DriverName: "sqlite3",
+		DriverName: sqlitecodec.DriverName,
 		DSN:        sqliteRuntimeDSN(cfg.DBURL),
 	}, &gorm.Config{
 		Logger: logger.Discard,
@@ -112,6 +113,7 @@ func openSharedHandle(cfg *config.Config) (*sharedHandle, error) {
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: open database: %w", err)
 	}
+	sqlitecodec.Install(db)
 	sqlDB, err := db.DB()
 	if err != nil {
 		return nil, fmt.Errorf("sqlite: underlying db: %w", err)
