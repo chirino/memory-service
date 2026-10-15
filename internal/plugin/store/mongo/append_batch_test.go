@@ -94,7 +94,7 @@ func TestPartialAppendBatchStaleFinalizerPreservesLaterEdits(t *testing.T) {
 			t.Run(fmt.Sprintf("stage=%d/archived=%t", stage, archived), func(t *testing.T) {
 				cfg := config.DefaultConfig()
 				cfg.DatastoreType = "mongo"
-				cfg.DBURL = testmongo.StartStandaloneMongo(t)
+				cfg.DBURL = testmongo.StartMongo(t)
 				cfg.OutboxEnabled = false
 				cfg.EncryptionDBDisabled = true
 				ctx := config.WithContext(context.Background(), &cfg)
