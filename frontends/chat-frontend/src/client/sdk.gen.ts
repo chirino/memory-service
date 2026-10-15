@@ -190,6 +190,18 @@ export class ConversationsService {
    * Create a conversation
    *
    * Creates a new conversation owned by the current user.
+   *
+   * **Idempotency**: When a conversation ID is provided in the request, this
+   * operation is idempotent. If the exact same conversation already exists,
+   * the operation returns 200 OK with the existing conversation. If a
+   * conversation with the same ID exists but differs in any compared field,
+   * the operation returns 409 Conflict with error code
+   * `conversation_already_exists`.
+   *
+   * The complete equivalence rule: all of `title`, `metadata`, `agentId`,
+   * `forkedAtConversationId`, `forkedAtEntryId` must match, and the
+   * authenticated user identity and client identity (derived from the
+   * authentication token) must also match.
    */
   public static createConversation<ThrowOnError extends boolean = true>(
     parameters: {

@@ -86,7 +86,7 @@ MEMORY_SERVICE_DB_URL=mongodb://localhost:27017/memoryservice?replicaSet=rs0
 MEMORY_SERVICE_ATTACHMENTS_KIND=s3
 ```
 
-Episodic memory writes use MongoDB transactions, so the server requires a replica set or mongos and rejects standalone MongoDB during startup. For production, use a managed replica set/sharded deployment and its authenticated connection URI.
+All MongoDB writes use transactions, so the server requires a replica set or mongos and rejects standalone MongoDB during startup. For production, use a managed replica set/sharded deployment and its authenticated connection URI.
 
 MongoDB does not provide attachment blob storage. Use the S3 backend for durable deployments, or configure `MEMORY_SERVICE_ATTACHMENTS_KIND=fs` together with `MEMORY_SERVICE_ATTACHMENTS_FS_DIR` for a single-node service deployment.
 

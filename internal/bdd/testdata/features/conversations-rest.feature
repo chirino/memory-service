@@ -277,6 +277,40 @@ Feature: Conversations REST API
     And the response body "data[0].id" should be "${childConversationId}"
     And the response body "data[0].startedByConversationId" should be "${parentConversationId}"
 
+  Scenario: A non-owner writer can race to create a started child conversation
+    Given I have a conversation with title "Shared parent conversation"
+    And set "parentConversationId" to "${conversationId}"
+    And I share the conversation with user "bob" with request:
+    """
+    {
+      "userId": "bob",
+      "accessLevel": "writer"
+    }
+    """
+    And the response status should be 201
+    And I am authenticated as user "bob"
+    And I am authenticated as agent with API key "test-agent-key"
+    When I call POST "/v1/conversations/started-race-001/entries" concurrently 5 times with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${parentConversationId}",
+      "content": [
+        {
+          "role": "USER",
+          "text": "Concurrent child task"
+        }
+      ]
+    }
+    """
+    Then all responses should have status 201
+    When I call GET "/v1/conversations/started-race-001"
+    Then the response status should be 200
+    And the response body "ownerUserId" should be "alice"
+    And the response body "accessLevel" should be "writer"
+    And the response body "startedByConversationId" should be "${parentConversationId}"
+
   Scenario: Archiving a conversation keeps it readable and marks it archived
     Given I have a conversation with title "To Be Deleted"
     When I archive the conversation
@@ -541,3 +575,263 @@ Feature: Conversations REST API
     Then the response status should be 200
     And the response should contain 1 conversation
     And the response body "data[0].id" should be "${rootConversationId}"
+
+
+  Scenario: Create conversation with explicit ID - exact retry returns 200
+    When I create a conversation with request:
+    """
+    {
+      "id": "idempotent-conv-001",
+      "title": "Idempotent Conversation"
+    }
+    """
+    Then the response status should be 201
+    And set "firstCreatedAt" to the json response field "createdAt"
+    # Exact retry with same parameters
+    When I create a conversation with request:
+    """
+    {
+      "id": "idempotent-conv-001",
+      "title": "Idempotent Conversation"
+    }
+    """
+    Then the response status should be 200
+    And the response body "id" should be "idempotent-conv-001"
+    And the response body "createdAt" should be "${firstCreatedAt}"
+
+  Scenario: Create conversation with an explicit ID fork returns 201
+    Given I have a conversation with title "Fork status root"
+    And set "forkStatusRootId" to "${conversationId}"
+    And set "forkStatusChildId" to "00000000-0000-4000-8000-000000000801"
+    And I call POST "/v1/conversations/${forkStatusChildId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${forkStatusRootId}",
+      "content": [{"role": "USER", "text": "Child fork anchor"}]
+    }
+    """
+    And set "forkStatusEntryId" to the json response field "id"
+    When I create a conversation with request:
+    """
+    {
+      "id": "explicit-child-fork-status-001",
+      "title": "Explicit child fork",
+      "forkedAtConversationId": "${forkStatusChildId}",
+      "forkedAtEntryId": "${forkStatusEntryId}"
+    }
+    """
+    Then the response status should be 201
+    And the response body "id" should be "explicit-child-fork-status-001"
+    And the response body "startedByConversationId" should be "${forkStatusRootId}"
+
+  Scenario: Retry an explicit ID fork inside a started child group
+    Given I have a conversation with title "Fork retry root"
+    And set "forkRetryRootId" to "${conversationId}"
+    And set "forkRetryChildId" to "00000000-0000-4000-8000-000000000802"
+    And I call POST "/v1/conversations/${forkRetryChildId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${forkRetryRootId}",
+      "content": [{"role": "USER", "text": "Child fork retry anchor"}]
+    }
+    """
+    And set "forkRetryEntryId" to the json response field "id"
+    And "alice" is connected to the SSE event stream
+    And I create a conversation with request:
+    """
+    {
+      "id": "explicit-child-fork-retry-001",
+      "title": "Retry child fork",
+      "forkedAtConversationId": "${forkRetryChildId}",
+      "forkedAtEntryId": "${forkRetryEntryId}"
+    }
+    """
+    And set "forkRetryCreatedAt" to the json response field "createdAt"
+    And "alice" should receive an SSE event with kind "conversation" and event "created" where data "conversation" is "explicit-child-fork-retry-001"
+    When I create a conversation with request:
+    """
+    {
+      "id": "explicit-child-fork-retry-001",
+      "title": "Retry child fork",
+      "forkedAtConversationId": "${forkRetryChildId}",
+      "forkedAtEntryId": "${forkRetryEntryId}"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${forkRetryCreatedAt}"
+    And the response body "startedByConversationId" should be "${forkRetryRootId}"
+    And "alice" should not receive an SSE event with kind "conversation" and event "created" within 1 second
+
+  Scenario: Create conversation with explicit ID - conflicting retry returns 409
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-conv-001",
+      "title": "Original Title"
+    }
+    """
+    Then the response status should be 201
+    # Conflicting retry with different title
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-conv-001",
+      "title": "Different Title"
+    }
+    """
+    Then the response status should be 409
+    And the response body "code" should be "conversation_already_exists"
+    And the response body "details.conversationId" should be "conflict-conv-001"
+
+  Scenario: Create conversation with explicit ID - conflicting metadata returns 409
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-meta-001",
+      "title": "Test",
+      "metadata": {"key": "value1"}
+    }
+    """
+    Then the response status should be 201
+    # Conflicting retry with different metadata
+    When I create a conversation with request:
+    """
+    {
+      "id": "conflict-meta-001",
+      "title": "Test",
+      "metadata": {"key": "value2"}
+    }
+    """
+    Then the response status should be 409
+    And the response body "code" should be "conversation_already_exists"
+
+  Scenario: Create conversation with explicit ID - archived conversation returns 404
+    When I create a conversation with request:
+    """
+    {
+      "id": "archived-conv-001",
+      "title": "Will Be Archived"
+    }
+    """
+    Then the response status should be 201
+    And set "archivedConvId" to "archived-conv-001"
+    # Archive the conversation
+    When I call PATCH "/v1/conversations/${archivedConvId}" with body:
+    """
+    {
+      "archived": true
+    }
+    """
+    Then the response status should be 200
+    # Try to create with same ID
+    When I create a conversation with request:
+    """
+    {
+      "id": "archived-conv-001",
+      "title": "Will Be Archived"
+    }
+    """
+    Then the response status should be 404
+
+  Scenario: Create conversation with explicit ID and metadata - exact retry with nil vs empty metadata
+    When I create a conversation with request:
+    """
+    {
+      "id": "meta-nil-empty-001",
+      "title": "Metadata Test"
+    }
+    """
+    Then the response status should be 201
+    # Retry with explicit empty metadata (should match nil)
+    When I create a conversation with request:
+    """
+    {
+      "id": "meta-nil-empty-001",
+      "title": "Metadata Test",
+      "metadata": {}
+    }
+    """
+    Then the response status should be 200
+
+  Scenario: Create conversation with explicit ID - multiple exact retries remain idempotent
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 201
+    And set "originalCreatedAt" to the json response field "createdAt"
+    # Second retry
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${originalCreatedAt}"
+    # Third retry
+    When I create a conversation with request:
+    """
+    {
+      "id": "multi-retry-001",
+      "title": "Multi Retry Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${originalCreatedAt}"
+
+
+
+  Scenario: Create conversation with explicit ID - cross-user isolation (404 for different user)
+    Given I am authenticated as user "alice"
+    When I create a conversation with request:
+    """
+    {
+      "id": "cross-user-001",
+      "title": "Alice's Conversation"
+    }
+    """
+    Then the response status should be 201
+    # Switch to different user and try same ID
+    Given I am authenticated as user "bob"
+    When I create a conversation with request:
+    """
+    {
+      "id": "cross-user-001",
+      "title": "Alice's Conversation"
+    }
+    """
+    Then the response status should be 404
+
+  Scenario: Create conversation with explicit ID - concurrent exact retries produce one conversation
+    When I create a conversation with request:
+    """
+    {
+      "id": "concurrent-001",
+      "title": "Concurrent Test"
+    }
+    """
+    Then the response status should be 201
+    And set "firstCreatedAt" to the json response field "createdAt"
+    # Simulate concurrent retry (DB constraint fires, returns existing)
+    When I create a conversation with request:
+    """
+    {
+      "id": "concurrent-001",
+      "title": "Concurrent Test"
+    }
+    """
+    Then the response status should be 200
+    And the response body "createdAt" should be "${firstCreatedAt}"
+    # Verify only one conversation exists
+    When I call GET "/v1/conversations/concurrent-001"
+    Then the response status should be 200
+    And the response body "id" should be "concurrent-001"

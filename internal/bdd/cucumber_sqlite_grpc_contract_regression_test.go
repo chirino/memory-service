@@ -34,6 +34,7 @@ func TestFeaturesSQLiteGRPCContractRegressions(t *testing.T) {
 
 	featureFiles := []string{
 		filepath.Join("testdata", "features", "response-recorder-grpc.feature"),
+		filepath.Join("testdata", "features-grpc", "conversations-grpc.feature"),
 		filepath.Join("testdata", "features-grpc", "forking-grpc.feature"),
 		filepath.Join("testdata", "features-grpc", "ownership-transfers-grpc.feature"),
 		filepath.Join("testdata", "features-grpc", "sharing-grpc.feature"),

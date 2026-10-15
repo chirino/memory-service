@@ -155,19 +155,27 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 	var eventsToPublish []registryeventbus.Event
 	if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
 		var (
-			conv *registrystore.ConversationDetail
-			err  error
+			result *registrystore.CreateConversationResult
+			conv   *registrystore.ConversationDetail
+			err    error
 		)
 		if convID != nil {
-			conv, err = store.CreateConversationWithID(ctx, userID, clientID, *convID, req.Title, req.Metadata, req.AgentID, forkConvID, forkEntryID)
+			result, err = store.CreateConversationWithID(ctx, userID, clientID, *convID, req.Title, req.Metadata, req.AgentID, forkConvID, forkEntryID)
+			if err != nil {
+				return err
+			}
+			conv = result.Conversation
 		} else {
 			conv, err = store.CreateConversation(ctx, userID, clientID, req.Title, req.Metadata, req.AgentID, forkConvID, forkEntryID)
-		}
-		if err != nil {
-			return err
+			if err != nil {
+				return err
+			}
 		}
 		createdConv = conv
-		if conv != nil {
+
+		// Suppress events for exact retry (following #528 pattern)
+		isExactRetry := result != nil && result.ExactRetry
+		if conv != nil && !isExactRetry {
 			events := []registryeventbus.Event{{
 				Event: "created",
 				Kind:  "conversation",
@@ -187,8 +195,7 @@ func createConversation(c *gin.Context, store registrystore.MemoryStore, eventBu
 				eventsToPublish = events
 			}
 		}
-		// Java parity: fork creation returns 200, regular creation returns 201.
-		if forkConvID != nil {
+		if isExactRetry {
 			c.JSON(http.StatusOK, toConversationDetail(conv))
 		} else {
 			c.JSON(http.StatusCreated, toConversationDetail(conv))
@@ -547,6 +554,7 @@ func handleError(c *gin.Context, err error) {
 	var notFound *registrystore.NotFoundError
 	var validation *registrystore.ValidationError
 	var conflict *registrystore.ConflictError
+	var convIDConflict *registrystore.ConversationIDConflictError
 	var forbidden *registrystore.ForbiddenError
 	var badRequest *registrystore.BadRequestError
 
@@ -558,6 +566,14 @@ func handleError(c *gin.Context, err error) {
 			"code":    "validation_error",
 			"error":   err.Error(),
 			"details": gin.H{"field": validation.Field},
+		})
+	// convIDConflict must be checked before conflict: ConversationIDConflictError unwraps to
+	// ConflictError, so errors.As for *ConflictError would also match it.
+	case errors.As(err, &convIDConflict):
+		c.JSON(http.StatusConflict, gin.H{
+			"code":    convIDConflict.Code,
+			"error":   convIDConflict.Message,
+			"details": convIDConflict.Details,
 		})
 	case errors.As(err, &conflict):
 		c.JSON(http.StatusConflict, gin.H{"error": err.Error()})

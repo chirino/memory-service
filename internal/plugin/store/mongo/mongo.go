@@ -47,10 +47,8 @@ func init() {
 			if err := client.Ping(ctx, nil); err != nil {
 				return nil, fmt.Errorf("failed to ping MongoDB: %w", err)
 			}
-			if cfg.OutboxEnabled {
-				if err := requireMongoTransactionTopology(ctx, client); err != nil {
-					return nil, err
-				}
+			if err := requireMongoTransactionTopology(ctx, client); err != nil {
+				return nil, err
 			}
 
 			dbName := "memory_service"
@@ -404,6 +402,8 @@ type MongoStore struct {
 	appendBatchPatchBeforeApply  func() error              // test-only patch failure hook; nil in production
 	metadataPatchBeforeUpdate    func()                    // test-only synchronization hook; nil in production
 	materializeBeforeTransaction func(bson.ObjectID) error // test-only fault-injection hook; nil in production
+	beforeConversationInsert     func() error              // test-only fault-injection hook; nil in production
+	beforeMembershipInsert       func() error              // test-only fault-injection hook; nil in production
 }
 
 func (s *MongoStore) OutboxEnabled() bool {
@@ -414,12 +414,10 @@ func (s *MongoStore) InReadTx(ctx context.Context, fn func(context.Context) erro
 	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
 }
 
-// InWriteTx opens a MongoDB transaction when the outbox is enabled. Otherwise
-// it records write intent only, allowing partial writes that batch retries recover.
+// InWriteTx executes fn inside a MongoDB session transaction for atomic write operations.
+// OutboxEnabled controls durable event streaming and change-stream relays, while
+// InWriteTx ensures datastore write atomicity independently.
 func (s *MongoStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
-	if !s.OutboxEnabled() {
-		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
-	}
 	if session := mongo.SessionFromContext(ctx); session != nil && session.TransactionRunning() {
 		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 	}
@@ -515,6 +513,25 @@ type conversationAncestryDoc struct {
 	ParentConversationID *string               `bson:"parent_conversation_id,omitempty"`
 	ForkedAtEntryID      *string               `bson:"forked_at_entry_id,omitempty"`
 	Ancestors            []ancestryAncestorDoc `bson:"ancestors"`
+}
+
+func (c convDoc) toModel() model.Conversation {
+	return model.Conversation{
+		ID:                      c.ID,
+		Title:                   c.Title,
+		OwnerUserID:             c.OwnerUserID,
+		ClientID:                c.ClientID,
+		AgentID:                 c.AgentID,
+		Metadata:                c.Metadata,
+		ConversationGroupID:     strToUUID(c.ConversationGroupID),
+		ForkedAtConversationID:  c.ForkedAtConversationID,
+		ForkedAtEntryID:         c.ForkedAtEntryID,
+		StartedByConversationID: c.StartedByConversationID,
+		StartedByEntryID:        ptrStrToUUID(c.StartedByEntryID),
+		CreatedAt:               c.CreatedAt,
+		UpdatedAt:               c.UpdatedAt,
+		ArchivedAt:              c.ArchivedAt,
+	}
 }
 
 type memberDoc struct {
@@ -823,64 +840,6 @@ func (s *MongoStore) createConversationAncestryDoc(ctx context.Context, convID, 
 	return doc, nil
 }
 
-// claimConversationAncestry is the first step of the publish order: ancestry is
-// claimed before the conversation document is inserted last. A duplicate claim is
-// accepted only when its lineage matches; a matching orphan left by a failed
-// publish is deleted and the claim retried once.
-func (s *MongoStore) claimConversationAncestry(ctx context.Context, requested conversationAncestryDoc) (*registrystore.ConversationDetail, error) {
-	for attempt := 0; attempt < 2; attempt++ {
-		if _, err := s.conversationAncestry().InsertOne(ctx, requested); err == nil {
-			return nil, nil
-		} else if !mongo.IsDuplicateKeyError(err) {
-			return nil, fmt.Errorf("failed to create conversation ancestry: %w", err)
-		}
-
-		var existingAncestry conversationAncestryDoc
-		err := s.conversationAncestry().FindOne(ctx, bson.M{"_id": requested.ID}).Decode(&existingAncestry)
-		if errors.Is(err, mongo.ErrNoDocuments) {
-			continue
-		}
-		if err != nil {
-			return nil, fmt.Errorf("failed to load existing conversation ancestry: %w", err)
-		}
-		if !conversationAncestryDocsMatch(existingAncestry, requested) {
-			return nil, &registrystore.ConflictError{Message: "conversation id already exists with different ancestry"}
-		}
-
-		var existing convDoc
-		err = s.conversations().FindOne(ctx, bson.M{"_id": requested.ID}).Decode(&existing)
-		if err == nil {
-			summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
-			if summaryErr != nil {
-				return nil, summaryErr
-			}
-			return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
-		}
-		if !errors.Is(err, mongo.ErrNoDocuments) {
-			return nil, fmt.Errorf("failed to load existing conversation: %w", err)
-		}
-		// Matching ancestry without a conversation is an orphan from a failed
-		// publish-last attempt. Remove it and retry the ancestry claim once.
-		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": requested.ID})
-	}
-	return nil, &registrystore.ConflictError{Message: "conversation ancestry claim is in progress"}
-}
-
-func conversationAncestryDocsMatch(left, right conversationAncestryDoc) bool {
-	return left.ID == right.ID &&
-		left.ConversationGroupID == right.ConversationGroupID &&
-		stringPtrEqual(left.ParentConversationID, right.ParentConversationID) &&
-		stringPtrEqual(left.ForkedAtEntryID, right.ForkedAtEntryID) &&
-		reflect.DeepEqual(left.Ancestors, right.Ancestors)
-}
-
-func stringPtrEqual(left, right *string) bool {
-	if left == nil || right == nil {
-		return left == right
-	}
-	return *left == *right
-}
-
 func (s *MongoStore) validateConversationAncestryDocSize(ctx context.Context, doc conversationAncestryDoc) error {
 	raw, err := bson.Marshal(doc)
 	if err != nil {
@@ -982,16 +941,20 @@ func (s *MongoStore) resolveConversationID(ctx context.Context, groupID string) 
 // --- Conversations ---
 
 func (s *MongoStore) CreateConversation(ctx context.Context, userID string, clientID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
-	return s.createConversation(ctx, userID, clientID, agentID, string(uuid.NewString()), title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	result, err := s.createConversation(ctx, userID, clientID, agentID, string(uuid.NewString()), title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
+	if err != nil {
+		return nil, err
+	}
+	return result.Conversation, nil
 }
 
-func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *MongoStore) CreateConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]any, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	return s.createConversation(ctx, userID, clientID, agentID, convID, title, metadata, forkedAtConversationID, forkedAtEntryID, nil, nil)
 }
 
-func (s *MongoStore) createConversation(ctx context.Context, userID string, clientID string, agentID *string, convID string, title string, metadata map[string]any, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.ConversationDetail, error) {
+func (s *MongoStore) createConversation(ctx context.Context, userID string, clientID string, agentID *string, convID string, title string, metadata map[string]any, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	groupID := uuid.New()
-	now := time.Now()
+	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	if metadata == nil {
 		metadata = map[string]any{}
@@ -1003,6 +966,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 
 	var actualGroupID string
 	ownerUserID := userID
+	callerAccessLevel := model.AccessLevelOwner
 	var membershipsToCopy []memberDoc
 	var sourceConv *convDoc
 	var anchorOwnerDepth *int
@@ -1063,7 +1027,8 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		if err != nil {
 			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: string(*startedByConversationID)}
 		}
-		if _, err := s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter); err != nil {
+		callerAccessLevel, err = s.requireAccess(ctx, userID, parentConv.ConversationGroupID, model.AccessLevelWriter)
+		if err != nil {
 			return nil, err
 		}
 		if startedByEntryID != nil {
@@ -1077,13 +1042,6 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		}
 		actualGroupID = uuid.NewString()
 		ownerUserID = parentConv.OwnerUserID
-		_, err = s.groups().InsertOne(ctx, groupDoc{
-			ID:        actualGroupID,
-			CreatedAt: now,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to create conversation group: %w", err)
-		}
 		cursor, err := s.memberships().Find(ctx, bson.M{"conversation_group_id": parentConv.ConversationGroupID})
 		if err != nil {
 			return nil, fmt.Errorf("failed to load parent memberships: %w", err)
@@ -1093,7 +1051,60 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		}
 	} else {
 		actualGroupID = uuidToStr(groupID)
-		_, err := s.groups().InsertOne(ctx, groupDoc{
+	}
+
+	validateExisting := func(existing convDoc) (*registrystore.CreateConversationResult, error) {
+		if existing.ArchivedAt != nil {
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+		}
+		if startedByConversationID == nil && existing.OwnerUserID != userID {
+			return nil, &registrystore.NotFoundError{Resource: "conversation", ID: convID}
+		}
+
+		decryptedTitle, err := s.decryptConversationTitle(existing.ID, existing.Title)
+		if err != nil {
+			return nil, fmt.Errorf("failed to decrypt conversation title: %w", err)
+		}
+		persistedStartedByConversationID := existing.StartedByConversationID
+		persistedStartedByEntryID := existing.StartedByEntryID
+		if err := s.hydrateConversationFork(ctx, &existing); err != nil {
+			return nil, err
+		}
+
+		existingModel := existing.toModel()
+		existingModel.StartedByConversationID = ptrStrToConversationID(persistedStartedByConversationID)
+		existingModel.StartedByEntryID = ptrStrToUUID(persistedStartedByEntryID)
+		if !registrystore.ConversationsMatch(&existingModel, ownerUserID, clientID, title, decryptedTitle, metadata, agentID,
+			forkedAtConversationID, forkedAtEntryID, startedByConversationID, startedByEntryID) {
+			return nil, registrystore.NewConversationIDConflictError(convID)
+		}
+
+		summary, err := s.conversationSummaryFromDoc(ctx, existing, callerAccessLevel)
+		if err != nil {
+			return nil, err
+		}
+		return &registrystore.CreateConversationResult{
+			Conversation: &registrystore.ConversationDetail{ConversationSummary: summary},
+			ExactRetry:   true,
+		}, nil
+	}
+
+	var existing convDoc
+	findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing)
+	if findErr == nil {
+		return validateExisting(existing)
+	}
+	if !errors.Is(findErr, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("failed to check existing conversation: %w", findErr)
+	}
+
+	encTitle, err := s.encryptConversationTitle(string(convID), title)
+	if err != nil {
+		return nil, fmt.Errorf("failed to encrypt title: %w", err)
+	}
+
+	if forkedAtConversationID == nil {
+		_, err = s.groups().InsertOne(ctx, groupDoc{
 			ID:        actualGroupID,
 			CreatedAt: now,
 		})
@@ -1102,10 +1113,6 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		}
 	}
 
-	encTitle, err := s.encryptConversationTitle(string(convID), title)
-	if err != nil {
-		return nil, fmt.Errorf("failed to encrypt title: %w", err)
-	}
 	doc := convDoc{
 		ID:                      string(convID),
 		Title:                   encTitle,
@@ -1124,26 +1131,24 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	if err != nil {
 		return nil, err
 	}
-	existingDetail, err := s.claimConversationAncestry(ctx, ancestryDoc)
-	if err != nil {
-		return nil, err
+	if _, err := s.conversationAncestry().InsertOne(ctx, ancestryDoc); err != nil {
+		return nil, fmt.Errorf("failed to create conversation ancestry: %w", err)
 	}
-	if existingDetail != nil {
-		return existingDetail, nil
-	}
-	if _, err := s.conversations().InsertOne(ctx, doc); err != nil {
-		if mongo.IsDuplicateKeyError(err) {
-			var existing convDoc
-			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": string(convID)}).Decode(&existing); findErr == nil {
-				summary, summaryErr := s.conversationSummaryFromDoc(ctx, existing, model.AccessLevelOwner)
-				if summaryErr != nil {
-					return nil, summaryErr
-				}
-				return &registrystore.ConversationDetail{ConversationSummary: summary}, nil
-			}
+
+	if s.beforeConversationInsert != nil {
+		if err := s.beforeConversationInsert(); err != nil {
+			return nil, err
 		}
-		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": string(convID)})
+	}
+
+	if _, err := s.conversations().InsertOne(ctx, doc); err != nil {
 		return nil, fmt.Errorf("failed to create conversation: %w", err)
+	}
+
+	if s.beforeMembershipInsert != nil {
+		if err := s.beforeMembershipInsert(); err != nil {
+			return nil, err
+		}
 	}
 
 	if forkedAtConversationID == nil {
@@ -1170,23 +1175,26 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 			}
 		}
 	}
-	return &registrystore.ConversationDetail{
-		ConversationSummary: registrystore.ConversationSummary{
-			ID:                      convID,
-			Title:                   title,
-			OwnerUserID:             ownerUserID,
-			ClientID:                clientID,
-			AgentID:                 agentID,
-			Metadata:                metadata,
-			ConversationGroupID:     strToUUID(actualGroupID),
-			ForkedAtConversationID:  forkedAtConversationID,
-			ForkedAtEntryID:         forkedAtEntryID,
-			StartedByConversationID: logicalStartedByConversationID,
-			StartedByEntryID:        logicalStartedByEntryID,
-			CreatedAt:               now,
-			UpdatedAt:               now,
-			AccessLevel:             model.AccessLevelOwner,
+	return &registrystore.CreateConversationResult{
+		Conversation: &registrystore.ConversationDetail{
+			ConversationSummary: registrystore.ConversationSummary{
+				ID:                      convID,
+				Title:                   title,
+				OwnerUserID:             ownerUserID,
+				ClientID:                clientID,
+				AgentID:                 agentID,
+				Metadata:                metadata,
+				ConversationGroupID:     strToUUID(actualGroupID),
+				ForkedAtConversationID:  forkedAtConversationID,
+				ForkedAtEntryID:         forkedAtEntryID,
+				StartedByConversationID: logicalStartedByConversationID,
+				StartedByEntryID:        logicalStartedByEntryID,
+				CreatedAt:               now,
+				UpdatedAt:               now,
+				AccessLevel:             callerAccessLevel,
+			},
 		},
+		ExactRetry: false,
 	}, nil
 }
 
@@ -2693,12 +2701,27 @@ func (s *MongoStore) appendEntries(ctx context.Context, userID string, conversat
 		}
 		detail, createErr := s.createConversation(ctx, userID, resolvedClientID, agentID, conversationID, "", nil, forkedAtConvID, forkedAtEntryID, startedByConversationID, startedByEntryID)
 		if createErr != nil {
-			return nil, createErr
-		}
-		conv = convDoc{
-			ID:                  string(detail.ID),
-			ConversationGroupID: uuidToStr(detail.ConversationGroupID),
-			OwnerUserID:         detail.OwnerUserID,
+			// createConversation handles the raw PK violation internally and returns
+			// ConversationIDConflictError when fields differ. In the auto-create path
+			// that means the conversation already exists — load it and continue.
+			var convIDConflict *registrystore.ConversationIDConflictError
+			if !errors.As(createErr, &convIDConflict) {
+				return nil, createErr
+			}
+			// Load the existing conversation by ID and continue with the append.
+			var existingDoc convDoc
+			if findErr := s.conversations().FindOne(ctx,
+				bson.M{"_id": string(conversationID)},
+			).Decode(&existingDoc); findErr != nil {
+				return nil, createErr
+			}
+			conv = existingDoc
+		} else {
+			conv = convDoc{
+				ID:                  string(detail.Conversation.ID),
+				ConversationGroupID: uuidToStr(detail.Conversation.ConversationGroupID),
+				OwnerUserID:         detail.Conversation.OwnerUserID,
+			}
 		}
 	}
 	// Block appending to archived conversations. Use explicit unarchive via conversationPatch.archived=false first.
@@ -3009,34 +3032,23 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 	}
 	ancestryDoc, err := s.createConversationAncestryDoc(ctx, conv.ID, groupID, nil, nil, nil)
 	if err != nil {
-		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
 		return convDoc{}, err
 	}
 	if _, err := s.conversationAncestry().InsertOne(ctx, ancestryDoc); err != nil {
-		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
-		if mongo.IsDuplicateKeyError(err) {
-			// A concurrent request already claimed this conversation; fetch and return it.
-			var existing convDoc
-			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": conv.ID}).Decode(&existing); findErr != nil {
-				return convDoc{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
-			}
-			return existing, nil
-		}
 		return convDoc{}, fmt.Errorf("failed to create conversation ancestry: %w", err)
 	}
-	if _, err := s.conversations().InsertOne(ctx, conv); err != nil {
-		// Clean up the orphaned group before handling the error.
-		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": conv.ID})
-		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
-		if mongo.IsDuplicateKeyError(err) {
-			// A concurrent request already created this conversation; fetch and return it.
-			var existing convDoc
-			if findErr := s.conversations().FindOne(ctx, bson.M{"_id": conv.ID}).Decode(&existing); findErr != nil {
-				return convDoc{}, fmt.Errorf("failed to fetch existing conversation: %w", findErr)
-			}
-			return existing, nil
+	if s.beforeConversationInsert != nil {
+		if err := s.beforeConversationInsert(); err != nil {
+			return convDoc{}, err
 		}
+	}
+	if _, err := s.conversations().InsertOne(ctx, conv); err != nil {
 		return convDoc{}, fmt.Errorf("failed to create conversation: %w", err)
+	}
+	if s.beforeMembershipInsert != nil {
+		if err := s.beforeMembershipInsert(); err != nil {
+			return convDoc{}, err
+		}
 	}
 
 	member := memberDoc{
@@ -3046,9 +3058,6 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 		CreatedAt:           now,
 	}
 	if _, err := s.memberships().InsertOne(ctx, member); err != nil {
-		_, _ = s.conversations().DeleteOne(ctx, bson.M{"_id": conv.ID})
-		_, _ = s.conversationAncestry().DeleteOne(ctx, bson.M{"_id": conv.ID})
-		_, _ = s.groups().DeleteOne(ctx, bson.M{"_id": groupID})
 		return convDoc{}, fmt.Errorf("failed to create membership: %w", err)
 	}
 

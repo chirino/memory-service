@@ -8,14 +8,15 @@ import (
 )
 
 var serialFeatureFiles = map[string]bool{
-	"eviction-events-rest.feature":             true,
-	"admin-rest.feature":                       true,
-	"admin-checkpoints-rest.feature":           true,
-	"admin-attachments-rest.feature":           true,
-	"admin-stats-rest.feature":                 true,
-	"admin-conversation-metadata-rest.feature": true,
-	"eviction-rest.feature":                    true,
-	"task-queue.feature":                       true,
+	"conversation-idempotency-race-rest.feature": true,
+	"eviction-events-rest.feature":               true,
+	"admin-rest.feature":                         true,
+	"admin-checkpoints-rest.feature":             true,
+	"admin-attachments-rest.feature":             true,
+	"admin-stats-rest.feature":                   true,
+	"admin-conversation-metadata-rest.feature":   true,
+	"eviction-rest.feature":                      true,
+	"task-queue.feature":                         true,
 }
 
 // authModeFeatureFiles is the set of feature files that require dedicated

@@ -33,9 +33,9 @@ That is the right intermediate state, but it is not the end state. Without sessi
 
 Mongo now uses:
 
-- `MongoStore.InWriteTx(...)` with `mongo.Session.WithTransaction` whenever the outbox is enabled
+- `MongoStore.InWriteTx(...)` with `mongo.Session.WithTransaction` for all write operations independently of outbox configuration
 - the transaction session carried by `context.Context` for business collection and `outbox_events` writes
-- startup topology validation that requires a replica set or mongos when the outbox is enabled
+- startup topology validation that unconditionally requires a replica set or mongos
 - a change-stream relay that stores its durable resume token and assigns a stable event sequence inside one transaction
 - opaque `mongo:<base64url BSON>` cursors: change-stream tokens for live rows and stable relay-generated anchors for committed rows recovered outside retained stream history
 - `ListOutboxEvents(...)` paging materialized events in relay order and reporting evicted cursor anchors as stale
@@ -230,4 +230,4 @@ Because `_id` is document identity, not the authoritative commit resume position
 
 - The relay persists one checkpoint resume token and also materializes the token on each replayable outbox document.
 - The relay retries a failed event-sequence materialization before it reads the next change, so it cannot checkpoint past an unmaterialized event.
-- Outbox-enabled MongoDB startup requires a replica set or mongos; standalone deployments are rejected.
+- MongoDB startup unconditionally requires a replica set or mongos; standalone deployments are rejected.

@@ -40,6 +40,28 @@ Response:
 }
 ```
 
+#### Retry creation with a client-supplied ID
+
+Set `id` in the request when the client needs a stable conversation ID. If you omit `id`, the service generates one.
+
+```bash
+curl -X POST http://localhost:8080/v1/conversations \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{"id": "support-chat-123", "title": "Support chat", "metadata": {"topic": "support"}}'
+```
+
+The service compares `title`, `metadata`, `agentId`, `forkedAtConversationId`, and `forkedAtEntryId`. It also compares the authenticated user and client identities.
+
+| Condition                                               | REST status     | Result                                                                                                      |
+| ------------------------------------------------------- | --------------- | ----------------------------------------------------------------------------------------------------------- |
+| No conversation has the requested ID                    | `201 Created`   | Creates the conversation and emits one `conversation/created` event. A new fork also returns `201 Created`. |
+| Every compared field and identity matches               | `200 OK`        | Returns the existing conversation without emitting another creation event.                                  |
+| A compared field or the client identity differs         | `409 Conflict`  | Returns the error code `conversation_already_exists`.                                                       |
+| The conversation is archived or belongs to another user | `404 Not Found` | Does not reveal the unavailable conversation.                                                               |
+
+The gRPC `CreateConversation` operation uses the same comparison. An exact retry returns the existing conversation without an error. A conflicting retry returns `ABORTED`. An unavailable conversation returns `NOT_FOUND`.
+
 ### Retrieving a Conversation
 
 ```bash

@@ -176,6 +176,19 @@ type ConversationsServiceClient interface {
 	// The mode parameter controls which conversations from each fork tree are returned.
 	// See ConversationListMode for available modes.
 	ListConversations(ctx context.Context, in *ListConversationsRequest, opts ...grpc.CallOption) (*ListConversationsResponse, error)
+	// CreateConversation creates a new conversation owned by the current user.
+	//
+	// Idempotency: When a conversation ID is provided in CreateConversationRequest.id,
+	// this operation is idempotent. If the exact same conversation already exists,
+	// the operation returns the existing conversation without error. If a conversation
+	// with the same ID exists but differs in any compared field, the operation returns
+	// ABORTED status. If the conversation exists but is archived or belongs to a
+	// different user, the operation returns NOT_FOUND status.
+	//
+	// The complete equivalence rule: all of title, metadata, agent_id,
+	// forked_at_conversation_id, forked_at_entry_id must match, and the
+	// authenticated user identity and client identity (derived from the
+	// authentication token) must also match.
 	CreateConversation(ctx context.Context, in *CreateConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
 	GetConversation(ctx context.Context, in *GetConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
 	UpdateConversation(ctx context.Context, in *UpdateConversationRequest, opts ...grpc.CallOption) (*Conversation, error)
@@ -259,6 +272,19 @@ type ConversationsServiceServer interface {
 	// The mode parameter controls which conversations from each fork tree are returned.
 	// See ConversationListMode for available modes.
 	ListConversations(context.Context, *ListConversationsRequest) (*ListConversationsResponse, error)
+	// CreateConversation creates a new conversation owned by the current user.
+	//
+	// Idempotency: When a conversation ID is provided in CreateConversationRequest.id,
+	// this operation is idempotent. If the exact same conversation already exists,
+	// the operation returns the existing conversation without error. If a conversation
+	// with the same ID exists but differs in any compared field, the operation returns
+	// ABORTED status. If the conversation exists but is archived or belongs to a
+	// different user, the operation returns NOT_FOUND status.
+	//
+	// The complete equivalence rule: all of title, metadata, agent_id,
+	// forked_at_conversation_id, forked_at_entry_id must match, and the
+	// authenticated user identity and client identity (derived from the
+	// authentication token) must also match.
 	CreateConversation(context.Context, *CreateConversationRequest) (*Conversation, error)
 	GetConversation(context.Context, *GetConversationRequest) (*Conversation, error)
 	UpdateConversation(context.Context, *UpdateConversationRequest) (*Conversation, error)

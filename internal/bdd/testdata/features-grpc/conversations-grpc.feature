@@ -106,6 +106,41 @@ Feature: Conversations gRPC API
     And the gRPC response field "forkedAtEntryId" should be "${sourceEntryId}"
     And the gRPC response field "hasResponseInProgress" should be false
 
+  Scenario: Retry an explicit ID fork inside a started child group via gRPC
+    Given I have a conversation with title "gRPC fork retry root"
+    And set "grpcForkRetryRootId" to "${conversationId}"
+    And set "grpcForkRetryChildId" to "00000000-0000-4000-8000-000000000803"
+    And I call POST "/v1/conversations/${grpcForkRetryChildId}/entries" with body:
+    """
+    {
+      "channel": "HISTORY",
+      "contentType": "history",
+      "startedByConversationId": "${grpcForkRetryRootId}",
+      "content": [{"role": "USER", "text": "gRPC child fork retry anchor"}]
+    }
+    """
+    And set "grpcForkRetryEntryId" to the json response field "id"
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    id: "grpc-explicit-child-fork-retry-001"
+    title: "gRPC retry child fork"
+    forked_at_conversation_id: "${grpcForkRetryChildId}"
+    forked_at_entry_id: "${grpcForkRetryEntryId}"
+    """
+    Then the gRPC response should not have an error
+    And set "grpcForkRetryCreatedAt" to the gRPC response field "createdAt"
+    When I send gRPC request "ConversationsService/CreateConversation" with body:
+    """
+    id: "grpc-explicit-child-fork-retry-001"
+    title: "gRPC retry child fork"
+    forked_at_conversation_id: "${grpcForkRetryChildId}"
+    forked_at_entry_id: "${grpcForkRetryEntryId}"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "grpc-explicit-child-fork-retry-001"
+    And the gRPC response field "createdAt" should be "${grpcForkRetryCreatedAt}"
+    And the gRPC response field "startedByConversationId" should be "${grpcForkRetryRootId}"
+
   Scenario: Update conversation metadata via gRPC
     Given I have a conversation with title "Metadata Before"
     When I send gRPC request "ConversationsService/UpdateConversation" with body:

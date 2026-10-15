@@ -32,7 +32,11 @@ func TestMongoMetadataFilterLatestMatchingFork(t *testing.T) {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
-	root, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Root", map[string]interface{}{"match": "yes"}, nil, nil, nil)
+	result, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Root", map[string]interface{}{"match": "yes"}, nil, nil, nil)
+
+	require.NoError(t, err)
+
+	root := result.Conversation
 	require.NoError(t, err)
 	entries, err := store.AppendEntries(ctx, "user1", root.ID, []registrystore.CreateEntryRequest{{
 		Content: json.RawMessage(`"history entry"`), ContentType: "text/plain", Channel: "history",
@@ -70,7 +74,11 @@ func TestMongoMetadataFilterMatchesOnlyScalarStrings(t *testing.T) {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
-	stringConv, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "String", map[string]interface{}{"kind": "1"}, nil, nil, nil)
+	result, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "String", map[string]interface{}{"kind": "1"}, nil, nil, nil)
+
+	require.NoError(t, err)
+
+	stringConv := result.Conversation
 	require.NoError(t, err)
 	_, err = store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000002", "Array", map[string]interface{}{"kind": []interface{}{"1"}}, nil, nil, nil)
 	require.NoError(t, err)
@@ -102,7 +110,11 @@ func TestMongoMetadataFilterNotEqual(t *testing.T) {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
-	conv1, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Conv1", map[string]interface{}{"status": "running"}, nil, nil, nil)
+	result, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Conv1", map[string]interface{}{"status": "running"}, nil, nil, nil)
+
+	require.NoError(t, err)
+
+	conv1 := result.Conversation
 	require.NoError(t, err)
 	_, err = store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000002", "Conv2", map[string]interface{}{"status": "waiting"}, nil, nil, nil)
 	require.NoError(t, err)
@@ -143,7 +155,9 @@ func TestMongoMetadataFilterInvalidCursor(t *testing.T) {
 	assert.ErrorAs(t, err, &badReq)
 
 	// Public inaccessible cursor returns BadRequestError
-	convUser2, err := store.CreateConversationWithID(ctx, "user2", "", "00000000-0000-4000-8000-000000000099", "User2 Conv", nil, nil, nil, nil)
+	result, err := store.CreateConversationWithID(ctx, "user2", "", "00000000-0000-4000-8000-000000000099", "User2 Conv", nil, nil, nil, nil)
+	require.NoError(t, err)
+	convUser2 := result.Conversation
 	require.NoError(t, err)
 	inaccessibleCursor := convUser2.ID
 	_, _, err = store.ListConversations(ctx, "user1", nil, &inaccessibleCursor, 10, model.ListModeAll, model.ConversationAncestryAll, registrystore.ArchiveFilterExclude, nil)
@@ -289,7 +303,11 @@ func TestMongoMetadataFilterSameKeyDuplicateAND(t *testing.T) {
 	store, err := loader(ctx)
 	require.NoError(t, err)
 
-	convRunning, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Running", map[string]interface{}{"status": "running"}, nil, nil, nil)
+	result, err := store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000001", "Running", map[string]interface{}{"status": "running"}, nil, nil, nil)
+
+	require.NoError(t, err)
+
+	convRunning := result.Conversation
 	require.NoError(t, err)
 	_, err = store.CreateConversationWithID(ctx, "user1", "", "00000000-0000-4000-8000-000000000002", "Waiting", map[string]interface{}{"status": "waiting"}, nil, nil, nil)
 	require.NoError(t, err)
