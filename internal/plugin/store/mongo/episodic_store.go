@@ -20,6 +20,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/chirino/memory-service/internal/txscope"
 	"github.com/google/uuid"
@@ -122,18 +123,32 @@ type mongoEpisodicStore struct {
 	vectors *mongo.Collection
 	enc     *dataencryption.Service
 	qdrant  *episodicqdrant.Client
+
+	// Test-only hooks; nil in production.
+	afterMemoryArchive func() error           // called after UpdateMany archive step, before InsertOne
+	beforeMemoryInsert func() error           // called before InsertOne; return TransientTransactionError to trigger replay
+	afterMemoryInsert  func(id uuid.UUID)     // called after successful InsertOne; records the inserted ID
 }
 
 func (s *mongoEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
 	return fn(txscope.WithIntent(ctx, txscope.IntentRead))
 }
 
+// InWriteTx executes fn inside a MongoDB session transaction using WithTransaction,
+// which replays the callback on TransientTransactionError (including WriteConflict from
+// concurrent writes to the same document). This enables the idempotency lookup inside
+// PutMemory to observe the winner's committed document on replay and return ExactRetry=true.
 func (s *mongoEpisodicStore) InWriteTx(ctx context.Context, fn func(context.Context) error) error {
 	if session := mongo.SessionFromContext(ctx); session != nil && session.TransactionRunning() {
 		return fn(txscope.WithIntent(ctx, txscope.IntentWrite))
 	}
-	err := runMongoTransactionOnce(ctx, s.col.Database().Client(), func(txCtx context.Context) error {
-		return fn(txscope.WithIntent(txCtx, txscope.IntentWrite))
+	session, err := s.col.Database().Client().StartSession()
+	if err != nil {
+		return fmt.Errorf("MongoDB episodic write transaction: start session: %w", err)
+	}
+	defer session.EndSession(ctx)
+	_, err = session.WithTransaction(ctx, func(txCtx context.Context) (any, error) {
+		return nil, fn(txscope.WithIntent(txCtx, txscope.IntentWrite))
 	})
 	if err != nil {
 		return fmt.Errorf("MongoDB episodic write transaction: %w", err)
@@ -268,19 +283,116 @@ func mongoMemoryArchiveMatch(archived registryepisodic.ArchiveFilter) bson.M {
 	}
 }
 
-// LookupMemoryByID is not yet implemented for MongoDB. Task 4 will provide the full implementation.
-func (s *mongoEpisodicStore) LookupMemoryByID(_ context.Context, _ uuid.UUID, _ registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
-	return nil, fmt.Errorf("LookupMemoryByID: not implemented for mongodb")
+// LookupMemoryByID is the pre-flight exact-retry check for MongoDB. It looks up a memory
+// document by its UUID and compares it against req without performing any write.
+//
+// Returns:
+//   - (*MemoryWriteResult{ExactRetry: true}, nil): document found and MemoriesMatch is true.
+//   - (nil, nil): no document exists — proceed to new-write path.
+//   - (nil, *store.NotFoundError): document exists but deleted_reason is 1 or 2.
+//   - (nil, *store.MemoryRevisionIDConflictError): namespace/key differ or MemoriesMatch false.
+//   - (nil, err): store-level error.
+func (s *mongoEpisodicStore) LookupMemoryByID(ctx context.Context, id uuid.UUID, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
+	nsEncoded, err := encodeNS(req.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	var doc memoryDoc
+	if err := s.col.FindOne(ctx, bson.M{"_id": id.String()}).Decode(&doc); err != nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
+			return nil, nil
+		}
+		return nil, fmt.Errorf("lookup memory by id: %w", err)
+	}
+
+	// Check namespace and key before decrypting — per the Lead-ruled requirement,
+	// namespace/key divergence is returned as a conflict without touching the value.
+	if doc.Namespace != nsEncoded || doc.Key != req.Key {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different namespace or key",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Document exists — check deleted_reason.
+	if doc.DeletedReason != nil {
+		dr := *doc.DeletedReason
+		if dr == 1 || dr == 2 {
+			return nil, &registrystore.NotFoundError{Resource: "memory", ID: id.String()}
+		}
+	}
+
+	// Decrypt and unmarshal the value for MemoriesMatch.
+	var value map[string]interface{}
+	if len(doc.ValueEncrypted) > 0 {
+		plain, err := s.decryptMemoryValue(id, doc.ValueEncrypted)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt memory value for lookup: %w", err)
+		}
+		if err := json.Unmarshal(plain, &value); err != nil {
+			return nil, fmt.Errorf("unmarshal memory value for lookup: %w", err)
+		}
+	}
+
+	existing := registryepisodic.MemoryExistingFields{
+		Namespace:  doc.Namespace,
+		Key:        doc.Key,
+		Value:      value,
+		Index:      doc.IndexedContent,
+		CreatedAt:  doc.CreatedAt,
+		ExpiresAt:  doc.ExpiresAt,
+		MemoryKind: doc.MemoryKind,
+	}
+	if !registryepisodic.MemoriesMatch(existing, req, nsEncoded) {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different content",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Exact retry — return stored result with ExactRetry=true.
+	ns, err := episodic.DecodeNamespace(doc.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("decode namespace: %w", err)
+	}
+	return &registryepisodic.MemoryWriteResult{
+		ID:         id,
+		Namespace:  ns,
+		Key:        doc.Key,
+		Attributes: doc.PolicyAttributes,
+		MemoryKind: doc.MemoryKind,
+		CreatedAt:  doc.CreatedAt,
+		ExpiresAt:  doc.ExpiresAt,
+		Revision:   doc.Revision,
+		ExactRetry: true,
+	}, nil
 }
 
-// PutMemory upserts a memory. The previous active row is archived first.
+// PutMemory upserts a memory. When req.RevisionID is non-nil, a lookup runs first
+// inside the transaction so that a concurrent second writer (whose WriteConflict
+// causes WithTransaction to replay its callback) finds the committed document and
+// returns ExactRetry=true instead of a duplicate-key error.
 func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := encodeNS(req.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
+	// Use caller-supplied ID when present; otherwise generate one.
 	newID := uuid.New()
+	if req.RevisionID != nil {
+		newID = *req.RevisionID
+	}
+
+	// Single UTC timestamp truncated to millisecond precision (MongoDB BSON Date resolution).
+	now := time.Now().UTC().Truncate(time.Millisecond)
 
 	valueJSON, err := json.Marshal(req.Value)
 	if err != nil {
@@ -293,16 +405,92 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 
 	var expiresAt *time.Time
 	if req.TTLSeconds > 0 {
-		t := time.Now().Add(time.Duration(req.TTLSeconds) * time.Second)
+		t := now.Add(time.Duration(req.TTLSeconds) * time.Second)
 		expiresAt = &t
 	}
 
-	now := time.Now()
 	indexedContent := req.Index
 	if indexedContent == nil {
 		indexedContent = map[string]string{}
 	}
 
+	// When RevisionID is set, look up the document first inside the transaction.
+	// The second concurrent writer (replayed by WithTransaction after WriteConflict)
+	// sees the winner's committed document here and returns ExactRetry=true.
+	if req.RevisionID != nil {
+		var existing memoryDoc
+		if err := s.col.FindOne(ctx, bson.M{"_id": newID.String()}).Decode(&existing); err != nil {
+			if !errors.Is(err, mongo.ErrNoDocuments) {
+				return nil, fmt.Errorf("in-tx lookup by id: %w", err)
+			}
+			// Not found — fall through to new-write path below.
+		} else {
+			// Document found: check namespace/key before decrypting.
+			if existing.Namespace != nsEncoded || existing.Key != req.Key {
+				return nil, &registrystore.MemoryRevisionIDConflictError{
+					ConflictError: &registrystore.ConflictError{
+						Message: "memory revision ID already in use with different namespace or key",
+						Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+					},
+					RevisionID: newID.String(),
+				}
+			}
+			// deleted_reason check.
+			if existing.DeletedReason != nil {
+				dr := *existing.DeletedReason
+				if dr == 1 || dr == 2 {
+					return nil, &registrystore.NotFoundError{Resource: "memory", ID: newID.String()}
+				}
+			}
+			// Decrypt and compare.
+			var value map[string]interface{}
+			if len(existing.ValueEncrypted) > 0 {
+				plain, decErr := s.decryptMemoryValue(newID, existing.ValueEncrypted)
+				if decErr != nil {
+					return nil, fmt.Errorf("decrypt memory value (in-tx lookup): %w", decErr)
+				}
+				if err := json.Unmarshal(plain, &value); err != nil {
+					return nil, fmt.Errorf("unmarshal memory value (in-tx lookup): %w", err)
+				}
+			}
+			ef := registryepisodic.MemoryExistingFields{
+				Namespace:  existing.Namespace,
+				Key:        existing.Key,
+				Value:      value,
+				Index:      existing.IndexedContent,
+				CreatedAt:  existing.CreatedAt,
+				ExpiresAt:  existing.ExpiresAt,
+				MemoryKind: existing.MemoryKind,
+			}
+			if !registryepisodic.MemoriesMatch(ef, req, nsEncoded) {
+				return nil, &registrystore.MemoryRevisionIDConflictError{
+					ConflictError: &registrystore.ConflictError{
+						Message: "memory revision ID already in use with different content",
+						Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+					},
+					RevisionID: newID.String(),
+				}
+			}
+			// Exact retry — decode namespace and return stored result.
+			ns, decErr := episodic.DecodeNamespace(existing.Namespace)
+			if decErr != nil {
+				return nil, fmt.Errorf("decode namespace: %w", decErr)
+			}
+			return &registryepisodic.MemoryWriteResult{
+				ID:         newID,
+				Namespace:  ns,
+				Key:        existing.Key,
+				Attributes: existing.PolicyAttributes,
+				MemoryKind: existing.MemoryKind,
+				CreatedAt:  existing.CreatedAt,
+				ExpiresAt:  existing.ExpiresAt,
+				Revision:   existing.Revision,
+				ExactRetry: true,
+			}, nil
+		}
+	}
+
+	// Load the active document for idempotency mode checks and archive step.
 	var active memoryDoc
 	hasActive := false
 	if err := s.col.FindOne(
@@ -310,12 +498,38 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		bson.M{"namespace": nsEncoded, "key": req.Key, "archived_at": bson.M{"$exists": false}},
 		options.FindOne().SetSort(bson.D{{Key: "created_at", Value: -1}, {Key: "_id", Value: -1}}),
 	).Decode(&active); err != nil {
-		if err != mongo.ErrNoDocuments {
+		if !errors.Is(err, mongo.ErrNoDocuments) {
 			return nil, fmt.Errorf("load active memory: %w", err)
 		}
 	} else {
 		hasActive = true
 	}
+
+	// create-only check: fail if an active row already exists.
+	if req.CreateOnly {
+		if hasActive {
+			return nil, registryepisodic.ErrMemoryRevisionConflict
+		}
+	}
+
+	// expected-active-revision-ID check: active document ID must match.
+	if req.ExpectedRevisionID != nil {
+		if !hasActive || active.ID != req.ExpectedRevisionID.String() {
+			var actualID string
+			if hasActive {
+				actualID = active.ID
+			}
+			return nil, &registrystore.ExpectedActiveRevisionIDMismatchError{
+				ConflictError: &registrystore.ConflictError{
+					Message: "active revision ID does not match expected_revision_id",
+					Code:    registrystore.ExpectedActiveRevisionIDMismatchCode,
+				},
+				ExpectedID: req.ExpectedRevisionID.String(),
+				ActualID:   actualID,
+			}
+		}
+	}
+
 	if req.ExpectedRevision != nil {
 		if !hasActive || active.Revision != *req.ExpectedRevision {
 			return nil, registryepisodic.ErrMemoryRevisionConflict
@@ -371,6 +585,12 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 			return nil, registryepisodic.ErrMemoryRevisionConflict
 		}
 	}
+	// Test-only fault injection point: after archive, before insert.
+	if s.afterMemoryArchive != nil {
+		if err := s.afterMemoryArchive(); err != nil {
+			return nil, err
+		}
+	}
 
 	// kind=0 (add) if no previous row existed; kind=1 (update) if one was archived.
 	var kind int32
@@ -396,11 +616,21 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 		MemoryKind:       req.MemoryKind,
 		// IndexedAt omitted = pending vector sync
 	}
+	// Test-only fault injection point: before insert.
+	if s.beforeMemoryInsert != nil {
+		if err := s.beforeMemoryInsert(); err != nil {
+			return nil, err
+		}
+	}
 	if _, err := s.col.InsertOne(ctx, doc); err != nil {
 		if mongo.IsDuplicateKeyError(err) {
 			return nil, registryepisodic.ErrMemoryRevisionConflict
 		}
 		return nil, fmt.Errorf("insert memory: %w", err)
+	}
+	// Test-only post-insert hook.
+	if s.afterMemoryInsert != nil {
+		s.afterMemoryInsert(newID)
 	}
 
 	return &registryepisodic.MemoryWriteResult{
