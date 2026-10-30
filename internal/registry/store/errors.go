@@ -7,6 +7,8 @@ import (
 
 const DuplicateSequenceConflictCode = "duplicate_sequence"
 const ConversationAlreadyExistsCode = "conversation_already_exists"
+const MemoryRevisionAlreadyExistsCode = "memory_revision_already_exists"
+const ExpectedActiveRevisionIDMismatchCode = "expected_active_revision_id_mismatch"
 
 // NotFoundError indicates the resource was not found (or user lacks access).
 type NotFoundError struct {
@@ -62,6 +64,33 @@ type ConversationIDConflictError struct {
 }
 
 func (e *ConversationIDConflictError) Unwrap() error {
+	return e.ConflictError
+}
+
+// MemoryRevisionIDConflictError indicates a memory revision ID was supplied but the
+// stored row for that ID has different content (namespace, key, value, index, TTL, or
+// kind). It unwraps to *ConflictError, so errors.As() for *ConflictError also matches
+// it. The response body must contain only code and the caller-supplied revision_id —
+// no stored namespace, key, value, kind, or timestamps.
+type MemoryRevisionIDConflictError struct {
+	*ConflictError
+	RevisionID string
+}
+
+func (e *MemoryRevisionIDConflictError) Unwrap() error {
+	return e.ConflictError
+}
+
+// ExpectedActiveRevisionIDMismatchError indicates that the expected_revision_id the
+// caller supplied does not match the active row's ID for (namespace, key). It unwraps
+// to *ConflictError, so errors.As() for *ConflictError also matches it.
+type ExpectedActiveRevisionIDMismatchError struct {
+	*ConflictError
+	ExpectedID string
+	ActualID   string // empty string when no active row exists
+}
+
+func (e *ExpectedActiveRevisionIDMismatchError) Unwrap() error {
 	return e.ConflictError
 }
 
