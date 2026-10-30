@@ -268,6 +268,11 @@ func mongoMemoryArchiveMatch(archived registryepisodic.ArchiveFilter) bson.M {
 	}
 }
 
+// LookupMemoryByID is not yet implemented for MongoDB. Task 4 will provide the full implementation.
+func (s *mongoEpisodicStore) LookupMemoryByID(_ context.Context, _ uuid.UUID, _ registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
+	return nil, fmt.Errorf("LookupMemoryByID: not implemented for mongodb")
+}
+
 // PutMemory upserts a memory. The previous active row is archived first.
 func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := encodeNS(req.Namespace)

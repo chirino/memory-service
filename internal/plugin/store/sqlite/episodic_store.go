@@ -177,6 +177,11 @@ func (e *sqliteEpisodicStore) decryptMemoryValue(id uuid.UUID, ciphertext []byte
 	return e.s.enc.DecryptField(ciphertext, memoryValueFieldDomain, strings.ToLower(id.String()))
 }
 
+// LookupMemoryByID is not yet implemented for SQLite. Task 3 will provide the full implementation.
+func (e *sqliteEpisodicStore) LookupMemoryByID(_ context.Context, _ uuid.UUID, _ registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
+	return nil, fmt.Errorf("LookupMemoryByID: not implemented for sqlite")
+}
+
 // PutMemory upserts a memory. On update, the previous active row is archived.
 func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := e.encodeNS(req.Namespace)

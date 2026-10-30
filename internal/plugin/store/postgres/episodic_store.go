@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -16,6 +17,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	internaltracing "github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	pgvec "github.com/pgvector/pgvector-go"
@@ -71,7 +73,8 @@ type postgresEpisodicStore struct {
 	db                    *gorm.DB
 	s                     *PostgresStore // for encrypt/decrypt helpers
 	qdrant                *episodicqdrant.Client
-	putAfterRevisionCheck func() // test-only synchronization hook
+	putAfterRevisionCheck func() // test-only synchronization hook: fires after ExpectedRevision check
+	putAfterAdvisoryLock  func() // test-only synchronization hook: fires after advisory lock is acquired
 }
 
 func (e *postgresEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
@@ -173,16 +176,125 @@ func (e *postgresEpisodicStore) decryptMemoryValue(id uuid.UUID, ciphertext []by
 	return e.s.enc.DecryptField(ciphertext, memoryValueFieldDomain, strings.ToLower(id.String()))
 }
 
+// LookupMemoryByID is the pre-flight exact-retry check. It looks up a memory row
+// by its UUID and compares it against req without performing any write. Called by
+// handlers before ResolveKindForWrite so that exact retries bypass kind-writability.
+//
+// Returns:
+//   - (*MemoryWriteResult{ExactRetry: true}, nil): row found, MemoriesMatch is true.
+//   - (nil, nil): no row exists for the id — proceed to new-write path.
+//   - (nil, *store.NotFoundError): row exists but deleted_reason is 1 or 2.
+//   - (nil, *store.MemoryRevisionIDConflictError): namespace/key differ or MemoriesMatch false.
+//   - (nil, err): store-level error.
+func (e *postgresEpisodicStore) LookupMemoryByID(ctx context.Context, id uuid.UUID, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
+	nsEncoded, err := e.encodeNS(req.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	var row memoryRow
+	result := e.s.dbFor(ctx).
+		Where("id = ?", id).
+		Limit(1).
+		Find(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("lookup memory by id: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// No row — caller proceeds to new-write path.
+		return nil, nil
+	}
+
+	// Check namespace and key before decrypting — per the Lead-ruled requirement,
+	// namespace/key divergence is returned as a conflict without touching the value.
+	if row.Namespace != nsEncoded || row.Key != req.Key {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different namespace or key",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Row exists — check deleted_reason.
+	if row.DeletedReason != nil {
+		dr := *row.DeletedReason
+		if dr == 1 || dr == 2 {
+			return nil, &registrystore.NotFoundError{Resource: "memory", ID: id.String()}
+		}
+	}
+
+	// Decrypt and unmarshal the value for MemoriesMatch.
+	var value map[string]interface{}
+	if len(row.ValueEncrypted) > 0 {
+		plain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt memory value for lookup: %w", err)
+		}
+		if err := json.Unmarshal(plain, &value); err != nil {
+			return nil, fmt.Errorf("unmarshal memory value for lookup: %w", err)
+		}
+	}
+
+	existing := registryepisodic.MemoryExistingFields{
+		Namespace:  row.Namespace,
+		Key:        row.Key,
+		Value:      value,
+		Index:      row.IndexedContent,
+		CreatedAt:  row.CreatedAt,
+		ExpiresAt:  row.ExpiresAt,
+		MemoryKind: row.MemoryKind,
+	}
+	if !registryepisodic.MemoriesMatch(existing, req, nsEncoded) {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different content",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Exact retry — return stored result with ExactRetry=true.
+	ns, err := e.decodeNS(row.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("decode namespace: %w", err)
+	}
+	return &registryepisodic.MemoryWriteResult{
+		ID:         row.ID,
+		Namespace:  ns,
+		Key:        row.Key,
+		Attributes: row.PolicyAttributes,
+		MemoryKind: row.MemoryKind,
+		CreatedAt:  row.CreatedAt,
+		ExpiresAt:  row.ExpiresAt,
+		Revision:   row.Revision,
+		ExactRetry: true,
+	}, nil
+}
+
 // PutMemory upserts a memory. On update, the previous active row is archived.
+// When req.RevisionID is non-nil, an advisory lock on the ID is taken at the
+// start of the transaction so that concurrent first-writers serialize correctly
+// and the second writer sees the committed row via the post-lock lookup.
 func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := e.encodeNS(req.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
+	// Use caller-supplied ID when present; otherwise generate one.
 	newID := uuid.New()
+	if req.RevisionID != nil {
+		newID = *req.RevisionID
+	}
 
-	// Encrypt the value.
+	// Single UTC-truncated timestamp for both CreatedAt and ExpiresAt so that
+	// the first response and any subsequent retry return identical strings.
+	now := time.Now().UTC().Truncate(time.Microsecond)
+
+	// Encrypt the value using newID as the AAD (consistent with the caller-supplied UUID).
 	valueJSON, err := json.Marshal(req.Value)
 	if err != nil {
 		return nil, fmt.Errorf("marshal value: %w", err)
@@ -194,11 +306,10 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 
 	var expiresAt *time.Time
 	if req.TTLSeconds > 0 {
-		t := time.Now().Add(time.Duration(req.TTLSeconds) * time.Second)
+		t := now.Add(time.Duration(req.TTLSeconds) * time.Second)
 		expiresAt = &t
 	}
 
-	now := time.Now()
 	indexedContent := req.Index
 	if indexedContent == nil {
 		indexedContent = map[string]string{}
@@ -212,6 +323,79 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		return nil, dbErr
 	}
 	err = scopedDB.Transaction(func(tx *gorm.DB) error {
+		// When a caller-supplied RevisionID is set, take an advisory transaction lock
+		// so concurrent first-writers serialize. The lock key is slot 2 (slots 0 and 1
+		// are used by conversation groups). The lock is released automatically at
+		// commit or rollback of this transaction.
+		if req.RevisionID != nil {
+			if err := tx.Exec("SELECT pg_advisory_xact_lock(hashtextextended(?, 2))", newID.String()).Error; err != nil {
+				return fmt.Errorf("advisory lock: %w", err)
+			}
+			if e.putAfterAdvisoryLock != nil {
+				e.putAfterAdvisoryLock()
+			}
+			// In-transaction lookup: after the advisory lock the second concurrent writer
+			// sees the row committed by the first writer and can return ExactRetry=true.
+			var existing []memoryRow
+			if err := tx.Where("id = ?", newID).Limit(1).Find(&existing).Error; err != nil {
+				return fmt.Errorf("in-tx lookup by id: %w", err)
+			}
+			if len(existing) > 0 {
+				row := existing[0]
+				// Namespace/key check before decryption.
+				if row.Namespace != nsEncoded || row.Key != req.Key {
+					return &registrystore.MemoryRevisionIDConflictError{
+						ConflictError: &registrystore.ConflictError{
+							Message: "memory revision ID already in use with different namespace or key",
+							Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+						},
+						RevisionID: newID.String(),
+					}
+				}
+				// deleted_reason check.
+				if row.DeletedReason != nil {
+					dr := *row.DeletedReason
+					if dr == 1 || dr == 2 {
+						return &registrystore.NotFoundError{Resource: "memory", ID: newID.String()}
+					}
+				}
+				// Decrypt and match.
+				var value map[string]interface{}
+				if len(row.ValueEncrypted) > 0 {
+					plain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
+					if err != nil {
+						return fmt.Errorf("decrypt memory value (in-tx lookup): %w", err)
+					}
+					if err := json.Unmarshal(plain, &value); err != nil {
+						return fmt.Errorf("unmarshal memory value (in-tx lookup): %w", err)
+					}
+				}
+				ef := registryepisodic.MemoryExistingFields{
+					Namespace:  row.Namespace,
+					Key:        row.Key,
+					Value:      value,
+					Index:      row.IndexedContent,
+					CreatedAt:  row.CreatedAt,
+					ExpiresAt:  row.ExpiresAt,
+					MemoryKind: row.MemoryKind,
+				}
+				if !registryepisodic.MemoriesMatch(ef, req, nsEncoded) {
+					return &registrystore.MemoryRevisionIDConflictError{
+						ConflictError: &registrystore.ConflictError{
+							Message: "memory revision ID already in use with different content",
+							Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+						},
+						RevisionID: newID.String(),
+					}
+				}
+				// Exact retry — signal the caller via the sentinel. The caller calls
+				// LookupMemoryByID outside the transaction to build the full result.
+				return errExactRetrySignal
+			}
+		}
+
+		// Step 3 — idempotency mode checks (only reached when RevisionID is set and
+		// no row was found, or when RevisionID is nil).
 		var active []memoryRow
 		if err := tx.Raw(`
 			SELECT *
@@ -223,6 +407,32 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		).Scan(&active).Error; err != nil {
 			return fmt.Errorf("load active row: %w", err)
 		}
+
+		// create-only check: fail if an active row already exists.
+		if req.CreateOnly {
+			if len(active) > 0 {
+				return registryepisodic.ErrMemoryRevisionConflict
+			}
+		}
+
+		// expected-active-revision-ID check: active row ID must match.
+		if req.ExpectedRevisionID != nil {
+			if len(active) == 0 || active[0].ID != *req.ExpectedRevisionID {
+				var actualID string
+				if len(active) > 0 {
+					actualID = active[0].ID.String()
+				}
+				return &registrystore.ExpectedActiveRevisionIDMismatchError{
+					ConflictError: &registrystore.ConflictError{
+						Message: "active revision ID does not match expected_revision_id",
+						Code:    registrystore.ExpectedActiveRevisionIDMismatchCode,
+					},
+					ExpectedID: req.ExpectedRevisionID.String(),
+					ActualID:   actualID,
+				}
+			}
+		}
+
 		if req.ExpectedRevision != nil {
 			if len(active) == 0 || active[0].Revision != *req.ExpectedRevision {
 				return registryepisodic.ErrMemoryRevisionConflict
@@ -314,6 +524,20 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errExactRetrySignal) {
+			// The in-transaction lookup found an exact retry. Look up the stored row
+			// outside the transaction (transaction already committed by the first writer)
+			// to build the result. We re-use LookupMemoryByID for this.
+			retryResult, lookupErr := e.LookupMemoryByID(ctx, newID, req)
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if retryResult == nil {
+				// Should not happen — row was present inside the transaction.
+				return nil, fmt.Errorf("exact retry row disappeared after commit")
+			}
+			return retryResult, nil
+		}
 		return nil, err
 	}
 
@@ -328,6 +552,10 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		Revision:   revision,
 	}, nil
 }
+
+// errExactRetrySignal is a package-private sentinel used to signal an exact-retry
+// result from inside a GORM transaction closure. It is never returned to callers.
+var errExactRetrySignal = errors.New("exact retry detected inside transaction")
 
 // GetMemoryRowKind returns the canonical kind of the row matching (namespace, key) and archive filter
 // without loading the value. Used for pre-authz kind lookup. Uses the scoped transaction handle.
