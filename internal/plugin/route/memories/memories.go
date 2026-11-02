@@ -71,6 +71,33 @@ func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, m
 		return
 	}
 
+	if req.ExpectedRevisionId != nil && req.RevisionId == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "expected_revision_id requires revision_id"})
+		return
+	}
+	if req.Revision != nil {
+		if *req.Revision != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "revision must be 1"})
+			return
+		}
+		if req.RevisionId == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "revision requires revision_id"})
+			return
+		}
+	}
+
+	var revisionID *uuid.UUID
+	if req.RevisionId != nil {
+		id := uuid.UUID(*req.RevisionId)
+		revisionID = &id
+	}
+	var expectedRevisionID *uuid.UUID
+	if req.ExpectedRevisionId != nil {
+		id := uuid.UUID(*req.ExpectedRevisionId)
+		expectedRevisionID = &id
+	}
+	createOnly := req.Revision != nil && *req.Revision == 1
+
 	pc := policyContext(c)
 
 	kindSel := ""
@@ -115,7 +142,29 @@ func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, m
 				}
 			}
 		}
-		// 2. Resolve exact canonical target kind once.
+		// 1a. Pre-flight lookup before ResolveKindForWrite for idempotent retries.
+		if revisionID != nil {
+			lookupRes, lookupErr := store.LookupMemoryByID(ctx, *revisionID, registryepisodic.PutMemoryRequest{
+				Namespace:          req.Namespace,
+				Key:                req.Key,
+				Value:              req.Value,
+				Index:              index,
+				TTLSeconds:         ttlSeconds,
+				ExpectedRevision:   req.ExpectedRevision,
+				RevisionID:         revisionID,
+				ExpectedRevisionID: expectedRevisionID,
+				CreateOnly:         createOnly,
+			})
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if lookupRes != nil && lookupRes.ExactRetry {
+				responseStatus = http.StatusOK
+				responseBody = toAPIMemoryWriteResult(lookupRes)
+				return nil
+			}
+		}
+		// 2. Resolve exact canonical target kind once (reached only for new writes).
 		resolvedKind, resolveErr := store.ResolveKindForWrite(ctx, kindSel)
 		if resolveErr != nil {
 			if errors.Is(resolveErr, registryepisodic.ErrMemoryKindInvalid) ||
@@ -156,11 +205,18 @@ func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, m
 			MemoryKind:            resolvedKind,
 			ExpectedRevision:      req.ExpectedRevision,
 			AuthorizedPredecessor: predecessorExpectation,
+			RevisionID:            revisionID,
+			ExpectedRevisionID:    expectedRevisionID,
+			CreateOnly:            createOnly,
 		})
 		if err != nil {
 			return err
 		}
-		responseStatus = http.StatusOK
+		if revisionID != nil {
+			responseStatus = http.StatusCreated
+		} else {
+			responseStatus = http.StatusOK
+		}
 		responseBody = toAPIMemoryWriteResult(result)
 		event := eventstream.MemoryWriteEvent("updated", "revised", result)
 		if result.Revision <= 1 {
@@ -1878,6 +1934,28 @@ func (e *kindClientError) Unwrap() error { return e.cause }
 
 func handleError(c *gin.Context, err error) {
 	_ = c.Error(err)
+	var expectedActiveMismatch *registrystore.ExpectedActiveRevisionIDMismatchError
+	if errors.As(err, &expectedActiveMismatch) {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":  expectedActiveMismatch.Code,
+			"error": expectedActiveMismatch.Message,
+		})
+		return
+	}
+	var memoryRevisionConflict *registrystore.MemoryRevisionIDConflictError
+	if errors.As(err, &memoryRevisionConflict) {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":    memoryRevisionConflict.Code,
+			"error":   memoryRevisionConflict.Message,
+			"details": gin.H{"revisionId": memoryRevisionConflict.RevisionID},
+		})
+		return
+	}
+	var notFound *registrystore.NotFoundError
+	if errors.As(err, &notFound) {
+		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": notFound.Error()})
+		return
+	}
 	if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": "memory revision conflict"})
 		return
@@ -2839,32 +2917,94 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		return
 	}
 
+	if req.ExpectedRevisionId != nil && req.RevisionId == nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "expected_revision_id requires revision_id"})
+		return
+	}
+	if req.Revision != nil {
+		if *req.Revision != 1 {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "revision must be 1"})
+			return
+		}
+		if req.RevisionId == nil {
+			c.JSON(http.StatusBadRequest, gin.H{"error": "revision requires revision_id"})
+			return
+		}
+	}
+
+	var revisionID *uuid.UUID
+	if req.RevisionId != nil {
+		id := uuid.UUID(*req.RevisionId)
+		revisionID = &id
+	}
+	var expectedRevisionID *uuid.UUID
+	if req.ExpectedRevisionId != nil {
+		id := uuid.UUID(*req.ExpectedRevisionId)
+		expectedRevisionID = &id
+	}
+	createOnly := req.Revision != nil && *req.Revision == 1
+
 	kindSel := ""
 	if req.Kind != nil {
 		kindSel = *req.Kind
 	}
-	var result *registryepisodic.MemoryWriteResult
+	var responseStatus int
+	var responseBody interface{}
 	var events []registryeventbus.Event
 	if err := routetx.EpisodicWrite(c, store, func(ctx context.Context) error {
-		result = nil
+		responseStatus = 0
+		responseBody = nil
 		events = nil
+
+		// 1a. Pre-flight lookup before kind resolution for idempotent retries.
+		if revisionID != nil {
+			lookupRes, lookupErr := store.LookupMemoryByID(ctx, *revisionID, registryepisodic.PutMemoryRequest{
+				Namespace:          req.Namespace,
+				Key:                req.Key,
+				Value:              req.Value,
+				Index:              index,
+				TTLSeconds:         ttlSeconds,
+				ExpectedRevision:   req.ExpectedRevision,
+				RevisionID:         revisionID,
+				ExpectedRevisionID: expectedRevisionID,
+				CreateOnly:         createOnly,
+			})
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if lookupRes != nil && lookupRes.ExactRetry {
+				responseStatus = http.StatusOK
+				responseBody = toAPIMemoryWriteResult(lookupRes)
+				return nil
+			}
+		}
+
 		policyAttrs, resolvedKind, err := resolveKindProjection(ctx, store, kindSel, req.Namespace, req.Key, req.Value, index)
 		if err != nil {
 			return err
 		}
-		result, err = store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
-			Namespace:        req.Namespace,
-			Key:              req.Key,
-			Value:            req.Value,
-			Index:            index,
-			TTLSeconds:       ttlSeconds,
-			PolicyAttributes: policyAttrs,
-			MemoryKind:       resolvedKind,
-			ExpectedRevision: req.ExpectedRevision,
+		result, err := store.PutMemory(ctx, registryepisodic.PutMemoryRequest{
+			Namespace:          req.Namespace,
+			Key:                req.Key,
+			Value:              req.Value,
+			Index:              index,
+			TTLSeconds:         ttlSeconds,
+			PolicyAttributes:   policyAttrs,
+			MemoryKind:         resolvedKind,
+			ExpectedRevision:   req.ExpectedRevision,
+			RevisionID:         revisionID,
+			ExpectedRevisionID: expectedRevisionID,
+			CreateOnly:         createOnly,
 		})
 		if err != nil {
 			return err
 		}
+		if revisionID != nil {
+			responseStatus = http.StatusCreated
+		} else {
+			responseStatus = http.StatusOK
+		}
+		responseBody = toAPIMemoryWriteResult(result)
 		event := eventstream.MemoryWriteEvent("updated", "revised", result)
 		if result.Revision <= 1 {
 			event.Event, event.Data.(map[string]any)["change"] = "created", "created"
@@ -2876,7 +3016,7 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		return
 	}
 	publishMemoryEvents(c.Request.Context(), memoryStore, eventBus, events)
-	c.JSON(http.StatusOK, toAPIMemoryWriteResult(result))
+	c.JSON(responseStatus, responseBody)
 }
 
 // HandleAdminUpdateMemory handles PATCH /admin/v1/memories for admin clients
