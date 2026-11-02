@@ -1213,6 +1213,40 @@ paths:
     put:
       tags: [Memories]
       summary: Upsert a memory item
+      description: |-
+        Writes a new revision of the memory identified by `(namespace, key)`.
+
+        **Idempotency modes.** Idempotency is opt-in.
+        - Neither `revision_id` nor `expected_revision_id`: the server generates the
+          revision ID and the request is not retry-safe.
+        - `revision_id` with `revision: 1` (create-only): the write is treated as the
+          initial creation. It fails with 409 `revision_already_exists` if an active
+          revision already exists for `(namespace, key)`.
+        - `revision_id` with `expected_revision_id` (update): the write replaces the
+          active revision only if its ID equals `expected_revision_id`; otherwise it
+          fails with 409 `expected_active_revision_id_mismatch`. This check is
+          independent of the numeric `expected_revision`.
+        - `revision_id` alone is a plain write that uses the caller-supplied ID and
+          has no create-only or active-ID gate.
+
+        **Exact retry.** When a revision with `revision_id` already exists, the server
+        compares namespace, key, value, index, TTL, and kind. If all match, the stored
+        revision is returned with 200 and no new row, archive, event, or outbox record
+        is produced. Not compared: policy attributes, the kind add/update flag,
+        `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+        in the response is the stored value and may differ across retries if the
+        revision was superseded or migrated, so clients must not compare it.
+
+        **Ordering.** Authorization for the target namespace and key is evaluated
+        before `revision_id` is looked up. Replay detection runs before kind-writability
+        checks, so an exact retry returns 200 even if the kind later became read-only.
+        A retry whose original record has been evicted is treated as a new write and is
+        subject to all new-write validation.
+
+        **Idempotency window.** Idempotency is guaranteed while the original revision
+        record is retained. Superseded revisions are eligible for hard deletion after
+        re-indexing (typically minutes). Archived and expired tombstones are retained
+        longer. After eviction the same `revision_id` may be treated as a new write.
       operationId: putMemory
       requestBody:
         required: true
@@ -1222,11 +1256,74 @@ paths:
               $ref: '#/components/schemas/PutMemoryRequest'
       responses:
         '200':
-          description: Memory stored.
+          description: |-
+            Memory stored (server-generated ID) or exact retry recognized.
+            An exact retry returns the stored revision unchanged: same `id`,
+            `createdAt`, and `expiresAt` as the first response. The `revision` field
+            may differ if the row was superseded or migrated between attempts.
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/MemoryWriteResult'
+        '201':
+          description: New revision created with a caller-supplied `revision_id`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/MemoryWriteResult'
+        '400':
+          description: |-
+            Invalid request. Causes include: `revision_id` is not a valid UUID,
+            `expected_revision_id` is not a valid UUID, `revision` is set to a value
+            other than 1, `revision` or `expected_revision_id` supplied without
+            `revision_id`.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: |-
+            The revision identified by `revision_id` was archived or expired and
+            swept. It no longer accepts retries.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '409':
+          description: |-
+            Conflict. The `code` field distinguishes these cases:
+            - `memory_revision_already_exists`: `revision_id` is already in use with
+              different content, a different key, or a different namespace. The
+              response carries only `code` and `details.revisionId` (the
+              caller-supplied value); no stored namespace, key, value, kind, or
+              timestamps are included.
+            - `revision_already_exists`: create-only write (`revision: 1`) rejected
+              because an active revision already exists for `(namespace, key)`.
+            - `expected_active_revision_id_mismatch`: the active revision's `id` does
+              not match `expected_revision_id`, or no active revision exists.
+            - Optimistic-concurrency failure: `expected_revision` does not match.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+              examples:
+                revision_already_exists:
+                  value:
+                    code: "revision_already_exists"
+                    error: "an active memory already exists for the namespace and key"
+                    requestId: "req_abc123"
+                memory_revision_already_exists:
+                  value:
+                    code: "memory_revision_already_exists"
+                    error: "memory revision exists but the request differs"
+                    requestId: "req_abc123"
+                    details:
+                      revisionId: "6f1c1d0a-0000-4000-8000-000000000001"
+                expected_active_revision_id_mismatch:
+                  value:
+                    code: "expected_active_revision_id_mismatch"
+                    error: "active revision ID does not match expected_revision_id"
+                    requestId: "req_abc123"
         default:
           $ref: '#/components/responses/Error'
       security:
@@ -2401,6 +2498,35 @@ components:
             the fixed built-in "default/v1" kind.
           pattern: '^[a-z][a-z0-9-]{0,62}/[a-z][a-z0-9-]{0,62}$'
           nullable: true
+        revision_id:
+          type: string
+          format: uuid
+          description: |-
+            Optional caller-supplied UUID for the new revision. When supplied, the server
+            looks up this ID before evaluating any create/update precondition. A recognized
+            exact retry (same namespace, key, value, index, TTL, and kind) returns 200 with
+            the stored result and produces no new row, archive, event, or outbox record.
+            Authorization for the caller's target namespace and key is evaluated before this
+            ID is looked up. A 409 conflict response carries only the `code` and the
+            `revision_id` the caller supplied; no stored namespace, key, value, kind, or
+            timestamps from the existing row are included in the response.
+            Idempotency is guaranteed while the original revision record is retained.
+        expected_revision_id:
+          type: string
+          format: uuid
+          description: |-
+            UUID of the active revision the caller expects to replace. Requires `revision_id`.
+            The server checks that the current active row's `id` equals this value before
+            archiving it. A mismatch returns 409 `expected_active_revision_id_mismatch`.
+        revision:
+          type: integer
+          format: int64
+          description: |-
+            When set to `1`, declares this as a create-only write: the server rejects the
+            write with 409 `revision_already_exists` if an active memory already exists for
+            the given namespace and key. Requires `revision_id`. Only the value `1` is
+            accepted; any other value returns 400. This is a request field and is distinct
+            from the `revision` in the response.
     MemoryWriteResult:
       type: object
       required: [kind]

@@ -780,6 +780,17 @@ message PutMemoryRequest {
   reserved "actor";
   // Optional exact canonical schema name. Absence always uses the fixed default/v1 kind.
   optional string kind = 8;
+  // Optional caller-supplied UUID (string form) for the new revision; enables
+  // idempotency. A recognized exact retry returns the stored revision with no new
+  // row, archive, event, or outbox record. Must be a valid UUID when present.
+  optional string revision_id = 9;
+  // UUID (string form) of the active revision the caller expects to replace.
+  // Requires revision_id. A mismatch returns ABORTED.
+  optional string expected_revision_id = 10;
+  // When 1, declares a create-only write: fails with ABORTED if an active memory
+  // already exists for the namespace and key. Requires revision_id. Only the value
+  // 1 is accepted; any other value returns INVALID_ARGUMENT.
+  optional int64 revision = 11;
 }
 
 message MemoryWriteResult {
@@ -940,6 +951,17 @@ message AdminPutMemoryRequest {
   optional string justification = 7;
   // Optional exact canonical schema name. Absence always uses the fixed default/v1 kind.
   optional string kind = 8;
+  // Optional caller-supplied UUID (string form) for the new revision; enables
+  // idempotency. A recognized exact retry returns the stored revision with no new
+  // row, archive, event, or outbox record. Must be a valid UUID when present.
+  optional string revision_id = 9;
+  // UUID (string form) of the active revision the caller expects to replace.
+  // Requires revision_id. A mismatch returns ABORTED.
+  optional string expected_revision_id = 10;
+  // When 1, declares a create-only write: fails with ABORTED if an active memory
+  // already exists for the namespace and key. Requires revision_id. Only the value
+  // 1 is accepted; any other value returns INVALID_ARGUMENT.
+  optional int64 revision = 11;
 }
 
 message AdminUpdateMemoryRequest {

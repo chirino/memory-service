@@ -764,6 +764,31 @@ export type PutMemoryRequest = {
    * the fixed built-in "default/v1" kind.
    */
   kind?: string;
+  /**
+   * Optional caller-supplied UUID for the new revision. When supplied, the server
+   * looks up this ID before evaluating any create/update precondition. A recognized
+   * exact retry (same namespace, key, value, index, TTL, and kind) returns 200 with
+   * the stored result and produces no new row, archive, event, or outbox record.
+   * A 409 conflict response carries only the `code` and the `revision_id` the
+   * caller supplied; no stored namespace, key, value, kind, or timestamps from the
+   * existing row are included in the response.
+   * Idempotency is guaranteed while the original revision record is retained.
+   */
+  revision_id?: string;
+  /**
+   * UUID of the active revision the caller expects to replace. Requires `revision_id`.
+   * The server checks that the current active row's `id` equals this value before
+   * archiving it. A mismatch returns 409 `expected_active_revision_id_mismatch`.
+   */
+  expected_revision_id?: string;
+  /**
+   * When set to `1`, declares this as a create-only write: the server rejects the
+   * write with 409 `revision_already_exists` if an active memory already exists for
+   * the given namespace and key. Requires `revision_id`. Only the value `1` is
+   * accepted; any other value returns 400. This is a request field and is distinct
+   * from the `revision` in the response.
+   */
+  revision?: number;
 };
 
 export type MemoryWriteResult = {
@@ -947,6 +972,32 @@ export type AdminPutMemoryData = {
 
 export type AdminPutMemoryErrors = {
   /**
+   * Invalid request. Causes include: `revision_id` is not a valid UUID,
+   * `expected_revision_id` is not a valid UUID, `revision` is set to a value
+   * other than 1, `revision` or `expected_revision_id` supplied without
+   * `revision_id`.
+   */
+  400: ErrorResponse;
+  /**
+   * The revision identified by `revision_id` was archived or expired and
+   * swept. It no longer accepts retries.
+   */
+  404: ErrorResponse;
+  /**
+   * Conflict. The `code` field distinguishes these cases:
+   * - `memory_revision_already_exists`: `revision_id` is already in use with
+   * different content, a different key, or a different namespace. The
+   * response carries only `code` and `details.revisionId` (the
+   * caller-supplied value); no stored namespace, key, value, kind, or
+   * timestamps are included.
+   * - `revision_already_exists`: create-only write (`revision: 1`) rejected
+   * because an active revision already exists for `(namespace, key)`.
+   * - `expected_active_revision_id_mismatch`: the active revision's `id` does
+   * not match `expected_revision_id`, or no active revision exists.
+   * - Optimistic-concurrency failure: `expected_revision` does not match.
+   */
+  409: ErrorResponse;
+  /**
    * Error response
    */
   default: ErrorResponse;
@@ -956,9 +1007,16 @@ export type AdminPutMemoryError = AdminPutMemoryErrors[keyof AdminPutMemoryError
 
 export type AdminPutMemoryResponses = {
   /**
-   * Memory stored.
+   * Memory stored (server-generated ID) or exact retry recognized.
+   * An exact retry returns the stored revision unchanged: same `id`,
+   * `createdAt`, and `expiresAt` as the first response. The `revision` field
+   * may differ if the row was superseded or migrated between attempts.
    */
   200: MemoryWriteResult;
+  /**
+   * New revision created with a caller-supplied `revision_id`.
+   */
+  201: MemoryWriteResult;
 };
 
 export type AdminPutMemoryResponse = AdminPutMemoryResponses[keyof AdminPutMemoryResponses];
