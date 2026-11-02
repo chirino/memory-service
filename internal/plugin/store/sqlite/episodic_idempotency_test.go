@@ -548,6 +548,26 @@ func TestSQLitePutMemory_CreateOnly_ActiveRowConflict(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.ErrorAs(t, err, &createOnly, "a create-only conflict must be distinguishable from the numeric conflicts")
+
+	// The rejected write has no side effects: no row for the new ID, and the existing
+	// active row is still the only active row, unarchived and at revision 1.
+	require.NoError(t, store.InReadTx(ctx, func(rctx context.Context) error {
+		var byID int64
+		require.NoError(t, store.dbFor(rctx).Raw("SELECT COUNT(*) FROM memories WHERE id = ?", id.String()).Scan(&byID).Error)
+		assert.Equal(t, int64(0), byID, "no row may be created for the rejected revision_id")
+		var rows []struct {
+			Revision   int64
+			ArchivedAt *time.Time
+		}
+		require.NoError(t, store.dbFor(rctx).Raw(
+			"SELECT revision, archived_at FROM memories WHERE key = 'k1'").Scan(&rows).Error)
+		require.Len(t, rows, 1, "exactly the original row must exist")
+		assert.Equal(t, int64(1), rows[0].Revision)
+		assert.Nil(t, rows[0].ArchivedAt, "the existing active row must not be archived")
+		return nil
+	}))
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -896,6 +916,8 @@ func TestSQLitePutMemory_CreateOnly_NumericExpectedRevisionStillRuns(t *testing.
 	// Create-only check passed (no active row), but numeric check fires and fails.
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict,
 		"numeric ExpectedRevision check must fire after create-only check passes")
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "a numeric conflict must not be classified as create-only")
 
 	// No row must have been created.
 	require.NoError(t, store.InReadTx(ctx, func(rctx context.Context) error {
@@ -906,4 +928,31 @@ func TestSQLitePutMemory_CreateOnly_NumericExpectedRevisionStillRuns(t *testing.
 		assert.Equal(t, int64(0), count, "no row must exist when numeric check fails")
 		return nil
 	}))
+}
+
+// TestSQLitePutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly verifies that the
+// AuthorizedPredecessor conflict stays the bare sentinel and is not classified as create-only,
+// so REST can tell the two apart. CreateOnly is left false: this is the non-idempotent path.
+func TestSQLitePutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly(t *testing.T) {
+	t.Parallel()
+	store, ctx := setupSQLiteIdempotencyStore(t)
+	ns := []string{"user", "alice", "predecessor-conflict"}
+
+	require.NoError(t, store.InWriteTx(ctx, func(wctx context.Context) error {
+		_, err := store.PutMemory(wctx, registryepisodic.PutMemoryRequest{
+			Namespace: ns, Key: "k1", Value: map[string]interface{}{"existing": true}, MemoryKind: "default/v1",
+		})
+		return err
+	}))
+
+	req := baseSQLiteIdempotencyReq(ns, "k1", uuid.New())
+	// The caller believed no active row existed, but one does.
+	req.AuthorizedPredecessor = &registryepisodic.MemoryPredecessorExpectation{Exists: false}
+	err := store.InWriteTx(ctx, func(wctx context.Context) error {
+		_, err := store.PutMemory(wctx, req)
+		return err
+	})
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "an AuthorizedPredecessor conflict must not be classified as create-only")
 }

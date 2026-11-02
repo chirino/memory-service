@@ -3611,6 +3611,11 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		return nil, status.Error(codes.InvalidArgument, "key must be non-empty and at most 1024 bytes")
 	}
 
+	revisionID, expectedRevisionID, createOnly, idemErr := parseGRPCPutMemoryIdempotency(req.RevisionId, req.ExpectedRevisionId, req.Revision)
+	if idemErr != nil {
+		return nil, idemErr
+	}
+
 	value := req.GetValue().AsMap()
 	index := req.GetIndex()
 	if index == nil {
@@ -3653,6 +3658,45 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 				}
 			}
 		}
+		// 1a. Idempotent pre-flight, before kind resolution so that a recognized exact
+		// retry bypasses kind writability. Authorization must precede it, so a caller
+		// without write access cannot probe revision IDs. When an active row exists it
+		// was authorized in step 1; otherwise authorize against the canonical kind now.
+		if revisionID != nil {
+			canonicalKind := grpcCanonicalKindName(kindSel)
+			if s.Policy != nil && (predecessorExpectation == nil || !predecessorExpectation.Exists) {
+				decision, authzErr := s.Policy.EvaluateAuthz(ctx, "write", namespace, key, value, index, canonicalKind, pc)
+				if authzErr != nil {
+					return episodicInternalError("policy evaluation error", authzErr)
+				}
+				if !decision.Allow {
+					if decision.Reason != "" {
+						return status.Error(codes.PermissionDenied, decision.Reason)
+					}
+					return status.Error(codes.PermissionDenied, "access denied")
+				}
+			}
+			lookupRes, lookupErr := s.Store.LookupMemoryByID(txCtx, *revisionID, registryepisodic.PutMemoryRequest{
+				Namespace:          namespace,
+				Key:                key,
+				Value:              value,
+				Index:              index,
+				TTLSeconds:         int(req.GetTtlSeconds()),
+				MemoryKind:         canonicalKind,
+				ExpectedRevision:   req.ExpectedRevision,
+				RevisionID:         revisionID,
+				ExpectedRevisionID: expectedRevisionID,
+				CreateOnly:         createOnly,
+			})
+			if lookupErr != nil {
+				return lookupErr
+			}
+			if lookupRes != nil && lookupRes.ExactRetry {
+				// Exact retry: return the stored revision. No write, event, or outbox record.
+				writeResult = lookupRes
+				return nil
+			}
+		}
 		// 2. Resolve exact canonical target kind once inside the write tx.
 		resolvedKind, resolveErr := s.Store.ResolveKindForWrite(txCtx, kindSel)
 		if resolveErr != nil {
@@ -3692,9 +3736,16 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 			MemoryKind:            resolvedKind,
 			ExpectedRevision:      req.ExpectedRevision,
 			AuthorizedPredecessor: predecessorExpectation,
+			RevisionID:            revisionID,
+			ExpectedRevisionID:    expectedRevisionID,
+			CreateOnly:            createOnly,
 		})
 		if putErr != nil {
 			return putErr
+		}
+		if writeResult.ExactRetry {
+			// A concurrent duplicate recognized inside PutMemory's own transaction.
+			return nil
 		}
 		event := eventstream.MemoryWriteEvent("updated", "revised", writeResult)
 		if writeResult.Revision <= 1 {
@@ -3703,14 +3754,8 @@ func (s *MemoriesServer) PutMemory(ctx context.Context, req *pb.PutMemoryRequest
 		memoryEvents, putErr = appendGRPCMemoryEvents(txCtx, s.MemoryStore, event)
 		return putErr
 	}); writeErr != nil {
-		// Preserve gRPC status errors (PermissionDenied, InvalidArgument) from the closure.
-		if _, ok := status.FromError(writeErr); ok {
-			return nil, writeErr
-		}
-		if errors.Is(writeErr, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", writeErr)
-		}
-		return nil, episodicInternalError("failed to store memory", writeErr)
+		// Preserves gRPC status errors (PermissionDenied, InvalidArgument) from the closure.
+		return nil, mapPutMemoryWriteError(writeErr)
 	}
 	result := writeResult
 	if result == nil {
@@ -4817,6 +4862,11 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 		return nil, status.Error(codes.InvalidArgument, "key must be non-empty and at most 1024 bytes")
 	}
 
+	revisionID, expectedRevisionID, createOnly, idemErr := parseGRPCPutMemoryIdempotency(req.RevisionId, req.ExpectedRevisionId, req.Revision)
+	if idemErr != nil {
+		return nil, idemErr
+	}
+
 	value := req.GetValue().AsMap()
 	index := req.GetIndex()
 	if index == nil {
@@ -4827,22 +4877,52 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 	var memoryEvents []registryeventbus.Event
 	result, err := withEpisodicWrite(ctx, s.Store, func(txCtx context.Context) (*registryepisodic.MemoryWriteResult, error) {
 		memoryEvents = nil
+		// Idempotent pre-flight, before kind resolution so that a recognized exact retry
+		// bypasses kind writability. Admin access was checked above; admin writes run no
+		// user policy, matching the REST admin handler.
+		if revisionID != nil {
+			lookupRes, lookupErr := s.Store.LookupMemoryByID(txCtx, *revisionID, registryepisodic.PutMemoryRequest{
+				Namespace:          namespace,
+				Key:                key,
+				Value:              value,
+				Index:              index,
+				TTLSeconds:         int(req.GetTtlSeconds()),
+				MemoryKind:         grpcCanonicalKindName(kindSel),
+				ExpectedRevision:   req.ExpectedRevision,
+				RevisionID:         revisionID,
+				ExpectedRevisionID: expectedRevisionID,
+				CreateOnly:         createOnly,
+			})
+			if lookupErr != nil {
+				return nil, lookupErr
+			}
+			if lookupRes != nil && lookupRes.ExactRetry {
+				return lookupRes, nil
+			}
+		}
 		policyAttrs, resolvedKind, err := grpcResolveKindProjection(txCtx, s.Store, kindSel, namespace, key, value, index)
 		if err != nil {
 			return nil, err
 		}
 		result, err := s.Store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
-			Namespace:        namespace,
-			Key:              key,
-			Value:            value,
-			Index:            index,
-			TTLSeconds:       int(req.GetTtlSeconds()),
-			PolicyAttributes: policyAttrs,
-			MemoryKind:       resolvedKind,
-			ExpectedRevision: req.ExpectedRevision,
+			Namespace:          namespace,
+			Key:                key,
+			Value:              value,
+			Index:              index,
+			TTLSeconds:         int(req.GetTtlSeconds()),
+			PolicyAttributes:   policyAttrs,
+			MemoryKind:         resolvedKind,
+			ExpectedRevision:   req.ExpectedRevision,
+			RevisionID:         revisionID,
+			ExpectedRevisionID: expectedRevisionID,
+			CreateOnly:         createOnly,
 		})
 		if err != nil {
 			return nil, err
+		}
+		if result.ExactRetry {
+			// A concurrent duplicate recognized inside PutMemory's own transaction.
+			return result, nil
 		}
 		event := eventstream.MemoryWriteEvent("updated", "revised", result)
 		if result.Revision <= 1 {
@@ -4852,13 +4932,7 @@ func (s *AdminMemoriesServer) PutMemory(ctx context.Context, req *pb.AdminPutMem
 		return result, err
 	})
 	if err != nil {
-		if _, ok := status.FromError(err); ok {
-			return nil, err
-		}
-		if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
-			return nil, grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
-		}
-		return nil, episodicInternalError("failed to store memory", err)
+		return nil, mapPutMemoryWriteError(err)
 	}
 	publishGRPCMemoryEvents(ctx, s.MemoryStore, s.EventBus, memoryEvents)
 	resp, err := memoryWriteResultToProto(result)
@@ -5170,6 +5244,73 @@ func (s *MemoriesServer) memoryPolicyContext(ctx context.Context) (episodic.Poli
 func episodicInternalError(message string, err error) error {
 	log.Error("episodic gRPC error", "message", message, "error", err, "stack", string(debug.Stack()))
 	return grpcStatusWithCause(codes.Internal, "internal server error", err)
+}
+
+// parseGRPCPutMemoryIdempotency validates and converts the optional PutMemory
+// idempotency fields. revision_id and expected_revision_id arrive as UUID strings
+// (not 16-byte values like MemoryWriteResult.id); revision == 1 declares create-only.
+func parseGRPCPutMemoryIdempotency(revisionID, expectedRevisionID *string, revision *int64) (rev *uuid.UUID, expected *uuid.UUID, createOnly bool, err error) {
+	if expectedRevisionID != nil && revisionID == nil {
+		return nil, nil, false, status.Error(codes.InvalidArgument, "expected_revision_id requires revision_id")
+	}
+	if revision != nil {
+		if *revision != 1 {
+			return nil, nil, false, status.Error(codes.InvalidArgument, "revision must be 1")
+		}
+		if revisionID == nil {
+			return nil, nil, false, status.Error(codes.InvalidArgument, "revision requires revision_id")
+		}
+	}
+	if revisionID != nil {
+		id, parseErr := uuid.Parse(*revisionID)
+		if parseErr != nil {
+			return nil, nil, false, status.Error(codes.InvalidArgument, "revision_id must be a valid UUID")
+		}
+		rev = &id
+	}
+	if expectedRevisionID != nil {
+		id, parseErr := uuid.Parse(*expectedRevisionID)
+		if parseErr != nil {
+			return nil, nil, false, status.Error(codes.InvalidArgument, "expected_revision_id must be a valid UUID")
+		}
+		expected = &id
+	}
+	return rev, expected, revision != nil, nil
+}
+
+// grpcCanonicalKindName returns the canonical kind a write would target, without the
+// writability check ResolveKindForWrite performs. The idempotent pre-flight lookup
+// compares it with the stored kind, and must run before ResolveKindForWrite so that an
+// exact retry succeeds even if the kind has since become read-only.
+func grpcCanonicalKindName(sel string) string {
+	if name := strings.TrimSpace(sel); name != "" {
+		return name
+	}
+	return episodic.DefaultKindName
+}
+
+// mapPutMemoryWriteError maps PutMemory transaction errors to gRPC statuses. Messages
+// for the revision-ID conflicts carry only the caller-supplied IDs: never the stored
+// namespace, key, kind, or active revision ID. gRPC cannot expose the REST `code`
+// field, so it is the message prefix.
+func mapPutMemoryWriteError(err error) error {
+	if _, ok := status.FromError(err); ok {
+		return err
+	}
+	var mismatch *registrystore.ExpectedActiveRevisionIDMismatchError
+	var revisionConflict *registrystore.MemoryRevisionIDConflictError
+	var notFound *registrystore.NotFoundError
+	switch {
+	case errors.As(err, &mismatch):
+		return grpcStatusWithCause(codes.Aborted, fmt.Sprintf("%s: expected_revision_id %s does not match the active revision", mismatch.Code, mismatch.ExpectedID), err)
+	case errors.As(err, &revisionConflict):
+		return grpcStatusWithCause(codes.Aborted, fmt.Sprintf("%s: revision_id %s is already in use", revisionConflict.Code, revisionConflict.RevisionID), err)
+	case errors.As(err, &notFound):
+		return grpcStatusWithCause(codes.NotFound, "memory not found", err)
+	case errors.Is(err, registryepisodic.ErrMemoryRevisionConflict):
+		return grpcStatusWithCause(codes.Aborted, "memory revision conflict", err)
+	}
+	return episodicInternalError("failed to store memory", err)
 }
 
 func memoryWriteResultToProto(item *registryepisodic.MemoryWriteResult) (*pb.MemoryWriteResult, error) {

@@ -143,13 +143,33 @@ func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, m
 			}
 		}
 		// 1a. Pre-flight lookup before ResolveKindForWrite for idempotent retries.
+		// Authorization must precede it so a caller without write access cannot probe
+		// revision IDs. An existing active row was authorized in step 1; with no active
+		// row, authorize the canonical target kind now.
 		if revisionID != nil {
+			canonicalKind := canonicalKindName(kindSel)
+			if policy != nil && (predecessorExpectation == nil || !predecessorExpectation.Exists) {
+				decision, authzErr := policy.EvaluateAuthz(c.Request.Context(), "write", req.Namespace, req.Key, req.Value, index, canonicalKind, pc)
+				if authzErr != nil {
+					return fmt.Errorf("policy evaluation error: %w", authzErr)
+				}
+				if !decision.Allow {
+					reason := decision.Reason
+					if reason == "" {
+						reason = "access denied"
+					}
+					responseStatus = http.StatusForbidden
+					responseBody = gin.H{"error": "access denied", "reason": reason}
+					return nil
+				}
+			}
 			lookupRes, lookupErr := store.LookupMemoryByID(ctx, *revisionID, registryepisodic.PutMemoryRequest{
 				Namespace:          req.Namespace,
 				Key:                req.Key,
 				Value:              req.Value,
 				Index:              index,
 				TTLSeconds:         ttlSeconds,
+				MemoryKind:         canonicalKind,
 				ExpectedRevision:   req.ExpectedRevision,
 				RevisionID:         revisionID,
 				ExpectedRevisionID: expectedRevisionID,
@@ -1956,6 +1976,15 @@ func handleError(c *gin.Context, err error) {
 		c.JSON(http.StatusNotFound, gin.H{"code": "not_found", "error": notFound.Error()})
 		return
 	}
+	// A create-only conflict also unwraps to ErrMemoryRevisionConflict, so it must be matched first.
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	if errors.As(err, &createOnly) {
+		c.JSON(http.StatusConflict, gin.H{
+			"code":  registrystore.RevisionAlreadyExistsCode,
+			"error": "an active memory already exists for the namespace and key",
+		})
+		return
+	}
 	if errors.Is(err, registryepisodic.ErrMemoryRevisionConflict) {
 		c.JSON(http.StatusConflict, gin.H{"error": "memory revision conflict"})
 		return
@@ -2091,6 +2120,17 @@ func normalizedRangeKindForType(fieldType string, existing registryepisodic.Attr
 	default:
 		return existing
 	}
+}
+
+// canonicalKindName returns the canonical kind a write targets, with the same normalization
+// as ResolveKindForWrite but without its existence and writability checks. The idempotent
+// pre-flight lookup compares it with the stored kind and must run before those checks so an
+// exact retry still succeeds after the kind becomes read-only.
+func canonicalKindName(sel string) string {
+	if name := strings.TrimSpace(sel); name != "" {
+		return name
+	}
+	return episodic.DefaultKindName
 }
 
 // resolveKindProjection resolves the canonical schema for a write, loads the schema version,
@@ -2956,7 +2996,8 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		responseBody = nil
 		events = nil
 
-		// 1a. Pre-flight lookup before kind resolution for idempotent retries.
+		// 1a. Pre-flight lookup before kind resolution for idempotent retries. Admin
+		// authorization (ensureAdmin) already ran before the transaction opened.
 		if revisionID != nil {
 			lookupRes, lookupErr := store.LookupMemoryByID(ctx, *revisionID, registryepisodic.PutMemoryRequest{
 				Namespace:          req.Namespace,
@@ -2964,6 +3005,7 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 				Value:              req.Value,
 				Index:              index,
 				TTLSeconds:         ttlSeconds,
+				MemoryKind:         canonicalKindName(kindSel),
 				ExpectedRevision:   req.ExpectedRevision,
 				RevisionID:         revisionID,
 				ExpectedRevisionID: expectedRevisionID,

@@ -411,7 +411,7 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		// create-only check: fail if an active row already exists.
 		if req.CreateOnly {
 			if len(active) > 0 {
-				return registryepisodic.ErrMemoryRevisionConflict
+				return &registryepisodic.CreateOnlyConflictError{}
 			}
 		}
 

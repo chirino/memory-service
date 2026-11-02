@@ -557,6 +557,8 @@ func TestPgPutMemory_CreateOnly_ActiveRowConflict(t *testing.T) {
 	})
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict,
 		"create-only with active row must return ErrMemoryRevisionConflict")
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.ErrorAs(t, err, &createOnly, "a create-only conflict must be distinguishable from the numeric conflicts")
 
 	// Active row must be untouched.
 	var activeCount int64
@@ -564,6 +566,12 @@ func TestPgPutMemory_CreateOnly_ActiveRowConflict(t *testing.T) {
 		store.s.db.Raw(`SELECT COUNT(*) FROM memories WHERE namespace = ? AND key = ? AND archived_at IS NULL`,
 			"user\x1ealice\x1ecreate-only-conflict", "k1").Scan(&activeCount).Error)
 	assert.Equal(t, int64(1), activeCount, "active row must be untouched")
+
+	var byID, total int64
+	require.NoError(t, store.s.db.Raw("SELECT COUNT(*) FROM memories WHERE id = ?", id).Scan(&byID).Error)
+	assert.Equal(t, int64(0), byID, "no row may be created for the rejected revision_id")
+	require.NoError(t, store.s.db.Raw("SELECT COUNT(*) FROM memories WHERE key = 'k1'").Scan(&total).Error)
+	assert.Equal(t, int64(1), total, "exactly the original row must exist (nothing archived or inserted)")
 }
 
 // ──────────────────────────────────────────────────────────────────────────────
@@ -706,6 +714,8 @@ func TestPgPutMemory_CreateOnly_NumericExpectedRevisionStillRuns(t *testing.T) {
 	// Create-only check passed (no active row), but numeric check fires and fails.
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict,
 		"numeric ExpectedRevision check must fire after create-only check passes")
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "a numeric conflict must not be classified as create-only")
 
 	// No row must have been created.
 	var count int64
@@ -739,7 +749,7 @@ func TestPgPutMemory_ExpectedRevisionID_NumericMismatch(t *testing.T) {
 	newID := uuid.New()
 	wrongNumericRevision := int64(99) // stored revision is 1
 	req := baseIdempotencyReq(ns, "k1", newID)
-	req.ExpectedRevisionID = &activeID    // UUID check passes
+	req.ExpectedRevisionID = &activeID           // UUID check passes
 	req.ExpectedRevision = &wrongNumericRevision // numeric check fails
 
 	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
@@ -943,4 +953,30 @@ func TestPgPutMemory_ConcurrentDifferentPayload(t *testing.T) {
 	require.NoError(t,
 		store.s.db.Raw("SELECT COUNT(*) FROM memories WHERE id = ?", id).Scan(&count).Error)
 	assert.Equal(t, int64(1), count, "exactly one row must exist after conflict")
+}
+
+// TestPgPutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly verifies that an
+// AuthorizedPredecessor conflict stays the bare sentinel and is not classified as create-only,
+// so REST can tell the two apart. CreateOnly is left false: this is the non-idempotent path.
+func TestPgPutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly(t *testing.T) {
+	store, ctx := setupPgIdempotencyStore(t)
+	ns := []string{"user", "alice", "predecessor-conflict"}
+
+	require.NoError(t, store.InWriteTx(ctx, func(txCtx context.Context) error {
+		_, err := store.PutMemory(txCtx, registryepisodic.PutMemoryRequest{
+			Namespace: ns, Key: "k1", Value: map[string]interface{}{"existing": true}, MemoryKind: "default/v1",
+		})
+		return err
+	}))
+
+	req := baseIdempotencyReq(ns, "k1", uuid.New())
+	// The caller believed no active row existed, but one does.
+	req.AuthorizedPredecessor = &registryepisodic.MemoryPredecessorExpectation{Exists: false}
+	err := store.InWriteTx(ctx, func(txCtx context.Context) error {
+		_, err := store.PutMemory(txCtx, req)
+		return err
+	})
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "an AuthorizedPredecessor conflict must not be classified as create-only")
 }

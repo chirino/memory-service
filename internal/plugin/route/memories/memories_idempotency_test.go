@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"sync"
@@ -394,7 +395,7 @@ func TestUserPutMemory_CreateOnly_ActiveRowConflict_Returns409(t *testing.T) {
 	revisionID := uuid.New()
 	store := &mockIdempotencyEpisodicStore{
 		lookupResult: nil,
-		putErr:       registryepisodic.ErrMemoryRevisionConflict,
+		putErr:       &registryepisodic.CreateOnlyConflictError{},
 	}
 
 	payload := map[string]interface{}{
@@ -407,6 +408,74 @@ func TestUserPutMemory_CreateOnly_ActiveRowConflict_Returns409(t *testing.T) {
 
 	recorder := executeUserPut(t, store, nil, nil, payload)
 	require.Equal(t, http.StatusConflict, recorder.Code, recorder.Body.String())
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, registrystore.RevisionAlreadyExistsCode, resp["code"])
+	require.Equal(t, "revision_already_exists", resp["code"])
+}
+
+// The four 409 outcomes of a PUT must stay pairwise distinguishable on both REST surfaces.
+// A create-only conflict is the only one carrying revision_already_exists; the bare sentinel
+// (numeric expected_revision or AuthorizedPredecessor mismatch) carries no code.
+func TestPutMemory_ConflictKinds_AreDistinguishable_OnBothSurfaces(t *testing.T) {
+	revisionID := uuid.New()
+	expectedID := uuid.New()
+	cases := []struct {
+		name     string
+		putErr   error
+		wantCode interface{} // nil means the body must carry no code
+	}{
+		{"create-only", &registryepisodic.CreateOnlyConflictError{}, "revision_already_exists"},
+		{"wrapped-create-only", fmt.Errorf("wrapped: %w", &registryepisodic.CreateOnlyConflictError{}), "revision_already_exists"},
+		{"numeric-or-predecessor", registryepisodic.ErrMemoryRevisionConflict, nil},
+		{"wrapped-sentinel", fmt.Errorf("wrapped: %w", registryepisodic.ErrMemoryRevisionConflict), nil},
+		{"expected-revision-id-mismatch", &registrystore.ExpectedActiveRevisionIDMismatchError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "active revision ID does not match expected_revision_id",
+				Code:    registrystore.ExpectedActiveRevisionIDMismatchCode,
+			},
+			ExpectedID: expectedID.String(),
+			ActualID:   uuid.NewString(),
+		}, "expected_active_revision_id_mismatch"},
+	}
+	surfaces := map[string]func(*testing.T, registryepisodic.EpisodicStore, map[string]interface{}) *httptest.ResponseRecorder{
+		"user": func(t *testing.T, s registryepisodic.EpisodicStore, p map[string]interface{}) *httptest.ResponseRecorder {
+			return executeUserPut(t, s, nil, nil, p)
+		},
+		"admin": func(t *testing.T, s registryepisodic.EpisodicStore, p map[string]interface{}) *httptest.ResponseRecorder {
+			return executeAdminPut(t, s, nil, p)
+		},
+	}
+	for surfaceName, exec := range surfaces {
+		for _, tc := range cases {
+			t.Run(surfaceName+"/"+tc.name, func(t *testing.T) {
+				store := &mockIdempotencyEpisodicStore{putErr: tc.putErr}
+				ns := []string{"user", "alice", "notes"}
+				if surfaceName == "admin" {
+					ns = []string{"system", "config"}
+				}
+				rec := exec(t, store, map[string]interface{}{
+					"namespace": ns, "key": "k1", "value": map[string]interface{}{"text": "hello"},
+					"revision_id": revisionID.String(),
+				})
+				require.Equal(t, http.StatusConflict, rec.Code, rec.Body.String())
+				var resp map[string]interface{}
+				require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &resp))
+				if tc.wantCode == nil {
+					require.NotContains(t, resp, "code", rec.Body.String())
+					require.Equal(t, "memory revision conflict", resp["error"])
+					return
+				}
+				require.Equal(t, tc.wantCode, resp["code"])
+				if tc.name == "create-only" || tc.name == "wrapped-create-only" {
+					// No stored data, namespace, key or revision ID is disclosed.
+					require.NotContains(t, resp, "details")
+					require.NotContains(t, rec.Body.String(), revisionID.String())
+					require.NotContains(t, rec.Body.String(), "k1")
+				}
+			})
+		}
+	}
 }
 
 func TestUserPutMemory_ExpectedRevisionID_Match_Returns201(t *testing.T) {

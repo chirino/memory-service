@@ -508,7 +508,7 @@ func (s *mongoEpisodicStore) PutMemory(ctx context.Context, req registryepisodic
 	// create-only check: fail if an active row already exists.
 	if req.CreateOnly {
 		if hasActive {
-			return nil, registryepisodic.ErrMemoryRevisionConflict
+			return nil, &registryepisodic.CreateOnlyConflictError{}
 		}
 	}
 

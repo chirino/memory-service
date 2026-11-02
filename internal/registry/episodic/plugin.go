@@ -21,6 +21,19 @@ import (
 
 var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
 var ErrMemoryRevisionConflict = errors.New("memory revision conflict")
+
+// CreateOnlyConflictError reports a create-only write (PutMemoryRequest.CreateOnly) rejected
+// because an active memory already exists for the namespace and key. It unwraps to
+// ErrMemoryRevisionConflict, so existing errors.Is checks and the gRPC mapping keep treating
+// it as a revision conflict, while REST can tell it apart from the numeric ExpectedRevision
+// and AuthorizedPredecessor conflicts, which stay the bare sentinel.
+type CreateOnlyConflictError struct{}
+
+// Error returns the sentinel's text so callers that format the error (gRPC mapError) are unchanged.
+func (e *CreateOnlyConflictError) Error() string { return ErrMemoryRevisionConflict.Error() }
+
+func (e *CreateOnlyConflictError) Unwrap() error { return ErrMemoryRevisionConflict }
+
 var ErrMemoryKindMigrationStateConflict = errors.New("memory kind migration state changed")
 var ErrSemanticSearchUnavailable = errors.New("semantic search unavailable")
 

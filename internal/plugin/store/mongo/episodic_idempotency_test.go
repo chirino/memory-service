@@ -11,8 +11,8 @@ import (
 
 	"github.com/chirino/memory-service/internal/config"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
-	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	registrymigrate "github.com/chirino/memory-service/internal/registry/migrate"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/testutil/testmongo"
 	"github.com/google/uuid"
 	"github.com/stretchr/testify/assert"
@@ -540,6 +540,20 @@ func TestMongoPutMemory_CreateOnly_ActiveRowConflict(t *testing.T) {
 		return err
 	})
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.ErrorAs(t, err, &createOnly, "a create-only conflict must be distinguishable from the numeric conflicts")
+
+	// The rejected write has no side effects: no document for the new ID, and the existing
+	// active document is the only one for the key, unarchived.
+	byID, cerr := store.col.CountDocuments(ctx, bson.M{"_id": id.String()})
+	require.NoError(t, cerr)
+	assert.Equal(t, int64(0), byID, "no document may be created for the rejected revision_id")
+	total, cerr := store.col.CountDocuments(ctx, bson.M{"key": "k1"})
+	require.NoError(t, cerr)
+	assert.Equal(t, int64(1), total, "exactly the original document must exist")
+	active, cerr := store.col.CountDocuments(ctx, bson.M{"key": "k1", "archived_at": bson.M{"$exists": false}})
+	require.NoError(t, cerr)
+	assert.Equal(t, int64(1), active, "the existing active document must not be archived")
 }
 
 // TestMongoPutMemory_CreateOnly_NumericExpectedRevisionStillRuns verifies that when
@@ -559,6 +573,8 @@ func TestMongoPutMemory_CreateOnly_NumericExpectedRevisionStillRuns(t *testing.T
 	})
 	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict,
 		"numeric ExpectedRevision must fire after create-only check passes")
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "a numeric conflict must not be classified as create-only")
 
 	count, err := store.col.CountDocuments(ctx, bson.M{"_id": id.String()})
 	require.NoError(t, err)
@@ -1044,4 +1060,30 @@ func TestMongoPutMemory_ConcurrentSameID_PredecessorArchivedOnce(t *testing.T) {
 	})
 	require.NoError(t, err)
 	assert.Equal(t, int64(1), archivedCount, "predecessor must be archived exactly once across all concurrent writers")
+}
+
+// TestMongoPutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly verifies that an
+// AuthorizedPredecessor conflict stays the bare sentinel and is not classified as create-only,
+// so REST can tell the two apart. CreateOnly is left false: this is the non-idempotent path.
+func TestMongoPutMemory_AuthorizedPredecessorConflict_IsNotCreateOnly(t *testing.T) {
+	store, ctx := setupMongoIdempotencyStore(t)
+	ns := []string{"user", "alice", "predecessor-conflict"}
+
+	require.NoError(t, store.InWriteTx(ctx, func(wctx context.Context) error {
+		_, err := store.PutMemory(wctx, registryepisodic.PutMemoryRequest{
+			Namespace: ns, Key: "k1", Value: map[string]interface{}{"existing": true}, MemoryKind: "default/v1",
+		})
+		return err
+	}))
+
+	req := baseMongoIdempotencyReq(ns, "k1", uuid.New())
+	// The caller believed no active row existed, but one does.
+	req.AuthorizedPredecessor = &registryepisodic.MemoryPredecessorExpectation{Exists: false}
+	err := store.InWriteTx(ctx, func(wctx context.Context) error {
+		_, err := store.PutMemory(wctx, req)
+		return err
+	})
+	require.ErrorIs(t, err, registryepisodic.ErrMemoryRevisionConflict)
+	var createOnly *registryepisodic.CreateOnlyConflictError
+	require.False(t, errors.As(err, &createOnly), "an AuthorizedPredecessor conflict must not be classified as create-only")
 }

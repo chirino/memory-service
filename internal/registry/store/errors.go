@@ -8,6 +8,11 @@ import (
 const DuplicateSequenceConflictCode = "duplicate_sequence"
 const ConversationAlreadyExistsCode = "conversation_already_exists"
 const MemoryRevisionAlreadyExistsCode = "memory_revision_already_exists"
+
+// RevisionAlreadyExistsCode is the REST code for a create-only write (revision: 1)
+// rejected because an active memory already exists for the namespace and key.
+// Distinct from MemoryRevisionAlreadyExistsCode, which reports a reused revision_id.
+const RevisionAlreadyExistsCode = "revision_already_exists"
 const ExpectedActiveRevisionIDMismatchCode = "expected_active_revision_id_mismatch"
 
 // NotFoundError indicates the resource was not found (or user lacks access).
