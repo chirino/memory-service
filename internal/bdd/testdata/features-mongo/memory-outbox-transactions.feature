@@ -40,3 +40,89 @@ Feature: MongoDB memory outbox transactions
     """
     Then the gRPC response should not have an error
     And the gRPC response field "value.source" should be "grpc"
+
+  Scenario: An exact PutMemory REST retry produces exactly one outbox event
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "revision_id": "66666666-6666-4666-8666-000000000001",
+      "revision": 1,
+      "namespace": ["user", "alice", "outbox"],
+      "key": "rest-retry",
+      "value": { "source": "rest-retry" }
+    }
+    """
+    Then the response status should be 201
+    When I execute MongoDB query:
+    """
+    {"collection":"outbox_events","operation":"count","filter":{"kind":"memory","data.memory":"66666666-6666-4666-8666-000000000001"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "revision_id": "66666666-6666-4666-8666-000000000001",
+      "revision": 1,
+      "namespace": ["user", "alice", "outbox"],
+      "key": "rest-retry",
+      "value": { "source": "rest-retry" }
+    }
+    """
+    Then the response status should be 200
+    When I execute MongoDB query:
+    """
+    {"collection":"outbox_events","operation":"count","filter":{"kind":"memory","data.memory":"66666666-6666-4666-8666-000000000001"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+  Scenario: An exact PutMemory gRPC retry produces exactly one outbox event
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    revision_id: "66666666-6666-4666-8666-000000000002"
+    revision: 1
+    namespace: "user"
+    namespace: "alice"
+    namespace: "outbox"
+    key: "grpc-retry"
+    value {
+      fields {
+        key: "source"
+        value { string_value: "grpc-retry" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    When I execute MongoDB query:
+    """
+    {"collection":"outbox_events","operation":"count","filter":{"kind":"memory","data.memory":"66666666-6666-4666-8666-000000000002"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    revision_id: "66666666-6666-4666-8666-000000000002"
+    revision: 1
+    namespace: "user"
+    namespace: "alice"
+    namespace: "outbox"
+    key: "grpc-retry"
+    value {
+      fields {
+        key: "source"
+        value { string_value: "grpc-retry" }
+      }
+    }
+    """
+    Then the gRPC response should not have an error
+    When I execute MongoDB query:
+    """
+    {"collection":"outbox_events","operation":"count","filter":{"kind":"memory","data.memory":"66666666-6666-4666-8666-000000000002"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |

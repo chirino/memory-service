@@ -232,6 +232,14 @@ func putMemoryWithEvents(c *gin.Context, store registryepisodic.EpisodicStore, m
 		if err != nil {
 			return err
 		}
+		if result.ExactRetry {
+			// A concurrent duplicate recognized inside PutMemory's own transaction (the
+			// pre-flight lookup above only catches retries of an already-committed row).
+			// Return the stored revision without a second event or outbox record.
+			responseStatus = http.StatusOK
+			responseBody = toAPIMemoryWriteResult(result)
+			return nil
+		}
 		if revisionID != nil {
 			responseStatus = http.StatusCreated
 		} else {
@@ -3040,6 +3048,14 @@ func HandleAdminPutMemory(c *gin.Context, store registryepisodic.EpisodicStore, 
 		})
 		if err != nil {
 			return err
+		}
+		if result.ExactRetry {
+			// A concurrent duplicate recognized inside PutMemory's own transaction (the
+			// pre-flight lookup above only catches retries of an already-committed row).
+			// Return the stored revision without a second event or outbox record.
+			responseStatus = http.StatusOK
+			responseBody = toAPIMemoryWriteResult(result)
+			return nil
 		}
 		if revisionID != nil {
 			responseStatus = http.StatusCreated

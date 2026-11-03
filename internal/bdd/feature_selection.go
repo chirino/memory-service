@@ -9,6 +9,7 @@ import (
 
 var serialFeatureFiles = map[string]bool{
 	"conversation-idempotency-race-rest.feature": true,
+	"memory-put-idempotency-race-rest.feature":   true,
 	"eviction-events-rest.feature":               true,
 	"admin-rest.feature":                         true,
 	"admin-checkpoints-rest.feature":             true,

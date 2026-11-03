@@ -1020,3 +1020,65 @@ func TestCallbackReplaySafety_AdminPutMemory_ResetsStateOnReplay(t *testing.T) {
 	require.Equal(t, http.StatusCreated, recorder.Code)
 	require.Equal(t, 2, store.txCallbackCount)
 }
+
+// A concurrent duplicate that loses the race is recognized inside PutMemory's own transaction
+// (the pre-flight lookup found nothing). The handler must report it as 200 with no event.
+func TestUserPutMemory_ConcurrentDuplicateInsideStore_Returns200_NoEvent(t *testing.T) {
+	revisionID := uuid.New()
+	store := &mockIdempotencyEpisodicStore{
+		putResult: &registryepisodic.MemoryWriteResult{
+			ID:         revisionID,
+			Namespace:  []string{"user", "alice", "notes"},
+			Key:        "k1",
+			MemoryKind: "default/v1",
+			Revision:   1,
+			CreatedAt:  time.Now().UTC(),
+			ExactRetry: true,
+		},
+	}
+	bus := &recordingEventBus{}
+
+	recorder := executeUserPut(t, store, bus, nil, map[string]interface{}{
+		"namespace":   []string{"user", "alice", "notes"},
+		"key":         "k1",
+		"value":       map[string]interface{}{"text": "hello"},
+		"revision_id": revisionID.String(),
+	})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, revisionID.String(), resp["id"])
+	require.Equal(t, 1, store.putCalls)
+	require.Equal(t, 0, bus.count(), "no events should be published for a duplicate recognized inside PutMemory")
+}
+
+func TestAdminPutMemory_ConcurrentDuplicateInsideStore_Returns200_NoEvent(t *testing.T) {
+	revisionID := uuid.New()
+	store := &mockIdempotencyEpisodicStore{
+		putResult: &registryepisodic.MemoryWriteResult{
+			ID:         revisionID,
+			Namespace:  []string{"system", "config"},
+			Key:        "k1",
+			MemoryKind: "default/v1",
+			Revision:   1,
+			CreatedAt:  time.Now().UTC(),
+			ExactRetry: true,
+		},
+	}
+	bus := &recordingEventBus{}
+
+	recorder := executeAdminPut(t, store, bus, map[string]interface{}{
+		"namespace":   []string{"system", "config"},
+		"key":         "k1",
+		"value":       map[string]interface{}{"mode": "fast"},
+		"revision_id": revisionID.String(),
+	})
+	require.Equal(t, http.StatusOK, recorder.Code, recorder.Body.String())
+
+	var resp map[string]interface{}
+	require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &resp))
+	require.Equal(t, revisionID.String(), resp["id"])
+	require.Equal(t, 1, store.putCalls)
+	require.Equal(t, 0, bus.count(), "no events should be published for a duplicate recognized inside PutMemory")
+}

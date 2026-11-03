@@ -75,7 +75,38 @@ Response:
 The `value` is not echoed back in the response — only the write confirmation is returned.
 
 Calling `PUT` with an existing `(namespace, key)` pair upserts the memory, replacing the previous value.
-For optimistic concurrency, include `expected_revision` on `PUT` or `PATCH`; the request fails with `409 Conflict` if the active memory revision no longer matches. Each successful write or archive update increments the revision.
+
+#### Idempotent Writes and Preconditions
+
+By default, omitting `revision_id` creates a new revision with a server-generated UUID and returns `200 OK`. To make writes retry-safe across network retries, clients can supply a caller-generated UUID `revision_id`.
+
+```bash
+curl -X PUT http://localhost:8080/v1/memories \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "namespace": ["user", "alice", "notes"],
+    "key": "python_tip",
+    "value": {
+      "text": "Alice prefers list comprehensions over map/filter."
+    },
+    "index": {"text": "Alice prefers list comprehensions over map/filter."},
+    "revision_id": "6f1c1d0a-0000-4000-8000-000000000001",
+    "revision": 1
+  }'
+```
+
+- **First write with `revision_id`**: Returns `201 Created` with the new memory record.
+- **Exact retry**: Retrying with the identical `revision_id` and content (`namespace`, `key`, `value`, `index`, `ttl_seconds`, and kind) returns `200 OK` with the stored revision record (`id`, `createdAt`, `expiresAt`) unchanged. Exact retries produce no new database rows, archive rows, event stream events, or outbox records.
+- **Mismatched retry**: Retrying the same `revision_id` with different content, key, or namespace returns `409 Conflict` with code `memory_revision_already_exists`. To prevent existence disclosure across tenants, the response body contains only the error `code` and the caller's `revision_id`.
+- **Create-only writes (`revision: 1`)**: Supplying `"revision": 1` (requires `revision_id`) ensures the memory is only created if no active revision currently exists for `(namespace, key)`. If an active memory exists, the write fails with `409 Conflict` (`code`: `revision_already_exists`).
+- **Active revision precondition (`expected_revision_id`)**: Supplying `expected_revision_id` (requires `revision_id`) checks that the current active memory revision has the specified UUID before archiving and replacing it. If the active revision ID does not match, the write fails with `409 Conflict` (`code`: `expected_active_revision_id_mismatch`).
+- **Numeric revision check (`expected_revision`)**: Numeric compare-and-swap can be combined on `PUT` or `PATCH`. If the active memory's numeric revision does not match, the request fails with `409 Conflict` (`code`: `memory revision conflict`).
+
+##### Idempotency Window and Revision Caveat
+
+- **Idempotency Window**: Exact-retry idempotency is guaranteed for as long as the revision record is retained. In high-churn environments, superseded revisions are pruned after an administrator-configurable retention window. Retries of pruned or archived-and-swept revisions return `404 Not Found`. Note that superseded-revision eviction policies and deleted tombstone retention are configured and operated independently.
+- **Revision Number Across Retries**: The response `revision` field reflects the row's state at retrieval. If the memory was subsequently superseded or migrated between attempts, the returned `revision` integer may differ from the initial attempt; clients should not compare the numeric `revision` field across retries.
 
 ### Reading a Memory
 
@@ -653,7 +684,7 @@ curl -X POST http://localhost:8080/admin/v1/memories/search \
 
 When `as_user_id` is omitted, admin search is admin-wide and caller filters narrow that result set. When `as_user_id` is set, the server applies the same memory search policy that the target user would receive from public `POST /v1/memories/search`.
 
-Admin writes use the same memory body shape as public `PUT /v1/memories` and may include `expected_revision` for compare-and-swap updates. Admin archive uses repeated `ns` query parameters plus `key`, with `{"archived": true}` in the request body:
+Admin writes use the same memory body shape as public `PUT /v1/memories` and support `revision_id`, `expected_revision_id`, `revision: 1`, and `expected_revision` for idempotent writes and compare-and-swap preconditions. Admin archive uses repeated `ns` query parameters plus `key`, with `{"archived": true}` in the request body:
 
 ```bash
 curl -X PUT "http://localhost:8080/admin/v1/memories?justification=cognition%20processor%20write" \

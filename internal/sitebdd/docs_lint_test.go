@@ -200,6 +200,33 @@ func TestDocsCodeFromFileReferences(t *testing.T) {
 	}
 }
 
+// TestDocsMemoriesIdempotencyText checks that the memories documentation covers
+// PutMemory idempotency, revision preconditions, conflict codes, and retention window.
+func TestDocsMemoriesIdempotencyText(t *testing.T) {
+	projectRoot := mustProjectRoot(t)
+	memoriesDocPath := filepath.Join(projectRoot, "site", "src", "pages", "docs", "concepts", "memories.md")
+	content := readFile(t, memoriesDocPath)
+
+	requiredSnippets := []string{
+		"revision_id",
+		"expected_revision_id",
+		"revision: 1",
+		"201 Created",
+		"200 OK",
+		"memory_revision_already_exists",
+		"revision_already_exists",
+		"expected_active_revision_id_mismatch",
+		"Idempotency Window",
+		"superseded-revision eviction",
+	}
+
+	for _, snippet := range requiredSnippets {
+		if !strings.Contains(content, snippet) {
+			t.Errorf("memories.md missing required text snippet %q", snippet)
+		}
+	}
+}
+
 // --- MDX scanning helpers ---
 
 type mdxTag struct {

@@ -197,8 +197,14 @@ func (m *MongoTestDB) ExecMongoQuery(ctx context.Context, query string) ([]map[s
 		}
 		defer cur.Close(ctx)
 		return mongoCursorToRows(ctx, cur)
+	case "delete", "delete_many", "delete_one":
+		delRes, err := collection.DeleteMany(ctx, filter)
+		if err != nil {
+			return nil, fmt.Errorf("mongo delete failed: %w", err)
+		}
+		return []map[string]interface{}{{"deleted_count": delRes.DeletedCount}}, nil
 	default:
-		return nil, fmt.Errorf("unsupported mongo operation %q (supported: find, count, aggregate)", spec.Operation)
+		return nil, fmt.Errorf("unsupported mongo operation %q (supported: find, count, aggregate, delete)", spec.Operation)
 	}
 }
 

@@ -125,9 +125,9 @@ type mongoEpisodicStore struct {
 	qdrant  *episodicqdrant.Client
 
 	// Test-only hooks; nil in production.
-	afterMemoryArchive func() error           // called after UpdateMany archive step, before InsertOne
-	beforeMemoryInsert func() error           // called before InsertOne; return TransientTransactionError to trigger replay
-	afterMemoryInsert  func(id uuid.UUID)     // called after successful InsertOne; records the inserted ID
+	afterMemoryArchive func() error       // called after UpdateMany archive step, before InsertOne
+	beforeMemoryInsert func() error       // called before InsertOne; return TransientTransactionError to trigger replay
+	afterMemoryInsert  func(id uuid.UUID) // called after successful InsertOne; records the inserted ID
 }
 
 func (s *mongoEpisodicStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {

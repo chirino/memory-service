@@ -391,8 +391,8 @@ func TestSQLiteEpisodicStoreVectorSearch(t *testing.T) {
 	require.Len(t, pending, 2)
 
 	embeddings := map[string][]float32{
-		pending[0].ID.String(): []float32{1, 0},
-		pending[1].ID.String(): []float32{-1, 0},
+		pending[0].ID.String(): {1, 0},
+		pending[1].ID.String(): {-1, 0},
 	}
 	if pending[0].ID.String() != firstID {
 		embeddings[pending[0].ID.String()] = []float32{-1, 0}
