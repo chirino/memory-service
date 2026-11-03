@@ -104,6 +104,10 @@ type TestDB interface {
 	ExecMongoQuery(ctx context.Context, query string) ([]map[string]interface{}, error)
 	// ArchiveConversation sets archived_at on the conversation and its group to `days` ago.
 	ArchiveConversation(ctx context.Context, conversationID string, days int) error
+	// SetConversationGroupActivity sets the group creation time, every conversation's
+	// creation and update times, and every entry's creation time in the group
+	// containing conversationID to `days` ago.
+	SetConversationGroupActivity(ctx context.Context, conversationID string, days int) error
 	// ArchiveConversationOnly sets archived_at on the conversation only, without touching the group.
 	ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error
 	// Task queue operations for task-queue BDD feature.

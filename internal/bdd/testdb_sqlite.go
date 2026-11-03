@@ -193,6 +193,30 @@ func (s *SQLiteTestDB) ArchiveConversation(ctx context.Context, conversationID s
 	return nil
 }
 
+func (s *SQLiteTestDB) SetConversationGroupActivity(ctx context.Context, conversationID string, days int) error {
+	db, err := s.conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer db.Close()
+
+	at := time.Now().AddDate(0, 0, -days)
+	for _, statement := range []string{
+		`UPDATE conversation_groups SET created_at = ?, created_at_ns = ? WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = ?)`,
+		`UPDATE entries SET created_at = ?, created_at_ns = ? WHERE conversation_group_id = (SELECT conversation_group_id FROM conversations WHERE id = ?)`,
+	} {
+		if _, err := db.ExecContext(ctx, statement, at, conversationID); err != nil {
+			return fmt.Errorf("failed to set conversation group activity: %w", err)
+		}
+	}
+	if _, err := db.ExecContext(ctx,
+		`UPDATE conversations SET created_at = ?, created_at_ns = ?, updated_at = ?, updated_at_ns = ? WHERE conversation_group_id = (SELECT conversation_group_id FROM conversations WHERE id = ?)`,
+		at, at, conversationID); err != nil {
+		return fmt.Errorf("failed to set conversation group activity: %w", err)
+	}
+	return nil
+}
+
 func (s *SQLiteTestDB) ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error {
 	db, err := s.conn(ctx)
 	if err != nil {

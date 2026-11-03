@@ -149,7 +149,7 @@ Yes. Search results can include `highlights`, so if sensitive text is indexed, s
 
 ### How is long-term storage growth controlled?
 
-There is no automatic old-epoch eviction in the current model, because that breaks fork guarantees. Growth is currently controlled operationally (for example, deleting conversation trees, applying app-level retention/archival policies, and planned usage metering/quotas).
+There is no automatic old-epoch eviction in the current model, because that breaks fork guarantees. Growth is currently controlled operationally (for example, deleting conversation trees, applying app-level retention/archival policies, [evicting](/docs/concepts/admin-apis/#eviction-permanently-removing-old-data) archived or inactive conversation trees, and planned usage metering/quotas).
 
 ## Operations and Integration
 

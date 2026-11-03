@@ -327,13 +327,14 @@ curl -X PATCH "http://localhost:8080/v1/admin/conversations/{id}" \
 
 Set `archived` to `true` to archive the fork tree or `false` to unarchive it. All updates require the `admin` role, and the response is the updated conversation object.
 
-## Eviction: Permanently Removing Archived Data
+## Eviction: Permanently Removing Old Data
 
-Archiving keeps data recoverable. **Eviction** permanently removes resources that have been archived for longer than a specified retention period. This operation is irreversible and requires the `admin` role.
+Archiving keeps data recoverable. **Eviction** permanently removes resources older than a specified retention period. By default it removes conversations that have been archived for longer than the retention period. This operation is irreversible and requires the `admin` role.
 
 ### When to Use Eviction
 
 - Enforcing a data retention policy (e.g., purge conversations archived more than 90 days ago)
+- Removing abandoned conversations that were never archived (e.g., no activity for 30 days)
 - Satisfying a GDPR/right-to-erasure request
 - Reclaiming storage after bulk deletes
 
@@ -360,6 +361,47 @@ The `retentionPeriod` is an ISO 8601 duration. Common values:
 | `P1Y`   | 1 year                     |
 | `PT24H` | 24 hours                   |
 | `P0D`   | Immediately (all archived) |
+
+`resourceTypes` accepts `conversations` and `outbox_events`. `outbox_events` removes durable [event outbox](/docs/concepts/events/) records created longer ago than the retention period, and returns `501 Not Implemented` when the datastore has no outbox.
+
+### Choosing Which Conversations to Evict
+
+Add a `conversationFilter` to choose which conversation groups are evicted and which clock the retention period is measured from. This example evicts unarchived conversations with no activity in the last 30 days:
+
+```bash
+curl -X POST "http://localhost:8080/v1/admin/evict" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <admin-token>" \
+  -d '{
+    "retentionPeriod": "P30D",
+    "resourceTypes": ["conversations"],
+    "conversationFilter": {
+      "archived": "exclude",
+      "ageBasis": "lastActivity"
+    },
+    "justification": "Remove abandoned conversations"
+  }'
+```
+
+`archived` selects candidate conversation groups by archive state:
+
+| Value            | Candidates                     |
+| ---------------- | ------------------------------ |
+| `only` (default) | Archived groups                |
+| `exclude`        | Unarchived groups              |
+| `include`        | Archived and unarchived groups |
+
+`ageBasis` selects the clock compared with `retentionPeriod`. A group is evicted when that clock is older than the retention period:
+
+| Value                  | Clock                                                                                                                                                            |
+| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `archivedAt` (default) | When the group was archived. Valid only with `archived: only`.                                                                                                   |
+| `lastActivity`         | The most recent conversation creation, conversation update, or entry append anywhere in the tree that would be deleted, including forks and child conversations. |
+| `createdAt`            | When the group was created, regardless of later activity.                                                                                                        |
+
+Omitting `conversationFilter`, or either of its properties, uses the defaults, so existing requests keep evicting only conversations archived longer than the retention period. The server rejects unknown values and combinations that cannot apply, such as `{"archived": "exclude"}` (the default `archivedAt` clock needs archived groups). The filter applies only to the `conversations` resource type.
+
+Evicting a conversation group always deletes the whole tree: its forks and every descendant child conversation group, whether or not those match the filter. With `lastActivity`, recent activity anywhere in that tree keeps the whole tree, and activity committed while eviction runs is honored before anything is deleted.
 
 ### Streaming Eviction (SSE)
 

@@ -329,14 +329,14 @@ func (m *metricsStore) DeleteAttachment(ctx context.Context, userID string, conv
 	return m.inner.DeleteAttachment(ctx, userID, conversationID, attachmentID)
 }
 
-func (m *metricsStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error) {
+func (m *metricsStore) FindEvictableGroupIDs(ctx context.Context, filter store.ConversationEvictionFilter, limit int) ([]uuid.UUID, error) {
 	defer observe("find_evictable_group_ids", time.Now())
-	return m.inner.FindEvictableGroupIDs(ctx, cutoff, limit)
+	return m.inner.FindEvictableGroupIDs(ctx, filter, limit)
 }
 
-func (m *metricsStore) CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error) {
+func (m *metricsStore) CountEvictableGroups(ctx context.Context, filter store.ConversationEvictionFilter) (int64, error) {
 	defer observe("count_evictable_groups", time.Now())
-	return m.inner.CountEvictableGroups(ctx, cutoff)
+	return m.inner.CountEvictableGroups(ctx, filter)
 }
 
 func (m *metricsStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]store.DeletedConversationGroup, error) {

@@ -362,6 +362,33 @@ func (m *MongoTestDB) ArchiveConversation(ctx context.Context, conversationID st
 	return nil
 }
 
+func (m *MongoTestDB) SetConversationGroupActivity(ctx context.Context, conversationID string, days int) error {
+	client, db, err := m.db(ctx)
+	if err != nil {
+		return err
+	}
+	defer client.Disconnect(ctx)
+
+	at := time.Now().AddDate(0, 0, -days)
+	var conv struct {
+		ConversationGroupID string `bson:"conversation_group_id"`
+	}
+	if err := db.Collection("conversations").FindOne(ctx, bson.M{"_id": conversationID}).Decode(&conv); err != nil {
+		return fmt.Errorf("failed to find conversation %s: %w", conversationID, err)
+	}
+	if _, err := db.Collection("conversation_groups").UpdateByID(ctx, conv.ConversationGroupID, bson.M{"$set": bson.M{"created_at": at}}); err != nil {
+		return fmt.Errorf("failed to set conversation group activity: %w", err)
+	}
+	inGroup := bson.M{"conversation_group_id": conv.ConversationGroupID}
+	if _, err := db.Collection("conversations").UpdateMany(ctx, inGroup, bson.M{"$set": bson.M{"created_at": at, "updated_at": at}}); err != nil {
+		return fmt.Errorf("failed to set conversation group activity: %w", err)
+	}
+	if _, err := db.Collection("entries").UpdateMany(ctx, inGroup, bson.M{"$set": bson.M{"created_at": at}}); err != nil {
+		return fmt.Errorf("failed to set conversation group activity: %w", err)
+	}
+	return nil
+}
+
 func (m *MongoTestDB) ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error {
 	client, db, err := m.db(ctx)
 	if err != nil {

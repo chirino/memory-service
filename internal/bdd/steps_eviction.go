@@ -21,6 +21,8 @@ func init() {
 		ctx.Step(`^the conversation was archived (\d+) days ago$`, e.theConversationWasArchivedDaysAgo)
 		ctx.Step(`^I have (\d+) conversations archived (\d+) days ago$`, e.iHaveConversationsArchivedDaysAgo)
 		ctx.Step(`^the conversation has entries$`, e.theConversationHasEntries)
+		ctx.Step(`^the conversation group of "([^"]*)" was last active (\d+) days ago$`, e.theConversationGroupWasLastActiveDaysAgo)
+		ctx.Step(`^the conversation "([^"]*)" was archived (\d+) days ago$`, e.theNamedConversationWasArchivedDaysAgo)
 		ctx.Step(`^the conversation is shared with user "([^"]*)"$`, e.theConversationIsSharedWithUser)
 		ctx.Step(`^the conversation has a pending ownership transfer to user "([^"]*)"$`, e.theConversationHasAPendingOwnershipTransferToUser)
 		ctx.Step(`^the response content type should be "([^"]*)"$`, e.theResponseContentTypeShouldBe)
@@ -42,6 +44,25 @@ type evictionSteps struct {
 func (e *evictionSteps) theConversationWasArchivedDaysAgo(days int) error {
 	convID := fmt.Sprintf("%v", e.s.Variables["conversationId"])
 	return e.archiveConversationDaysAgo(convID, days)
+}
+
+func (e *evictionSteps) theConversationGroupWasLastActiveDaysAgo(convID string, days int) error {
+	expanded, err := e.s.Expand(convID)
+	if err != nil {
+		return err
+	}
+	if e.s.TestDB() == nil {
+		return fmt.Errorf("no TestDB configured")
+	}
+	return e.s.TestDB().SetConversationGroupActivity(context.Background(), expanded, days)
+}
+
+func (e *evictionSteps) theNamedConversationWasArchivedDaysAgo(convID string, days int) error {
+	expanded, err := e.s.Expand(convID)
+	if err != nil {
+		return err
+	}
+	return e.archiveConversationDaysAgo(expanded, days)
 }
 
 func (e *evictionSteps) archiveConversationDaysAgo(convID string, days int) error {

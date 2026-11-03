@@ -189,7 +189,7 @@ curl "http://localhost:8080/v1/conversations?archived=include" \
   -H "Authorization: Bearer <token>"
 ```
 
-Archived conversations remain readable until they are evicted by a retention policy.
+Archived conversations remain readable until they are evicted by a retention policy. Administrators can also configure eviction to remove unarchived conversations by creation time or by last activity; see [Eviction](/docs/concepts/admin-apis/#eviction-permanently-removing-old-data).
 
 ## Inline `conversationPatch` on Entry Append
 

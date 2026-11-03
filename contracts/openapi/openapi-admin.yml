@@ -1277,10 +1277,19 @@ paths:
   /v1/admin/evict:
     post:
       tags: [Admin]
-      summary: Hard-delete archived resources past retention period
+      summary: Hard-delete resources past retention period
       description: |-
-        Permanently removes resources that have been archived for longer than
-        the specified retention period. This operation is irreversible.
+        Permanently removes resources older than the specified retention
+        period. This operation is irreversible.
+
+        By default, conversations are evicted when their conversation group has
+        been archived for longer than the retention period. Use
+        `conversationFilter` to also select unarchived groups, or to measure
+        the retention period from the last activity or from creation instead.
+
+        Deleting a selected conversation group also deletes its forks and every
+        descendant child conversation group, whether or not those match the
+        filter.
 
         The operation runs in batches to minimize database lock contention.
 
@@ -1326,7 +1335,15 @@ paths:
         '204':
           description: Eviction completed successfully (default synchronous response).
         '400':
-          description: Invalid request (bad retention period format, unknown resource type).
+          description: |-
+            Invalid request (bad retention period format, unknown resource type,
+            or an invalid `conversationFilter`).
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '501':
+          description: The configured datastore does not support `outbox_events` eviction.
           content:
             application/json:
               schema:
@@ -2898,7 +2915,9 @@ components:
         retentionPeriod:
           type: string
           description: |-
-            ISO 8601 duration. Resources archived longer than this are hard-deleted.
+            ISO 8601 duration. Resources older than this are hard-deleted. For
+            conversations, `conversationFilter.ageBasis` selects which clock
+            the duration is measured from.
             Examples: P90D (90 days), P1Y (1 year), PT24H (24 hours).
           example: "P90D"
         resourceTypes:
@@ -2907,14 +2926,60 @@ components:
             type: string
             enum:
               - conversations
+              - outbox_events
           description: |-
             Which resource types to evict.
-            - conversations: Archived conversations past retention.
+            - conversations: Conversation groups selected by `conversationFilter`
+              (archived groups past retention by default).
+            - outbox_events: Durable event outbox records created longer ago
+              than the retention period. Returns 501 when the configured
+              datastore has no event outbox.
           example: ["conversations"]
+        conversationFilter:
+          $ref: '#/components/schemas/ConversationEvictionFilter'
         justification:
           type: string
           description: Reason for the eviction (for audit log).
           example: "Quarterly data cleanup per retention policy"
+    ConversationEvictionFilter:
+      type: object
+      additionalProperties: false
+      description: |-
+        Selects which conversation groups `conversations` eviction deletes.
+        Valid only when `resourceTypes` includes `conversations`; it does not
+        affect other resource types. Omitting the filter, or any of its
+        properties, uses the defaults `archived: only` and
+        `ageBasis: archivedAt`, which select groups archived longer than the
+        retention period.
+
+        A selected group is deleted with its forks and every descendant child
+        conversation group, regardless of their archive state or age.
+      properties:
+        archived:
+          type: string
+          enum: [only, exclude, include]
+          default: only
+          description: |-
+            Archive state of the candidate conversation groups.
+            - only: archived groups.
+            - exclude: unarchived groups.
+            - include: archived and unarchived groups.
+        ageBasis:
+          type: string
+          enum: [archivedAt, lastActivity, createdAt]
+          default: archivedAt
+          description: |-
+            Clock compared with `retentionPeriod`. A group is selected when its
+            clock is earlier than the current time minus the retention period.
+            - archivedAt: when the group was archived. Requires `archived: only`.
+            - lastActivity: the most recent conversation creation, conversation
+              update, or entry append anywhere in the tree that would be
+              deleted, including forks and descendant child groups. Activity
+              committed before the deletion prevents it.
+            - createdAt: when the group was created, regardless of later activity.
+      example:
+        archived: exclude
+        ageBasis: lastActivity
     EvictProgressEvent:
       type: object
       description: Progress event sent via SSE during eviction.

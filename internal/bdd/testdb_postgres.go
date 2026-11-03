@@ -193,6 +193,26 @@ func (p *PostgresTestDB) ArchiveConversation(ctx context.Context, conversationID
 	return nil
 }
 
+func (p *PostgresTestDB) SetConversationGroupActivity(ctx context.Context, conversationID string, days int) error {
+	conn, err := p.conn(ctx)
+	if err != nil {
+		return fmt.Errorf("failed to connect to database: %w", err)
+	}
+	defer conn.Close(ctx)
+
+	at := time.Now().AddDate(0, 0, -days)
+	for _, statement := range []string{
+		`UPDATE conversation_groups SET created_at = $1 WHERE id = (SELECT conversation_group_id FROM conversations WHERE id = $2)`,
+		`UPDATE conversations SET created_at = $1, updated_at = $1 WHERE conversation_group_id = (SELECT conversation_group_id FROM conversations WHERE id = $2)`,
+		`UPDATE entries SET created_at = $1 WHERE conversation_group_id = (SELECT conversation_group_id FROM conversations WHERE id = $2)`,
+	} {
+		if _, err := conn.Exec(ctx, statement, at, conversationID); err != nil {
+			return fmt.Errorf("failed to set conversation group activity: %w", err)
+		}
+	}
+	return nil
+}
+
 func (p *PostgresTestDB) ArchiveConversationOnly(ctx context.Context, conversationID string, days int) error {
 	conn, err := p.conn(ctx)
 	if err != nil {

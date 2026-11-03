@@ -9,7 +9,6 @@ import (
 	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/service/eventstream"
-	"github.com/google/uuid"
 )
 
 // EvictionService periodically cleans up archived records past retention.
@@ -58,11 +57,11 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 		emitJobTerminal(event, ctx, int64(failures))
 	}()
 	defer recoverJobPanic(event, func() { failures++ })
-	cutoff := time.Now().Add(-e.retention)
+	filter := registrystore.DefaultConversationEvictionFilter(time.Now().Add(-e.retention))
 	var total int64
 	err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
 		var err error
-		total, err = e.store.CountEvictableGroups(readCtx, cutoff)
+		total, err = e.store.CountEvictableGroups(readCtx, filter)
 		return err
 	})
 	if err != nil {
@@ -82,29 +81,10 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 	event.SetWorkCount(total)
 	event.EmitStart()
 	for {
-		var ids []uuid.UUID
-		err := e.store.InReadTx(ctx, func(readCtx context.Context) error {
-			var err error
-			ids, err = e.store.FindEvictableGroupIDs(readCtx, cutoff, e.batchSize)
-			return err
-		})
-		if err != nil {
-			if markJobInterrupted(event, ctx, err) {
-				return
-			}
-			log.Error("Eviction: find IDs failed", "err", err)
-			event.SetReason("list_failed")
-			event.EnrichError(err)
-			failures++
-			return
-		}
-		if len(ids) == 0 {
-			break
-		}
-		var eventsToPublish []registryeventbus.Event
+		var batch eventstream.ConversationEvictionBatch
 		if err := e.store.InWriteTx(ctx, func(writeCtx context.Context) error {
 			var err error
-			eventsToPublish, err = eventstream.DeleteConversationGroups(writeCtx, e.store, ids)
+			batch, err = eventstream.EvictConversationGroups(writeCtx, e.store, filter, e.batchSize)
 			return err
 		}); err != nil {
 			if markJobInterrupted(event, ctx, err) {
@@ -114,7 +94,13 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			event.SetReason("delete_failed")
 			event.EnrichError(err)
 			failures++
-		} else if err := eventstream.PublishEvents(ctx, e.store, e.eventBus, eventsToPublish...); err != nil {
+			return
+		}
+		if batch.Found == 0 {
+			break
+		}
+		filter = batch.Next
+		if err := eventstream.PublishEvents(ctx, e.store, e.eventBus, batch.Events...); err != nil {
 			if markJobInterrupted(event, ctx, err) {
 				return
 			}
@@ -122,10 +108,8 @@ func (e *EvictionService) runEviction(ctx context.Context) {
 			event.SetReason("event_publish_failed")
 			event.EnrichError(err)
 			failures++
-			evicted += len(ids)
-		} else {
-			evicted += len(ids)
 		}
+		evicted += batch.Deleted
 
 		if e.delay > 0 {
 			select {

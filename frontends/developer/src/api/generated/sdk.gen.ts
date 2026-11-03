@@ -692,10 +692,19 @@ export const adminSearchConversations = <ThrowOnError extends boolean = false>(
   });
 
 /**
- * Hard-delete archived resources past retention period
+ * Hard-delete resources past retention period
  *
- * Permanently removes resources that have been archived for longer than
- * the specified retention period. This operation is irreversible.
+ * Permanently removes resources older than the specified retention
+ * period. This operation is irreversible.
+ *
+ * By default, conversations are evicted when their conversation group has
+ * been archived for longer than the retention period. Use
+ * `conversationFilter` to also select unarchived groups, or to measure
+ * the retention period from the last activity or from creation instead.
+ *
+ * Deleting a selected conversation group also deletes its forks and every
+ * descendant child conversation group, whether or not those match the
+ * filter.
  *
  * The operation runs in batches to minimize database lock contention.
  *

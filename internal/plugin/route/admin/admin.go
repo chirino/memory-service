@@ -1041,8 +1041,9 @@ func contentDisposition(disposition string, filename *string) string {
 
 func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus registryeventbus.EventBus) {
 	var req struct {
-		RetentionPeriod string   `json:"retentionPeriod" binding:"required"`
-		ResourceTypes   []string `json:"resourceTypes"   binding:"required"`
+		RetentionPeriod    string          `json:"retentionPeriod"    binding:"required"`
+		ResourceTypes      []string        `json:"resourceTypes"      binding:"required"`
+		ConversationFilter json.RawMessage `json:"conversationFilter"`
 	}
 	if err := c.ShouldBindJSON(&req); err != nil {
 		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
@@ -1074,6 +1075,15 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 	}
 
 	cutoff := time.Now().Add(-duration)
+	conversationFilter, err := parseConversationEvictionFilter(req.ConversationFilter, cutoff)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
+		return
+	}
+	if !evictConversations && hasJSONValue(req.ConversationFilter) {
+		c.JSON(http.StatusBadRequest, gin.H{"error": "conversationFilter requires the conversations resource type"})
+		return
+	}
 	outboxStore, _ := store.(registrystore.EventOutboxStore)
 	if evictOutboxEvents && outboxStore == nil {
 		c.JSON(http.StatusNotImplemented, gin.H{"error": "outbox event eviction is not supported by the configured datastore"})
@@ -1123,7 +1133,7 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 		if streamProgress {
 			if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
 				var err error
-				total, err = store.CountEvictableGroups(ctx, cutoff)
+				total, err = store.CountEvictableGroups(ctx, conversationFilter)
 				return err
 			}); err != nil {
 				reportError(err)
@@ -1132,25 +1142,20 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 		}
 		var evicted int64
 		for {
-			var eventsToPublish []registryeventbus.Event
-			var batchCount int
+			var batch eventstream.ConversationEvictionBatch
 			if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-				batchCount = 0
-				eventsToPublish = nil
-				ids, err := store.FindEvictableGroupIDs(ctx, cutoff, batchSize)
-				if err != nil || len(ids) == 0 {
-					return err
-				}
-				batchCount = len(ids)
-				eventsToPublish, err = eventstream.DeleteConversationGroups(ctx, store, ids)
+				var err error
+				batch, err = eventstream.EvictConversationGroups(ctx, store, conversationFilter, batchSize)
 				return err
 			}); err != nil {
 				reportError(err)
 				return
 			}
-			if batchCount == 0 {
+			if batch.Found == 0 {
 				break
 			}
+			conversationFilter = batch.Next
+			eventsToPublish, batchCount := batch.Events, batch.Deleted
 			// Publish each completed batch before another operation can fail.
 			// SQL commits first; MongoDB cannot roll back completed batches.
 			if err := eventstream.PublishEvents(c.Request.Context(), store, eventBus, eventsToPublish...); err != nil {
@@ -1195,6 +1200,36 @@ func adminEvict(c *gin.Context, store registrystore.MemoryStore, eventBus regist
 	} else {
 		c.Status(http.StatusNoContent)
 	}
+}
+
+func hasJSONValue(raw json.RawMessage) bool {
+	trimmed := bytes.TrimSpace(raw)
+	return len(trimmed) > 0 && !bytes.Equal(trimmed, []byte("null"))
+}
+
+// parseConversationEvictionFilter applies the documented defaults to omitted
+// properties and rejects unknown properties, values, and combinations.
+func parseConversationEvictionFilter(raw json.RawMessage, cutoff time.Time) (registrystore.ConversationEvictionFilter, error) {
+	filter := registrystore.DefaultConversationEvictionFilter(cutoff)
+	if !hasJSONValue(raw) {
+		return filter, nil
+	}
+	var body struct {
+		Archived *string `json:"archived"`
+		AgeBasis *string `json:"ageBasis"`
+	}
+	decoder := json.NewDecoder(bytes.NewReader(raw))
+	decoder.DisallowUnknownFields()
+	if err := decoder.Decode(&body); err != nil {
+		return filter, fmt.Errorf("invalid conversationFilter: %v", err)
+	}
+	if body.Archived != nil {
+		filter.Archived = registrystore.ConversationArchiveFilter(*body.Archived)
+	}
+	if body.AgeBasis != nil {
+		filter.AgeBasis = registrystore.ConversationAgeBasis(*body.AgeBasis)
+	}
+	return filter, filter.Validate()
 }
 
 func parseDuration(iso string) (time.Duration, error) {
