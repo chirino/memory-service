@@ -608,6 +608,14 @@ func eventBusFlags(cfg *config.Config) []cli.Flag {
 			Value:       cfg.OutboxReplayBatchSize,
 			Usage:       "Replay page size used by outbox-backed event streams",
 		},
+		&cli.DurationFlag{
+			Name:        "outbox-relay-stall-timeout",
+			Category:    "Event Bus:",
+			Sources:     cli.EnvVars("MEMORY_SERVICE_OUTBOX_RELAY_STALL_TIMEOUT"),
+			Destination: &cfg.OutboxRelayStallTimeout,
+			Value:       cfg.OutboxRelayStallTimeout,
+			Usage:       "Restart the PostgreSQL outbox relay when committed outbox rows stay without an event_seq this long (0 disables)",
+		},
 	}
 }
 

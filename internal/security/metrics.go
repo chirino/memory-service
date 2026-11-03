@@ -53,6 +53,22 @@ var (
 
 	// SecurityUnsafeConfig records explicit operator acknowledgements for unsafe settings.
 	SecurityUnsafeConfig *prometheus.GaugeVec
+
+	// OutboxRelayLeader is 1 while this process runs the PostgreSQL outbox relay.
+	OutboxRelayLeader prometheus.Gauge
+
+	// OutboxRelayLastCommitTimestamp is the Unix time at which this process's
+	// relay last finished processing a committed transaction.
+	OutboxRelayLastCommitTimestamp prometheus.Gauge
+
+	// OutboxRelayLeaderExitsTotal counts relay leader exits by bounded reason.
+	OutboxRelayLeaderExitsTotal *prometheus.CounterVec
+
+	// OutboxUnsequencedEvents is the number of committed outbox rows without an event_seq.
+	OutboxUnsequencedEvents prometheus.Gauge
+
+	// OutboxUnsequencedOldestAge is the age of the oldest committed outbox row without an event_seq.
+	OutboxUnsequencedOldestAge prometheus.Gauge
 )
 
 var validLabelKey = regexp.MustCompile(`^[a-zA-Z_][a-zA-Z0-9_]*$`)
@@ -189,6 +205,34 @@ func initMetricsInner(constLabels prometheus.Labels) {
 		},
 		[]string{"reason"},
 	)
+
+	OutboxRelayLeader = f.NewGauge(prometheus.GaugeOpts{
+		Name: "memory_service_outbox_relay_leader",
+		Help: "1 while this process runs the PostgreSQL outbox relay, otherwise 0",
+	})
+
+	OutboxRelayLastCommitTimestamp = f.NewGauge(prometheus.GaugeOpts{
+		Name: "memory_service_outbox_relay_last_commit_timestamp_seconds",
+		Help: "Unix time at which this process's outbox relay last finished processing a committed transaction",
+	})
+
+	OutboxRelayLeaderExitsTotal = f.NewCounterVec(
+		prometheus.CounterOpts{
+			Name: "memory_service_outbox_relay_leader_exits_total",
+			Help: "Total number of outbox relay leader exits in this process",
+		},
+		[]string{"reason"},
+	)
+
+	OutboxUnsequencedEvents = f.NewGauge(prometheus.GaugeOpts{
+		Name: "memory_service_outbox_unsequenced_events",
+		Help: "Committed outbox rows that do not have an event_seq yet",
+	})
+
+	OutboxUnsequencedOldestAge = f.NewGauge(prometheus.GaugeOpts{
+		Name: "memory_service_outbox_unsequenced_oldest_age_seconds",
+		Help: "Age of the oldest committed outbox row that does not have an event_seq yet, or 0 when there is none",
+	})
 }
 
 // MetricsMiddleware records HTTP request metrics for Prometheus.

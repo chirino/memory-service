@@ -36,6 +36,8 @@ The checkpoint stores the current phase and page token after each acknowledged p
 
 Keep outbox retention longer than the longest expected ClickHouse outage plus the initial scan duration.
 
+The processor only receives events after Memory Service gives them a sequence number. On PostgreSQL, the outbox relay does that. If the processor stops receiving events while Memory Service keeps accepting writes, check `memory_service_outbox_unsequenced_oldest_age_seconds` on Memory Service; see [Outbox Relay Metrics](/docs/configuration/#outbox-relay-metrics).
+
 ## Manage schemas
 
 `--schema-mode=manage` creates the expected schema and applies processor-owned TTL changes. `--schema-mode=validate` compares the database with the expected schema and exits on drift without applying DDL. In external retention mode, neither schema mode validates or changes TTL expressions.

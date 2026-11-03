@@ -348,6 +348,10 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_outbox_events_event_seq
     ON outbox_events (event_seq) WHERE event_seq IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_outbox_events_kind_event_seq
     ON outbox_events (kind, event_seq) WHERE event_seq IS NOT NULL;
+-- Keeps the relay watchdog's scan for rows still waiting for an event_seq
+-- cheap; healthy deployments hold almost no rows here.
+CREATE INDEX IF NOT EXISTS idx_outbox_events_unsequenced
+    ON outbox_events (created_at, tx_seq) WHERE event_seq IS NULL;
 
 ------------------------------------------------------------
 -- Attachments

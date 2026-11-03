@@ -342,10 +342,11 @@ per-user channel fan-out. PostgreSQL remains supported, but it is better suited 
 
 Enable the outbox when consumers need durable replay with `/v1/events?after=<cursor>` or gRPC `SubscribeEvents.after_cursor`. Leave it disabled if you only need live frontend cache invalidation.
 
-| Flag / Env Var                                                                     | Values          | Default | Description                                                                  |
-| ---------------------------------------------------------------------------------- | --------------- | ------- | ---------------------------------------------------------------------------- |
-| <Cfg p="--outbox-enabled" e="MEMORY_SERVICE_OUTBOX_ENABLED" />                     | `true`, `false` | `false` | Enable durable event outbox writes and replay-capable event streaming        |
-| <Cfg p="--outbox-replay-batch-size" e="MEMORY_SERVICE_OUTBOX_REPLAY_BATCH_SIZE" /> | integer         | `1000`  | Max outbox events read per replay page before switching back to live tailing |
+| Flag / Env Var                                                                         | Values          | Default | Description                                                                                                        |
+| -------------------------------------------------------------------------------------- | --------------- | ------- | ------------------------------------------------------------------------------------------------------------------ |
+| <Cfg p="--outbox-enabled" e="MEMORY_SERVICE_OUTBOX_ENABLED" />                         | `true`, `false` | `false` | Enable durable event outbox writes and replay-capable event streaming                                              |
+| <Cfg p="--outbox-replay-batch-size" e="MEMORY_SERVICE_OUTBOX_REPLAY_BATCH_SIZE" />     | integer         | `1000`  | Max outbox events read per replay page before switching back to live tailing                                       |
+| <Cfg p="--outbox-relay-stall-timeout" e="MEMORY_SERVICE_OUTBOX_RELAY_STALL_TIMEOUT" /> | duration        | `2m`    | PostgreSQL only: restart the outbox relay when committed events wait this long for a sequence number. `0` disables |
 
 When `MEMORY_SERVICE_OUTBOX_ENABLED=true`:
 
@@ -362,6 +363,16 @@ For PostgreSQL, enabling the outbox requires the database server to start with a
 - `max_wal_senders >= 1`
 
 If those settings are missing, memory-service startup fails while creating the PostgreSQL logical replication slot for the outbox relay.
+
+On PostgreSQL, a background relay assigns each committed event its replay sequence number, and only one replica runs it at a time. Every replica checks for committed events that are still waiting for a number. If the relay in this replica has numbered or published nothing while the oldest waiting event is older than <Cfg p="--outbox-relay-stall-timeout" e="MEMORY_SERVICE_OUTBOX_RELAY_STALL_TIMEOUT" />, it restarts the relay, which resumes from its replication slot. When the relay creates its replication slot, on first start or after the slot was dropped or lost in a database failover or restore, it also numbers and publishes events that committed before the slot existed, because the slot never streams them. The relay's state is exported as Prometheus metrics; see [Outbox Relay Metrics](#outbox-relay-metrics).
+
+The replication slot keeps WAL on the database server until the relay confirms it has read it. A healthy relay confirms its position about every 10 seconds, but WAL builds up while the relay is stopped or stalled. On PostgreSQL 13 and later, set `max_slot_wal_keep_size` to cap it. If a stall goes past that cap, PostgreSQL invalidates the slot (`wal_status = 'lost'` in `pg_replication_slots`), and the relay cannot read from it: every leader attempt exits with `reason="error"` until you drop the slot:
+
+```sql
+SELECT pg_drop_replication_slot('memory_service_outbox_slot');
+```
+
+The relay then creates a new slot and numbers the events that were waiting. If you disable the outbox, drop the slot the same way. Memory Service stops reading from it, so it would otherwise keep WAL indefinitely.
 
 When it is disabled, the event stream still works for live delivery, but replay is unavailable.
 
@@ -1197,6 +1208,20 @@ When `--prometheus-url` is not configured, admin stats endpoints return **501 No
 | `/v1/admin/stats/summary`             | Current datastore-backed totals     |
 | `/v1/admin/stats/store-latency-p95`   | Store operation P95 latency by type |
 | `/v1/admin/stats/store-throughput`    | Store operations/sec by type        |
+
+### Outbox Relay Metrics
+
+These metrics are exported when the event outbox is enabled on PostgreSQL:
+
+| Metric                                                      | Type    | Description                                                                                            |
+| ----------------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------ |
+| `memory_service_outbox_unsequenced_oldest_age_seconds`      | gauge   | Age of the oldest committed event still waiting for a sequence number; `0` when none are waiting       |
+| `memory_service_outbox_unsequenced_events`                  | gauge   | Committed events still waiting for a sequence number                                                   |
+| `memory_service_outbox_relay_leader`                        | gauge   | `1` in the replica that runs the relay, `0` elsewhere                                                  |
+| `memory_service_outbox_relay_last_commit_timestamp_seconds` | gauge   | Unix time at which this replica's relay last finished processing a committed transaction               |
+| `memory_service_outbox_relay_leader_exits_total`            | counter | Relay exits in this replica, labeled by `reason`: `shutdown`, `stalled` (watchdog restart), or `error` |
+
+Alert on `memory_service_outbox_unsequenced_oldest_age_seconds`. Events normally get a number within milliseconds of commit, so an age of a few minutes means the relay is not keeping up, and replay consumers cannot see those events yet. Every replica samples the value from the database every 15 seconds, so aggregate it with `max`. `sum(memory_service_outbox_relay_leader)` should be `1`. The last-commit timestamp only moves when transactions write events, so an idle deployment shows an old value.
 
 ### Prometheus Scrape Configuration
 
