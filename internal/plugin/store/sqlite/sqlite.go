@@ -324,7 +324,7 @@ func (s *SQLiteStore) CreateConversationWithID(ctx context.Context, userID strin
 func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID string, clientID string, convID string, title string, metadata map[string]interface{}, agentID *string, forkedAtConversationID *string, forkedAtEntryID *uuid.UUID, startedByConversationID *string, startedByEntryID *uuid.UUID) (*registrystore.CreateConversationResult, error) {
 	db := s.writeDBFor(ctx, "sqlite store create conversation")
 	groupID := uuid.New()
-	now := time.Now()
+	now := time.Now().UTC()
 
 	if metadata == nil {
 		metadata = map[string]interface{}{}
