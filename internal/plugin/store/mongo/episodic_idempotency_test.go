@@ -228,6 +228,40 @@ func TestMongoLookupMemoryByID_ExpiredRow(t *testing.T) {
 	require.ErrorAs(t, err, &notFound, "expired row (deleted_reason=2) must return NotFoundError")
 }
 
+// TestMongoLookupMemoryByID_ExpiredButUnsweptRow verifies the spec decision D6: a row whose
+// TTL has passed but which the sweeper has not archived (deleted_reason absent) is still
+// an exact retry. Only deleted_reason 1 or 2 returns NotFoundError. No sweeper runs here.
+func TestMongoLookupMemoryByID_ExpiredButUnsweptRow(t *testing.T) {
+	store, ctx := setupMongoIdempotencyStore(t)
+	ns := []string{"user", "alice", "expired-unswept"}
+	id := uuid.New()
+	req := baseMongoIdempotencyReq(ns, "k1", id)
+	req.TTLSeconds = 1
+
+	var first *registryepisodic.MemoryWriteResult
+	require.NoError(t, store.InWriteTx(ctx, func(wctx context.Context) error {
+		var err error
+		first, err = store.PutMemory(wctx, req)
+		return err
+	}))
+	require.NotNil(t, first.ExpiresAt)
+	time.Sleep(time.Until(first.ExpiresAt.Add(100 * time.Millisecond)))
+	require.True(t, time.Now().After(*first.ExpiresAt), "test precondition: TTL must have elapsed")
+
+	n, err := store.col.CountDocuments(ctx, bson.M{"_id": id.String(), "deleted_reason": bson.M{"$exists": true, "$ne": nil}})
+	require.NoError(t, err)
+	require.Zero(t, n, "test precondition: row must not have been swept")
+
+	result, err := store.LookupMemoryByID(ctx, id, req)
+	require.NoError(t, err)
+	require.NotNil(t, result)
+	assert.True(t, result.ExactRetry)
+	assert.Equal(t, first.ID, result.ID)
+	assert.True(t, first.CreatedAt.Equal(result.CreatedAt))
+	require.NotNil(t, result.ExpiresAt)
+	assert.True(t, first.ExpiresAt.Equal(*result.ExpiresAt))
+}
+
 // TestMongoLookupMemoryByID_SupersededNotEvicted verifies ExactRetry=true for
 // a superseded row (deleted_reason=0) that has not yet been evicted.
 func TestMongoLookupMemoryByID_SupersededNotEvicted(t *testing.T) {

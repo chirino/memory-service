@@ -218,11 +218,37 @@ func TestDocsMemoriesIdempotencyText(t *testing.T) {
 		"expected_active_revision_id_mismatch",
 		"Idempotency Window",
 		"superseded-revision eviction",
+		// The 409 for a reused revision_id carries the ID under details.revisionId.
+		"details.revisionId",
+		// Tombstone retention is a separate setting from superseded-row eviction.
+		"MEMORY_SERVICE_EPISODIC_TOMBSTONE_RETENTION",
+		// Known limitation: durable event delivery depends on the outbox.
+		"MEMORY_SERVICE_OUTBOX_ENABLED",
+		// gRPC statuses for the same conflicts and validation failures.
+		"ABORTED",
+		"INVALID_ARGUMENT",
 	}
 
 	for _, snippet := range requiredSnippets {
 		if !strings.Contains(content, snippet) {
 			t.Errorf("memories.md missing required text snippet %q", snippet)
+		}
+	}
+
+	// Text that contradicts the implemented behavior must not return. A numeric
+	// revision conflict has no `code`; a hard-deleted superseded row is treated as a
+	// new write rather than 404; superseded rows are evicted after re-indexing, not
+	// after a configurable window; and the reused-revision_id 409 body also carries
+	// `error` and `details.revisionId`.
+	forbiddenSnippets := []string{
+		"`code`: `memory revision conflict`",
+		"pruned or archived-and-swept revisions return `404",
+		"administrator-configurable retention window",
+		"contains only the error `code` and the caller's `revision_id`",
+	}
+	for _, snippet := range forbiddenSnippets {
+		if strings.Contains(content, snippet) {
+			t.Errorf("memories.md contains text that contradicts the implementation: %q", snippet)
 		}
 	}
 }
