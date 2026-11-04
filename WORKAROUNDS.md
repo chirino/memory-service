@@ -77,3 +77,9 @@
 - What: Override the compatible AI SDK dependency graph to Undici 7.30.1 in the TypeScript library and examples.
 - Why: `@ai-sdk/provider-utils` 3.0.41 requests Undici 5.29.0, which retains known security vulnerabilities. The examples already override this dependency; the library now applies the same security constraint.
 - Proper fix: Adopt a compatible AI SDK release that requests a fixed Undici version, then remove the overrides after the TypeScript and site tests pass.
+
+## pglogrepl standby status write deadline
+
+- What: The PostgreSQL outbox relay sets a write deadline on the replication connection's `net.Conn` before calling `pglogrepl.SendStandbyStatusUpdate`, then clears it.
+- Why: `SendStandbyStatusUpdate` ignores its context and writes through `SendUnbufferedEncodedCopyData` with no deadline. If the server or a proxy stops reading, the write blocks forever, and the relay keeps its leader lock while it numbers no outbox rows.
+- Proper fix: Make `SendStandbyStatusUpdate` honor its context upstream, or add a context-aware unbuffered CopyData write to pgconn, then remove the manual deadline.

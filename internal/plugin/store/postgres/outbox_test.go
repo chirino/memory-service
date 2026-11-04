@@ -162,6 +162,7 @@ func TestPostgresOutboxRelayDoesNotAdvancePastDurablePublishFailure(t *testing.T
 	require.Zero(t, next, "the relay watermark must remain before the failed event")
 	require.Zero(t, bus.publishCalls, "durable relays must not use the asynchronous enqueue path")
 	require.Equal(t, 1, bus.durablePublishCalls)
+	require.Equal(t, uint64(1), relay.progress.Load(), "numbering rows counts as watchdog progress even when publishing fails")
 }
 
 func TestExplainOutboxRelaySetupErrorWalLevel(t *testing.T) {

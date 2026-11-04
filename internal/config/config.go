@@ -317,6 +317,10 @@ type Config struct {
 	SSESubscriberBufferSize  int
 	OutboxEnabled            bool
 	OutboxReplayBatchSize    int
+	// OutboxRelayStallTimeout restarts a PostgreSQL outbox relay leader that
+	// has left committed rows without an event_seq for this long. Zero disables
+	// restarts; the stall metrics are still exported.
+	OutboxRelayStallTimeout time.Duration
 
 	// Policy imports
 	PolicyImportPath string // Comma-separated files and directories containing startup-imported policy definitions
@@ -425,6 +429,7 @@ func DefaultConfig() Config {
 		SSESubscriberBufferSize:  64,
 		OutboxEnabled:            false,
 		OutboxReplayBatchSize:    1000,
+		OutboxRelayStallTimeout:  2 * time.Minute,
 
 		// Episodic memory defaults
 		EpisodicMaxDepth:           5,
