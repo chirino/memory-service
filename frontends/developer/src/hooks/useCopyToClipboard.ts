@@ -32,9 +32,7 @@ export interface UseCopyToClipboardReturn {
  * )
  * ```
  */
-export function useCopyToClipboard(
-  options: UseCopyToClipboardOptions = {},
-): UseCopyToClipboardReturn {
+export function useCopyToClipboard(options: UseCopyToClipboardOptions = {}): UseCopyToClipboardReturn {
   const { timeout = 2000, onSuccess, onError } = options;
   const [copied, setCopied] = React.useState(false);
   const timeoutRef = React.useRef<ReturnType<typeof setTimeout> | null>(null);

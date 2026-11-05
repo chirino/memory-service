@@ -40,12 +40,10 @@ function MemoryDetailPage() {
     return (
       <div className="flex h-full items-center justify-center p-8">
         <div className="console-panel max-w-md rounded-2xl p-6 text-center">
-          <p className="text-sm text-destructive mb-4">
-            {getErrorMessage(error, "Failed to load memory")}
-          </p>
+          <p className="mb-4 text-sm text-destructive">{getErrorMessage(error, "Failed to load memory")}</p>
           <Link to="/memories">
             <Button variant="outline" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" />
+              <ArrowLeft className="mr-1 h-4 w-4" />
               Back to Memories
             </Button>
           </Link>
@@ -66,14 +64,14 @@ function MemoryDetailPage() {
         <div className="mb-4">
           <Link to="/memories">
             <Button variant="ghost" size="sm">
-              <ArrowLeft className="h-4 w-4 mr-1" />
+              <ArrowLeft className="mr-1 h-4 w-4" />
               Back to Memories
             </Button>
           </Link>
         </div>
 
         <div className="mb-3 flex items-center gap-2 text-sm text-muted-foreground">
-          <Link to="/memories" className="hover:text-foreground transition-colors">
+          <Link to="/memories" className="transition-colors hover:text-foreground">
             Memories
           </Link>
           {data.namespace && data.namespace.length > 0 && (
@@ -94,7 +92,7 @@ function MemoryDetailPage() {
             <div className="mb-1.5 text-[0.7rem] font-semibold uppercase tracking-[0.14em] text-muted-foreground">
               Memory key
             </div>
-            <div className="flex items-center gap-2 mb-2">
+            <div className="mb-2 flex items-center gap-2">
               <h1 className="truncate font-mono text-lg font-medium text-foreground md:text-xl">
                 {data.key ?? "(no key)"}
               </h1>
@@ -102,31 +100,27 @@ function MemoryDetailPage() {
             </div>
 
             {/* Badges */}
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex flex-wrap items-center gap-2">
               {data.archived ? (
                 <Badge variant="secondary">
-                  <Archive className="w-3 h-3 mr-1" />
+                  <Archive className="mr-1 h-3 w-3" />
                   Archived
                   {data.archivedAt && (
-                    <span className="ml-1 text-xs">
-                      {new Date(data.archivedAt).toISOString().slice(0, 10)}
-                    </span>
+                    <span className="ml-1 text-xs">{new Date(data.archivedAt).toISOString().slice(0, 10)}</span>
                   )}
                 </Badge>
               ) : (
-                <Badge>
-                  Active
-                </Badge>
+                <Badge>Active</Badge>
               )}
               {data.expiresAt && (
                 <Badge variant="outline">
-                  <Clock className="w-3 h-3 mr-1" />
+                  <Clock className="mr-1 h-3 w-3" />
                   expires {new Date(data.expiresAt).toISOString().slice(0, 10)}
                 </Badge>
               )}
               {data.revision !== undefined && (
                 <Badge variant="outline" className="font-mono">
-                  <Hash className="w-3 h-3 mr-1" />
+                  <Hash className="mr-1 h-3 w-3" />
                   rev {data.revision}
                 </Badge>
               )}
@@ -155,9 +149,7 @@ function MemoryDetailPage() {
           <div>
             <span className="text-muted-foreground">Namespace</span>
             <p className="mt-1 font-mono text-xs text-foreground">
-              {data.namespace && data.namespace.length > 0
-                ? data.namespace.join(" / ")
-                : "(no namespace)"}
+              {data.namespace && data.namespace.length > 0 ? data.namespace.join(" / ") : "(no namespace)"}
             </p>
           </div>
           <div>
@@ -427,7 +419,9 @@ function TestimonyBlock({
 }
 
 function ProvenanceDetails({ provenance }: { provenance: Record<string, unknown> }) {
-  const entries = Object.entries(provenance).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  const entries = Object.entries(provenance).filter(
+    ([, value]) => value !== null && value !== undefined && value !== "",
+  );
 
   if (entries.length === 0) {
     return null;

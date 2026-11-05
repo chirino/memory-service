@@ -28,11 +28,7 @@ export interface TimestampPopoverProps {
  * />
  * ```
  */
-export function TimestampPopover({
-  timestamp,
-  displayText,
-  className,
-}: TimestampPopoverProps) {
+export function TimestampPopover({ timestamp, displayText, className }: TimestampPopoverProps) {
   const formattedDisplay =
     displayText ||
     new Date(timestamp).toLocaleDateString("en-US", {
@@ -50,7 +46,7 @@ export function TimestampPopover({
         <button
           type="button"
           className={cn(
-            "text-xs text-muted-foreground hover:text-foreground hover:underline transition-colors cursor-pointer",
+            "cursor-pointer text-xs text-muted-foreground transition-colors hover:text-foreground hover:underline",
             className,
           )}
         >
@@ -59,13 +55,9 @@ export function TimestampPopover({
       </PopoverTrigger>
       <PopoverContent className="w-auto p-3" align="end">
         <div className="space-y-2">
-          <p className="text-xs font-medium text-muted-foreground">
-            Full Timestamp
-          </p>
+          <p className="text-xs font-medium text-muted-foreground">Full Timestamp</p>
           <div className="flex items-center gap-2">
-            <code className="text-sm font-mono bg-muted px-2 py-1 rounded select-all">
-              {timestamp}
-            </code>
+            <code className="select-all rounded bg-muted px-2 py-1 font-mono text-sm">{timestamp}</code>
             <CopyButton value={timestamp} iconSize={4} />
           </div>
         </div>

@@ -39,13 +39,7 @@ export function formatJson(value: unknown): string {
  * Tokenizes the formatted JSON string and applies color classes
  * for keys, strings, numbers, booleans, and null values.
  */
-export function JsonHighlight({
-  value,
-  className,
-}: {
-  value: unknown;
-  className?: string;
-}) {
+export function JsonHighlight({ value, className }: { value: unknown; className?: string }) {
   const text = formatJson(value);
 
   // Tokenize JSON string into typed segments for highlighting
@@ -100,7 +94,7 @@ export function JsonHighlight({
       <pre
         className={
           className ??
-          "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 text-sm text-foreground font-mono"
+          "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 font-mono text-sm text-foreground"
         }
       >
         {text}
@@ -118,12 +112,7 @@ export function JsonHighlight({
   };
 
   return (
-    <pre
-      className={
-        className ??
-        "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 text-sm font-mono"
-      }
-    >
+    <pre className={className ?? "console-code overflow-x-auto whitespace-pre-wrap rounded-lg p-3 font-mono text-sm"}>
       {tokens.map((token, i) => (
         <span key={i} className={colorMap[token.type]}>
           {token.text}

@@ -18,14 +18,7 @@ function MemoriesPage() {
   const [namespaceFilter, setNamespaceFilter] = useState<string[]>([]);
   const [keyPrefixFilter, setKeyPrefixFilter] = useState("");
 
-  const {
-    data,
-    isLoading,
-    error,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useAdminMemoriesInfinite({
+  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } = useAdminMemoriesInfinite({
     namespacePrefix: namespaceFilter.length > 0 ? namespaceFilter : undefined,
     keyPrefix: keyPrefixFilter || undefined,
     limit: 50,
@@ -71,28 +64,19 @@ function MemoriesPage() {
             <div className="console-segmented">
               <button
                 onClick={() => setArchiveFilter("exclude")}
-                className={cn(
-                  "console-segment",
-                  archiveFilter === "exclude" && "console-segment-active",
-                )}
+                className={cn("console-segment", archiveFilter === "exclude" && "console-segment-active")}
               >
                 Active
               </button>
               <button
                 onClick={() => setArchiveFilter("include")}
-                className={cn(
-                  "console-segment",
-                  archiveFilter === "include" && "console-segment-active",
-                )}
+                className={cn("console-segment", archiveFilter === "include" && "console-segment-active")}
               >
                 All
               </button>
               <button
                 onClick={() => setArchiveFilter("only")}
-                className={cn(
-                  "console-segment",
-                  archiveFilter === "only" && "console-segment-active",
-                )}
+                className={cn("console-segment", archiveFilter === "only" && "console-segment-active")}
               >
                 Archived
               </button>
@@ -150,16 +134,18 @@ function MemoriesPage() {
           <div className="ml-5 hidden w-64 border-r border-[rgba(43,39,34,0.1)] pr-4 pt-2 md:ml-10 md:block">
             <h3 className="mb-3 text-xs font-semibold uppercase tracking-[0.08em] text-muted-foreground">Namespaces</h3>
             <div className="space-y-1">
-              {Array.from(namespaceSegments).sort().map((segment) => (
-                <button
-                  key={segment}
-                  onClick={() => handleNamespaceClick(segment)}
-                  className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone transition-colors hover:bg-white/65 hover:text-foreground"
-                >
-                  <ChevronRight className="h-4 w-4" />
-                  {segment}
-                </button>
-              ))}
+              {Array.from(namespaceSegments)
+                .sort()
+                .map((segment) => (
+                  <button
+                    key={segment}
+                    onClick={() => handleNamespaceClick(segment)}
+                    className="flex w-full items-center gap-2 rounded-lg px-3 py-2 text-left text-sm text-stone transition-colors hover:bg-white/65 hover:text-foreground"
+                  >
+                    <ChevronRight className="h-4 w-4" />
+                    {segment}
+                  </button>
+                ))}
             </div>
           </div>
         )}
@@ -220,7 +206,5 @@ function MemoriesPage() {
     </div>
   );
 }
-
-
 
 // Made with Bob

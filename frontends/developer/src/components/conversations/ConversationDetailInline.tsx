@@ -13,8 +13,16 @@ interface ConversationDetailInlineProps {
 }
 
 export function ConversationDetailInline({ conversationId, highlightEntryId }: ConversationDetailInlineProps) {
-  const { data: conversation, isLoading: isLoadingConversation, error: conversationError } = useAdminConversation(conversationId);
-  const { data: entriesData, isLoading: isLoadingEntries, error: entriesError } = useAdminConversationEntries(conversationId, {
+  const {
+    data: conversation,
+    isLoading: isLoadingConversation,
+    error: conversationError,
+  } = useAdminConversation(conversationId);
+  const {
+    data: entriesData,
+    isLoading: isLoadingEntries,
+    error: entriesError,
+  } = useAdminConversationEntries(conversationId, {
     forks: "none",
     limit: 10,
   });
@@ -44,10 +52,10 @@ export function ConversationDetailInline({ conversationId, highlightEntryId }: C
   return (
     <div className="space-y-4 pt-4">
       {/* Metadata badges */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         {conversation.archived ? (
           <Badge variant="secondary">
-            <Archive className="w-3 h-3 mr-1" />
+            <Archive className="mr-1 h-3 w-3" />
             Archived
           </Badge>
         ) : (
@@ -55,13 +63,13 @@ export function ConversationDetailInline({ conversationId, highlightEntryId }: C
         )}
         {conversation.ownerUserId && (
           <Badge variant="outline">
-            <User className="w-3 h-3 mr-1" />
+            <User className="mr-1 h-3 w-3" />
             {conversation.ownerUserId}
           </Badge>
         )}
         {entries.length > 0 && (
           <Badge variant="outline">
-            <Hash className="w-3 h-3 mr-1" />
+            <Hash className="mr-1 h-3 w-3" />
             {entries.length} {entries.length === 1 ? "entry" : "entries"}
           </Badge>
         )}
@@ -71,7 +79,7 @@ export function ConversationDetailInline({ conversationId, highlightEntryId }: C
       <div className="grid grid-cols-2 gap-4 text-sm">
         <div>
           <span className="text-muted-foreground">Conversation ID</span>
-          <p className="mt-1 font-mono text-xs text-foreground break-all">{conversation.id}</p>
+          <p className="mt-1 break-all font-mono text-xs text-foreground">{conversation.id}</p>
         </div>
         <div>
           <span className="text-muted-foreground">Created</span>

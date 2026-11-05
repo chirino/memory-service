@@ -20,20 +20,15 @@ function SearchConversationsPage() {
   const debouncedQuery = useDebounce(query, 300);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = useAdminSearchConversations({
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useAdminSearchConversations({
     query: debouncedQuery,
     limit: 20,
     includeEntry: true,
   });
 
-  const results = (data?.pages.flatMap((page) => page.data || []) || [])
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const results = (data?.pages.flatMap((page) => page.data || []) || []).sort(
+    (a, b) => (b.score ?? 0) - (a.score ?? 0),
+  );
   const hasResults = results.length > 0;
 
   const toggleExpand = (key: string) => {
@@ -43,12 +38,8 @@ function SearchConversationsPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
-        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">
-          Search Conversations
-        </h1>
-        <p className="console-subtitle mt-3 text-base md:text-lg">
-          Full-text search across conversation entries
-        </p>
+        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Search Conversations</h1>
+        <p className="console-subtitle mt-3 text-base md:text-lg">Full-text search across conversation entries</p>
       </div>
 
       <div className="px-5 pb-6 md:px-10">
@@ -76,14 +67,12 @@ function SearchConversationsPage() {
             <div>
               <div className="mb-4 flex items-center gap-2">
                 <MessageSquare className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold text-foreground">
-                  Results ({results.length})
-                </h2>
+                <h2 className="text-lg font-semibold text-foreground">Results ({results.length})</h2>
               </div>
               <div className="space-y-3">
                 {results.map((result) => {
                   const expandKey = `${result.conversationId}-${result.entryId}`;
-                  
+
                   // Extract roles from entry content
                   const extractRoles = (): string => {
                     if (!result.entry?.content || !Array.isArray(result.entry.content)) return "";
@@ -99,67 +88,64 @@ function SearchConversationsPage() {
                     return roles.length > 0 ? roles.join(", ") : "";
                   };
                   const rolesText = extractRoles();
-                  
+
                   return (
-                  <div key={expandKey} className="console-panel rounded-xl overflow-hidden">
-                    <button
-                      onClick={() => toggleExpand(expandKey)}
-                      className="w-full p-4 text-left transition-colors hover:bg-sage-soft/25"
-                    >
-                      <div className="mb-2 flex items-start justify-between">
-                        <div className="flex items-start gap-2 flex-1 min-w-0">
-                          {expandedId === expandKey ? (
-                            <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                          ) : (
-                            <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0 mt-0.5" />
-                          )}
-                          <div className="flex-1 min-w-0">
-                            <div className="flex items-center gap-2 mb-1 flex-wrap">
-                              <h3 className="font-medium text-foreground">
-                                {result.conversationTitle || "Untitled Conversation"}
-                              </h3>
-                              {result.score && (
-                                <Badge variant="outline" className="font-mono text-xs">
-                                  {result.score.toFixed(3)}
-                                </Badge>
-                              )}
-                              {rolesText && (
-                                <Badge variant="secondary" className="text-xs">
-                                  {rolesText}
-                                </Badge>
+                    <div key={expandKey} className="console-panel overflow-hidden rounded-xl">
+                      <button
+                        onClick={() => toggleExpand(expandKey)}
+                        className="w-full p-4 text-left transition-colors hover:bg-sage-soft/25"
+                      >
+                        <div className="mb-2 flex items-start justify-between">
+                          <div className="flex min-w-0 flex-1 items-start gap-2">
+                            {expandedId === expandKey ? (
+                              <ChevronDown className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                            ) : (
+                              <ChevronRight className="mt-0.5 h-5 w-5 shrink-0 text-muted-foreground" />
+                            )}
+                            <div className="min-w-0 flex-1">
+                              <div className="mb-1 flex flex-wrap items-center gap-2">
+                                <h3 className="font-medium text-foreground">
+                                  {result.conversationTitle || "Untitled Conversation"}
+                                </h3>
+                                {result.score && (
+                                  <Badge variant="outline" className="font-mono text-xs">
+                                    {result.score.toFixed(3)}
+                                  </Badge>
+                                )}
+                                {rolesText && (
+                                  <Badge variant="secondary" className="text-xs">
+                                    {rolesText}
+                                  </Badge>
+                                )}
+                              </div>
+                              {expandedId !== expandKey && result.highlights && (
+                                <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">
+                                  {result.highlights}
+                                </div>
                               )}
                             </div>
-                            {expandedId !== expandKey && result.highlights && (
-                              <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">
-                                {result.highlights}
-                              </div>
-                            )}
                           </div>
                         </div>
-                      </div>
-                      {expandedId !== expandKey && result.entry && (
-                        <div className="space-y-1 text-sm text-muted-foreground ml-7">
-                          <p className="font-mono text-xs">Entry: {result.entryId?.slice(0, 16)}...</p>
-                          {result.entry.createdAt && (
-                            <p>Created {formatRelativeTime(result.entry.createdAt)}</p>
-                          )}
+                        {expandedId !== expandKey && result.entry && (
+                          <div className="ml-7 space-y-1 text-sm text-muted-foreground">
+                            <p className="font-mono text-xs">Entry: {result.entryId?.slice(0, 16)}...</p>
+                            {result.entry.createdAt && <p>Created {formatRelativeTime(result.entry.createdAt)}</p>}
+                          </div>
+                        )}
+                      </button>
+                      {expandedId === expandKey && result.entry && (
+                        <div className="border-t border-[rgba(43,39,34,0.1)] px-4 pb-4">
+                          <div className="space-y-4 pt-4">
+                            <div className="text-sm font-medium text-muted-foreground">Matched Entry</div>
+                            <div className="console-panel rounded-lg p-3 ring-2 ring-primary">
+                              <EntryCard entry={result.entry} compact={false} />
+                            </div>
+                          </div>
                         </div>
                       )}
-                    </button>
-                    {expandedId === expandKey && result.entry && (
-                      <div className="border-t border-[rgba(43,39,34,0.1)] px-4 pb-4">
-                        <div className="space-y-4 pt-4">
-                          <div className="text-sm font-medium text-muted-foreground">
-                            Matched Entry
-                          </div>
-                          <div className="console-panel rounded-lg p-3 ring-2 ring-primary">
-                            <EntryCard entry={result.entry} compact={false} />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )})}
+                    </div>
+                  );
+                })}
               </div>
             </div>
 

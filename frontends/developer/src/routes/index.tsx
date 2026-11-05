@@ -1,11 +1,11 @@
-import { createFileRoute, Navigate } from '@tanstack/react-router'
+import { createFileRoute, Navigate } from "@tanstack/react-router";
 
-export const Route = createFileRoute('/')({
+export const Route = createFileRoute("/")({
   component: IndexRoute,
-})
+});
 
 function IndexRoute() {
-  return <Navigate to="/conversations" />
+  return <Navigate to="/conversations" />;
 }
 
 // Made with Bob

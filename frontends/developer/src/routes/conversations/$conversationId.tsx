@@ -4,11 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { GitFork, Loader2, Network } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { CopyButton } from "@/components/ui/copy-button";
-import {
-  getLlmContextEntries,
-  LlmContextRenderer,
-  type ViewMode,
-} from "@/components/content-renderers";
+import { getLlmContextEntries, LlmContextRenderer, type ViewMode } from "@/components/content-renderers";
 import { EntryCard as SharedEntryCard } from "@/components/conversations/EntryCard";
 import { cn } from "@/lib/utils";
 import { buildRenderItems, filterRenderItemsByChannel, type ChannelFilter } from "@/lib/entry-render-items";

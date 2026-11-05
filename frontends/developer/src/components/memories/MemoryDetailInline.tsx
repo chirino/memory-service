@@ -49,15 +49,13 @@ export function MemoryDetailInline({ memoryId }: MemoryDetailInlineProps) {
   return (
     <div className="space-y-4 pt-4">
       {/* Metadata badges */}
-      <div className="flex items-center gap-2 flex-wrap">
+      <div className="flex flex-wrap items-center gap-2">
         {data.archived ? (
           <Badge variant="secondary">
-            <Archive className="w-3 h-3 mr-1" />
+            <Archive className="mr-1 h-3 w-3" />
             Archived
             {data.archivedAt && (
-              <span className="ml-1 text-xs">
-                {new Date(data.archivedAt).toISOString().slice(0, 10)}
-              </span>
+              <span className="ml-1 text-xs">{new Date(data.archivedAt).toISOString().slice(0, 10)}</span>
             )}
           </Badge>
         ) : (
@@ -65,13 +63,13 @@ export function MemoryDetailInline({ memoryId }: MemoryDetailInlineProps) {
         )}
         {data.expiresAt && (
           <Badge variant="outline">
-            <Clock className="w-3 h-3 mr-1" />
+            <Clock className="mr-1 h-3 w-3" />
             expires {new Date(data.expiresAt).toISOString().slice(0, 10)}
           </Badge>
         )}
         {data.revision !== undefined && (
           <Badge variant="outline" className="font-mono">
-            <Hash className="w-3 h-3 mr-1" />
+            <Hash className="mr-1 h-3 w-3" />
             rev {data.revision}
           </Badge>
         )}
@@ -184,7 +182,10 @@ function CognitionMemoryCardInline({
                 key={mode}
                 type="button"
                 onClick={() => setViewMode(mode)}
-                className={cn("console-segment min-w-0 px-3 py-1 text-xs", viewMode === mode && "console-segment-active")}
+                className={cn(
+                  "console-segment min-w-0 px-3 py-1 text-xs",
+                  viewMode === mode && "console-segment-active",
+                )}
               >
                 {label}
               </button>
@@ -207,9 +208,7 @@ function CognitionMemoryCardInline({
                   </>
                 )}
               </div>
-              <p className="console-title text-lg leading-[1.3] text-foreground">
-                {content || "No content provided."}
-              </p>
+              <p className="console-title text-lg leading-[1.3] text-foreground">{content || "No content provided."}</p>
             </div>
             {hasConfidence && (
               <div className="flex shrink-0 flex-row items-center gap-2 sm:flex-col sm:items-end">
@@ -355,7 +354,9 @@ function TestimonyBlockInline({
 }
 
 function ProvenanceDetailsInline({ provenance }: { provenance: Record<string, unknown> }) {
-  const entries = Object.entries(provenance).filter(([, value]) => value !== null && value !== undefined && value !== "");
+  const entries = Object.entries(provenance).filter(
+    ([, value]) => value !== null && value !== undefined && value !== "",
+  );
 
   if (entries.length === 0) {
     return null;

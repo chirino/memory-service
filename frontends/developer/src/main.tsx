@@ -13,7 +13,7 @@ import { routeTree } from "./routeTree.gen";
 // Create a new router instance
 const router = createRouter({
   routeTree,
-  basepath: '/developer'
+  basepath: "/developer",
 });
 
 // Register the router instance for type safety

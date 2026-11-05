@@ -1,17 +1,10 @@
 import * as React from "react";
 import { Copy, Check } from "lucide-react";
 import { cn } from "@/lib/utils";
-import {
-  useCopyToClipboard,
-  type UseCopyToClipboardOptions,
-} from "@/hooks/useCopyToClipboard";
+import { useCopyToClipboard, type UseCopyToClipboardOptions } from "@/hooks/useCopyToClipboard";
 
 export interface CopyButtonProps
-  extends Omit<
-      React.ButtonHTMLAttributes<HTMLButtonElement>,
-      "children" | "onError"
-    >,
-    UseCopyToClipboardOptions {
+  extends Omit<React.ButtonHTMLAttributes<HTMLButtonElement>, "children" | "onError">, UseCopyToClipboardOptions {
   /** The text to copy to clipboard */
   value: string;
   /** Size of the icon (default: 4 = w-4 h-4) */
@@ -35,10 +28,7 @@ export interface CopyButtonProps
  * ```
  */
 const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
-  (
-    { value, iconSize = 4, timeout, onSuccess, onError, className, ...props },
-    ref,
-  ) => {
+  ({ value, iconSize = 4, timeout, onSuccess, onError, className, ...props }, ref) => {
     const { copied, copy } = useCopyToClipboard({
       timeout,
       onSuccess,
@@ -59,19 +49,13 @@ const CopyButton = React.forwardRef<HTMLButtonElement, CopyButtonProps>(
         onClick={() => copy(value)}
         className={cn(
           "rounded-md p-1 transition-colors",
-          copied
-            ? "text-primary"
-            : "text-muted-foreground hover:bg-white/75 hover:text-foreground",
+          copied ? "text-primary" : "text-muted-foreground hover:bg-white/75 hover:text-foreground",
           className,
         )}
         title={copied ? "Copied!" : "Copy to clipboard"}
         {...props}
       >
-        {copied ? (
-          <Check className={sizeClass} />
-        ) : (
-          <Copy className={sizeClass} />
-        )}
+        {copied ? <Check className={sizeClass} /> : <Copy className={sizeClass} />}
       </button>
     );
   },

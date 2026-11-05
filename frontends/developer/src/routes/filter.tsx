@@ -24,38 +24,34 @@ function FilterPage() {
   const shouldSearchConversations = searchType === "all" || searchType === "conversations";
   const shouldSearchMemories = searchType === "all" || searchType === "memories";
 
-  const {
-    data: conversationsData,
-    isLoading: conversationsLoading,
-  } = useAdminConversations({ archived: "exclude" });
+  const { data: conversationsData, isLoading: conversationsLoading } = useAdminConversations({ archived: "exclude" });
 
-  const {
-    data: memoriesData,
-    isLoading: memoriesLoading,
-  } = useAdminMemories({});
+  const { data: memoriesData, isLoading: memoriesLoading } = useAdminMemories({});
 
   // Filter results based on query
-  const filteredConversations = debouncedQuery && conversationsData?.data
-    ? conversationsData.data.filter((conv: AdminConversation) => {
-        const searchLower = debouncedQuery.toLowerCase();
-        return (
-          conv.title?.toLowerCase().includes(searchLower) ||
-          conv.id?.toLowerCase().includes(searchLower) ||
-          conv.ownerUserId?.toLowerCase().includes(searchLower)
-        );
-      })
-    : [];
+  const filteredConversations =
+    debouncedQuery && conversationsData?.data
+      ? conversationsData.data.filter((conv: AdminConversation) => {
+          const searchLower = debouncedQuery.toLowerCase();
+          return (
+            conv.title?.toLowerCase().includes(searchLower) ||
+            conv.id?.toLowerCase().includes(searchLower) ||
+            conv.ownerUserId?.toLowerCase().includes(searchLower)
+          );
+        })
+      : [];
 
-  const filteredMemories = debouncedQuery && memoriesData?.items
-    ? memoriesData.items.filter((memory: AdminMemoryItem) => {
-        const searchLower = debouncedQuery.toLowerCase();
-        return (
-          memory.key?.toLowerCase().includes(searchLower) ||
-          memory.namespace?.join("/").toLowerCase().includes(searchLower) ||
-          JSON.stringify(memory.value).toLowerCase().includes(searchLower)
-        );
-      })
-    : [];
+  const filteredMemories =
+    debouncedQuery && memoriesData?.items
+      ? memoriesData.items.filter((memory: AdminMemoryItem) => {
+          const searchLower = debouncedQuery.toLowerCase();
+          return (
+            memory.key?.toLowerCase().includes(searchLower) ||
+            memory.namespace?.join("/").toLowerCase().includes(searchLower) ||
+            JSON.stringify(memory.value).toLowerCase().includes(searchLower)
+          );
+        })
+      : [];
 
   const isLoading = conversationsLoading || memoriesLoading;
   const hasResults = filteredConversations.length > 0 || filteredMemories.length > 0;
@@ -132,9 +128,7 @@ function FilterPage() {
                       className="console-panel block rounded-xl p-4 transition-colors hover:bg-sage-soft/25"
                     >
                       <div className="mb-2 flex items-start justify-between">
-                        <h3 className="font-medium text-foreground">
-                          {conversation.title || "Untitled Conversation"}
-                        </h3>
+                        <h3 className="font-medium text-foreground">{conversation.title || "Untitled Conversation"}</h3>
                         {conversation.archived && <Badge variant="secondary">Archived</Badge>}
                       </div>
                       <div className="space-y-1 text-sm text-muted-foreground">
@@ -153,9 +147,7 @@ function FilterPage() {
               <div>
                 <div className="mb-4 flex items-center gap-2">
                   <Database className="h-5 w-5 text-muted-foreground" />
-                  <h2 className="text-lg font-semibold text-foreground">
-                    Memories ({filteredMemories.length})
-                  </h2>
+                  <h2 className="text-lg font-semibold text-foreground">Memories ({filteredMemories.length})</h2>
                 </div>
                 <div className="space-y-3">
                   {filteredMemories.map((memory) => (

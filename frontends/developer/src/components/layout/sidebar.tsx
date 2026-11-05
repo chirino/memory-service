@@ -19,9 +19,7 @@ const navItems = [
   { to: "/search/memories", label: "Search Memories", icon: Search },
 ];
 
-const cognitiveNavItems = [
-  { to: "/processes", label: "Processes", icon: Cpu },
-];
+const cognitiveNavItems = [{ to: "/processes", label: "Processes", icon: Cpu }];
 
 export function Sidebar() {
   const router = useRouterState();
@@ -85,9 +83,9 @@ export function Sidebar() {
             </Link>
           );
         })}
-        
-        <div className="hidden md:block border-t border-[rgba(43,39,34,0.12)] my-3" />
-        
+
+        <div className="my-3 hidden border-t border-[rgba(43,39,34,0.12)] md:block" />
+
         {cognitiveNavItems.map((item) => {
           const isActive = currentPath.startsWith(item.to);
           const Icon = item.icon;

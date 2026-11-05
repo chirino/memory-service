@@ -17,14 +17,10 @@ export const Route = createFileRoute("/conversations/")({
 
 function ConversationsPage() {
   const [archiveFilter, setArchiveFilter] = useState<"exclude" | "include" | "only">("exclude");
-  const {
-    data,
-    isLoading,
-    error,
-    hasNextPage,
-    isFetchingNextPage,
-    fetchNextPage,
-  } = useAdminConversationsInfinite({ archived: archiveFilter, limit: 50 });
+  const { data, isLoading, error, hasNextPage, isFetchingNextPage, fetchNextPage } = useAdminConversationsInfinite({
+    archived: archiveFilter,
+    limit: 50,
+  });
   const archiveMutation = useArchiveConversation();
   const unarchiveMutation = useUnarchiveConversation();
   const auth = useAuth();
@@ -57,7 +53,9 @@ function ConversationsPage() {
         <div className="flex items-start justify-between gap-6">
           <div>
             <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Conversations</h1>
-            <p className="console-subtitle mt-3 text-base md:text-lg">Browse and inspect all conversations across users</p>
+            <p className="console-subtitle mt-3 text-base md:text-lg">
+              Browse and inspect all conversations across users
+            </p>
           </div>
           <button
             type="button"
@@ -72,28 +70,19 @@ function ConversationsPage() {
           <div className="console-segmented">
             <button
               onClick={() => setArchiveFilter("exclude")}
-              className={cn(
-                "console-segment",
-                archiveFilter === "exclude" && "console-segment-active",
-              )}
+              className={cn("console-segment", archiveFilter === "exclude" && "console-segment-active")}
             >
               Active
             </button>
             <button
               onClick={() => setArchiveFilter("include")}
-              className={cn(
-                "console-segment",
-                archiveFilter === "include" && "console-segment-active",
-              )}
+              className={cn("console-segment", archiveFilter === "include" && "console-segment-active")}
             >
               All
             </button>
             <button
               onClick={() => setArchiveFilter("only")}
-              className={cn(
-                "console-segment",
-                archiveFilter === "only" && "console-segment-active",
-              )}
+              className={cn("console-segment", archiveFilter === "only" && "console-segment-active")}
             >
               Archived
             </button>
@@ -145,77 +134,71 @@ function ConversationsPage() {
                   }
                   const conversationId = conversation.id;
                   return (
-                  <tr key={conversationId}>
-                    <td>
-                      <Link
-                        to="/conversations/$conversationId"
-                        params={{ conversationId }}
-                        className="font-medium text-foreground hover:text-primary hover:underline"
-                      >
-                        {conversation.title || "Untitled Conversation"}
-                      </Link>
-                        {conversation.clientId && (
-                          <div className="mt-1 text-xs text-muted-foreground">
-                            Client: {conversation.clientId}
-                          </div>
-                        )}
-                    </td>
-                    <td>
-                      <span className="text-sm text-foreground">{conversation.ownerUserId}</span>
-                    </td>
-                    <td>
-                      <span className="text-sm text-muted-foreground">
-                        {formatRelativeTime(conversation.createdAt)}
-                      </span>
-                    </td>
-                    <td>
-                      <span className="text-sm text-muted-foreground">
-                        {formatRelativeTime(conversation.updatedAt)}
-                      </span>
-                    </td>
-                    <td>
-                      {conversation.archived ? (
-                        <Badge variant="secondary">Archived</Badge>
-                      ) : (
-                        <Badge>Active</Badge>
-                      )}
-                    </td>
-                    <td>
-                      <div className="flex items-center justify-end gap-2">
-                        <Link to="/conversations/$conversationId" params={{ conversationId }}>
-                          <Button variant="ghost" size="sm">
-                            <Eye className="h-4 w-4" />
-                            View
-                          </Button>
+                    <tr key={conversationId}>
+                      <td>
+                        <Link
+                          to="/conversations/$conversationId"
+                          params={{ conversationId }}
+                          className="font-medium text-foreground hover:text-primary hover:underline"
+                        >
+                          {conversation.title || "Untitled Conversation"}
                         </Link>
-                        {isAdmin && (
-                          <>
-                            {conversation.archived ? (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleUnarchive(conversationId)}
-                                disabled={unarchiveMutation.isPending}
-                              >
-                                <ArchiveRestore className="h-4 w-4" />
-                                Unarchive
-                              </Button>
-                            ) : (
-                              <Button
-                                variant="ghost"
-                                size="sm"
-                                onClick={() => handleArchive(conversationId)}
-                                disabled={archiveMutation.isPending}
-                              >
-                                <Archive className="h-4 w-4" />
-                                Archive
-                              </Button>
-                            )}
-                          </>
+                        {conversation.clientId && (
+                          <div className="mt-1 text-xs text-muted-foreground">Client: {conversation.clientId}</div>
                         )}
-                      </div>
-                    </td>
-                  </tr>
+                      </td>
+                      <td>
+                        <span className="text-sm text-foreground">{conversation.ownerUserId}</span>
+                      </td>
+                      <td>
+                        <span className="text-sm text-muted-foreground">
+                          {formatRelativeTime(conversation.createdAt)}
+                        </span>
+                      </td>
+                      <td>
+                        <span className="text-sm text-muted-foreground">
+                          {formatRelativeTime(conversation.updatedAt)}
+                        </span>
+                      </td>
+                      <td>
+                        {conversation.archived ? <Badge variant="secondary">Archived</Badge> : <Badge>Active</Badge>}
+                      </td>
+                      <td>
+                        <div className="flex items-center justify-end gap-2">
+                          <Link to="/conversations/$conversationId" params={{ conversationId }}>
+                            <Button variant="ghost" size="sm">
+                              <Eye className="h-4 w-4" />
+                              View
+                            </Button>
+                          </Link>
+                          {isAdmin && (
+                            <>
+                              {conversation.archived ? (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleUnarchive(conversationId)}
+                                  disabled={unarchiveMutation.isPending}
+                                >
+                                  <ArchiveRestore className="h-4 w-4" />
+                                  Unarchive
+                                </Button>
+                              ) : (
+                                <Button
+                                  variant="ghost"
+                                  size="sm"
+                                  onClick={() => handleArchive(conversationId)}
+                                  disabled={archiveMutation.isPending}
+                                >
+                                  <Archive className="h-4 w-4" />
+                                  Archive
+                                </Button>
+                              )}
+                            </>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
                   );
                 })}
               </tbody>
