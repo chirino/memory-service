@@ -46,8 +46,19 @@ The processor rejects:
 
 - a newer or incompatible schema version
 - a changed projection manifest under an existing name
+- a registered projection chain whose manifests were reordered or removed from the configuration
 - an unregistered relation that uses a requested projection table or view name
 - a live exporter with conflicting database-wide retention values
+
+When a [projection chain](/docs/analytics/projections/#share-a-table-across-content-type-versions) adds columns, `--schema-mode=manage` adds them to the existing table and recreates its views. `--schema-mode=validate` makes no changes and exits with the missing columns and the `ALTER TABLE` statements that add them, so a separate, privileged ClickHouse user can apply them. Validate mode also requires the `previous` column in `projection_registry`, which manage mode adds automatically.
+
+To list registered projection manifests and the tables they write to, query the registry:
+
+```sql
+SELECT table_name, projection_name, previous, projection_digest
+FROM memory_service.projection_registry FINAL
+ORDER BY table_name, projection_name;
+```
 
 Schema V1 is the first supported release schema. Reset databases made by unreleased pre-V1 drafts.
 
@@ -98,6 +109,8 @@ memory-service process clickhouse \
   --projection-path /etc/memory-service/projections/support-ticket.yaml \
   --projection-replay-id support-ticket-v1-backfill
 ```
+
+A replay also applies a manifest that replaces logic in a projection chain to existing resources. Its rows replace the older rows in the shared table.
 
 Reuse of the same replay ID does not request another scan. Change the ID after you correct a projection or source-data problem.
 

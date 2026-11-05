@@ -438,6 +438,13 @@ func testMultiRowProjection(t *testing.T, rule string) *Projection {
 	return projection
 }
 
+func testProjectionSet(t *testing.T, items ...*Projection) *ProjectionSet {
+	t.Helper()
+	set := &ProjectionSet{Items: items}
+	require.NoError(t, set.link())
+	return set
+}
+
 func testProjectionManifest(name, selector string) projectionManifest {
 	return projectionManifest{
 		APIVersion: "memory-service/v1alpha1",

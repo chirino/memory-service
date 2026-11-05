@@ -144,6 +144,8 @@ Projection paths are valid only in `projected` or `full` mode. A path can identi
 
 Repeat `--projection-path` to load multiple paths from the CLI. For `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH`, separate multiple paths with commas. See [Create analytics projections](/docs/analytics/projections/) for the manifest format.
 
+To check projection paths before you start the processor, run `memory-service process clickhouse-projections` with the same `--projection-path` values or `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH`. It validates the manifests and prints each table's chain, combined columns, and which manifest's logic projects each content type or kind. It doesn't connect to ClickHouse. Add `--format json` for machine-readable output.
+
 ## Batching and retries
 
 | Setting                                                                       | Default    | Constraint                                                |

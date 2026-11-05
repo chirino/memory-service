@@ -20,24 +20,8 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func integrationNativeAddress() string {
-	if address := os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE_ADDRESS"); address != "" {
-		return address
-	}
-	return "localhost:9002"
-}
-
-func integrationHTTPAddress() string {
-	if address := os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE_HTTP_ADDRESS"); address != "" {
-		return address
-	}
-	return "localhost:8123"
-}
-
 func TestClickHouseSinkIntegration(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("memory-service-analytics"), 0o600))
 	cfg := Config{ExporterID: "integration", Addresses: []string{integrationNativeAddress()}, Username: "memory_service_analytics", PasswordFile: filepath.Join(dir, "password"), AllowInsecureClickHouse: true}
@@ -73,9 +57,7 @@ func TestClickHouseSinkIntegration(t *testing.T) {
 }
 
 func TestClickHouseDirectLineageSupportsRecursiveTraversal(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	database, _ := createIntegrationDatabase(t, ctx)
@@ -124,9 +106,7 @@ func TestClickHouseDirectLineageSupportsRecursiveTraversal(t *testing.T) {
 }
 
 func TestClickHouseProjectionIntegration(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("memory-service-analytics"), 0o600))
 	manifest := `apiVersion: memory-service/v1alpha1
@@ -208,9 +188,7 @@ spec:
 }
 
 func TestClickHouseMultiRowProjectionIntegration(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	dir := t.TempDir()
@@ -338,9 +316,7 @@ spec:
 }
 
 func TestClickHouseRejectsUnregisteredProjectionRelation(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, projection := writeIntegrationProjection(t, ctx, "existing_relation_v1", "existing/relation/v1")
@@ -352,11 +328,9 @@ func TestClickHouseRejectsUnregisteredProjectionRelation(t *testing.T) {
 }
 
 func TestClickHouseCurrentViewsDoNotResurrectAfterTombstonePartRemoval(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("memory-service-analytics"), 0o600))
+	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("clickhouse"), 0o600))
 	manifest := `apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
 metadata: {name: tombstone_fence_v1}
@@ -371,9 +345,12 @@ spec:
 `
 	manifestPath := filepath.Join(dir, "projection.yaml")
 	require.NoError(t, os.WriteFile(manifestPath, []byte(manifest), 0o600))
-	cfg := Config{ExporterID: "integration-tombstone-fence-" + strconv.FormatInt(time.Now().UnixNano(), 10), Addresses: []string{integrationNativeAddress()}, Username: "memory_service_analytics", PasswordFile: filepath.Join(dir, "password"), AllowInsecureClickHouse: true, PayloadMode: PayloadProjected, ProjectionPaths: []string{manifestPath}}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
+	// Use a dedicated database: the fixed batch IDs below are insert deduplication tokens,
+	// and a shared database deduplicates them against other tests and earlier runs.
+	database, _ := createIntegrationDatabase(t, ctx)
+	cfg := integrationDatabaseConfig(database, "integration-tombstone-fence", dir, manifestPath)
 	sink, err := OpenSink(ctx, cfg)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = sink.Close() })
@@ -403,9 +380,7 @@ spec:
 }
 
 func TestClickHousePurgeRetryUsesPersistedSubjects(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, projection := writeIntegrationProjection(t, ctx, "purge_retry_v1", "purge-retry/v1")
@@ -431,9 +406,7 @@ func TestClickHousePurgeRetryUsesPersistedSubjects(t *testing.T) {
 }
 
 func TestClickHouseHistoricalProjectionRetention(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, historicalManifest, historical := writeIntegrationProjection(t, ctx, "maintenance_a_v1", "maintenance-a/v1")
@@ -457,9 +430,7 @@ func TestClickHouseHistoricalProjectionRetention(t *testing.T) {
 }
 
 func TestClickHouseRejectsConflictingSharedRetentionPolicy(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, _ := writeIntegrationProjection(t, ctx, "retention_policy_v1", "retention-policy/v1")
@@ -500,9 +471,7 @@ func TestClickHouseRejectsConflictingSharedRetentionPolicy(t *testing.T) {
 }
 
 func TestClickHouseExternalRetentionAndRecordOnlyPurge(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	database, admin := createIntegrationDatabase(t, ctx)
@@ -533,9 +502,7 @@ func TestClickHouseExternalRetentionAndRecordOnlyPurge(t *testing.T) {
 }
 
 func TestClickHouseDisabledProjectionIsValidatedButNotCreated(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, projection := writeIntegrationProjection(t, ctx, "disabled_projection_v1", "disabled-projection/v1")
@@ -554,9 +521,7 @@ func TestClickHouseDisabledProjectionIsValidatedButNotCreated(t *testing.T) {
 }
 
 func TestClickHouseValidateModeRegistersRetentionOwnerAndCommits(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, _ := writeIntegrationProjection(t, ctx, "validate_write_v1", "validate-write/v1")
@@ -587,9 +552,7 @@ func TestClickHouseValidateModeRegistersRetentionOwnerAndCommits(t *testing.T) {
 }
 
 func TestClickHouseValidateModeRejectsRetentionTTLMismatchWithoutDDL(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	tests := []struct {
 		name        string
 		provision   func(*Config)
@@ -664,9 +627,7 @@ func TestClickHouseValidateModeRejectsRetentionTTLMismatchWithoutDDL(t *testing.
 }
 
 func TestClickHouseRetentionConflictFencesRecoveredWriter(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, _ := writeIntegrationProjection(t, ctx, "retention_fence_v1", "retention-fence/v1")
@@ -704,9 +665,7 @@ func TestClickHouseRetentionConflictFencesRecoveredWriter(t *testing.T) {
 }
 
 func TestClickHouseRetentionRenewalFailureIsTerminal(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, manifest, _ := writeIntegrationProjection(t, ctx, "retention_renewal_failure_v1", "retention-renewal-failure/v1")
@@ -729,9 +688,7 @@ func TestClickHouseRetentionRenewalFailureIsTerminal(t *testing.T) {
 }
 
 func TestClickHouseHardDeletePurgesHistoricalProjectionTables(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	dir, historicalManifest, historical := writeIntegrationProjection(t, ctx, "purge_historical_a_v1", "purge-historical-a/v1")
@@ -762,9 +719,7 @@ func TestClickHouseHardDeletePurgesHistoricalProjectionTables(t *testing.T) {
 }
 
 func TestClickHouseHardDeletePurgesDependentAnalyticsData(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("memory-service-analytics"), 0o600))
 	manifestPath := filepath.Join(dir, "projection.yaml")
@@ -904,9 +859,7 @@ func assertCurrentViewCounts(t *testing.T, ctx context.Context, sink *ClickHouse
 }
 
 func TestClickHouseHTTPSinkIntegration(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	dir := t.TempDir()
 	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("memory-service-analytics"), 0o600))
 	cfg := Config{ExporterID: "integration-http", Addresses: []string{integrationHTTPAddress()}, Protocol: "http", Username: "memory_service_analytics", PasswordFile: filepath.Join(dir, "password"), AllowInsecureClickHouse: true, SchemaMode: "validate"}
@@ -918,9 +871,7 @@ func TestClickHouseHTTPSinkIntegration(t *testing.T) {
 }
 
 func TestClickHouseInsertDeduplicationReadiness(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
 	defer cancel()
 	dir, manifest, projection := writeIntegrationProjection(t, ctx, "dedup_v1", "dedup/v1")
@@ -978,9 +929,7 @@ func TestClickHouseInsertDeduplicationReadiness(t *testing.T) {
 }
 
 func TestClickHousePurgeSubjectsBatched(t *testing.T) {
-	if os.Getenv("MEMORY_SERVICE_TEST_CLICKHOUSE") != "true" {
-		t.Skip("set MEMORY_SERVICE_TEST_CLICKHOUSE=true")
-	}
+	requireClickHouseIntegration(t)
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	database, admin := createIntegrationDatabase(t, ctx)

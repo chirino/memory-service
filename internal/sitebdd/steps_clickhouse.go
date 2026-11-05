@@ -17,10 +17,9 @@ import (
 
 	ch "github.com/ClickHouse/clickhouse-go/v2"
 	clickhouseprocessor "github.com/chirino/memory-service/internal/cmd/process/clickhouse"
+	"github.com/chirino/memory-service/internal/testutil/testclickhouse"
 	"github.com/cucumber/godog"
 	"github.com/google/uuid"
-	"github.com/testcontainers/testcontainers-go"
-	"github.com/testcontainers/testcontainers-go/wait"
 )
 
 type siteClickHouse struct {
@@ -74,35 +73,7 @@ type fixtureProjectionFailure struct {
 
 func startSiteClickHouse(t testing.TB) *siteClickHouse {
 	t.Helper()
-	ctx := context.Background()
-	container, err := testcontainers.GenericContainer(ctx, testcontainers.GenericContainerRequest{
-		ContainerRequest: testcontainers.ContainerRequest{
-			Image:        "clickhouse/clickhouse-server:26.8.2.7",
-			Env:          map[string]string{"CLICKHOUSE_DB": "default", "CLICKHOUSE_USER": "clickhouse", "CLICKHOUSE_PASSWORD": "clickhouse", "CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT": "1"},
-			ExposedPorts: []string{"8123/tcp", "9000/tcp"},
-			WaitingFor:   wait.ForHTTP("/ping").WithPort("8123/tcp").WithStartupTimeout(2 * time.Minute),
-		},
-		Started: true,
-	})
-	if err != nil {
-		t.Fatalf("start ClickHouse for site docs: %v", err)
-	}
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-		defer cancel()
-		if err := container.Terminate(cleanupCtx); err != nil {
-			t.Errorf("terminate ClickHouse for site docs: %v", err)
-		}
-	})
-	host, err := container.Host(ctx)
-	if err != nil {
-		t.Fatalf("get ClickHouse host: %v", err)
-	}
-	port, err := container.MappedPort(ctx, "9000/tcp")
-	if err != nil {
-		t.Fatalf("get ClickHouse native port: %v", err)
-	}
-	return &siteClickHouse{address: host + ":" + port.Port()}
+	return &siteClickHouse{address: testclickhouse.StartTB(t).NativeAddress}
 }
 
 func registerClickHouseSteps(ctx *godog.ScenarioContext, s *SiteScenario) {
@@ -165,7 +136,7 @@ func (s *SiteScenario) loadClickHouseFixture(doc *godog.DocString) error {
 	if err != nil {
 		return fmt.Errorf("load ClickHouse fixture projections: %w", err)
 	}
-	batch, err := fixtureBatch(ctx, fixture, projections.Items, time.Now().UTC())
+	batch, err := fixtureBatch(ctx, fixture, projections, time.Now().UTC())
 	if err != nil {
 		return err
 	}
@@ -227,7 +198,7 @@ func (s *SiteScenario) clickHouseQueryShouldReturnAtLeast(minimum int) error {
 	return nil
 }
 
-func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections []*clickhouseprocessor.Projection, anchor time.Time) (clickhouseprocessor.Batch, error) {
+func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections *clickhouseprocessor.ProjectionSet, anchor time.Time) (clickhouseprocessor.Batch, error) {
 	const exporterID = "site-docs"
 	batchID := fixtureID("batch")
 	version := uint64(1)
@@ -299,13 +270,10 @@ func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections []*
 }
 
 // fixtureProjectionRows evaluates the bundled projection manifests so documentation queries
-// run against the same rows the processor writes.
-func fixtureProjectionRows(ctx context.Context, projections []*clickhouseprocessor.Projection, resource, selector string, base clickhouseprocessor.ProjectionRow, input map[string]any) ([]clickhouseprocessor.ProjectionRow, error) {
+// run against the same rows the processor writes. Match applies projection chain routing.
+func fixtureProjectionRows(ctx context.Context, projections *clickhouseprocessor.ProjectionSet, resource, selector string, base clickhouseprocessor.ProjectionRow, input map[string]any) ([]clickhouseprocessor.ProjectionRow, error) {
 	var result []clickhouseprocessor.ProjectionRow
-	for _, projection := range projections {
-		if projection.Resource != resource || projection.Selector != selector {
-			continue
-		}
+	for _, projection := range projections.Match(resource, selector) {
 		rows, code := projection.Rows(ctx, base, input)
 		if code != "" {
 			return nil, fmt.Errorf("projection %s failed with %s", projection.Name, code)
