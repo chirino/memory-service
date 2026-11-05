@@ -17,9 +17,7 @@ export function ViewToggle({ mode, onChange }: ViewToggleProps) {
         onClick={() => onChange("rendered")}
         className={cn(
           "rounded-md px-2.5 py-1 transition-colors",
-          mode === "rendered"
-            ? "bg-sage-soft text-primary"
-            : "text-muted-foreground hover:bg-sage-soft/40",
+          mode === "rendered" ? "bg-sage-soft text-primary" : "text-muted-foreground hover:bg-sage-soft/40",
         )}
       >
         Rendered
@@ -29,9 +27,7 @@ export function ViewToggle({ mode, onChange }: ViewToggleProps) {
         onClick={() => onChange("raw")}
         className={cn(
           "rounded-md px-2.5 py-1 transition-colors",
-          mode === "raw"
-            ? "bg-sage-soft text-primary"
-            : "text-muted-foreground hover:bg-sage-soft/40",
+          mode === "raw" ? "bg-sage-soft text-primary" : "text-muted-foreground hover:bg-sage-soft/40",
         )}
       >
         JSON

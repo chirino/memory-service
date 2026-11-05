@@ -3,8 +3,7 @@ import type { EntryWithForkPoint } from "@/hooks";
 export type ChannelFilter = "all" | "history" | "context" | "journal";
 
 export type RenderItem =
-  | { type: "entry"; entry: EntryWithForkPoint }
-  | { type: "context-group"; entries: EntryWithForkPoint[] };
+  { type: "entry"; entry: EntryWithForkPoint } | { type: "context-group"; entries: EntryWithForkPoint[] };
 
 /**
  * Splits the entry list into individual entry cards and context-group blocks.

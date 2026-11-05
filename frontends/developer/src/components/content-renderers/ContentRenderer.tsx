@@ -21,11 +21,7 @@ interface ContentRendererProps {
  * @param viewMode - When provided, controls which view to show. When omitted,
  *                   defaults to 'rendered' for custom renderers or JSON for unknown types.
  */
-export function ContentRenderer({
-  content,
-  contentType,
-  viewMode,
-}: ContentRendererProps) {
+export function ContentRenderer({ content, contentType, viewMode }: ContentRendererProps) {
   const hasCustom = hasCustomRenderer(contentType);
   const isRawMode = viewMode === "raw";
 
@@ -39,12 +35,7 @@ export function ContentRenderer({
   }
 
   return (
-    <div
-      className={cn(
-        "overflow-x-auto",
-        isRawMode ? "console-code rounded-lg p-3" : "",
-      )}
-    >
+    <div className={cn("overflow-x-auto", isRawMode ? "console-code rounded-lg p-3" : "")}>
       {isRawMode ? (
         <JsonRenderer content={content} contentType={contentType} />
       ) : (

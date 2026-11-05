@@ -37,13 +37,12 @@
     }
   },
   "devDependencies": {
-    "@types/node": "^26.6.1",
-    "ai": "5.0.273",
-    "prettier": "3.9.8",
-    "typescript": "^5.8.2"
+    "@types/node": "^26.6.6",
+    "ai": "5.0.282",
+    "prettier": "3.9.10",
+    "typescript": "^5.9.3"
   },
   "overrides": {
-    "zod@^4": "4.6.6",
     "undici": "$undici"
   }
 }

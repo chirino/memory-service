@@ -8,9 +8,7 @@ interface SearchLoadingStateProps {
  * Loading state component displayed while a search query is being executed.
  * Shows a spinning loader icon and a customizable message.
  */
-export function SearchLoadingState({ 
-  message = "Searching..." 
-}: SearchLoadingStateProps) {
+export function SearchLoadingState({ message = "Searching..." }: SearchLoadingStateProps) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">

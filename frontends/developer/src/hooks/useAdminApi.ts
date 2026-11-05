@@ -34,7 +34,7 @@ export function useAdminConversations(params?: {
   return useQuery(
     adminListConversationsOptions({
       query: params,
-    })
+    }),
   );
 }
 
@@ -67,20 +67,23 @@ export function useAdminConversation(conversationId: string) {
   return useQuery(
     adminGetConversationOptions({
       path: { id: conversationId },
-    })
+    }),
   );
 }
 
-export function useAdminConversationEntries(conversationId: string, params?: {
-  forks?: "all" | "none";
-  limit?: number;
-  afterCursor?: string;
-}) {
+export function useAdminConversationEntries(
+  conversationId: string,
+  params?: {
+    forks?: "all" | "none";
+    limit?: number;
+    afterCursor?: string;
+  },
+) {
   return useQuery(
     adminGetEntriesOptions({
       path: { id: conversationId },
       query: params,
-    })
+    }),
   );
 }
 
@@ -125,15 +128,11 @@ export function useAdminMemories(params?: {
   return useQuery(
     adminListMemoriesOptions({
       query: params,
-    })
+    }),
   );
 }
 
-export function useAdminMemoriesInfinite(params?: {
-  namespacePrefix?: string[];
-  keyPrefix?: string;
-  limit?: number;
-}) {
+export function useAdminMemoriesInfinite(params?: { namespacePrefix?: string[]; keyPrefix?: string; limit?: number }) {
   const limit = params?.limit ?? 50;
   return useInfiniteQuery({
     queryKey: ["adminListMemories", params],
@@ -157,16 +156,12 @@ export function useAdminMemory(memoryId: string) {
   return useQuery(
     adminGetMemoryOptions({
       path: { id: memoryId },
-    })
+    }),
   );
 }
 
 // Search
-export function useAdminSearchConversations(params: {
-  query: string;
-  limit?: number;
-  includeEntry?: boolean;
-}) {
+export function useAdminSearchConversations(params: { query: string; limit?: number; includeEntry?: boolean }) {
   const limit = params.limit ?? 20;
   return useInfiniteQuery({
     queryKey: ["adminSearchConversations", params],
@@ -188,11 +183,7 @@ export function useAdminSearchConversations(params: {
   });
 }
 
-export function useAdminSearchMemories(params: {
-  namespacePrefix: string[];
-  query?: string;
-  limit?: number;
-}) {
+export function useAdminSearchMemories(params: { namespacePrefix: string[]; query?: string; limit?: number }) {
   const limit = params.limit ?? 20;
   return useInfiniteQuery({
     queryKey: ["adminSearchMemories", params],

@@ -9,16 +9,13 @@ import type { ContentRendererProps } from "./index";
  */
 export function JsonRenderer({ content }: ContentRendererProps) {
   return (
-    <div className="relative group">
+    <div className="group relative">
       <CopyButton
         value={formatJson(content)}
         iconSize={3.5}
-        className="absolute top-0 right-0 opacity-0 group-hover:opacity-100 transition-opacity z-10"
+        className="absolute right-0 top-0 z-10 opacity-0 transition-opacity group-hover:opacity-100"
       />
-      <JsonHighlight
-        value={content}
-        className="text-sm whitespace-pre-wrap font-mono overflow-x-auto"
-      />
+      <JsonHighlight value={content} className="overflow-x-auto whitespace-pre-wrap font-mono text-sm" />
     </div>
   );
 }

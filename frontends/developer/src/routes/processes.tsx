@@ -22,20 +22,10 @@ function ProcessesPage() {
       <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
         <div className="flex items-start justify-between gap-6">
           <div>
-            <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">
-              Cognitive Processes
-            </h1>
-            <p className="console-subtitle mt-3 text-base md:text-lg">
-              Monitor cognitive memory processing pipelines
-            </p>
+            <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Cognitive Processes</h1>
+            <p className="console-subtitle mt-3 text-base md:text-lg">Monitor cognitive memory processing pipelines</p>
           </div>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => refetch()}
-            disabled={isFetching}
-            className="mt-3"
-          >
+          <Button variant="ghost" size="sm" onClick={() => refetch()} disabled={isFetching} className="mt-3">
             <RefreshCw className={`h-4 w-4 ${isFetching ? "animate-spin" : ""}`} />
             Refresh
           </Button>
@@ -96,27 +86,22 @@ interface ProcessCardProps {
 
 function ProcessCard({ process, isExpanded, onToggle }: ProcessCardProps) {
   const { data: details, isLoading: isLoadingDetails } = useCognitiveProcessDetails(
-    isExpanded ? process.id : undefined
+    isExpanded ? process.id : undefined,
   );
 
   return (
-    <div className="console-panel rounded-xl overflow-hidden">
-      <button
-        onClick={onToggle}
-        className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20"
-      >
+    <div className="console-panel overflow-hidden rounded-xl">
+      <button onClick={onToggle} className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20">
         <div className="flex items-start justify-between gap-4">
           <div className="min-w-0 flex-1">
             <div className="mb-2 flex flex-wrap items-center gap-2">
               {isExpanded ? (
-                <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
               ) : (
-                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
               )}
               <Cpu className="h-5 w-5 text-primary" strokeWidth={1.55} />
-              <Badge variant={process.state === "ENABLED" ? "default" : "secondary"}>
-                {process.state}
-              </Badge>
+              <Badge variant={process.state === "ENABLED" ? "default" : "secondary"}>{process.state}</Badge>
             </div>
             <h3 className="text-lg font-semibold text-foreground">{process.displayName}</h3>
             <p className="mt-1 text-sm text-muted-foreground">{process.description}</p>
@@ -132,9 +117,7 @@ function ProcessCard({ process, isExpanded, onToggle }: ProcessCardProps) {
               <p className="text-sm text-muted-foreground">Loading details...</p>
             </div>
           )}
-          {!isLoadingDetails && details && (
-            <ProcessDetails details={details} />
-          )}
+          {!isLoadingDetails && details && <ProcessDetails details={details} />}
         </div>
       )}
     </div>
@@ -158,14 +141,17 @@ interface ProcessDetailsProps {
       totalQueues?: number;
       activeQueues?: number;
       pendingJobs?: number;
-      resourceTypes?: Record<string, {
-        type: string;
-        provider?: string;
-        modelName?: string;
-        model?: string;
-        endpoint?: string;
-        prompt?: string;
-      }>;
+      resourceTypes?: Record<
+        string,
+        {
+          type: string;
+          provider?: string;
+          modelName?: string;
+          model?: string;
+          endpoint?: string;
+          prompt?: string;
+        }
+      >;
     };
   };
 }
@@ -263,7 +249,7 @@ function ProcessDetails({ details }: ProcessDetailsProps) {
           {Object.entries(details.details.resourceTypes).map(([key, resource]) => (
             <div key={key} className="rounded-lg border border-[rgba(43,39,34,0.12)] bg-white/50 p-4">
               <div className="mb-2 flex items-center gap-2">
-                <h5 className="font-medium text-foreground capitalize">{key}</h5>
+                <h5 className="font-medium capitalize text-foreground">{key}</h5>
                 <Badge variant="outline">{resource.type}</Badge>
               </div>
               <div className="space-y-1 text-sm">

@@ -20,13 +20,9 @@ export function ExpandableEntryLink({ entryId }: ExpandableEntryLinkProps) {
     <div className="border-l-2 border-primary/20 pl-2">
       <button
         onClick={toggleExpand}
-        className="flex items-center gap-1.5 text-xs font-mono text-primary hover:underline"
+        className="flex items-center gap-1.5 font-mono text-xs text-primary hover:underline"
       >
-        {isExpanded ? (
-          <ChevronDown className="h-3 w-3 shrink-0" />
-        ) : (
-          <ChevronRight className="h-3 w-3 shrink-0" />
-        )}
+        {isExpanded ? <ChevronDown className="h-3 w-3 shrink-0" /> : <ChevronRight className="h-3 w-3 shrink-0" />}
         <span className="break-all">{entryId}</span>
       </button>
 

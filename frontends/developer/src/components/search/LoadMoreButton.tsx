@@ -12,11 +12,7 @@ interface LoadMoreButtonProps {
  * Displays a button to fetch the next page of results, with loading state.
  * Automatically hides when there are no more pages to load.
  */
-export function LoadMoreButton({
-  hasNextPage,
-  isFetchingNextPage,
-  onLoadMore,
-}: LoadMoreButtonProps) {
+export function LoadMoreButton({ hasNextPage, isFetchingNextPage, onLoadMore }: LoadMoreButtonProps) {
   if (!hasNextPage) {
     return null;
   }
@@ -30,7 +26,7 @@ export function LoadMoreButton({
           "rounded-lg px-4 py-2 text-sm font-medium transition-colors",
           isFetchingNextPage
             ? "cursor-not-allowed bg-sage-soft/30 text-muted-foreground"
-            : "bg-sage-soft text-foreground hover:bg-sage-soft/80"
+            : "bg-sage-soft text-foreground hover:bg-sage-soft/80",
         )}
       >
         {isFetchingNextPage ? (

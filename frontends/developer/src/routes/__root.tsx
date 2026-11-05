@@ -11,7 +11,7 @@ function RootComponent() {
     <RequireAuth roles={["admin", "auditor"]}>
       <div className="console-shell flex h-screen flex-col text-foreground md:flex-row">
         <Sidebar />
-        <main className="console-main min-h-0 flex-1 overflow-x-hidden overflow-y-auto">
+        <main className="console-main min-h-0 flex-1 overflow-y-auto overflow-x-hidden">
           <Outlet />
         </main>
       </div>

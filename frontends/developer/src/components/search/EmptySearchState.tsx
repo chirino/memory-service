@@ -8,9 +8,7 @@ interface EmptySearchStateProps {
  * Empty state component displayed when no search query has been entered.
  * Shows a search icon and a message prompting the user to enter a query.
  */
-export function EmptySearchState({ 
-  message = "Enter a search query to get started" 
-}: EmptySearchStateProps) {
+export function EmptySearchState({ message = "Enter a search query to get started" }: EmptySearchStateProps) {
   return (
     <div className="flex h-full items-center justify-center">
       <div className="text-center">

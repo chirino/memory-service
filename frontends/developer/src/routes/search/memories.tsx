@@ -19,31 +19,22 @@ function SearchMemoriesPage() {
   const [namespaceInput, setNamespaceInput] = useState("user");
   const [namespacePrefix, setNamespacePrefix] = useState<string[]>(["user"]);
 
-  const {
-    data,
-    isLoading,
-    isFetchingNextPage,
-    hasNextPage,
-    fetchNextPage,
-  } = useAdminSearchMemories({
+  const { data, isLoading, isFetchingNextPage, hasNextPage, fetchNextPage } = useAdminSearchMemories({
     namespacePrefix,
     query: debouncedQuery,
     limit: 20,
   });
 
-  const results = (data?.pages.flatMap((page) => page.items || []) || [])
-    .sort((a, b) => (b.score ?? 0) - (a.score ?? 0));
+  const results = (data?.pages.flatMap((page) => page.items || []) || []).sort(
+    (a, b) => (b.score ?? 0) - (a.score ?? 0),
+  );
   const hasResults = results.length > 0;
 
   return (
     <div className="flex h-full flex-col">
       <div className="px-5 pb-5 pt-8 md:px-10 md:pt-10">
-        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">
-          Search Memories
-        </h1>
-        <p className="console-subtitle mt-3 text-base md:text-lg">
-          Semantic search across memory items
-        </p>
+        <h1 className="console-title text-4xl leading-tight text-foreground md:text-5xl">Search Memories</h1>
+        <p className="console-subtitle mt-3 text-base md:text-lg">Semantic search across memory items</p>
       </div>
 
       <div className="px-5 pb-6 md:px-10">
@@ -67,9 +58,16 @@ function SearchMemoriesPage() {
                 const value = e.target.value;
                 setNamespaceInput(value);
                 const trimmed = value.trim();
-                setNamespacePrefix(trimmed ? trimmed.split(",").map(s => s.trim()).filter(Boolean) : []);
+                setNamespacePrefix(
+                  trimmed
+                    ? trimmed
+                        .split(",")
+                        .map((s) => s.trim())
+                        .filter(Boolean)
+                    : [],
+                );
               }}
-              className="console-input w-full py-2 px-4 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
+              className="console-input w-full px-4 py-2 text-sm focus:border-primary focus:outline-none focus:ring-1 focus:ring-primary"
             />
           </div>
         </div>
@@ -87,9 +85,7 @@ function SearchMemoriesPage() {
             <div>
               <div className="mb-4 flex items-center gap-2">
                 <Database className="h-5 w-5 text-muted-foreground" />
-                <h2 className="text-lg font-semibold text-foreground">
-                  Results ({results.length})
-                </h2>
+                <h2 className="text-lg font-semibold text-foreground">Results ({results.length})</h2>
               </div>
               <div className="space-y-3">
                 {results.map((memory) => (

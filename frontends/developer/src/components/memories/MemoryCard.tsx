@@ -41,18 +41,15 @@ export function MemoryCard({ memory, score, highlights, matchedQueries }: Memory
     const subject = typeof memory.attributes?.sub === "string" ? memory.attributes.sub : undefined;
 
     return (
-      <div className="console-panel rounded-xl overflow-hidden">
-        <button
-          onClick={toggleExpand}
-          className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20"
-        >
+      <div className="console-panel overflow-hidden rounded-xl">
+        <button onClick={toggleExpand} className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20">
           <div className="flex items-start justify-between gap-4">
             <div className="min-w-0 flex-1">
               <div className="mb-2 flex flex-wrap items-center gap-2">
                 {isExpanded ? (
-                  <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
                 ) : (
-                  <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                  <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
                 )}
                 <Badge>{COGNITION_KIND_LABELS[cognitionKind]}</Badge>
                 <span className="truncate font-mono text-xs text-muted-foreground">{namespaceLabel}</span>
@@ -67,9 +64,7 @@ export function MemoryCard({ memory, score, highlights, matchedQueries }: Memory
                 {content || <span className="font-mono text-base text-muted-foreground">{memory.key}</span>}
               </p>
               {!isExpanded && highlights && (
-                <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">
-                  {highlights}
-                </div>
+                <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">{highlights}</div>
               )}
             </div>
             <div className="flex shrink-0 items-center gap-3">
@@ -107,18 +102,15 @@ export function MemoryCard({ memory, score, highlights, matchedQueries }: Memory
 
   // Non-cognition memory card
   return (
-    <div className="console-panel rounded-xl overflow-hidden">
-      <button
-        onClick={toggleExpand}
-        className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20"
-      >
+    <div className="console-panel overflow-hidden rounded-xl">
+      <button onClick={toggleExpand} className="w-full p-5 text-left transition-colors hover:bg-sage-soft/20">
         <div className="flex items-start justify-between">
-          <div className="flex-1 min-w-0">
+          <div className="min-w-0 flex-1">
             <div className="mb-2 flex items-center gap-2">
               {isExpanded ? (
-                <ChevronDown className="h-5 w-5 text-muted-foreground shrink-0" />
+                <ChevronDown className="h-5 w-5 shrink-0 text-muted-foreground" />
               ) : (
-                <ChevronRight className="h-5 w-5 text-muted-foreground shrink-0" />
+                <ChevronRight className="h-5 w-5 shrink-0 text-muted-foreground" />
               )}
               <span className="font-mono text-sm font-medium text-foreground">{namespaceLabel}</span>
               {memory.archived && <Badge variant="secondary">Archived</Badge>}
@@ -130,9 +122,7 @@ export function MemoryCard({ memory, score, highlights, matchedQueries }: Memory
             </div>
             <div className="text-lg font-semibold text-foreground">{memory.key}</div>
             {!isExpanded && highlights && (
-              <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">
-                {highlights}
-              </div>
+              <div className="mt-2 rounded-md bg-sage-soft/30 p-2 text-sm text-foreground">{highlights}</div>
             )}
             {!isExpanded && (
               <div className="mt-1 text-sm text-muted-foreground">
@@ -150,11 +140,13 @@ export function MemoryCard({ memory, score, highlights, matchedQueries }: Memory
 
         {!isExpanded && memory.attributes && Object.keys(memory.attributes).length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
-            {Object.entries(memory.attributes).slice(0, 3).map(([key, value]) => (
-              <Badge key={key} variant="outline">
-                {key}: {String(value)}
-              </Badge>
-            ))}
+            {Object.entries(memory.attributes)
+              .slice(0, 3)
+              .map(([key, value]) => (
+                <Badge key={key} variant="outline">
+                  {key}: {String(value)}
+                </Badge>
+              ))}
             {Object.keys(memory.attributes).length > 3 && (
               <Badge variant="outline">+{Object.keys(memory.attributes).length - 3} more</Badge>
             )}

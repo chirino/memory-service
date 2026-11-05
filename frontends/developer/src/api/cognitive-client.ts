@@ -34,14 +34,17 @@ export interface CognitiveProcessDetails extends CognitiveProcess {
     totalQueues?: number;
     activeQueues?: number;
     pendingJobs?: number;
-    resourceTypes?: Record<string, {
-      type: string;
-      provider?: string;
-      modelName?: string;
-      model?: string;
-      endpoint?: string;
-      prompt?: string;
-    }>;
+    resourceTypes?: Record<
+      string,
+      {
+        type: string;
+        provider?: string;
+        modelName?: string;
+        model?: string;
+        endpoint?: string;
+        prompt?: string;
+      }
+    >;
   };
 }
 

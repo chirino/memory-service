@@ -39,31 +39,28 @@ const MAX_PREVIEW_LENGTH = 200;
 
 function ExpandableField({ label, value }: { label: string; value: unknown }) {
   const [isExpanded, setIsExpanded] = React.useState(false);
-  
+
   if (value === null || value === undefined) {
     return null;
   }
 
   // Handle arrays and objects by stringifying them
-  const stringValue = typeof value === "string" 
-    ? value 
-    : Array.isArray(value)
-      ? JSON.stringify(value, null, 2)
-      : typeof value === "object"
+  const stringValue =
+    typeof value === "string"
+      ? value
+      : Array.isArray(value)
         ? JSON.stringify(value, null, 2)
-        : String(value);
-  
+        : typeof value === "object"
+          ? JSON.stringify(value, null, 2)
+          : String(value);
+
   const needsExpansion = stringValue.length > MAX_PREVIEW_LENGTH;
-  const displayValue = needsExpansion && !isExpanded 
-    ? stringValue.slice(0, MAX_PREVIEW_LENGTH) + "..." 
-    : stringValue;
+  const displayValue = needsExpansion && !isExpanded ? stringValue.slice(0, MAX_PREVIEW_LENGTH) + "..." : stringValue;
 
   return (
     <div className="space-y-1">
       <div className="flex items-center gap-2">
-        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">
-          {label}
-        </span>
+        <span className="text-xs font-semibold uppercase tracking-wider text-muted-foreground">{label}</span>
         {needsExpansion && (
           <button
             onClick={(e) => {
@@ -123,7 +120,7 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
     // Extract roles from content array
     const extractRoles = (): string[] => {
       if (!entry.content || !Array.isArray(entry.content)) return [];
-      
+
       return entry.content
         .map((item) => {
           if (typeof item === "object" && item !== null) {
@@ -142,10 +139,8 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
     if (compact) {
       return (
         <div className="space-y-2">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>
-              {entry.channel}
-            </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>{entry.channel}</Badge>
             {rolesText && (
               <Badge variant="secondary" className="text-xs font-semibold">
                 {rolesText}
@@ -173,13 +168,9 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
           {/* Header */}
           <div className="mb-2 flex items-center justify-between">
             <div className="flex items-center gap-2">
-              <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>
-                {entry.channel}
-              </Badge>
+              <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>{entry.channel}</Badge>
               {entry.epoch !== undefined && (
-                <Badge className="bg-[#eadccd] text-xs font-medium text-[#98613d]">
-                  epoch: {entry.epoch}
-                </Badge>
+                <Badge className="bg-[#eadccd] text-xs font-medium text-[#98613d]">epoch: {entry.epoch}</Badge>
               )}
               <div className="flex min-w-0 flex-1 items-center gap-1">
                 <span className="truncate font-mono text-xs text-muted-foreground" title={entryIdTitle ?? entry.id}>
@@ -187,9 +178,7 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
                 </span>
                 {!entryIdLabel && <CopyButton value={entry.id || ""} iconSize={3} className="shrink-0" />}
               </div>
-              {entry.isForkPoint && (
-                <ForkPointBadge forksAtPoint={entry.forksAtPoint} channelFilter={channelFilter} />
-              )}
+              {entry.isForkPoint && <ForkPointBadge forksAtPoint={entry.forksAtPoint} channelFilter={channelFilter} />}
             </div>
             {formatDate && entry.createdAt && (
               <div onClick={(e) => e.stopPropagation()}>
@@ -200,9 +189,7 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
 
           {/* User and content type */}
           <div className="mb-2 flex items-center justify-between text-sm text-muted-foreground">
-            <div className="flex items-center gap-4">
-              {entry.userId && <span>User: {entry.userId}</span>}
-            </div>
+            <div className="flex items-center gap-4">{entry.userId && <span>User: {entry.userId}</span>}</div>
             <div className="flex items-center gap-3">
               {entry.contentType && <span>Type: {entry.contentType}</span>}
               {rolesText && <span>Roles: {rolesText}</span>}
@@ -211,16 +198,15 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
 
           {/* Expandable Raw Data Sections */}
           <div className="mt-3 space-y-3">
-            {entry.indexedContent && (
-              <ExpandableField label="Indexed Content" value={entry.indexedContent} />
-            )}
-            {children ?? (entry.content && (
-              <ContentRenderer
-                content={entry.content as unknown[]}
-                contentType={entry.contentType || ""}
-                viewMode={viewMode}
-              />
-            ))}
+            {entry.indexedContent && <ExpandableField label="Indexed Content" value={entry.indexedContent} />}
+            {children ??
+              (entry.content && (
+                <ContentRenderer
+                  content={entry.content as unknown[]}
+                  contentType={entry.contentType || ""}
+                  viewMode={viewMode}
+                />
+              ))}
           </div>
         </div>
       );
@@ -231,14 +217,10 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
       <div className="space-y-3">
         {/* Header */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2 flex-wrap">
-            <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>
-              {entry.channel}
-            </Badge>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge className={cn("text-xs font-medium", getChannelColor(entry.channel || ""))}>{entry.channel}</Badge>
             {entry.epoch !== undefined && (
-              <Badge className="bg-[#eadccd] text-xs font-medium text-[#98613d]">
-                epoch: {entry.epoch}
-              </Badge>
+              <Badge className="bg-[#eadccd] text-xs font-medium text-[#98613d]">epoch: {entry.epoch}</Badge>
             )}
           </div>
         </div>
@@ -257,14 +239,10 @@ export const EntryCard = React.forwardRef<HTMLDivElement, EntryCardProps>(
         </div>
 
         {/* Indexed Content */}
-        {entry.indexedContent && (
-          <ExpandableField label="Indexed Content" value={entry.indexedContent} />
-        )}
+        {entry.indexedContent && <ExpandableField label="Indexed Content" value={entry.indexedContent} />}
 
         {/* Raw Content */}
-        {entry.content && (
-          <ExpandableField label="Raw Content" value={entry.content} />
-        )}
+        {entry.content && <ExpandableField label="Raw Content" value={entry.content} />}
       </div>
     );
   },
