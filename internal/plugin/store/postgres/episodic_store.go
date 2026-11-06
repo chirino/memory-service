@@ -73,7 +73,7 @@ type postgresEpisodicStore struct {
 	db                    *gorm.DB
 	s                     *PostgresStore // for encrypt/decrypt helpers
 	qdrant                *episodicqdrant.Client
-	putAfterRevisionCheck func() // test-only synchronization hook: fires after ExpectedRevision check
+	putAfterRevisionCheck func() // test-only synchronization hook: fires after the ExpectedRevision / ExpectedRevisionID / CreateOnly checks, before the archive
 	putAfterAdvisoryLock  func() // test-only synchronization hook: fires after advisory lock is acquired
 }
 
@@ -448,15 +448,20 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			}
 		}
 		predecessor := req.AuthorizedPredecessor
-		if predecessor == nil && req.ExpectedRevision != nil {
-			// Bind the later archive to the exact row whose revision was checked.
+		// boundByExpectedRevisionID is true when the archive is bound only because the
+		// caller supplied expected_revision_id, so a failed bound archive maps to the
+		// expected-revision-ID mismatch rather than the bare revision conflict.
+		boundByExpectedRevisionID := false
+		if predecessor == nil && (req.ExpectedRevision != nil || req.ExpectedRevisionID != nil) {
+			// Bind the later archive to the exact row whose revision or ID was checked.
 			// Under READ COMMITTED a namespace/key-only update could otherwise
 			// archive a concurrently committed replacement.
 			predecessor = &registryepisodic.MemoryPredecessorExpectation{
 				Exists: true, ID: active[0].ID, Revision: active[0].Revision,
 			}
+			boundByExpectedRevisionID = req.ExpectedRevision == nil
 		}
-		if req.ExpectedRevision != nil && e.putAfterRevisionCheck != nil {
+		if (req.ExpectedRevision != nil || req.ExpectedRevisionID != nil || req.CreateOnly) && e.putAfterRevisionCheck != nil {
 			e.putAfterRevisionCheck()
 		}
 		if len(active) > 0 {
@@ -469,6 +474,11 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 		deletedReason := int16(0)
 		var result *gorm.DB
 		switch expected := predecessor; {
+		case req.CreateOnly:
+			// Create-only never archives: an active row seen here would already have
+			// returned CreateOnlyConflictError, and one committed since is rejected
+			// atomically by memories_active_idx at the insert below.
+			result = tx
 		case expected != nil && !expected.Exists:
 			result = tx
 		case expected != nil:
@@ -490,6 +500,33 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			return fmt.Errorf("archive previous row: %w", result.Error)
 		}
 		if predecessor != nil && predecessor.Exists && result.RowsAffected != 1 {
+			if boundByExpectedRevisionID {
+				// The row validated against expected_revision_id was replaced between the
+				// check and the archive. Report the current active ID, as the check does.
+				var actualID string
+				var current []memoryRow
+				if err := tx.Raw(`
+					SELECT *
+					FROM memories
+					WHERE namespace = ? AND key = ? AND archived_at IS NULL
+					ORDER BY created_at DESC, id DESC
+					LIMIT 1`,
+					nsEncoded, req.Key,
+				).Scan(&current).Error; err != nil {
+					return fmt.Errorf("reload active row: %w", err)
+				}
+				if len(current) > 0 {
+					actualID = current[0].ID.String()
+				}
+				return &registrystore.ExpectedActiveRevisionIDMismatchError{
+					ConflictError: &registrystore.ConflictError{
+						Message: "active revision ID does not match expected_revision_id",
+						Code:    registrystore.ExpectedActiveRevisionIDMismatchCode,
+					},
+					ExpectedID: req.ExpectedRevisionID.String(),
+					ActualID:   actualID,
+				}
+			}
 			return registryepisodic.ErrMemoryRevisionConflict
 		}
 		// kind=0 (add) if no previous row existed, kind=1 (update) if one was archived.
@@ -516,7 +553,13 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			// IndexedAt NULL = pending vector sync
 		}
 		if err := tx.Create(&row).Error; err != nil {
-			if isUniqueViolation(err) {
+			if pgErr, ok := pgUniqueViolation(err); ok {
+				// A create-only write that loses the race for the active (namespace, key)
+				// slot is a create-only conflict; any other unique violation stays the
+				// bare revision conflict.
+				if req.CreateOnly && pgErr.ConstraintName == "memories_active_idx" {
+					return &registryepisodic.CreateOnlyConflictError{}
+				}
 				return registryepisodic.ErrMemoryRevisionConflict
 			}
 			return err
