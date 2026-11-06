@@ -3248,23 +3248,60 @@ func (s *SQLiteStore) AdminDeleteAttachment(ctx context.Context, attachmentID uu
 
 // --- Eviction ---
 
-func (s *SQLiteStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error) {
+// Bind explicit (seconds, nanos) bounds: GORM assigns one argument per
+// placeholder before the driver would split a time.Time into two.
+func sqliteEvictionCompare(column, op string, at time.Time) (string, []any) {
+	return sqlitecodec.Pair(column) + " " + op + " (?, ?)", sqlitecodec.Bounds(at)
+}
+
+func (s *SQLiteStore) FindEvictableGroupIDs(ctx context.Context, filter registrystore.ConversationEvictionFilter, limit int) ([]uuid.UUID, error) {
+	db := s.dbFor(ctx)
+	if filter.AgeBasis != registrystore.ConversationAgeLastActivity {
+		query, args := registrystore.EvictionCandidatesSQL(filter, sqliteEvictionCompare)
+		return scanEvictionIDs(db.Raw(query+" LIMIT ?", append(args, limit)...))
+	}
 	var ids []uuid.UUID
-	err := s.dbFor(ctx).
-		Model(&model.ConversationGroup{}).
-		Where("archived_at IS NOT NULL AND (archived_at, archived_at_ns) < (?, ?)", cutoff).
-		Limit(limit).
-		Pluck("id", &ids).Error
+	err := scanIdleEvictionCandidates(db, filter, limit, func(id uuid.UUID) { ids = append(ids, id) })
 	return ids, err
 }
 
-func (s *SQLiteStore) CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error) {
+func (s *SQLiteStore) CountEvictableGroups(ctx context.Context, filter registrystore.ConversationEvictionFilter) (int64, error) {
+	db := s.dbFor(ctx)
 	var count int64
-	err := s.dbFor(ctx).
-		Model(&model.ConversationGroup{}).
-		Where("archived_at IS NOT NULL AND (archived_at, archived_at_ns) < (?, ?)", cutoff).
-		Count(&count).Error
+	if filter.AgeBasis != registrystore.ConversationAgeLastActivity {
+		query, args := registrystore.EvictionCandidatesSQL(filter, sqliteEvictionCompare)
+		err := db.Raw("SELECT COUNT(*) FROM ("+query+") evictable", args...).Scan(&count).Error
+		return count, err
+	}
+	err := scanIdleEvictionCandidates(db, filter, 0, func(uuid.UUID) { count++ })
 	return count, err
+}
+
+func scanIdleEvictionCandidates(db *gorm.DB, filter registrystore.ConversationEvictionFilter, limit int, visit func(uuid.UUID)) error {
+	return registrystore.ScanIdleEvictionCandidates(filter, limit,
+		func(after *uuid.UUID, n int) ([]uuid.UUID, error) {
+			page := filter
+			page.AfterGroupID = after
+			query, args := registrystore.EvictionCandidatesSQL(page, sqliteEvictionCompare)
+			return scanEvictionIDs(db.Raw(query+" ORDER BY g.id LIMIT ?", append(args, n)...))
+		},
+		func(ids []uuid.UUID) ([]uuid.UUID, error) {
+			query, args := registrystore.IdleEvictionTreesSQL(ids, filter.Cutoff, sqliteEvictionCompare)
+			return scanEvictionIDs(db.Raw(query, args...))
+		},
+		visit)
+}
+
+func scanEvictionIDs(query *gorm.DB) ([]uuid.UUID, error) {
+	var rows []struct{ ID uuid.UUID }
+	if err := query.Scan(&rows).Error; err != nil {
+		return nil, err
+	}
+	ids := make([]uuid.UUID, len(rows))
+	for i, row := range rows {
+		ids[i] = row.ID
+	}
+	return ids, nil
 }
 
 func (s *SQLiteStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]registrystore.DeletedConversationGroup, error) {

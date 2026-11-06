@@ -257,6 +257,7 @@ export type {
   AdminUpdateMemoryResponses,
   Channel,
   ClientOptions,
+  ConversationEvictionFilter,
   ConversationForkNavigation,
   ConversationForkOption,
   ConversationForkPoint,

@@ -537,19 +537,58 @@ export type SearchResult = {
 
 export type EvictRequest = {
   /**
-   * ISO 8601 duration. Resources archived longer than this are hard-deleted.
+   * ISO 8601 duration. Resources older than this are hard-deleted. For
+   * conversations, `conversationFilter.ageBasis` selects which clock
+   * the duration is measured from.
    * Examples: P90D (90 days), P1Y (1 year), PT24H (24 hours).
    */
   retentionPeriod: string;
   /**
    * Which resource types to evict.
-   * - conversations: Archived conversations past retention.
+   * - conversations: Conversation groups selected by `conversationFilter`
+   * (archived groups past retention by default).
+   * - outbox_events: Durable event outbox records created longer ago
+   * than the retention period. Returns 501 when the configured
+   * datastore has no event outbox.
    */
-  resourceTypes: Array<"conversations">;
+  resourceTypes: Array<"conversations" | "outbox_events">;
+  conversationFilter?: ConversationEvictionFilter;
   /**
    * Reason for the eviction (for audit log).
    */
   justification?: string;
+};
+
+/**
+ * Selects which conversation groups `conversations` eviction deletes.
+ * Valid only when `resourceTypes` includes `conversations`; it does not
+ * affect other resource types. Omitting the filter, or any of its
+ * properties, uses the defaults `archived: only` and
+ * `ageBasis: archivedAt`, which select groups archived longer than the
+ * retention period.
+ *
+ * A selected group is deleted with its forks and every descendant child
+ * conversation group, regardless of their archive state or age.
+ */
+export type ConversationEvictionFilter = {
+  /**
+   * Archive state of the candidate conversation groups.
+   * - only: archived groups.
+   * - exclude: unarchived groups.
+   * - include: archived and unarchived groups.
+   */
+  archived?: "only" | "exclude" | "include";
+  /**
+   * Clock compared with `retentionPeriod`. A group is selected when its
+   * clock is earlier than the current time minus the retention period.
+   * - archivedAt: when the group was archived. Requires `archived: only`.
+   * - lastActivity: the most recent conversation creation, conversation
+   * update, or entry append anywhere in the tree that would be
+   * deleted, including forks and descendant child groups. Activity
+   * committed before the deletion prevents it.
+   * - createdAt: when the group was created, regardless of later activity.
+   */
+  ageBasis?: "archivedAt" | "lastActivity" | "createdAt";
 };
 
 /**
@@ -1884,9 +1923,14 @@ export type AdminEvictData = {
 
 export type AdminEvictErrors = {
   /**
-   * Invalid request (bad retention period format, unknown resource type).
+   * Invalid request (bad retention period format, unknown resource type,
+   * or an invalid `conversationFilter`).
    */
   400: ErrorResponse;
+  /**
+   * The configured datastore does not support `outbox_events` eviction.
+   */
+  501: ErrorResponse;
   /**
    * Error response
    */

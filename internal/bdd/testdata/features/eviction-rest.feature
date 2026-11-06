@@ -590,3 +590,183 @@ Feature: Data Eviction
     Then the MongoDB result should match:
       | group_id   |
       | ${groupId} |
+
+  # Serial required: this scenario runs a datastore-wide eviction sweep over unarchived conversations.
+  Scenario: Evict unarchived conversations with no recent activity
+    Given I have a conversation with title "Idle unarchived"
+    And set "idleConversationId" to "${conversationId}"
+    And the conversation group of "${idleConversationId}" was last active 100 days ago
+    And I have a conversation with title "Archived idle"
+    And set "archivedConversationId" to "${conversationId}"
+    And the conversation group of "${archivedConversationId}" was last active 100 days ago
+    And the conversation was archived 100 days ago
+    And I have a conversation with title "Recently active"
+    And set "activeConversationId" to "${conversationId}"
+    And the conversation group of "${activeConversationId}" was last active 100 days ago
+    And I am authenticated as agent with API key "test-agent-key"
+    And I append an entry to the conversation:
+      """
+      {
+        "channel": "HISTORY",
+        "contentType": "history",
+        "content": [{"role": "USER", "text": "Still working on this"}]
+      }
+      """
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {
+          "archived": "exclude",
+          "ageBasis": "lastActivity"
+        }
+      }
+      """
+    Then the response status should be 204
+    When I call GET "/v1/conversations/${idleConversationId}"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${activeConversationId}"
+    Then the response status should be 200
+    When I call GET "/v1/conversations/${archivedConversationId}"
+    Then the response status should be 200
+
+  # Serial required: this scenario runs a datastore-wide eviction sweep over unarchived conversations.
+  Scenario: Recent activity anywhere in a conversation tree prevents its eviction
+    Given I have a conversation with title "Idle parent"
+    And set "parentConversationId" to "${conversationId}"
+    And I am authenticated as agent with API key "test-agent-key"
+    And I append an entry to the conversation:
+      """
+      {
+        "channel": "HISTORY",
+        "contentType": "history",
+        "content": [{"role": "USER", "text": "Delegate child work"}]
+      }
+      """
+    And set "childConversationId" to "00000000-0000-4000-8000-000000000803"
+    When I call POST "/v1/conversations/${childConversationId}/entries" with body:
+      """
+      {
+        "channel": "HISTORY",
+        "contentType": "history",
+        "startedByConversationId": "${parentConversationId}",
+        "content": [{"role": "USER", "text": "Child work"}]
+      }
+      """
+    Then the response status should be 201
+    And set "childEntryId" to the json response field "id"
+    When I fork conversation "${childConversationId}" at entry "${childEntryId}" with request:
+      """
+      {}
+      """
+    And set "childForkId" to "${forkedConversationId}"
+    And the conversation group of "${parentConversationId}" was last active 100 days ago
+    And the conversation group of "${childConversationId}" was last active 100 days ago
+    When I call POST "/v1/conversations/${childForkId}/entries" with body:
+      """
+      {
+        "channel": "HISTORY",
+        "contentType": "history",
+        "content": [{"role": "USER", "text": "Recent work in the child fork"}]
+      }
+      """
+    Then the response status should be 201
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "exclude", "ageBasis": "lastActivity"}
+      }
+      """
+    Then the response status should be 204
+    When I call GET "/v1/conversations/${parentConversationId}"
+    Then the response status should be 200
+    When I call GET "/v1/conversations/${childForkId}"
+    Then the response status should be 200
+
+    # Once the whole tree is idle, evicting the parent deletes its child and the child's fork.
+    Given the conversation group of "${childConversationId}" was last active 100 days ago
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "exclude", "ageBasis": "lastActivity"}
+      }
+      """
+    Then the response status should be 204
+    When I call GET "/v1/conversations/${parentConversationId}"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${childConversationId}"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${childForkId}"
+    Then the response status should be 404
+
+  # Serial required: this scenario runs a datastore-wide eviction sweep over archived and unarchived conversations.
+  Scenario: Evict conversations by creation time regardless of recent activity
+    Given I have a conversation with title "Old but active"
+    And set "oldActiveConversationId" to "${conversationId}"
+    And the conversation group of "${oldActiveConversationId}" was last active 100 days ago
+    And I am authenticated as agent with API key "test-agent-key"
+    And I append an entry to the conversation:
+      """
+      {
+        "channel": "HISTORY",
+        "contentType": "history",
+        "content": [{"role": "USER", "text": "Recent entry"}]
+      }
+      """
+    And I have a conversation with title "Old and archived"
+    And set "oldArchivedConversationId" to "${conversationId}"
+    And the conversation group of "${oldArchivedConversationId}" was last active 100 days ago
+    And the conversation was archived 1 days ago
+    And I have a conversation with title "New"
+    And set "newConversationId" to "${conversationId}"
+    And the conversation group of "${newConversationId}" was last active 10 days ago
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "include", "ageBasis": "createdAt"}
+      }
+      """
+    Then the response status should be 204
+    When I call GET "/v1/conversations/${oldActiveConversationId}"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${oldArchivedConversationId}"
+    Then the response status should be 404
+    When I call GET "/v1/conversations/${newConversationId}"
+    Then the response status should be 200
+
+  # Serial today only because this feature shares the serial eviction runner; this scenario is a pure validation check and appears parallel-safe.
+  Scenario: Conversation filters that cannot apply are rejected
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "exclude"}
+      }
+      """
+    Then the response status should be 400
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "include", "ageBasis": "archivedAt"}
+      }
+      """
+    Then the response status should be 400
+    When I call POST "/v1/admin/evict" with body:
+      """
+      {
+        "retentionPeriod": "P30D",
+        "resourceTypes": ["conversations"],
+        "conversationFilter": {"archived": "everything", "ageBasis": "lastActivity"}
+      }
+      """
+    Then the response status should be 400

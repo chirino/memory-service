@@ -26,6 +26,70 @@ func DeleteConversationGroups(ctx context.Context, store registrystore.MemorySto
 	if err != nil {
 		return nil, err
 	}
+	return deleteLoadedConversationGroups(ctx, store, groups)
+}
+
+// ConversationEvictionBatch is the result of one EvictConversationGroups call.
+type ConversationEvictionBatch struct {
+	// Found counts the candidates selected before eligibility was rechecked.
+	// Keep batching with Next while it is non-zero.
+	Found int
+	// Deleted counts the selected candidates that were deleted.
+	Deleted int
+	// Events must be published after the transaction commits.
+	Events []registryeventbus.Event
+	// Next selects the following batch. For lastActivity it resumes after this
+	// batch's candidates, so groups that were checked are not walked again.
+	// Activity only moves a tree's clock forward, so a skipped group cannot
+	// become eligible later in the same run.
+	Next registrystore.ConversationEvictionFilter
+}
+
+// EvictConversationGroups deletes one batch of at most limit groups matching
+// filter, with their whole started-child trees. Call inside InWriteTx and
+// publish the returned events after commit.
+func EvictConversationGroups(ctx context.Context, store registrystore.MemoryStore, filter registrystore.ConversationEvictionFilter, limit int) (ConversationEvictionBatch, error) {
+	batch := ConversationEvictionBatch{Next: filter}
+	ids, err := store.FindEvictableGroupIDs(ctx, filter, limit)
+	if err != nil || len(ids) == 0 {
+		return batch, err
+	}
+	if filter.AgeBasis == registrystore.ConversationAgeLastActivity {
+		// lastActivity results are ordered by ID.
+		last := ids[len(ids)-1]
+		batch.Next.AfterGroupID = &last
+	}
+	// Loading locks the deletion trees on datastores with row locks, so the
+	// recheck reads every write committed before the locks were granted and
+	// later writes wait for this transaction.
+	groups, err := store.LoadDeletedConversationGroups(ctx, ids)
+	if err != nil {
+		return ConversationEvictionBatch{}, err
+	}
+	recheck := filter
+	recheck.GroupIDs = ids
+	recheck.AfterGroupID = nil
+	eligible, err := store.FindEvictableGroupIDs(ctx, recheck, len(ids))
+	if err != nil {
+		return ConversationEvictionBatch{}, err
+	}
+	batch.Found = len(ids)
+	if len(eligible) == 0 {
+		return batch, nil
+	}
+	if len(eligible) != len(ids) {
+		if groups, err = store.LoadDeletedConversationGroups(ctx, eligible); err != nil {
+			return ConversationEvictionBatch{}, err
+		}
+	}
+	if batch.Events, err = deleteLoadedConversationGroups(ctx, store, groups); err != nil {
+		return ConversationEvictionBatch{}, err
+	}
+	batch.Deleted = len(eligible)
+	return batch, nil
+}
+
+func deleteLoadedConversationGroups(ctx context.Context, store registrystore.MemoryStore, groups []registrystore.DeletedConversationGroup) ([]registryeventbus.Event, error) {
 	ids := make([]uuid.UUID, 0, len(groups))
 	for _, group := range groups {
 		ids = append(ids, group.ConversationGroupID)

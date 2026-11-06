@@ -114,6 +114,7 @@ func (m *mongoMigrator) Migrate(ctx context.Context) error {
 			{Keys: bson.D{{Key: "created_at", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "updated_at", Value: 1}, {Key: "_id", Value: 1}}},
 			{Keys: bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "created_at", Value: 1}}},
+			{Keys: bson.D{{Key: "started_by_conversation_id", Value: 1}}, Options: options.Index().SetSparse(true)},
 			// Wildcard index on metadata fields enables efficient key-value filter lookups (metadata.key = value).
 			{
 				Keys:    bson.D{{Key: "metadata.$**", Value: 1}},
@@ -993,6 +994,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	var membershipsToCopy []memberDoc
 	var sourceConv *convDoc
 	var anchorOwnerDepth *int
+	var lineageGroupID string
 	logicalStartedByConversationID := startedByConversationID
 	logicalStartedByEntryID := startedByEntryID
 	if forkedAtConversationID != nil {
@@ -1041,6 +1043,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 		logicalStartedByConversationID = ptrStrToConversationID(parent.StartedByConversationID)
 		logicalStartedByEntryID = ptrStrToUUID(parent.StartedByEntryID)
 		actualGroupID = parent.ConversationGroupID
+		lineageGroupID = parent.ConversationGroupID
 	} else if startedByConversationID != nil {
 		var parentConv convDoc
 		err := s.conversations().FindOne(ctx, bson.M{
@@ -1064,6 +1067,7 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 			}
 		}
 		actualGroupID = uuid.NewString()
+		lineageGroupID = parentConv.ConversationGroupID
 		ownerUserID = parentConv.OwnerUserID
 		cursor, err := s.memberships().Find(ctx, bson.M{"conversation_group_id": parentConv.ConversationGroupID})
 		if err != nil {
@@ -1129,6 +1133,15 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 	encTitle, err := s.encryptConversationTitle(string(convID), title)
 	if err != nil {
 		return nil, fmt.Errorf("failed to encrypt title: %w", err)
+	}
+
+	if lineageGroupID != "" {
+		// Write the parent group so this transaction conflicts with a concurrent
+		// deletion of the parent tree. Without the write, snapshot isolation lets
+		// eviction miss the new fork or child and orphan it.
+		if _, err := s.groups().UpdateByID(ctx, lineageGroupID, bson.M{"$inc": bson.M{"lineage_revision": 1}}); err != nil {
+			return nil, fmt.Errorf("failed to lock parent conversation group: %w", err)
+		}
 	}
 
 	if forkedAtConversationID == nil {
@@ -4206,11 +4219,64 @@ func (s *MongoStore) DeleteAttachment(ctx context.Context, userID string, conver
 
 // --- Eviction ---
 
-func (s *MongoStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time, limit int) ([]uuid.UUID, error) {
-	opts := options.Find().SetLimit(int64(limit)).SetProjection(bson.M{"_id": 1})
-	cur, err := s.groups().Find(ctx, bson.M{
-		"archived_at": bson.M{"$exists": true, "$lt": cutoff},
-	}, opts)
+func mongoEvictionCandidates(filter registrystore.ConversationEvictionFilter) bson.M {
+	query := bson.M{}
+	switch filter.Archived {
+	case registrystore.ConversationArchiveOnly:
+		query["archived_at"] = bson.M{"$exists": true}
+	case registrystore.ConversationArchiveExclude:
+		query["archived_at"] = bson.M{"$exists": false}
+	}
+	if filter.AgeBasis == registrystore.ConversationAgeArchivedAt {
+		query["archived_at"] = bson.M{"$exists": true, "$lt": filter.Cutoff}
+	} else {
+		// The candidate's own creation is part of its tree's activity.
+		query["created_at"] = bson.M{"$lt": filter.Cutoff}
+	}
+	idQuery := bson.M{}
+	if len(filter.GroupIDs) > 0 {
+		ids := make([]string, len(filter.GroupIDs))
+		for i, id := range filter.GroupIDs {
+			ids[i] = uuidToStr(id)
+		}
+		idQuery["$in"] = ids
+	}
+	if filter.AfterGroupID != nil {
+		idQuery["$gt"] = uuidToStr(*filter.AfterGroupID)
+	}
+	if len(idQuery) > 0 {
+		query["_id"] = idQuery
+	}
+	return query
+}
+
+func (s *MongoStore) FindEvictableGroupIDs(ctx context.Context, filter registrystore.ConversationEvictionFilter, limit int) ([]uuid.UUID, error) {
+	if filter.AgeBasis != registrystore.ConversationAgeLastActivity {
+		return s.findEvictionCandidates(ctx, filter, false, limit)
+	}
+	var ids []uuid.UUID
+	err := s.scanIdleEvictionCandidates(ctx, filter, limit, func(id uuid.UUID) { ids = append(ids, id) })
+	return ids, err
+}
+
+func (s *MongoStore) CountEvictableGroups(ctx context.Context, filter registrystore.ConversationEvictionFilter) (int64, error) {
+	if filter.AgeBasis != registrystore.ConversationAgeLastActivity {
+		return s.groups().CountDocuments(ctx, mongoEvictionCandidates(filter))
+	}
+	var count int64
+	err := s.scanIdleEvictionCandidates(ctx, filter, 0, func(uuid.UUID) { count++ })
+	return count, err
+}
+
+func (s *MongoStore) findEvictionCandidates(ctx context.Context, filter registrystore.ConversationEvictionFilter, ordered bool, limit int) ([]uuid.UUID, error) {
+	opts := options.Find().SetProjection(bson.M{"_id": 1})
+	if ordered {
+		opts.SetSort(bson.D{{Key: "_id", Value: 1}})
+	}
+	if limit > 0 {
+		opts.SetLimit(int64(limit))
+	}
+	cur, err := s.groups().Find(ctx, mongoEvictionCandidates(filter), opts)
 	if err != nil {
 		return nil, err
 	}
@@ -4218,18 +4284,151 @@ func (s *MongoStore) FindEvictableGroupIDs(ctx context.Context, cutoff time.Time
 	if err := cur.All(ctx, &docs); err != nil {
 		return nil, err
 	}
-
 	ids := make([]uuid.UUID, len(docs))
-	for i, d := range docs {
-		ids[i] = strToUUID(d.ID)
+	for i, doc := range docs {
+		ids[i] = strToUUID(doc.ID)
 	}
 	return ids, nil
 }
 
-func (s *MongoStore) CountEvictableGroups(ctx context.Context, cutoff time.Time) (int64, error) {
-	return s.groups().CountDocuments(ctx, bson.M{
-		"archived_at": bson.M{"$exists": true, "$lt": cutoff},
-	})
+// Pages are read eagerly, so no cursor stays open across the tree reads.
+func (s *MongoStore) scanIdleEvictionCandidates(ctx context.Context, filter registrystore.ConversationEvictionFilter, limit int, visit func(uuid.UUID)) error {
+	return registrystore.ScanIdleEvictionCandidates(filter, limit,
+		func(after *uuid.UUID, n int) ([]uuid.UUID, error) {
+			page := filter
+			page.AfterGroupID = after
+			return s.findEvictionCandidates(ctx, page, true, n)
+		},
+		func(ids []uuid.UUID) ([]uuid.UUID, error) {
+			roots := make([]string, len(ids))
+			for i, id := range ids {
+				roots[i] = uuidToStr(id)
+			}
+			active, err := s.activeEvictionRoots(ctx, roots, filter.Cutoff)
+			if err != nil {
+				return nil, err
+			}
+			idle := make([]uuid.UUID, 0, len(ids))
+			for i, id := range ids {
+				if !active[roots[i]] {
+					idle = append(idle, id)
+				}
+			}
+			return idle, nil
+		},
+		visit)
+}
+
+// activeEvictionRoots returns the roots whose started-child tree has a group,
+// conversation, or entry created or updated at or after cutoff. The tree is the
+// same one conversation deletion removes.
+func (s *MongoStore) activeEvictionRoots(ctx context.Context, roots []string, cutoff time.Time) (map[string]bool, error) {
+	owners := make(map[string]map[string]bool, len(roots))
+	for _, root := range roots {
+		owners[root] = map[string]bool{root: true}
+	}
+	for frontier := roots; len(frontier) > 0; {
+		cur, err := s.conversations().Find(ctx, bson.M{"conversation_group_id": bson.M{"$in": frontier}}, options.Find().SetProjection(bson.M{"_id": 1, "conversation_group_id": 1}))
+		if err != nil {
+			return nil, err
+		}
+		var parents []convDoc
+		if err := cur.All(ctx, &parents); err != nil {
+			return nil, err
+		}
+		if len(parents) == 0 {
+			break
+		}
+		parentGroups := make(map[string]string, len(parents))
+		parentIDs := make([]string, 0, len(parents))
+		for _, parent := range parents {
+			parentGroups[string(parent.ID)] = parent.ConversationGroupID
+			parentIDs = append(parentIDs, string(parent.ID))
+		}
+		cur, err = s.conversations().Find(ctx, bson.M{"started_by_conversation_id": bson.M{"$in": parentIDs}}, options.Find().SetProjection(bson.M{"conversation_group_id": 1, "started_by_conversation_id": 1}))
+		if err != nil {
+			return nil, err
+		}
+		var children []convDoc
+		if err := cur.All(ctx, &children); err != nil {
+			return nil, err
+		}
+		// A group gains roots when it is reachable from several candidates;
+		// revisit it so its descendants inherit every root.
+		grown := map[string]bool{}
+		for _, child := range children {
+			if child.StartedByConversationID == nil {
+				continue
+			}
+			parentOwners := owners[parentGroups[*child.StartedByConversationID]]
+			childOwners := owners[child.ConversationGroupID]
+			if childOwners == nil {
+				childOwners = map[string]bool{}
+				owners[child.ConversationGroupID] = childOwners
+			}
+			for root := range parentOwners {
+				if !childOwners[root] {
+					childOwners[root] = true
+					grown[child.ConversationGroupID] = true
+				}
+			}
+		}
+		frontier = frontier[:0:0]
+		for group := range grown {
+			frontier = append(frontier, group)
+		}
+	}
+
+	groups := make([]string, 0, len(owners))
+	for group := range owners {
+		groups = append(groups, group)
+	}
+	activeGroups := map[string]bool{}
+	collect := func(coll *mongo.Collection, pipeline mongo.Pipeline) error {
+		cur, err := coll.Aggregate(ctx, pipeline)
+		if err != nil {
+			return err
+		}
+		var rows []struct {
+			ID string `bson:"_id"`
+		}
+		if err := cur.All(ctx, &rows); err != nil {
+			return err
+		}
+		for _, row := range rows {
+			activeGroups[row.ID] = true
+		}
+		return nil
+	}
+	if err := collect(s.groups(), mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"_id": bson.M{"$in": groups}, "created_at": bson.M{"$gte": cutoff}}}},
+		{{Key: "$project", Value: bson.M{"_id": 1}}},
+	}); err != nil {
+		return nil, err
+	}
+	if err := collect(s.conversations(), mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"conversation_group_id": bson.M{"$in": groups}, "$or": bson.A{
+			bson.M{"created_at": bson.M{"$gte": cutoff}},
+			bson.M{"updated_at": bson.M{"$gte": cutoff}},
+		}}}},
+		{{Key: "$group", Value: bson.M{"_id": "$conversation_group_id"}}},
+	}); err != nil {
+		return nil, err
+	}
+	if err := collect(s.entries(), mongo.Pipeline{
+		{{Key: "$match", Value: bson.M{"conversation_group_id": bson.M{"$in": groups}, "created_at": bson.M{"$gte": cutoff}}}},
+		{{Key: "$group", Value: bson.M{"_id": "$conversation_group_id"}}},
+	}); err != nil {
+		return nil, err
+	}
+
+	active := map[string]bool{}
+	for group := range activeGroups {
+		for root := range owners[group] {
+			active[root] = true
+		}
+	}
+	return active, nil
 }
 
 func (s *MongoStore) LoadDeletedConversationGroups(ctx context.Context, groupIDs []uuid.UUID) ([]registrystore.DeletedConversationGroup, error) {
