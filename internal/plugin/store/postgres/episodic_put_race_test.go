@@ -125,6 +125,55 @@ func TestPostgresExpectedRevisionIDBindsArchivedPredecessor(t *testing.T) {
 	}))
 }
 
+// TestPostgresExpectedRevisionIDWithAuthorizedPredecessorRace covers the user-path shape:
+// the handler supplies AuthorizedPredecessor (policy configured) together with
+// expected_revision_id. A competing writer replaces A before the archive, and the raced
+// failure must be the same ExpectedActiveRevisionIDMismatchError as the check-time one.
+func TestPostgresExpectedRevisionIDWithAuthorizedPredecessorRace(t *testing.T) {
+	store, ctx := setupPgIdempotencyStore(t)
+	ns := []string{"user", "alice", "expected-revision-id-user-race"}
+	const key = "same-key"
+
+	idA := uuid.New()
+	_, err := pgPut(ctx, store, registryepisodic.PutMemoryRequest{
+		Namespace: ns, Key: key, Value: map[string]interface{}{"writer": "A"}, MemoryKind: "default/v1", RevisionID: &idA,
+	})
+	require.NoError(t, err)
+
+	checked, release := pauseFirstCheck(store, t)
+	idStale := uuid.New()
+	staleDone := make(chan error, 1)
+	go func() {
+		_, err := pgPut(ctx, store, registryepisodic.PutMemoryRequest{
+			Namespace: ns, Key: key, Value: map[string]interface{}{"writer": "stale"}, MemoryKind: "default/v1",
+			RevisionID: &idStale, ExpectedRevisionID: &idA,
+			AuthorizedPredecessor: &registryepisodic.MemoryPredecessorExpectation{Exists: true, ID: idA, Revision: 1},
+		})
+		staleDone <- err
+	}()
+	<-checked // stale request validated A and is paused before its archive
+
+	idB := uuid.New()
+	_, err = pgPut(ctx, store, registryepisodic.PutMemoryRequest{
+		Namespace: ns, Key: key, Value: map[string]interface{}{"writer": "B"}, MemoryKind: "default/v1", RevisionID: &idB,
+	})
+	require.NoError(t, err)
+	release()
+
+	var mismatch *registrystore.ExpectedActiveRevisionIDMismatchError
+	staleErr := <-staleDone
+	require.ErrorAs(t, staleErr, &mismatch, "raced failure must match the check-time expected_revision_id mismatch")
+	assert.Equal(t, idA.String(), mismatch.ExpectedID)
+	assert.Equal(t, idB.String(), mismatch.ActualID)
+
+	rows := pgKeyRows(t, store, ns, key)
+	require.Len(t, rows, 2, "only A and B may exist; the failed request must leave no row")
+	assert.Equal(t, idA, rows[0].ID)
+	assert.True(t, rows[0].Archived)
+	assert.Equal(t, idB, rows[1].ID)
+	assert.False(t, rows[1].Archived, "B must stay active")
+}
+
 // TestPostgresExpectedRevisionIDMatchAndMismatch preserves the non-racing behavior.
 func TestPostgresExpectedRevisionIDMatchAndMismatch(t *testing.T) {
 	store, ctx := setupPgIdempotencyStore(t)

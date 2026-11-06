@@ -448,10 +448,12 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			}
 		}
 		predecessor := req.AuthorizedPredecessor
-		// boundByExpectedRevisionID is true when the archive is bound only because the
-		// caller supplied expected_revision_id, so a failed bound archive maps to the
-		// expected-revision-ID mismatch rather than the bare revision conflict.
-		boundByExpectedRevisionID := false
+		// boundByExpectedRevisionID is true whenever the caller supplied
+		// expected_revision_id, whether the archive is bound by it or by an
+		// AuthorizedPredecessor, so a raced zero-row archive maps to the same
+		// expected-revision-ID mismatch as the check above rather than the bare
+		// revision conflict.
+		boundByExpectedRevisionID := req.ExpectedRevisionID != nil
 		if predecessor == nil && (req.ExpectedRevision != nil || req.ExpectedRevisionID != nil) {
 			// Bind the later archive to the exact row whose revision or ID was checked.
 			// Under READ COMMITTED a namespace/key-only update could otherwise
@@ -459,7 +461,6 @@ func (e *postgresEpisodicStore) PutMemory(ctx context.Context, req registryepiso
 			predecessor = &registryepisodic.MemoryPredecessorExpectation{
 				Exists: true, ID: active[0].ID, Revision: active[0].Revision,
 			}
-			boundByExpectedRevisionID = req.ExpectedRevision == nil
 		}
 		if (req.ExpectedRevision != nil || req.ExpectedRevisionID != nil || req.CreateOnly) && e.putAfterRevisionCheck != nil {
 			e.putAfterRevisionCheck()
