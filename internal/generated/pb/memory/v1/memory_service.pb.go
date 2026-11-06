@@ -5525,7 +5525,18 @@ type PutMemoryRequest struct {
 	Index            map[string]string      `protobuf:"bytes,5,rep,name=index,proto3" json:"index,omitempty" protobuf_key:"bytes,1,opt,name=key" protobuf_val:"bytes,2,opt,name=value"`
 	ExpectedRevision *int64                 `protobuf:"varint,6,opt,name=expected_revision,json=expectedRevision,proto3,oneof" json:"expected_revision,omitempty"`
 	// Optional exact canonical schema name. Absence always uses the fixed default/v1 kind.
-	Kind          *string `protobuf:"bytes,8,opt,name=kind,proto3,oneof" json:"kind,omitempty"`
+	Kind *string `protobuf:"bytes,8,opt,name=kind,proto3,oneof" json:"kind,omitempty"`
+	// Optional caller-supplied UUID (string form) for the new revision; enables
+	// idempotency. A recognized exact retry returns the stored revision with no new
+	// row, archive, event, or outbox record. Must be a valid UUID when present.
+	RevisionId *string `protobuf:"bytes,9,opt,name=revision_id,json=revisionId,proto3,oneof" json:"revision_id,omitempty"`
+	// UUID (string form) of the active revision the caller expects to replace.
+	// Requires revision_id. A mismatch returns ABORTED.
+	ExpectedRevisionId *string `protobuf:"bytes,10,opt,name=expected_revision_id,json=expectedRevisionId,proto3,oneof" json:"expected_revision_id,omitempty"`
+	// When 1, declares a create-only write: fails with ABORTED if an active memory
+	// already exists for the namespace and key. Requires revision_id. Only the value
+	// 1 is accepted; any other value returns INVALID_ARGUMENT.
+	Revision      *int64 `protobuf:"varint,11,opt,name=revision,proto3,oneof" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -5607,6 +5618,27 @@ func (x *PutMemoryRequest) GetKind() string {
 		return *x.Kind
 	}
 	return ""
+}
+
+func (x *PutMemoryRequest) GetRevisionId() string {
+	if x != nil && x.RevisionId != nil {
+		return *x.RevisionId
+	}
+	return ""
+}
+
+func (x *PutMemoryRequest) GetExpectedRevisionId() string {
+	if x != nil && x.ExpectedRevisionId != nil {
+		return *x.ExpectedRevisionId
+	}
+	return ""
+}
+
+func (x *PutMemoryRequest) GetRevision() int64 {
+	if x != nil && x.Revision != nil {
+		return *x.Revision
+	}
+	return 0
 }
 
 type MemoryWriteResult struct {
@@ -6817,7 +6849,18 @@ type AdminPutMemoryRequest struct {
 	ExpectedRevision *int64                 `protobuf:"varint,6,opt,name=expected_revision,json=expectedRevision,proto3,oneof" json:"expected_revision,omitempty"`
 	Justification    *string                `protobuf:"bytes,7,opt,name=justification,proto3,oneof" json:"justification,omitempty"`
 	// Optional exact canonical schema name. Absence always uses the fixed default/v1 kind.
-	Kind          *string `protobuf:"bytes,8,opt,name=kind,proto3,oneof" json:"kind,omitempty"`
+	Kind *string `protobuf:"bytes,8,opt,name=kind,proto3,oneof" json:"kind,omitempty"`
+	// Optional caller-supplied UUID (string form) for the new revision; enables
+	// idempotency. A recognized exact retry returns the stored revision with no new
+	// row, archive, event, or outbox record. Must be a valid UUID when present.
+	RevisionId *string `protobuf:"bytes,9,opt,name=revision_id,json=revisionId,proto3,oneof" json:"revision_id,omitempty"`
+	// UUID (string form) of the active revision the caller expects to replace.
+	// Requires revision_id. A mismatch returns ABORTED.
+	ExpectedRevisionId *string `protobuf:"bytes,10,opt,name=expected_revision_id,json=expectedRevisionId,proto3,oneof" json:"expected_revision_id,omitempty"`
+	// When 1, declares a create-only write: fails with ABORTED if an active memory
+	// already exists for the namespace and key. Requires revision_id. Only the value
+	// 1 is accepted; any other value returns INVALID_ARGUMENT.
+	Revision      *int64 `protobuf:"varint,11,opt,name=revision,proto3,oneof" json:"revision,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -6906,6 +6949,27 @@ func (x *AdminPutMemoryRequest) GetKind() string {
 		return *x.Kind
 	}
 	return ""
+}
+
+func (x *AdminPutMemoryRequest) GetRevisionId() string {
+	if x != nil && x.RevisionId != nil {
+		return *x.RevisionId
+	}
+	return ""
+}
+
+func (x *AdminPutMemoryRequest) GetExpectedRevisionId() string {
+	if x != nil && x.ExpectedRevisionId != nil {
+		return *x.ExpectedRevisionId
+	}
+	return ""
+}
+
+func (x *AdminPutMemoryRequest) GetRevision() int64 {
+	if x != nil && x.Revision != nil {
+		return *x.Revision
+	}
+	return 0
 }
 
 type AdminUpdateMemoryRequest struct {
@@ -12088,7 +12152,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\a_cursor\"a\n" +
 	"\x0eUnindexedEntry\x12'\n" +
 	"\x0fconversation_id\x18\x01 \x01(\tR\x0econversationId\x12&\n" +
-	"\x05entry\x18\x02 \x01(\v2\x10.memory.v1.EntryR\x05entry\"\x81\x03\n" +
+	"\x05entry\x18\x02 \x01(\v2\x10.memory.v1.EntryR\x05entry\"\xb5\x04\n" +
 	"\x10PutMemoryRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x03(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12-\n" +
@@ -12097,13 +12161,21 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"ttlSeconds\x12<\n" +
 	"\x05index\x18\x05 \x03(\v2&.memory.v1.PutMemoryRequest.IndexEntryR\x05index\x120\n" +
 	"\x11expected_revision\x18\x06 \x01(\x03H\x00R\x10expectedRevision\x88\x01\x01\x12\x17\n" +
-	"\x04kind\x18\b \x01(\tH\x01R\x04kind\x88\x01\x01\x1a8\n" +
+	"\x04kind\x18\b \x01(\tH\x01R\x04kind\x88\x01\x01\x12$\n" +
+	"\vrevision_id\x18\t \x01(\tH\x02R\n" +
+	"revisionId\x88\x01\x01\x125\n" +
+	"\x14expected_revision_id\x18\n" +
+	" \x01(\tH\x03R\x12expectedRevisionId\x88\x01\x01\x12\x1f\n" +
+	"\brevision\x18\v \x01(\x03H\x04R\brevision\x88\x01\x01\x1a8\n" +
 	"\n" +
 	"IndexEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x14\n" +
 	"\x12_expected_revisionB\a\n" +
-	"\x05_kindJ\x04\b\a\x10\bR\x05actor\"\xa2\x02\n" +
+	"\x05_kindB\x0e\n" +
+	"\f_revision_idB\x17\n" +
+	"\x15_expected_revision_idB\v\n" +
+	"\t_revisionJ\x04\b\a\x10\bR\x05actor\"\xa2\x02\n" +
 	"\x11MemoryWriteResult\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12\x1c\n" +
 	"\tnamespace\x18\x02 \x03(\tR\tnamespace\x12\x10\n" +
@@ -12231,7 +12303,7 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x02id\x18\x01 \x01(\fR\x02id\x12#\n" +
 	"\rinclude_usage\x18\x02 \x01(\bR\fincludeUsage\x12)\n" +
 	"\rjustification\x18\x03 \x01(\tH\x00R\rjustification\x88\x01\x01B\x10\n" +
-	"\x0e_justification\"\xbb\x03\n" +
+	"\x0e_justification\"\xef\x04\n" +
 	"\x15AdminPutMemoryRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x03(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12-\n" +
@@ -12241,14 +12313,22 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x05index\x18\x05 \x03(\v2+.memory.v1.AdminPutMemoryRequest.IndexEntryR\x05index\x120\n" +
 	"\x11expected_revision\x18\x06 \x01(\x03H\x00R\x10expectedRevision\x88\x01\x01\x12)\n" +
 	"\rjustification\x18\a \x01(\tH\x01R\rjustification\x88\x01\x01\x12\x17\n" +
-	"\x04kind\x18\b \x01(\tH\x02R\x04kind\x88\x01\x01\x1a8\n" +
+	"\x04kind\x18\b \x01(\tH\x02R\x04kind\x88\x01\x01\x12$\n" +
+	"\vrevision_id\x18\t \x01(\tH\x03R\n" +
+	"revisionId\x88\x01\x01\x125\n" +
+	"\x14expected_revision_id\x18\n" +
+	" \x01(\tH\x04R\x12expectedRevisionId\x88\x01\x01\x12\x1f\n" +
+	"\brevision\x18\v \x01(\x03H\x05R\brevision\x88\x01\x01\x1a8\n" +
 	"\n" +
 	"IndexEntry\x12\x10\n" +
 	"\x03key\x18\x01 \x01(\tR\x03key\x12\x14\n" +
 	"\x05value\x18\x02 \x01(\tR\x05value:\x028\x01B\x14\n" +
 	"\x12_expected_revisionB\x10\n" +
 	"\x0e_justificationB\a\n" +
-	"\x05_kind\"\xfd\x01\n" +
+	"\x05_kindB\x0e\n" +
+	"\f_revision_idB\x17\n" +
+	"\x15_expected_revision_idB\v\n" +
+	"\t_revision\"\xfd\x01\n" +
 	"\x18AdminUpdateMemoryRequest\x12\x1c\n" +
 	"\tnamespace\x18\x01 \x03(\tR\tnamespace\x12\x10\n" +
 	"\x03key\x18\x02 \x01(\tR\x03key\x12\x1f\n" +

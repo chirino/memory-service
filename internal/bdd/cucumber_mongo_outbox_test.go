@@ -74,5 +74,6 @@ func TestFeaturesMongoOutbox(t *testing.T) {
 		"mockPrometheus": prom,
 		"grpcAddr":       grpcAddr,
 	})
+	runBDDFeaturesWithConcurrency(t, "mongo-outbox-memory-race", []string{filepath.Join("testdata", "features-mongo", "memory-put-idempotency-race-outbox.feature")}, apiURL, grpcAddr, &cfg, &MongoTestDB{DBURL: mongoURL}, nil, 1)
 	runBDDFeaturesWithConcurrency(t, "mongo-outbox-eviction", []string{filepath.Join("testdata", "features", "eviction-events-rest.feature")}, apiURL, grpcAddr, &cfg, &MongoTestDB{DBURL: mongoURL}, nil, 1)
 }

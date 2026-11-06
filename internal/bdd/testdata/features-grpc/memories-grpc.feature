@@ -812,3 +812,902 @@ Feature: Episodic Memory gRPC API
     Then the gRPC response should not have an error
     And the gRPC response field "items" should have size 1
     And the gRPC response field "items[0].key" should be "grpc-custom-visible"
+
+  Scenario: gRPC PutMemory with revision_id and revision: 1 creates memory idempotently
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-idem-create"
+    key: "gk-idem-create"
+    value {
+      fields {
+        key: "v"
+        value { number_value: 1 }
+      }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000001"
+    revision: 1
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-000000000001"
+    And set "grpcFirstCreatedAt" to the gRPC response field "createdAt"
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-idem-create"
+    key: "gk-idem-create"
+    value {
+      fields {
+        key: "v"
+        value { number_value: 1 }
+      }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000001"
+    revision: 1
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-000000000001"
+    And the gRPC response field "createdAt" should be "${grpcFirstCreatedAt}"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-idem-create'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-idem-create"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+
+  Scenario: gRPC create-only on active memory returns ABORTED
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-idem-conflict"
+    key: "gk-active"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-idem-conflict"
+    key: "gk-active"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000002"
+    revision: 1
+    """
+    Then the gRPC response should have status "ABORTED"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-active'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-active"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-000000000002'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"_id": "9f1c1d0a-0000-4000-8000-000000000002"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+
+  Scenario: gRPC PutMemory with matching expected_revision_id updates memory idempotently
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas"
+    key: "gk-cas"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000010"
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas"
+    key: "gk-cas"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000011"
+    expected_revision_id: "9f1c1d0a-0000-4000-8000-000000000010"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-000000000011"
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas"
+    key: "gk-cas"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000011"
+    expected_revision_id: "9f1c1d0a-0000-4000-8000-000000000010"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-000000000011"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-cas'
+    """
+    Then the SQL result should match:
+      | count |
+      | 2     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-cas"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 2     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-cas' AND archived_at IS NULL
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-cas", "archived_at": {"$exists": false}}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+
+  Scenario: gRPC PutMemory with mismatching expected_revision_id returns ABORTED
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas-mismatch"
+    key: "gk-mismatch"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000020"
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas-mismatch"
+    key: "gk-mismatch"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000021"
+    expected_revision_id: "9f1c1d0a-0000-4000-8000-000000000099"
+    """
+    Then the gRPC response should have status "ABORTED"
+    And the gRPC error message should contain "expected_active_revision_id_mismatch"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-mismatch'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-mismatch"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-000000000021'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"_id": "9f1c1d0a-0000-4000-8000-000000000021"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+
+  Scenario: gRPC PutMemory retry with different value returns ABORTED
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-diff"
+    key: "gk-diff"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000030"
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-diff"
+    key: "gk-diff"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000030"
+    """
+    Then the gRPC response should have status "ABORTED"
+    And the gRPC error message should contain "memory_revision_already_exists"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-diff'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-diff"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+
+  Scenario: gRPC PutMemory rejects revision value other than 1
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-invalid"
+    key: "gk-invalid-rev"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000040"
+    revision: 2
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: gRPC PutMemory with expected_revision_id without revision_id returns INVALID_ARGUMENT
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-invalid"
+    key: "gk-no-rev-id"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    expected_revision_id: "9f1c1d0a-0000-4000-8000-000000000050"
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+
+  Scenario: gRPC PutMemory retry of archived memory returns NOT_FOUND
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-arch"
+    key: "gk-arch"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000060"
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/UpdateMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-arch"
+    key: "gk-arch"
+    archived: true
+    """
+    Then the gRPC response should not have an error
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-arch"
+    key: "gk-arch"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000060"
+    """
+    Then the gRPC response should have status "NOT_FOUND"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-arch' AND archived_at IS NOT NULL AND deleted_reason = 1
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-arch", "archived_at": {"$exists": true}, "deleted_reason": 1}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-arch'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-arch"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+  Scenario: gRPC PutMemory rejects empty and non-UUID revision_id
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-invalid"
+    key: "gk-empty-rev-id"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: ""
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-invalid"
+    key: "gk-bad-rev-id"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "not-a-valid-uuid"
+    revision: 1
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-empty-rev-id' OR key = 'gk-bad-rev-id'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": {"$in": ["gk-empty-rev-id", "gk-bad-rev-id"]}}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC PutMemory with expected_revision_id when no active memory exists returns ABORTED
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-cas-none"
+    key: "gk-no-prior"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000070"
+    expected_revision_id: "9f1c1d0a-0000-4000-8000-000000000071"
+    """
+    Then the gRPC response should have status "ABORTED"
+    And the gRPC error message should contain "expected_active_revision_id_mismatch"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-no-prior'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-no-prior"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC cross-namespace revision_id collision returns ABORTED without disclosing data
+    Given I am authenticated as user "alice"
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-secret"
+    key: "gk-secret"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000080"
+    """
+    Then the gRPC response should not have an error
+    When I am authenticated as user "bob"
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "bob"
+    namespace: "grpc-public"
+    key: "gk-other"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000080"
+    """
+    Then the gRPC response should have status "ABORTED"
+    And the gRPC error message should contain "memory_revision_already_exists"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-000000000080'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"_id": "9f1c1d0a-0000-4000-8000-000000000080"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-other'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-other"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC PutMemory retry with different TTL returns ABORTED and same TTL succeeds
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-ttl"
+    key: "gk-ttl"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    ttl_seconds: 3600
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000090"
+    """
+    Then the gRPC response should not have an error
+    And set "grpcTtlExpiresAt" to the gRPC response field "expiresAt"
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-ttl"
+    key: "gk-ttl"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    ttl_seconds: 3600
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000090"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "expiresAt" should be "${grpcTtlExpiresAt}"
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-ttl"
+    key: "gk-ttl"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    ttl_seconds: 7200
+    revision_id: "9f1c1d0a-0000-4000-8000-000000000090"
+    """
+    Then the gRPC response should have status "ABORTED"
+    And the gRPC error message should contain "memory_revision_already_exists"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-ttl'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-ttl"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+  Scenario: gRPC PutMemory index nil and empty map match exactly on retry
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-index"
+    key: "gk-index"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000a0"
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-index"
+    key: "gk-index"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000a0"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000a0"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-index'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-index"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+  Scenario: gRPC exact retry suppresses side effects
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-side-effects"
+    key: "gk-side"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000b0"
+    """
+    Then the gRPC response should not have an error
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-side-effects"
+    key: "gk-side"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000b0"
+    """
+    Then the gRPC response should not have an error
+    When I call GET "/v1/memories/events?ns=user&ns=alice&ns=grpc-side-effects&kinds=add"
+    Then the response status should be 200
+    And the response body "events" should have 1 item
+    When I call GET "/v1/memories/events?ns=user&ns=alice&ns=grpc-side-effects&kinds=update"
+    Then the response status should be 200
+    And the response body "events" should have 0 items
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-side'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-side"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-side' AND archived_at IS NOT NULL
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-side", "archived_at": {"$exists": true}}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC retry by a caller without write access to the namespace returns PERMISSION_DENIED
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-authz"
+    key: "gk-authz"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000c0"
+    """
+    Then the gRPC response should not have an error
+    When I am authenticated as user "bob"
+    And I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-authz"
+    key: "gk-authz"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000c0"
+    """
+    Then the gRPC response should have status "PERMISSION_DENIED"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-authz'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-authz"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+  Scenario: gRPC PutMemory rejects non-UUID expected_revision_id and writes nothing
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-invalid"
+    key: "gk-bad-expected-id"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000002b0"
+    expected_revision_id: "not-a-valid-uuid"
+    """
+    Then the gRPC response should have status "INVALID_ARGUMENT"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-bad-expected-id'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-bad-expected-id"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC evicted row retry with create-only mode returns ABORTED when active row exists
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-evict-idem"
+    key: "gk-evict-k1"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000e1"
+    revision: 1
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000e1"
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-evict-idem"
+    key: "gk-evict-k1"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000e2"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000e2"
+
+    When I execute SQL query:
+    """
+    DELETE FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-0000000000e1'
+    """
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "delete", "filter": {"_id": "9f1c1d0a-0000-4000-8000-0000000000e1"}}
+    """
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-evict-idem"
+    key: "gk-evict-k1"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000e1"
+    revision: 1
+    """
+    Then the gRPC response should have status "ABORTED"
+
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-0000000000e1'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"_id": "9f1c1d0a-0000-4000-8000-0000000000e1"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: gRPC PUT with revision_id after HardDeleteEvictableUpdates is treated as a new write
+    Given I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-hard-delete-idem"
+    key: "gk-hd-k1"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000f1"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000f1"
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-hard-delete-idem"
+    key: "gk-hd-k1"
+    value {
+      fields { key: "v" value { number_value: 2 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000f2"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000f2"
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-hard-delete-idem"
+    key: "gk-hd-k1"
+    value {
+      fields { key: "v" value { number_value: 1 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000f1"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000f1"
+
+    When I execute SQL query:
+    """
+    DELETE FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-0000000000f1'
+    """
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "delete", "filter": {"_id": "9f1c1d0a-0000-4000-8000-0000000000f1"}}
+    """
+
+    When I send gRPC request "MemoriesService/PutMemory" with body:
+    """
+    namespace: "user"
+    namespace: "alice"
+    namespace: "grpc-hard-delete-idem"
+    key: "gk-hd-k1"
+    value {
+      fields { key: "v" value { number_value: 3 } }
+    }
+    revision_id: "9f1c1d0a-0000-4000-8000-0000000000f1"
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "id" should be "9f1c1d0a-0000-4000-8000-0000000000f1"
+
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'gk-hd-k1' AND archived_at IS NULL
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "gk-hd-k1", "archived_at": {"$exists": false}}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |
+
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE id = '9f1c1d0a-0000-4000-8000-0000000000f2' AND archived_at IS NOT NULL
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"_id": "9f1c1d0a-0000-4000-8000-0000000000f2", "archived_at": {"$exists": true}}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |

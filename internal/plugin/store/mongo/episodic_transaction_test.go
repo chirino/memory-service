@@ -46,20 +46,27 @@ func TestMongoWriteTransactionRollsBackAllEpisodicWrites(t *testing.T) {
 	}))
 }
 
-func TestMongoEpisodicWriteTransactionDoesNotRetryCallback(t *testing.T) {
+// TestMongoEpisodicWriteTransactionRetriesCallbackOnTransientError verifies that
+// InWriteTx uses session.WithTransaction and replays the callback on
+// TransientTransactionError. This enables idempotency: the loser's replayed callback
+// sees the winner's committed document and returns ExactRetry=true.
+func TestMongoEpisodicWriteTransactionRetriesCallbackOnTransientError(t *testing.T) {
 	store, ctx := setupMongoEpisodicStore(t)
 
 	attempts := 0
 	err := store.InWriteTx(ctx, func(context.Context) error {
 		attempts++
-		return mongo.CommandError{
-			Message: "retry transaction",
-			Labels:  []string{"TransientTransactionError"},
+		if attempts < 3 {
+			return mongo.CommandError{
+				Message: "retry transaction",
+				Labels:  []string{"TransientTransactionError"},
+			}
 		}
+		return nil
 	})
 
-	require.Error(t, err)
-	assert.Equal(t, 1, attempts)
+	require.NoError(t, err, "InWriteTx must succeed after transient errors are exhausted")
+	assert.Equal(t, 3, attempts, "callback must have been replayed until success")
 }
 
 func TestMongoTransactionKeepsKindAndContentOnOneSnapshot(t *testing.T) {

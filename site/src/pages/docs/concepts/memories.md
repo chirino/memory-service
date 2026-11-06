@@ -75,7 +75,78 @@ Response:
 The `value` is not echoed back in the response — only the write confirmation is returned.
 
 Calling `PUT` with an existing `(namespace, key)` pair upserts the memory, replacing the previous value.
-For optimistic concurrency, include `expected_revision` on `PUT` or `PATCH`; the request fails with `409 Conflict` if the active memory revision no longer matches. Each successful write or archive update increments the revision.
+For optimistic concurrency, include `expected_revision` on `PUT` or `PATCH`; the request fails with `409 Conflict` if the active memory revision no longer matches. Each successful write or archive update increments the revision. `expected_revision` (a number) and `expected_revision_id` (a UUID, described below) are independent checks.
+
+#### Retry a write with a client-supplied revision ID
+
+Set `revision_id` in the request when the client needs to retry a write safely. If you omit `revision_id`, the service generates one, always returns `200 OK`, and a retry writes another revision. `revision_id` must be a UUID.
+
+```bash
+curl -X PUT http://localhost:8080/v1/memories \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "namespace": ["user", "alice", "profile"],
+    "key": "preferences",
+    "value": {"theme": "dark"},
+    "revision_id": "6f1c1d0a-0000-4000-8000-000000000001",
+    "revision": 1
+  }'
+```
+
+The first call returns `201 Created`. Sending the same request again returns `200 OK` with the same `id`, `createdAt`, and `expiresAt`.
+
+Add `revision` or `expected_revision_id` to choose a precondition. Both require `revision_id`.
+
+| Request fields                           | Behavior                                                                                                                                                                                                  |
+| ---------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `revision_id` only                       | Writes the revision with your ID and replaces the active revision, if any.                                                                                                                                |
+| `revision_id` and `revision: 1`          | Create-only. Fails with `409 Conflict` and code `revision_already_exists` if an active memory exists for `(namespace, key)`. Only the value `1` is valid.                                                 |
+| `revision_id` and `expected_revision_id` | Replaces the active revision only if its `id` equals `expected_revision_id`. Otherwise fails with `409 Conflict` and code `expected_active_revision_id_mismatch`, including when no active memory exists. |
+
+Validation fails when `revision_id` or `expected_revision_id` is not a UUID, `revision` is not `1`, or `revision` or `expected_revision_id` is sent without `revision_id`.
+
+A recognized retry is decided by `revision_id` alone, before any precondition runs. The service compares `namespace`, `key`, `value`, `index`, `ttl_seconds`, and the kind. It does not compare `revision`, `expected_revision`, or `expected_revision_id`, so a retry carrying them still succeeds while the stored revision exists.
+
+| Condition                                                       | REST status       | Result                                                                                                                                           |
+| --------------------------------------------------------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------ |
+| No memory has the requested `revision_id`                       | `201 Created`     | Creates the revision and emits one memory event.                                                                                                 |
+| Every compared field matches                                    | `200 OK`          | Returns the stored revision without a new row, archived predecessor, event, or outbox record. This also applies after a later write replaced it. |
+| The ID is used by a different namespace, key, or compared field | `409 Conflict`    | Returns the error code `memory_revision_already_exists`. The body identifies only the `details.revisionId` you sent, never stored data.          |
+| The revision was archived, or expired and was swept             | `404 Not Found`   | Retries are not accepted.                                                                                                                        |
+| A request field fails validation                                | `400 Bad Request` | Nothing is written.                                                                                                                              |
+| The caller cannot write the namespace                           | `403 Forbidden`   | Authorization runs before the `revision_id` lookup, so a caller cannot probe for IDs.                                                            |
+
+Because the lookup runs before the kind is checked for writability, an exact retry still returns `200 OK` after the kind became read-only. A new write for a read-only kind is rejected. A numeric `expected_revision` mismatch returns `409 Conflict` with the error `memory revision conflict` and no `code`.
+
+The gRPC `PutMemory` operation takes the same `revision_id`, `expected_revision_id`, and `revision` fields. It makes no `200`/`201` distinction: a first write and an exact retry both succeed.
+
+```text
+revision_id: "6f1c1d0a-0000-4000-8000-000000000001"
+revision: 1
+namespace: "user"
+namespace: "alice"
+namespace: "profile"
+key: "preferences"
+value { fields { key: "theme" value { string_value: "dark" } } }
+```
+
+A reused `revision_id`, a create-only conflict, and an `expected_revision_id` mismatch return `ABORTED`. An archived revision returns `NOT_FOUND`. Invalid fields return `INVALID_ARGUMENT`.
+
+##### Idempotency Window
+
+A retry is recognized while the original revision record is retained. After the record is deleted, the same `revision_id` is treated as a new write.
+
+- A revision replaced by a later write stays retryable until superseded-revision eviction deletes it. The background maintenance pass deletes superseded revisions after the indexer has re-indexed them. It runs every 60 seconds and handles up to `MEMORY_SERVICE_EPISODIC_EVICTION_BATCH_SIZE` rows per pass (default `100`). There is no minimum retention for superseded revisions, so retry soon after a failure.
+- A revision that was archived, or expired and was swept, keeps returning `404 Not Found` while its tombstone is retained. A revision whose TTL has passed but that has not been swept yet is still an exact match and returns `200 OK`. Tombstones are deleted after `MEMORY_SERVICE_EPISODIC_TOMBSTONE_RETENTION` (default 90 days). Superseded-revision eviction and tombstone retention are separate and do not share settings.
+
+The `revision` field in the response is the stored value. It can differ between a first write and a later retry if the row was superseded or migrated, so do not compare `revision` across retries.
+
+##### Events and the outbox
+
+A first write emits one memory event. With `MEMORY_SERVICE_OUTBOX_ENABLED=true`, the outbox record is written in the same transaction as the memory, and an exact retry adds no second record. See [Event Outbox Settings](/docs/configuration/#event-outbox-settings).
+
+**Known limitation:** with the outbox disabled (the default), the event is published after the write commits. If the service stops between the commit and the publish, that event is lost, and the retry returns `200 OK` without emitting it. Enable the outbox when consumers must not miss memory events.
 
 ### Reading a Memory
 
@@ -653,7 +724,7 @@ curl -X POST http://localhost:8080/admin/v1/memories/search \
 
 When `as_user_id` is omitted, admin search is admin-wide and caller filters narrow that result set. When `as_user_id` is set, the server applies the same memory search policy that the target user would receive from public `POST /v1/memories/search`.
 
-Admin writes use the same memory body shape as public `PUT /v1/memories` and may include `expected_revision` for compare-and-swap updates. Admin archive uses repeated `ns` query parameters plus `key`, with `{"archived": true}` in the request body:
+Admin writes use the same memory body shape as public `PUT /v1/memories` and accept `revision_id`, `expected_revision_id`, `revision: 1`, and `expected_revision`. They follow the same retry rules, status codes, and error codes as [public writes](#retry-a-write-with-a-client-supplied-revision-id). Admin archive uses repeated `ns` query parameters plus `key`, with `{"archived": true}` in the request body:
 
 ```bash
 curl -X PUT "http://localhost:8080/admin/v1/memories?justification=cognition%20processor%20write" \

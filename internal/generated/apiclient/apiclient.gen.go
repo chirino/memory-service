@@ -1118,14 +1118,37 @@ type OwnershipTransfer struct {
 // PutMemoryRequest defines model for PutMemoryRequest.
 type PutMemoryRequest struct {
 	// ExpectedRevision Optional optimistic concurrency revision expected for the active memory.
-	ExpectedRevision *int64             `json:"expected_revision,omitempty"`
-	Index            *map[string]string `json:"index,omitempty"`
-	Key              string             `json:"key"`
+	ExpectedRevision *int64 `json:"expected_revision,omitempty"`
+
+	// ExpectedRevisionId UUID of the active revision the caller expects to replace. Requires `revision_id`.
+	// The server checks that the current active row's `id` equals this value before
+	// archiving it. A mismatch returns 409 `expected_active_revision_id_mismatch`.
+	ExpectedRevisionId *openapi_types.UUID `json:"expected_revision_id,omitempty"`
+	Index              *map[string]string  `json:"index,omitempty"`
+	Key                string              `json:"key"`
 
 	// Kind Optional exact canonical schema name ("profile/v2"). Omission always uses
 	// the fixed built-in "default/v1" kind.
-	Kind       *string                `json:"kind,omitempty"`
-	Namespace  []string               `json:"namespace"`
+	Kind      *string  `json:"kind,omitempty"`
+	Namespace []string `json:"namespace"`
+
+	// Revision When set to `1`, declares this as a create-only write: the server rejects the
+	// write with 409 `revision_already_exists` if an active memory already exists for
+	// the given namespace and key. Requires `revision_id`. Only the value `1` is
+	// accepted; any other value returns 400. This is a request field and is distinct
+	// from the `revision` in the response.
+	Revision *int64 `json:"revision,omitempty"`
+
+	// RevisionId Optional caller-supplied UUID for the new revision. When supplied, the server
+	// looks up this ID before evaluating any create/update precondition. A recognized
+	// exact retry (same namespace, key, value, index, TTL, and kind) returns 200 with
+	// the stored result and produces no new row, archive, event, or outbox record.
+	// Authorization for the caller's target namespace and key is evaluated before this
+	// ID is looked up. A 409 conflict response carries only the `code` and the
+	// `revision_id` the caller supplied; no stored namespace, key, value, kind, or
+	// timestamps from the existing row are included in the response.
+	// Idempotency is guaranteed while the original revision record is retained.
+	RevisionId *openapi_types.UUID    `json:"revision_id,omitempty"`
 	TtlSeconds *int                   `json:"ttl_seconds,omitempty"`
 	Value      map[string]interface{} `json:"value"`
 }
@@ -2337,12 +2360,80 @@ type ClientInterface interface {
 
 	// PutMemoryWithBody Upsert a memory item
 	//
+	// Writes a new revision of the memory identified by `(namespace, key)`.
+	//
+	// **Idempotency modes.** Idempotency is opt-in.
+	// - Neither `revision_id` nor `expected_revision_id`: the server generates the
+	//   revision ID and the request is not retry-safe.
+	// - `revision_id` with `revision: 1` (create-only): the write is treated as the
+	//   initial creation. It fails with 409 `revision_already_exists` if an active
+	//   revision already exists for `(namespace, key)`.
+	// - `revision_id` with `expected_revision_id` (update): the write replaces the
+	//   active revision only if its ID equals `expected_revision_id`; otherwise it
+	//   fails with 409 `expected_active_revision_id_mismatch`. This check is
+	//   independent of the numeric `expected_revision`.
+	// - `revision_id` alone is a plain write that uses the caller-supplied ID and
+	//   has no create-only or active-ID gate.
+	//
+	// **Exact retry.** When a revision with `revision_id` already exists, the server
+	// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+	// revision is returned with 200 and no new row, archive, event, or outbox record
+	// is produced. Not compared: policy attributes, the kind add/update flag,
+	// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+	// in the response is the stored value and may differ across retries if the
+	// revision was superseded or migrated, so clients must not compare it.
+	//
+	// **Ordering.** Authorization for the target namespace and key is evaluated
+	// before `revision_id` is looked up. Replay detection runs before kind-writability
+	// checks, so an exact retry returns 200 even if the kind later became read-only.
+	// A retry whose original record has been evicted is treated as a new write and is
+	// subject to all new-write validation.
+	//
+	// **Idempotency window.** Idempotency is guaranteed while the original revision
+	// record is retained. Superseded revisions are eligible for hard deletion after
+	// re-indexing (typically minutes). Archived and expired tombstones are retained
+	// longer. After eviction the same `revision_id` may be treated as a new write.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with PUT /v1/memories (the `PutMemory` operationId).
 	PutMemoryWithBody(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// PutMemory Upsert a memory item
+	//
+	// Writes a new revision of the memory identified by `(namespace, key)`.
+	//
+	// **Idempotency modes.** Idempotency is opt-in.
+	// - Neither `revision_id` nor `expected_revision_id`: the server generates the
+	//   revision ID and the request is not retry-safe.
+	// - `revision_id` with `revision: 1` (create-only): the write is treated as the
+	//   initial creation. It fails with 409 `revision_already_exists` if an active
+	//   revision already exists for `(namespace, key)`.
+	// - `revision_id` with `expected_revision_id` (update): the write replaces the
+	//   active revision only if its ID equals `expected_revision_id`; otherwise it
+	//   fails with 409 `expected_active_revision_id_mismatch`. This check is
+	//   independent of the numeric `expected_revision`.
+	// - `revision_id` alone is a plain write that uses the caller-supplied ID and
+	//   has no create-only or active-ID gate.
+	//
+	// **Exact retry.** When a revision with `revision_id` already exists, the server
+	// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+	// revision is returned with 200 and no new row, archive, event, or outbox record
+	// is produced. Not compared: policy attributes, the kind add/update flag,
+	// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+	// in the response is the stored value and may differ across retries if the
+	// revision was superseded or migrated, so clients must not compare it.
+	//
+	// **Ordering.** Authorization for the target namespace and key is evaluated
+	// before `revision_id` is looked up. Replay detection runs before kind-writability
+	// checks, so an exact retry returns 200 even if the kind later became read-only.
+	// A retry whose original record has been evicted is treated as a new write and is
+	// subject to all new-write validation.
+	//
+	// **Idempotency window.** Idempotency is guaranteed while the original revision
+	// record is retained. Superseded revisions are eligible for hard deletion after
+	// re-indexing (typically minutes). Archived and expired tombstones are retained
+	// longer. After eviction the same `revision_id` may be treated as a new write.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -3324,6 +3415,40 @@ func (c *Client) UpdateMemory(ctx context.Context, params *UpdateMemoryParams, b
 
 // PutMemoryWithBody Upsert a memory item
 //
+// Writes a new revision of the memory identified by `(namespace, key)`.
+//
+// **Idempotency modes.** Idempotency is opt-in.
+//   - Neither `revision_id` nor `expected_revision_id`: the server generates the
+//     revision ID and the request is not retry-safe.
+//   - `revision_id` with `revision: 1` (create-only): the write is treated as the
+//     initial creation. It fails with 409 `revision_already_exists` if an active
+//     revision already exists for `(namespace, key)`.
+//   - `revision_id` with `expected_revision_id` (update): the write replaces the
+//     active revision only if its ID equals `expected_revision_id`; otherwise it
+//     fails with 409 `expected_active_revision_id_mismatch`. This check is
+//     independent of the numeric `expected_revision`.
+//   - `revision_id` alone is a plain write that uses the caller-supplied ID and
+//     has no create-only or active-ID gate.
+//
+// **Exact retry.** When a revision with `revision_id` already exists, the server
+// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+// revision is returned with 200 and no new row, archive, event, or outbox record
+// is produced. Not compared: policy attributes, the kind add/update flag,
+// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+// in the response is the stored value and may differ across retries if the
+// revision was superseded or migrated, so clients must not compare it.
+//
+// **Ordering.** Authorization for the target namespace and key is evaluated
+// before `revision_id` is looked up. Replay detection runs before kind-writability
+// checks, so an exact retry returns 200 even if the kind later became read-only.
+// A retry whose original record has been evicted is treated as a new write and is
+// subject to all new-write validation.
+//
+// **Idempotency window.** Idempotency is guaranteed while the original revision
+// record is retained. Superseded revisions are eligible for hard deletion after
+// re-indexing (typically minutes). Archived and expired tombstones are retained
+// longer. After eviction the same `revision_id` may be treated as a new write.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with PUT /v1/memories (the `PutMemory` operationId).
@@ -3340,6 +3465,40 @@ func (c *Client) PutMemoryWithBody(ctx context.Context, contentType string, body
 }
 
 // PutMemory Upsert a memory item
+//
+// Writes a new revision of the memory identified by `(namespace, key)`.
+//
+// **Idempotency modes.** Idempotency is opt-in.
+//   - Neither `revision_id` nor `expected_revision_id`: the server generates the
+//     revision ID and the request is not retry-safe.
+//   - `revision_id` with `revision: 1` (create-only): the write is treated as the
+//     initial creation. It fails with 409 `revision_already_exists` if an active
+//     revision already exists for `(namespace, key)`.
+//   - `revision_id` with `expected_revision_id` (update): the write replaces the
+//     active revision only if its ID equals `expected_revision_id`; otherwise it
+//     fails with 409 `expected_active_revision_id_mismatch`. This check is
+//     independent of the numeric `expected_revision`.
+//   - `revision_id` alone is a plain write that uses the caller-supplied ID and
+//     has no create-only or active-ID gate.
+//
+// **Exact retry.** When a revision with `revision_id` already exists, the server
+// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+// revision is returned with 200 and no new row, archive, event, or outbox record
+// is produced. Not compared: policy attributes, the kind add/update flag,
+// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+// in the response is the stored value and may differ across retries if the
+// revision was superseded or migrated, so clients must not compare it.
+//
+// **Ordering.** Authorization for the target namespace and key is evaluated
+// before `revision_id` is looked up. Replay detection runs before kind-writability
+// checks, so an exact retry returns 200 even if the kind later became read-only.
+// A retry whose original record has been evicted is treated as a new write and is
+// subject to all new-write validation.
+//
+// **Idempotency window.** Idempotency is guaranteed while the original revision
+// record is retained. Superseded revisions are eligible for hard deletion after
+// re-indexing (typically minutes). Archived and expired tombstones are retained
+// longer. After eviction the same `revision_id` may be treated as a new write.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -6433,12 +6592,80 @@ type ClientWithResponsesInterface interface {
 
 	// PutMemoryWithBodyWithResponse Upsert a memory item
 	//
+	// Writes a new revision of the memory identified by `(namespace, key)`.
+	//
+	// **Idempotency modes.** Idempotency is opt-in.
+	// - Neither `revision_id` nor `expected_revision_id`: the server generates the
+	//   revision ID and the request is not retry-safe.
+	// - `revision_id` with `revision: 1` (create-only): the write is treated as the
+	//   initial creation. It fails with 409 `revision_already_exists` if an active
+	//   revision already exists for `(namespace, key)`.
+	// - `revision_id` with `expected_revision_id` (update): the write replaces the
+	//   active revision only if its ID equals `expected_revision_id`; otherwise it
+	//   fails with 409 `expected_active_revision_id_mismatch`. This check is
+	//   independent of the numeric `expected_revision`.
+	// - `revision_id` alone is a plain write that uses the caller-supplied ID and
+	//   has no create-only or active-ID gate.
+	//
+	// **Exact retry.** When a revision with `revision_id` already exists, the server
+	// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+	// revision is returned with 200 and no new row, archive, event, or outbox record
+	// is produced. Not compared: policy attributes, the kind add/update flag,
+	// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+	// in the response is the stored value and may differ across retries if the
+	// revision was superseded or migrated, so clients must not compare it.
+	//
+	// **Ordering.** Authorization for the target namespace and key is evaluated
+	// before `revision_id` is looked up. Replay detection runs before kind-writability
+	// checks, so an exact retry returns 200 even if the kind later became read-only.
+	// A retry whose original record has been evicted is treated as a new write and is
+	// subject to all new-write validation.
+	//
+	// **Idempotency window.** Idempotency is guaranteed while the original revision
+	// record is retained. Superseded revisions are eligible for hard deletion after
+	// re-indexing (typically minutes). Archived and expired tombstones are retained
+	// longer. After eviction the same `revision_id` may be treated as a new write.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with PUT /v1/memories (the `PutMemory` operationId).
 	PutMemoryWithBodyWithResponse(ctx context.Context, contentType string, body io.Reader, reqEditors ...RequestEditorFn) (*PutMemoryResp, error)
 
 	// PutMemoryWithResponse Upsert a memory item
+	//
+	// Writes a new revision of the memory identified by `(namespace, key)`.
+	//
+	// **Idempotency modes.** Idempotency is opt-in.
+	// - Neither `revision_id` nor `expected_revision_id`: the server generates the
+	//   revision ID and the request is not retry-safe.
+	// - `revision_id` with `revision: 1` (create-only): the write is treated as the
+	//   initial creation. It fails with 409 `revision_already_exists` if an active
+	//   revision already exists for `(namespace, key)`.
+	// - `revision_id` with `expected_revision_id` (update): the write replaces the
+	//   active revision only if its ID equals `expected_revision_id`; otherwise it
+	//   fails with 409 `expected_active_revision_id_mismatch`. This check is
+	//   independent of the numeric `expected_revision`.
+	// - `revision_id` alone is a plain write that uses the caller-supplied ID and
+	//   has no create-only or active-ID gate.
+	//
+	// **Exact retry.** When a revision with `revision_id` already exists, the server
+	// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+	// revision is returned with 200 and no new row, archive, event, or outbox record
+	// is produced. Not compared: policy attributes, the kind add/update flag,
+	// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+	// in the response is the stored value and may differ across retries if the
+	// revision was superseded or migrated, so clients must not compare it.
+	//
+	// **Ordering.** Authorization for the target namespace and key is evaluated
+	// before `revision_id` is looked up. Replay detection runs before kind-writability
+	// checks, so an exact retry returns 200 even if the kind later became read-only.
+	// A retry whose original record has been evicted is treated as a new write and is
+	// subject to all new-write validation.
+	//
+	// **Idempotency window.** Idempotency is guaranteed while the original revision
+	// record is retained. Superseded revisions are eligible for hard deletion after
+	// re-indexing (typically minutes). Archived and expired tombstones are retained
+	// longer. After eviction the same `revision_id` may be treated as a new write.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -8080,6 +8307,14 @@ type PutMemoryResp struct {
 	HTTPResponse *http.Response
 	// JSON200 the response for an HTTP 200 `application/json` response
 	JSON200 *MemoryWriteResult
+	// JSON201 the response for an HTTP 201 `application/json` response
+	JSON201 *MemoryWriteResult
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 }
@@ -8087,6 +8322,26 @@ type PutMemoryResp struct {
 // GetJSON200 returns the response for an HTTP 200 `application/json` response
 func (r PutMemoryResp) GetJSON200() *MemoryWriteResult {
 	return r.JSON200
+}
+
+// GetJSON201 returns the response for an HTTP 201 `application/json` response
+func (r PutMemoryResp) GetJSON201() *MemoryWriteResult {
+	return r.JSON201
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r PutMemoryResp) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r PutMemoryResp) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r PutMemoryResp) GetJSON409() *ErrorResponse {
+	return r.JSON409
 }
 
 // GetJSONDefault returns the response for an HTTP default `application/json` response
@@ -9332,6 +9587,40 @@ func (c *ClientWithResponses) UpdateMemoryWithResponse(ctx context.Context, para
 
 // PutMemoryWithBodyWithResponse Upsert a memory item
 //
+// Writes a new revision of the memory identified by `(namespace, key)`.
+//
+// **Idempotency modes.** Idempotency is opt-in.
+//   - Neither `revision_id` nor `expected_revision_id`: the server generates the
+//     revision ID and the request is not retry-safe.
+//   - `revision_id` with `revision: 1` (create-only): the write is treated as the
+//     initial creation. It fails with 409 `revision_already_exists` if an active
+//     revision already exists for `(namespace, key)`.
+//   - `revision_id` with `expected_revision_id` (update): the write replaces the
+//     active revision only if its ID equals `expected_revision_id`; otherwise it
+//     fails with 409 `expected_active_revision_id_mismatch`. This check is
+//     independent of the numeric `expected_revision`.
+//   - `revision_id` alone is a plain write that uses the caller-supplied ID and
+//     has no create-only or active-ID gate.
+//
+// **Exact retry.** When a revision with `revision_id` already exists, the server
+// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+// revision is returned with 200 and no new row, archive, event, or outbox record
+// is produced. Not compared: policy attributes, the kind add/update flag,
+// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+// in the response is the stored value and may differ across retries if the
+// revision was superseded or migrated, so clients must not compare it.
+//
+// **Ordering.** Authorization for the target namespace and key is evaluated
+// before `revision_id` is looked up. Replay detection runs before kind-writability
+// checks, so an exact retry returns 200 even if the kind later became read-only.
+// A retry whose original record has been evicted is treated as a new write and is
+// subject to all new-write validation.
+//
+// **Idempotency window.** Idempotency is guaranteed while the original revision
+// record is retained. Superseded revisions are eligible for hard deletion after
+// re-indexing (typically minutes). Archived and expired tombstones are retained
+// longer. After eviction the same `revision_id` may be treated as a new write.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with PUT /v1/memories (the `PutMemory` operationId).
@@ -9344,6 +9633,40 @@ func (c *ClientWithResponses) PutMemoryWithBodyWithResponse(ctx context.Context,
 }
 
 // PutMemoryWithResponse Upsert a memory item
+//
+// Writes a new revision of the memory identified by `(namespace, key)`.
+//
+// **Idempotency modes.** Idempotency is opt-in.
+//   - Neither `revision_id` nor `expected_revision_id`: the server generates the
+//     revision ID and the request is not retry-safe.
+//   - `revision_id` with `revision: 1` (create-only): the write is treated as the
+//     initial creation. It fails with 409 `revision_already_exists` if an active
+//     revision already exists for `(namespace, key)`.
+//   - `revision_id` with `expected_revision_id` (update): the write replaces the
+//     active revision only if its ID equals `expected_revision_id`; otherwise it
+//     fails with 409 `expected_active_revision_id_mismatch`. This check is
+//     independent of the numeric `expected_revision`.
+//   - `revision_id` alone is a plain write that uses the caller-supplied ID and
+//     has no create-only or active-ID gate.
+//
+// **Exact retry.** When a revision with `revision_id` already exists, the server
+// compares namespace, key, value, index, TTL, and kind. If all match, the stored
+// revision is returned with 200 and no new row, archive, event, or outbox record
+// is produced. Not compared: policy attributes, the kind add/update flag,
+// `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+// in the response is the stored value and may differ across retries if the
+// revision was superseded or migrated, so clients must not compare it.
+//
+// **Ordering.** Authorization for the target namespace and key is evaluated
+// before `revision_id` is looked up. Replay detection runs before kind-writability
+// checks, so an exact retry returns 200 even if the kind later became read-only.
+// A retry whose original record has been evicted is treated as a new write and is
+// subject to all new-write validation.
+//
+// **Idempotency window.** Idempotency is guaranteed while the original revision
+// record is retained. Superseded revisions are eligible for hard deletion after
+// re-indexing (typically minutes). Archived and expired tombstones are retained
+// longer. After eviction the same `revision_id` may be treated as a new write.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -10674,6 +10997,34 @@ func ParsePutMemoryResp(rsp *http.Response) (*PutMemoryResp, error) {
 			return nil, err
 		}
 		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 201:
+		var dest MemoryWriteResult
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON201 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
 		var dest Error

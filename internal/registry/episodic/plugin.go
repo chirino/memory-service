@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"reflect"
 	"regexp"
 	"strconv"
 	"strings"
@@ -20,6 +21,19 @@ import (
 
 var ErrAdminStatsSummaryUnsupported = errors.New("admin stats summary unsupported")
 var ErrMemoryRevisionConflict = errors.New("memory revision conflict")
+
+// CreateOnlyConflictError reports a create-only write (PutMemoryRequest.CreateOnly) rejected
+// because an active memory already exists for the namespace and key. It unwraps to
+// ErrMemoryRevisionConflict, so existing errors.Is checks and the gRPC mapping keep treating
+// it as a revision conflict, while REST can tell it apart from the numeric ExpectedRevision
+// and AuthorizedPredecessor conflicts, which stay the bare sentinel.
+type CreateOnlyConflictError struct{}
+
+// Error returns the sentinel's text so callers that format the error (gRPC mapError) are unchanged.
+func (e *CreateOnlyConflictError) Error() string { return ErrMemoryRevisionConflict.Error() }
+
+func (e *CreateOnlyConflictError) Unwrap() error { return ErrMemoryRevisionConflict }
+
 var ErrMemoryKindMigrationStateConflict = errors.New("memory kind migration state changed")
 var ErrSemanticSearchUnavailable = errors.New("semantic search unavailable")
 
@@ -60,6 +74,15 @@ type PutMemoryRequest struct {
 	// MemoryKind is the resolved canonical schema name for this write (set by the handler).
 	// Must be non-empty before PutMemory is called; stores reject empty kind.
 	MemoryKind string `json:"-"`
+	// RevisionID is the caller-supplied UUID for the new revision. nil = server-generated.
+	// When non-nil the store performs a LookupMemoryByID pre-check before the archive step.
+	RevisionID *uuid.UUID `json:"-"`
+	// ExpectedRevisionID is the UUID of the active revision the caller expects to replace.
+	// Only valid when RevisionID is also set. nil = not supplied.
+	ExpectedRevisionID *uuid.UUID `json:"-"`
+	// CreateOnly is true when the caller supplied revision: 1 in the request body,
+	// declaring that this write must be a first creation (no active row may exist).
+	CreateOnly bool `json:"-"`
 }
 
 type MemoryPredecessor struct {
@@ -222,6 +245,85 @@ type MemoryWriteResult struct {
 	CreatedAt  time.Time              `json:"createdAt"`
 	ExpiresAt  *time.Time             `json:"expiresAt"`
 	Revision   int64                  `json:"revision"`
+	// ExactRetry is true when PutMemory detected an exact retry: the caller-supplied
+	// RevisionID matched an existing row and all compared fields were equal.
+	// The handler must skip event and outbox emission when ExactRetry is true.
+	ExactRetry bool `json:"-"`
+}
+
+// MemoryExistingFields are the stored fields passed to MemoriesMatch to decide
+// whether a PutMemory request is an exact retry of the revision identified by
+// RevisionID. The store decrypts and unmarshals the value before filling this struct,
+// so MemoriesMatch has no crypto or DB dependency.
+type MemoryExistingFields struct {
+	// Namespace is the RS-encoded namespace of the stored row.
+	Namespace string
+	// Key is the memory key of the stored row.
+	Key string
+	// Value is the decrypted, unmarshalled value map.
+	Value map[string]interface{}
+	// Index is the stored index map. nil and empty are equivalent (normalized to {}).
+	Index map[string]string
+	// CreatedAt is the stored creation timestamp of the row.
+	CreatedAt time.Time
+	// ExpiresAt is the stored expiry time. nil means no expiry (TTL == 0).
+	ExpiresAt *time.Time
+	// MemoryKind is the stored canonical schema name.
+	MemoryKind string
+}
+
+// MemoriesMatch reports whether an existing stored row is an exact match for a
+// PutMemory request. encodedNS is the RS-encoded form of req.Namespace as computed
+// by the handler before calling the store, allowing the comparison to happen without
+// re-encoding inside this helper.
+//
+// Fields compared: namespace (encodedNS vs existing.Namespace), key, value
+// (reflect.DeepEqual), index (nil normalized to {}), TTL
+// (existing.ExpiresAt - existing.CreatedAt == ttlSeconds * second; ttlSeconds == 0
+// means ExpiresAt == nil), memory kind.
+//
+// Fields NOT compared: PolicyAttributes, CreateOnly, RevisionID, ExpectedRevisionID,
+// ExpectedRevision, AuthorizedPredecessor. These apply to the original attempt only.
+func MemoriesMatch(existing MemoryExistingFields, req PutMemoryRequest, encodedNS string) bool {
+	if existing.Namespace != encodedNS {
+		return false
+	}
+	if existing.Key != req.Key {
+		return false
+	}
+	if !reflect.DeepEqual(existing.Value, req.Value) {
+		return false
+	}
+	// Normalize nil index to empty map on both sides before comparing.
+	existingIndex := existing.Index
+	if existingIndex == nil {
+		existingIndex = map[string]string{}
+	}
+	reqIndex := req.Index
+	if reqIndex == nil {
+		reqIndex = map[string]string{}
+	}
+	if !reflect.DeepEqual(existingIndex, reqIndex) {
+		return false
+	}
+	// TTL: ttlSeconds == 0 means ExpiresAt must be nil; otherwise
+	// ExpiresAt - CreatedAt must equal ttlSeconds * second exactly.
+	if req.TTLSeconds == 0 {
+		if existing.ExpiresAt != nil {
+			return false
+		}
+	} else {
+		if existing.ExpiresAt == nil {
+			return false
+		}
+		if existing.ExpiresAt.Sub(existing.CreatedAt) != time.Duration(req.TTLSeconds)*time.Second {
+			return false
+		}
+	}
+	if existing.MemoryKind != req.MemoryKind {
+		return false
+	}
+	return true
 }
 
 // SearchRequest is the input for POST /v1/memories/search.
@@ -736,6 +838,24 @@ type EpisodicStore interface {
 
 	// EpisodicKindStore provides schema version/default/migration operations.
 	EpisodicKindStore
+
+	// LookupMemoryByID is the pre-flight exact-retry check called by handlers before
+	// ResolveKindForWrite. It looks up the row by id, compares it against req, and
+	// returns one of three outcomes without performing any write:
+	//
+	//   - (*MemoryWriteResult{ExactRetry: true}, nil): row found, MemoriesMatch is true.
+	//     The handler must return this result immediately (200 / OK) and skip
+	//     ResolveKindForWrite, archiving, insertion, events, and outbox emission.
+	//   - (nil, nil): no row exists for the id. The handler proceeds to the normal
+	//     new-write path (ResolveKindForWrite, PutMemory, …).
+	//   - (nil, store.NotFoundError): row exists but deleted_reason is 1 or 2 (archived
+	//     or expired). The handler maps this to 404 / NOT_FOUND.
+	//   - (nil, *store.MemoryRevisionIDConflictError): row exists but namespace, key,
+	//     value, index, TTL, or kind differs. The handler maps this to 409 / ABORTED.
+	//     Namespace/key divergence is detected before decryption to avoid disclosing
+	//     data across namespaces.
+	//   - (nil, err): any other store-level error.
+	LookupMemoryByID(ctx context.Context, id uuid.UUID, req PutMemoryRequest) (*MemoryWriteResult, error)
 
 	// PutMemory upserts a memory. On update, the previous active row is archived.
 	PutMemory(ctx context.Context, req PutMemoryRequest) (*MemoryWriteResult, error)

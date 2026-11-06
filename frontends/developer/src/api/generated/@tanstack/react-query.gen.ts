@@ -297,6 +297,39 @@ export const adminUpdateMemoryMutation = (
  * Upsert a memory item (admin)
  *
  * Allows admins to write memories across namespaces. Requires admin role.
+ * Accepts the same `revision_id`, `expected_revision_id`, and `revision`
+ * idempotency fields as the user `PUT /v1/memories` operation.
+ *
+ * **Idempotency modes.** Idempotency is opt-in.
+ * - Neither `revision_id` nor `expected_revision_id`: the server generates the
+ * revision ID and the request is not retry-safe.
+ * - `revision_id` with `revision: 1` (create-only): the write is treated as the
+ * initial creation. It fails with 409 `revision_already_exists` if an active
+ * revision already exists for `(namespace, key)`.
+ * - `revision_id` with `expected_revision_id` (update): the write replaces the
+ * active revision only if its ID equals `expected_revision_id`; otherwise it
+ * fails with 409 `expected_active_revision_id_mismatch`. This check is
+ * independent of the numeric `expected_revision`.
+ * - `revision_id` alone is a plain write that uses the caller-supplied ID and
+ * has no create-only or active-ID gate.
+ *
+ * **Exact retry.** When a revision with `revision_id` already exists, the server
+ * compares namespace, key, value, index, TTL, and kind. If all match, the stored
+ * revision is returned with 200 and no new row, archive, event, or outbox record
+ * is produced. Not compared: policy attributes, the kind add/update flag,
+ * `revision`, `expected_revision`, and `expected_revision_id`. The `revision`
+ * in the response is the stored value and may differ across retries if the
+ * revision was superseded or migrated, so clients must not compare it.
+ *
+ * **Ordering.** Replay detection runs before kind-writability checks, so an
+ * exact retry returns 200 even if the kind later became read-only. A retry whose
+ * original record has been evicted is treated as a new write and is subject to
+ * all new-write validation.
+ *
+ * **Idempotency window.** Idempotency is guaranteed while the original revision
+ * record is retained. Superseded revisions are eligible for hard deletion after
+ * re-indexing (typically minutes). Archived and expired tombstones are retained
+ * longer. After eviction the same `revision_id` may be treated as a new write.
  */
 export const adminPutMemoryMutation = (
   options?: Partial<Options<AdminPutMemoryData>>,

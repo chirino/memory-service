@@ -6,6 +6,7 @@ import (
 	"context"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -17,6 +18,7 @@ import (
 	"github.com/chirino/memory-service/internal/episodic"
 	episodicqdrant "github.com/chirino/memory-service/internal/plugin/store/episodicqdrant"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"github.com/chirino/memory-service/internal/tracing"
 	"github.com/google/uuid"
 	"gorm.io/gorm"
@@ -177,16 +179,125 @@ func (e *sqliteEpisodicStore) decryptMemoryValue(id uuid.UUID, ciphertext []byte
 	return e.s.enc.DecryptField(ciphertext, memoryValueFieldDomain, strings.ToLower(id.String()))
 }
 
+// LookupMemoryByID is the pre-flight exact-retry check for SQLite. It looks up a memory
+// row by its UUID and compares it against req without performing any write. Must be
+// called inside an InReadTx or InWriteTx scope.
+//
+// Returns:
+//   - (*MemoryWriteResult{ExactRetry: true}, nil): row found and MemoriesMatch is true.
+//   - (nil, nil): no row exists — proceed to new-write path.
+//   - (nil, *store.NotFoundError): row exists but deleted_reason is 1 or 2.
+//   - (nil, *store.MemoryRevisionIDConflictError): namespace/key differ or MemoriesMatch false.
+//   - (nil, err): store-level error.
+func (e *sqliteEpisodicStore) LookupMemoryByID(ctx context.Context, id uuid.UUID, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
+	nsEncoded, err := e.encodeNS(req.Namespace)
+	if err != nil {
+		return nil, err
+	}
+
+	var row memoryRow
+	result := e.dbFor(ctx).
+		Where("id = ?", id.String()).
+		Limit(1).
+		Find(&row)
+	if result.Error != nil {
+		return nil, fmt.Errorf("lookup memory by id: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+
+	// Check namespace and key before decrypting — per the Lead-ruled requirement,
+	// namespace/key divergence is returned as a conflict without touching the value.
+	if row.Namespace != nsEncoded || row.Key != req.Key {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different namespace or key",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Row exists — check deleted_reason.
+	if row.DeletedReason != nil {
+		dr := *row.DeletedReason
+		if dr == 1 || dr == 2 {
+			return nil, &registrystore.NotFoundError{Resource: "memory", ID: id.String()}
+		}
+	}
+
+	// Decrypt and unmarshal the value for MemoriesMatch.
+	var value map[string]interface{}
+	if len(row.ValueEncrypted) > 0 {
+		plain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
+		if err != nil {
+			return nil, fmt.Errorf("decrypt memory value for lookup: %w", err)
+		}
+		if err := json.Unmarshal(plain, &value); err != nil {
+			return nil, fmt.Errorf("unmarshal memory value for lookup: %w", err)
+		}
+	}
+
+	existing := registryepisodic.MemoryExistingFields{
+		Namespace:  row.Namespace,
+		Key:        row.Key,
+		Value:      value,
+		Index:      row.IndexedContent,
+		CreatedAt:  row.CreatedAt,
+		ExpiresAt:  row.ExpiresAt,
+		MemoryKind: row.MemoryKind,
+	}
+	if !registryepisodic.MemoriesMatch(existing, req, nsEncoded) {
+		return nil, &registrystore.MemoryRevisionIDConflictError{
+			ConflictError: &registrystore.ConflictError{
+				Message: "memory revision ID already in use with different content",
+				Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+			},
+			RevisionID: id.String(),
+		}
+	}
+
+	// Exact retry — return stored result with ExactRetry=true.
+	ns, err := e.decodeNS(row.Namespace)
+	if err != nil {
+		return nil, fmt.Errorf("decode namespace: %w", err)
+	}
+	return &registryepisodic.MemoryWriteResult{
+		ID:         row.ID,
+		Namespace:  ns,
+		Key:        row.Key,
+		Attributes: row.PolicyAttributes,
+		MemoryKind: row.MemoryKind,
+		CreatedAt:  row.CreatedAt,
+		ExpiresAt:  row.ExpiresAt,
+		Revision:   row.Revision,
+		ExactRetry: true,
+	}, nil
+}
+
 // PutMemory upserts a memory. On update, the previous active row is archived.
+// When req.RevisionID is non-nil, an in-transaction lookup runs after loading
+// the active row so that the second concurrent writer (serialized by writeMu)
+// sees the committed row and returns ExactRetry=true instead of a spurious conflict.
 func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodic.PutMemoryRequest) (*registryepisodic.MemoryWriteResult, error) {
 	nsEncoded, err := e.encodeNS(req.Namespace)
 	if err != nil {
 		return nil, err
 	}
 
+	// Use caller-supplied ID when present; otherwise generate one.
 	newID := uuid.New()
+	if req.RevisionID != nil {
+		newID = *req.RevisionID
+	}
 
-	// Encrypt the value.
+	// Single UTC timestamp for both CreatedAt and ExpiresAt so that the first
+	// response and any retry return identical instants. SQLite stores nanoseconds
+	// (no truncation needed — spec: "needs .UTC() but no truncation for SQLite").
+	now := time.Now().UTC()
+
+	// Encrypt the value using newID as the AAD.
 	valueJSON, err := json.Marshal(req.Value)
 	if err != nil {
 		return nil, fmt.Errorf("marshal value: %w", err)
@@ -198,11 +309,10 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 
 	var expiresAt *time.Time
 	if req.TTLSeconds > 0 {
-		t := time.Now().Add(time.Duration(req.TTLSeconds) * time.Second)
+		t := now.Add(time.Duration(req.TTLSeconds) * time.Second)
 		expiresAt = &t
 	}
 
-	now := time.Now()
 	indexedContent := req.Index
 	if indexedContent == nil {
 		indexedContent = map[string]string{}
@@ -210,7 +320,87 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 
 	var kind int16
 	revision := int64(1)
+	// exactRetryResult is set by the in-transaction lookup when an exact retry is detected.
+	// It is only valid when the transaction closure returns errSQLiteExactRetry.
+	var exactRetryResult *registryepisodic.MemoryWriteResult
 	err = e.writeDBFor(ctx, "sqlite episodic store put memory").Transaction(func(tx *gorm.DB) error {
+		// When RevisionID is set, look up the row first (inside the write transaction,
+		// which is serialized by writeMu). The second writer sees the committed row
+		// and returns ExactRetry=true. No advisory lock needed for SQLite.
+		if req.RevisionID != nil {
+			var existing []memoryRow
+			if err := tx.Where("id = ?", newID.String()).Limit(1).Find(&existing).Error; err != nil {
+				return fmt.Errorf("in-tx lookup by id: %w", err)
+			}
+			if len(existing) > 0 {
+				row := existing[0]
+				// Namespace/key check before decryption.
+				if row.Namespace != nsEncoded || row.Key != req.Key {
+					return &registrystore.MemoryRevisionIDConflictError{
+						ConflictError: &registrystore.ConflictError{
+							Message: "memory revision ID already in use with different namespace or key",
+							Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+						},
+						RevisionID: newID.String(),
+					}
+				}
+				// deleted_reason check.
+				if row.DeletedReason != nil {
+					dr := *row.DeletedReason
+					if dr == 1 || dr == 2 {
+						return &registrystore.NotFoundError{Resource: "memory", ID: newID.String()}
+					}
+				}
+				// Decrypt and match.
+				var value map[string]interface{}
+				if len(row.ValueEncrypted) > 0 {
+					plain, err := e.decryptMemoryValue(row.ID, row.ValueEncrypted)
+					if err != nil {
+						return fmt.Errorf("decrypt memory value (in-tx lookup): %w", err)
+					}
+					if err := json.Unmarshal(plain, &value); err != nil {
+						return fmt.Errorf("unmarshal memory value (in-tx lookup): %w", err)
+					}
+				}
+				ef := registryepisodic.MemoryExistingFields{
+					Namespace:  row.Namespace,
+					Key:        row.Key,
+					Value:      value,
+					Index:      row.IndexedContent,
+					CreatedAt:  row.CreatedAt,
+					ExpiresAt:  row.ExpiresAt,
+					MemoryKind: row.MemoryKind,
+				}
+				if !registryepisodic.MemoriesMatch(ef, req, nsEncoded) {
+					return &registrystore.MemoryRevisionIDConflictError{
+						ConflictError: &registrystore.ConflictError{
+							Message: "memory revision ID already in use with different content",
+							Code:    registrystore.MemoryRevisionAlreadyExistsCode,
+						},
+						RevisionID: newID.String(),
+					}
+				}
+				// Exact retry — build the full result from the stored row and signal.
+				ns, err := e.decodeNS(row.Namespace)
+				if err != nil {
+					return fmt.Errorf("decode namespace: %w", err)
+				}
+				exactRetryResult = &registryepisodic.MemoryWriteResult{
+					ID:         row.ID,
+					Namespace:  ns,
+					Key:        row.Key,
+					Attributes: row.PolicyAttributes,
+					MemoryKind: row.MemoryKind,
+					CreatedAt:  row.CreatedAt,
+					ExpiresAt:  row.ExpiresAt,
+					Revision:   row.Revision,
+					ExactRetry: true,
+				}
+				return errSQLiteExactRetry
+			}
+		}
+
+		// Load the active row for idempotency mode checks and archive step.
 		var active []memoryRow
 		if err := tx.Raw(`
 			SELECT *
@@ -222,6 +412,32 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		).Scan(&active).Error; err != nil {
 			return fmt.Errorf("load active row: %w", err)
 		}
+
+		// create-only check: fail if an active row already exists.
+		if req.CreateOnly {
+			if len(active) > 0 {
+				return &registryepisodic.CreateOnlyConflictError{}
+			}
+		}
+
+		// expected-active-revision-ID check: active row ID must match.
+		if req.ExpectedRevisionID != nil {
+			if len(active) == 0 || active[0].ID != *req.ExpectedRevisionID {
+				var actualID string
+				if len(active) > 0 {
+					actualID = active[0].ID.String()
+				}
+				return &registrystore.ExpectedActiveRevisionIDMismatchError{
+					ConflictError: &registrystore.ConflictError{
+						Message: "active revision ID does not match expected_revision_id",
+						Code:    registrystore.ExpectedActiveRevisionIDMismatchCode,
+					},
+					ExpectedID: req.ExpectedRevisionID.String(),
+					ActualID:   actualID,
+				}
+			}
+		}
+
 		if req.ExpectedRevision != nil {
 			if len(active) == 0 || active[0].Revision != *req.ExpectedRevision {
 				return registryepisodic.ErrMemoryRevisionConflict
@@ -307,6 +523,11 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, errSQLiteExactRetry) {
+			// The in-transaction lookup found a matching row and built the result
+			// into exactRetryResult before returning the sentinel.
+			return exactRetryResult, nil
+		}
 		return nil, err
 	}
 
@@ -321,6 +542,10 @@ func (e *sqliteEpisodicStore) PutMemory(ctx context.Context, req registryepisodi
 		Revision:   revision,
 	}, nil
 }
+
+// errSQLiteExactRetry is a package-private sentinel used to signal an exact-retry
+// from inside a GORM transaction closure. It is never returned to callers.
+var errSQLiteExactRetry = errors.New("sqlite: exact retry detected inside transaction")
 
 // GetMemoryRowKind returns the canonical kind for (namespace, key) without loading the value.
 func (e *sqliteEpisodicStore) GetMemoryRowKind(ctx context.Context, namespace []string, key string, archived registryepisodic.ArchiveFilter) (string, bool, error) {

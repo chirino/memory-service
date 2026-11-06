@@ -918,3 +918,80 @@ Feature: Memory Kind Versions and Migrations
     """
     Then the response status should be 200
     And the response body should contain "custom-visible"
+
+  Scenario: Retry with the same revision_id and a different kind returns memory_revision_already_exists
+    Given I call POST "/admin/v1/memory-kinds" with body:
+    """
+    {
+      "name": "idemkind/v1",
+      "attributes": {"tag": "string"},
+      "projectionRego": "package memories.attributes\nattributes := {\"tag\": \"one\"}"
+    }
+    """
+    And I call POST "/admin/v1/memory-kinds" with body:
+    """
+    {
+      "name": "idemkind/v2",
+      "attributes": {"tag": "string"},
+      "projectionRego": "package memories.attributes\nattributes := {\"tag\": \"two\"}"
+    }
+    """
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "idem-kind-retry"],
+      "key": "kind-retry-key",
+      "value": {"v": 1},
+      "kind": "idemkind/v1",
+      "revision_id": "6f1c1d0a-0000-4000-8000-0000000002a0"
+    }
+    """
+    Then the response status should be 201
+    And the response body field "kind" should be "idemkind/v1"
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "idem-kind-retry"],
+      "key": "kind-retry-key",
+      "value": {"v": 1},
+      "kind": "idemkind/v1",
+      "revision_id": "6f1c1d0a-0000-4000-8000-0000000002a0"
+    }
+    """
+    Then the response status should be 200
+    And the response body field "kind" should be "idemkind/v1"
+    When I call PUT "/v1/memories" with body:
+    """
+    {
+      "namespace": ["user", "alice", "idem-kind-retry"],
+      "key": "kind-retry-key",
+      "value": {"v": 1},
+      "kind": "idemkind/v2",
+      "revision_id": "6f1c1d0a-0000-4000-8000-0000000002a0"
+    }
+    """
+    Then the response status should be 409
+    And the response body field "code" should be "memory_revision_already_exists"
+    And the response body field "details.revisionId" should be "6f1c1d0a-0000-4000-8000-0000000002a0"
+    And the response body should not contain "idemkind"
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'kind-retry-key' AND memory_kind = 'idemkind/v1' AND deleted_reason IS NULL
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM memories WHERE key = 'kind-retry-key'
+    """
+    Then the SQL result should match:
+      | count |
+      | 1     |
+    When I execute MongoDB query:
+    """
+    {"collection": "memories", "operation": "count", "filter": {"key": "kind-retry-key"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 1     |

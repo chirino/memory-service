@@ -59,17 +59,22 @@ func TestFeaturesPgOutbox(t *testing.T) {
 	apiURL := fmt.Sprintf("http://localhost:%d", srv.Running.Port)
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
+	runBDDFeaturesWithConcurrency(t, "pg-outbox-processor", []string{filepath.Join("testdata", "features-pg-outbox", "turn-traces-processor.feature")}, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, map[string]interface{}{
+		"grpcAddr": grpcAddr,
+	}, 1)
+
 	featureFiles := []string{
 		filepath.Join("testdata", "features", "sse-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
 		filepath.Join("testdata", "features-pg-outbox", "sse-events-pg-outbox-rest.feature"),
 		filepath.Join("testdata", "features-pg-outbox", "sse-events-pg-outbox-replay-rest.feature"),
-		filepath.Join("testdata", "features-pg-outbox", "turn-traces-processor.feature"),
+		filepath.Join("testdata", "features-pg-outbox", "memory-outbox-transactions.feature"),
 		filepath.Join("testdata", "features-grpc", "sse-events-grpc.feature"),
 	}
 	runBDDFeatures(t, "pg-outbox", featureFiles, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, map[string]interface{}{
 		"mockPrometheus": prom,
 		"grpcAddr":       grpcAddr,
 	})
+	runBDDFeaturesWithConcurrency(t, "pg-outbox-memory-race", []string{filepath.Join("testdata", "features-pg-outbox", "memory-put-idempotency-race-outbox.feature")}, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, nil, 1)
 	runBDDFeaturesWithConcurrency(t, "pg-outbox-eviction", []string{filepath.Join("testdata", "features", "eviction-events-rest.feature")}, apiURL, grpcAddr, &cfg, &PostgresTestDB{DBURL: dbURL}, nil, 1)
 }

@@ -374,6 +374,8 @@ func (s *SQLiteTestDB) CountTasks(ctx context.Context) (int, error) {
 
 func translateSQLiteBDDQuery(query string) string {
 	query = strings.ReplaceAll(query, "task_body->>'conversationGroupId'", "json_extract(task_body, '$.conversationGroupId')")
+	// SQLite stores memories.indexed_at as integer seconds, so CURRENT_TIMESTAMP (text) violates its CHECK, and indexed_at_ns holds only the sub-second part.
+	query = strings.ReplaceAll(query, "indexed_at = CURRENT_TIMESTAMP", "indexed_at = CAST(strftime('%s','now') AS INTEGER), indexed_at_ns = 0")
 	return query
 }
 

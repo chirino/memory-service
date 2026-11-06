@@ -3,7 +3,9 @@ package bdd
 import (
 	"bufio"
 	"context"
+	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -28,17 +30,19 @@ func init() {
 		ctx.Step(`^the response content type should be "([^"]*)"$`, e.theResponseContentTypeShouldBe)
 		ctx.Step(`^the SSE stream should contain progress events$`, e.theSSEStreamShouldContainProgressEvents)
 		ctx.Step(`^the final progress should be (\d+)$`, e.theFinalProgressShouldBe)
-		ctx.Step(`^I call POST "([^"]*)" concurrently (\d+) times with body:$`, e.iCallPOSTConcurrentlyTimesWithBody)
+		ctx.Step(`^I call (POST|PUT) "([^"]*)" concurrently (\d+) times with body:$`, e.iCallMethodConcurrentlyTimesWithBody)
+		ctx.Step(`^every concurrent response body field "([^"]*)" should be "([^"]*)"$`, e.everyConcurrentResponseBodyFieldShouldBe)
 		ctx.Step(`^all responses should have status (\d+)$`, e.allResponsesShouldHaveStatus)
 		ctx.Step(`^exactly one response should have status (\d+) and the rest should have status (\d+)$`, e.exactlyOneResponseShouldHaveStatusAndTheRestShouldHaveStatus)
 	})
 }
 
 type evictionSteps struct {
-	s              *cucumber.TestScenario
-	sseEvents      []string
-	finalProgress  int
-	concurrentResp []int // status codes from concurrent requests
+	s                *cucumber.TestScenario
+	sseEvents        []string
+	finalProgress    int
+	concurrentResp   []int    // status codes from concurrent requests
+	concurrentBodies []string // response bodies from concurrent requests, index-aligned with concurrentResp
 }
 
 func (e *evictionSteps) theConversationWasArchivedDaysAgo(days int) error {
@@ -194,6 +198,10 @@ func (e *evictionSteps) theFinalProgressShouldBe(expected int) error {
 }
 
 func (e *evictionSteps) iCallPOSTConcurrentlyTimesWithBody(path string, count int, jsonTxt *godog.DocString) error {
+	return e.iCallMethodConcurrentlyTimesWithBody("POST", path, count, jsonTxt)
+}
+
+func (e *evictionSteps) iCallMethodConcurrentlyTimesWithBody(method, path string, count int, jsonTxt *godog.DocString) error {
 	expanded, err := e.s.Expand(path)
 	if err != nil {
 		return err
@@ -202,26 +210,47 @@ func (e *evictionSteps) iCallPOSTConcurrentlyTimesWithBody(path string, count in
 	if err != nil {
 		return err
 	}
+	expandedBody = e.s.RewriteQuotedUsers(expandedBody)
 
 	apiURL := e.s.APIBaseURL()
-	subject := e.s.Session().TestUser.Subject
-	clientID := e.s.Session().Header.Get("X-Client-ID")
+	session := e.s.Session()
+
+	// Clone all session headers so every concurrent request shares scenario identity
+	baseHeaders := make(http.Header)
+	for k, v := range session.Header {
+		baseHeaders[k] = append([]string(nil), v...)
+	}
+	if baseHeaders.Get("Authorization") == "" && session.TestUser != nil && session.TestUser.Subject != "" {
+		baseHeaders.Set("Authorization", "Bearer "+session.TestUser.Subject)
+	}
+	if baseHeaders.Get("Content-Type") == "" {
+		baseHeaders.Set("Content-Type", "application/json")
+	}
+
 	var wg sync.WaitGroup
 	e.concurrentResp = make([]int, count)
+	e.concurrentBodies = make([]string, count)
+
+	// start is closed once every goroutine is ready, so the requests are released together
+	// instead of trickling out as goroutines are scheduled.
+	start := make(chan struct{})
+	var ready sync.WaitGroup
+	ready.Add(count)
 
 	for i := 0; i < count; i++ {
 		wg.Add(1)
 		go func(idx int) {
 			defer wg.Done()
-			req, err := http.NewRequest("POST", apiURL+expanded, strings.NewReader(expandedBody))
+			ready.Done()
+			<-start
+			req, err := http.NewRequest(method, apiURL+expanded, strings.NewReader(expandedBody))
 			if err != nil {
 				e.concurrentResp[idx] = 0
 				return
 			}
-			req.Header.Set("Content-Type", "application/json")
-			req.Header.Set("Authorization", "Bearer "+subject)
-			if clientID != "" {
-				req.Header.Set("X-Client-ID", clientID)
+			req.Header = make(http.Header)
+			for k, v := range baseHeaders {
+				req.Header[k] = append([]string(nil), v...)
 			}
 
 			client := &http.Client{Timeout: 30 * time.Second}
@@ -232,9 +261,33 @@ func (e *evictionSteps) iCallPOSTConcurrentlyTimesWithBody(path string, count in
 			}
 			defer resp.Body.Close()
 			e.concurrentResp[idx] = resp.StatusCode
+			if body, readErr := io.ReadAll(resp.Body); readErr == nil {
+				e.concurrentBodies[idx] = string(body)
+			}
 		}(i)
 	}
+	ready.Wait()
+	close(start)
 	wg.Wait()
+	return nil
+}
+
+// everyConcurrentResponseBodyFieldShouldBe asserts a top-level JSON string field on every
+// captured concurrent response body.
+func (e *evictionSteps) everyConcurrentResponseBodyFieldShouldBe(field, expected string) error {
+	if len(e.concurrentBodies) == 0 {
+		return fmt.Errorf("no concurrent responses were captured")
+	}
+	for i, body := range e.concurrentBodies {
+		var decoded map[string]interface{}
+		if err := json.Unmarshal([]byte(body), &decoded); err != nil {
+			return fmt.Errorf("concurrent response %d is not a JSON object: %w (body: %s)", i, err, body)
+		}
+		got, ok := decoded[field].(string)
+		if !ok || got != expected {
+			return fmt.Errorf("concurrent response %d field %q = %v, expected %q (body: %s)", i, field, decoded[field], expected, body)
+		}
+	}
 	return nil
 }
 
