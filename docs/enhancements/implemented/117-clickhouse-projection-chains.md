@@ -153,9 +153,11 @@ For each chain, the processor:
    type (`toTypeName(defaultValueOfTypeName(...))`) before the comparison, because
    `system.columns` rewrites type names, for example by omitting JSON parameters that equal
    ClickHouse's defaults.
-4. In `validate` mode, changes nothing and fails with the list of missing columns and the
-   `ALTER TABLE` statements that would add them, then requires every manifest to be
-   registered.
+4. In `validate` mode, changes nothing and fails with the list of missing columns, then
+   requires every manifest to be registered. The error tells the operator to start the
+   processor once in `manage` mode with a ClickHouse user that can alter tables, and shows
+   the `ALTER TABLE` statements that run applies. Applying those statements by hand is not
+   enough, because only `manage` mode registers the new manifests and recreates the views.
 5. In `manage` mode, registers each unregistered manifest in chain order with its table and
    previous manifest, then re-reads the registry to detect a conflicting concurrent registration.
    If two exporters extend the same table with divergent manifests at the same time, each

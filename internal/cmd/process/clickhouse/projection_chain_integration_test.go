@@ -226,6 +226,11 @@ func TestClickHouseProjectionChainValidateModeListsMissingColumns(t *testing.T) 
 	cfg.SchemaMode = "validate"
 	_, err = OpenSink(ctx, cfg)
 	require.ErrorContains(t, err, "is missing columns duration_ms")
+	// Applying the listed ALTER statements alone does not satisfy validate mode, so the
+	// error must not offer them as an alternative to a manage-mode start.
+	require.ErrorContains(t, err, "run the processor once with --schema-mode manage")
+	require.ErrorContains(t, err, "register the new manifests, and recreate the views")
+	require.NotContains(t, err.Error(), "or apply")
 	require.Equal(t, before, readTableColumns(t, ctx, admin, database, "support_ticket_chain_v1"), "validate mode must not change the table")
 	require.Len(t, readRegistryChain(t, ctx, admin, database, cfg.ExporterID), 1, "validate mode must not register manifests")
 }

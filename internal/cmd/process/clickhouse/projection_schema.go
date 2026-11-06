@@ -284,7 +284,9 @@ func (s *ClickHouseSink) ensureProjectionTableColumns(ctx context.Context, mode 
 		for i, name := range missing {
 			statements[i] = fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s", quoteIdentifier(s.database), quoteIdentifier(table.Name), projectionColumnDDL(name, table.Columns[name]))
 		}
-		return fmt.Errorf("projection table %s.%s is missing columns %s; run the processor once with --schema-mode manage or apply: %s", s.database, table.Name, strings.Join(missing, ", "), strings.Join(statements, "; "))
+		// Applying these statements alone is not enough: only manage mode registers the new
+		// manifests and recreates the views, so the statements are a preview of that run.
+		return fmt.Errorf("projection table %s.%s is missing columns %s; run the processor once with --schema-mode manage and a ClickHouse user that can alter tables to add them, register the new manifests, and recreate the views. That run applies: %s", s.database, table.Name, strings.Join(missing, ", "), strings.Join(statements, "; "))
 	}
 	for _, name := range missing {
 		if err := s.conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s", quoteIdentifier(s.database), quoteIdentifier(table.Name), projectionColumnDDL(name, table.Columns[name]))); err != nil {

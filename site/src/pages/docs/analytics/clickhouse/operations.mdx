@@ -50,7 +50,7 @@ The processor rejects:
 - an unregistered relation that uses a requested projection table or view name
 - a live exporter with conflicting database-wide retention values
 
-When a [projection chain](/docs/analytics/projections/#share-a-table-across-content-type-versions) adds columns, `--schema-mode=manage` adds them to the existing table and recreates its views. `--schema-mode=validate` makes no changes and exits with the missing columns and the `ALTER TABLE` statements that add them, so a separate, privileged ClickHouse user can apply them. Validate mode also requires the `previous` column in `projection_registry`, which manage mode adds automatically.
+When a [projection chain](/docs/analytics/projections/#share-a-table-across-content-type-versions) adds columns, `--schema-mode=manage` adds them to the existing table and recreates its views. `--schema-mode=validate` makes no changes and exits with the missing columns and the `ALTER TABLE` statements that will add them. Applying those statements by hand isn't enough: only manage mode registers the new manifests and recreates the views. To roll out such a chain in a validate-mode deployment, start the processor once with `--schema-mode=manage` and a ClickHouse user that can alter tables, then return to validate mode. Validate mode also requires the `previous` column in `projection_registry`, which manage mode adds automatically.
 
 To list registered projection manifests and the tables they write to, query the registry:
 

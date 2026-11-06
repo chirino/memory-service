@@ -359,6 +359,7 @@ Follow these rules:
 - `projectionRegoFrom` and `projectionRegoReplaces` must name an earlier manifest in the same chain. `projectionRegoFrom` shares that manifest's logic rather than copying it. `projectionRegoReplaces` replaces the logic that manifest uses. If that manifest reuses another manifest's logic through `projectionRegoFrom`, every content type sharing that logic switches unless you add a `selector`.
 - A content type can use only one logic in a chain. Use `projectionRegoReplaces` to change it.
 - Never edit, reorder, or remove a manifest after the processor registers it. The processor refuses to start if the registered manifests aren't the beginning of the configured chain.
+- Upgrade every processor that writes to the same ClickHouse database before you add a manifest to a chain. Processors from releases without projection chains refuse to start once a table they write has more than one registered manifest, with an error like `projection table "support_ticket_v1" is registered with a different immutable manifest`. They also can't read chain manifests registered under their own exporter ID.
 
 To keep an existing table, add a manifest whose `spec.previous` names its projection. The table keeps its name and rows. To move to a version-neutral name, start a new chain with `spec.table` and run a [projection replay](/docs/analytics/clickhouse/operations/#replay-projections) to fill it. The old table keeps working until readers switch, and you drop it manually afterward.
 
