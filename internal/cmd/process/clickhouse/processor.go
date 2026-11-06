@@ -865,10 +865,8 @@ func (p *Processor) applyProjections(ctx context.Context, common Common, resourc
 			selector = memory.GetMemoryKind()
 		}
 	}
-	for _, projection := range p.projections.Items {
-		if projection.Resource != kind || projection.Selector != selector {
-			continue
-		}
+	// Each matching table projects the resource with the logic its chain assigns to the selector.
+	for _, projection := range p.projections.Match(kind, selector) {
 		base := ProjectionRow{Common: common, ResourceID: resourceID, ConversationID: conversationID, ConversationGroupID: conversationGroupID}
 		if deleted {
 			p.pending.Projections = append(p.pending.Projections, projection.TombstoneRow(base))

@@ -13,6 +13,7 @@ func Command() *cli.Command {
 		Usage: "Run checkpointed Memory Service event processors",
 		Commands: []*cli.Command{
 			clickhouseprocessor.Command(),
+			clickhouseprocessor.ProjectionsCommand(),
 			turntraces.Command(),
 		},
 	}

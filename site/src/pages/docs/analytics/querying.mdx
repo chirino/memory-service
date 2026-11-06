@@ -36,18 +36,19 @@ ORDER BY name;`}
   minRows={1}
 />
 
-List registered projections and their selectors:
+List registered projections, their selectors, and the tables they write to. In a [projection chain](/docs/analytics/projections/#share-a-table-across-content-type-versions), several manifests share one `table_name`, and `previous` names the manifest before each one:
 
 <SqlTest
   query={`SELECT
   projection_name,
   selector,
   table_name,
+  previous,
   state,
   updated_at
 FROM memory_service.projection_registry FINAL
-ORDER BY projection_name;`}
-  columns={["projection_name", "selector", "table_name", "state", "updated_at"]}
+ORDER BY table_name, projection_name;`}
+  columns={["projection_name", "selector", "table_name", "previous", "state", "updated_at"]}
   minRows={1}
 />
 

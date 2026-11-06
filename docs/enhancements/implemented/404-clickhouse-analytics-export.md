@@ -469,7 +469,7 @@ column names as described in [Typed projections](#typed-projections).
 | Table | Engine | Purpose |
 | --- | --- | --- |
 | `schema_versions` | `MergeTree` | Installed schema version and checksum. |
-| `projection_registry` | `ReplacingMergeTree` | Projection name, digest, selector, declared table, and state. |
+| `projection_registry` | `ReplacingMergeTree` | Projection name, digest, selector, declared table, previous manifest, and state. The `previous` column is added outside the versioned DDL; see [Enhancement 117](117-clickhouse-projection-chains.md#registry). |
 | `lifecycle_events` | `ReplacingMergeTree` | Durable lifecycle facts keyed by stable event ID. |
 | `resources` | `ReplacingMergeTree` | Versioned generic resource rows and tombstones. |
 | `deletion_fences` | `ReplacingMergeTree` | Payload-free latest deletion version per resource. |
@@ -637,7 +637,8 @@ an `output` array instead; see [Multi-row projections](#multi-row-projections).
 
 Each projection:
 
-- has one canonical immutable name that is also its exact physical table name
+- has one canonical immutable name that is also its exact physical table name, unless it
+  belongs to a [projection chain](117-clickhouse-projection-chains.md)
 - selects either one exact entry `contentType` or one exact memory `kind`
 - has a content digest stored in the checkpoint and projection registry
 - defines columns from an allowlisted type system with explicit provider support
@@ -667,13 +668,14 @@ registrations, names that collide with another projection's generated views, and
 that already exist in the configured database unless the projection registry contains
 the identical manifest digest for that relation.
 Repeating the identical manifest is idempotent. A changed manifest under the same name is
-an error; a deployment creates a newly named projection to add, remove, or change a
-column. The digest remains in the checkpoint and projection registry but is not part of
+an error. A deployment creates a newly named projection to remove or change a column, or
+adds a later manifest to the projection's chain to add nullable columns or content types;
+see [Enhancement 117](117-clickhouse-projection-chains.md). The digest remains in the checkpoint and projection registry but is not part of
 the physical table name. Names are immutable; an `_vN` suffix is the recommended,
 human-readable version convention, but the processor does not rewrite or infer it.
 
 Multiple projections may select the same entry `contentType` or memory `kind`. Each must
-have a distinct `metadata.name`, and each produces its own table. Selector values never
+have a distinct `metadata.name`, and each chain produces its own table. Selector values never
 become SQL identifiers. The processor quotes every validated identifier.
 
 The portable field types are `string`, `bool`, `int64`, `uint64`, `float64`, `timestamp`,
@@ -734,8 +736,9 @@ can be enabled. See the ClickHouse documentation for
 
 Projection Rego receives a bounded typed input containing the generic resource fields and
 the decrypted source payload available under the selected mode. It has no network, file,
-clock, random, or database capabilities. Output must exactly match declared columns,
-types, nullability, string-size limits, and array-size limits.
+clock, random, or database capabilities. Output must match the table's declared columns,
+types, nullability, string-size limits, and array-size limits. Unknown keys are rejected;
+an omitted nullable column is written as `NULL`.
 
 For memory records, the existing immutable `MemoryKindVersion` attributes are the default
 typed projection when their fields are sufficient. The processor can map those already
@@ -746,7 +749,9 @@ ClickHouse-specific concerns to it.
 
 Changing the active projection set while a frozen batch exists is rejected. After the
 batch finishes, a new projection set starts with a new digest. A projection schema change
-uses a new manifest name and therefore a new physical table.
+uses a new manifest name and therefore a new physical table, except that a
+[projection chain](117-clickhouse-projection-chains.md) can add nullable columns to its
+table.
 Historical projection backfill is an explicit command, not an automatic startup side
 effect.
 

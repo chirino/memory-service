@@ -21,6 +21,7 @@ type ClickHouseSink struct {
 	conn                driver.Conn
 	database            string
 	projections         []*Projection
+	projectionTables    []*ProjectionTable
 	config              Config
 	retentionRegistered bool
 	retentionOwner      string
@@ -70,7 +71,7 @@ func OpenSink(ctx context.Context, cfg Config) (*ClickHouseSink, error) {
 		_ = conn.Close()
 		return nil, err
 	}
-	sink := &ClickHouseSink{conn: conn, database: cfg.Database, projections: projections.Items, config: cfg, retentionOwner: uuid.NewString(), retentionErrors: make(chan error, 1)}
+	sink := &ClickHouseSink{conn: conn, database: cfg.Database, projections: projections.Items, projectionTables: projections.Tables, config: cfg, retentionOwner: uuid.NewString(), retentionErrors: make(chan error, 1)}
 	if err := sink.EnsureSchema(ctx, cfg.SchemaMode); err != nil {
 		_ = conn.Close()
 		return nil, err

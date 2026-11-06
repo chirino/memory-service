@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"errors"
+	"fmt"
 	"math/big"
 	"net/http"
 	"net/http/httptest"
@@ -1048,6 +1049,12 @@ func testFullResourceDataNoTest(record *pb.AnalyticsRecord) json.RawMessage {
 			"id": item.GetId(), "namespace": item.GetNamespace(), "key": item.GetKey(), "kind": item.GetMemoryKind(),
 			"revision": item.GetRevision(), "createdAt": item.GetCreatedAt().AsTime().UTC(), "archived": item.GetArchivedAt() != nil,
 		}
+		if item.GetValue() != nil {
+			resource["value"] = item.GetValue().AsMap()
+		}
+		if item.GetAttributes() != nil {
+			resource["attributes"] = item.GetAttributes().AsMap()
+		}
 	}
 	data, _ := json.Marshal(resource)
 	return data
@@ -1074,7 +1081,7 @@ func TestProcessorSeparatesMultiRowSnapshots(t *testing.T) {
 			cfg := testConfig()
 			p, err := NewProcessor(cfg, sink)
 			require.NoError(t, err)
-			p.projections.Items = []*Projection{testMultiRowProjection(t, `output := [{"step": step} | some step in input.content]`)}
+			p.projections = testProjectionSet(t, testMultiRowProjection(t, `output := [{"step": step} | some step in input.content]`))
 			require.NoError(t, p.SetLeaseGeneration(1))
 			payloads := []json.RawMessage{
 				json.RawMessage(`{"id":"entry-1","conversationId":"c1","contentType":"support-steps/v1","content":["plan","act","check"]}`),
@@ -1100,5 +1107,84 @@ func TestProcessorSeparatesMultiRowSnapshots(t *testing.T) {
 			require.Len(t, sink.batches[1].Projections, 1)
 			require.Greater(t, sink.batches[1].Projections[0].IngestVersion, sink.batches[0].Projections[0].IngestVersion)
 		})
+	}
+}
+
+func TestProcessorWritesEveryChainManifestToTheSharedTable(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "projections.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join([]string{testChainRoot, testChainReuse, testChainReplace}, "---\n")), 0o600))
+	cfg := testConfig()
+	cfg.PayloadMode = PayloadProjected
+	cfg.ProjectionPaths = []string{path}
+	sink := &fakeSink{}
+	p, err := NewProcessor(cfg, sink)
+	require.NoError(t, err)
+	require.NoError(t, p.SetLeaseGeneration(1))
+	ctx := context.Background()
+	for i, contentType := range []string{"support-ticket/v1", "support-ticket/v2", "support-ticket/v3"} {
+		content, err := structpb.NewValue([]any{"plan"})
+		require.NoError(t, err)
+		id := fmt.Sprintf("entry-%d", i)
+		record := &pb.AnalyticsRecord{
+			Reference: &pb.AnalyticsResourceReference{Kind: pb.AnalyticsResourceKind_ANALYTICS_RESOURCE_KIND_ENTRY, Id: id}, SnapshotAvailable: true,
+			Record: &pb.AnalyticsRecord_Entry{Entry: &pb.AnalyticsEntryRecord{Id: id, ConversationId: "conversation-1", ContentType: contentType, CreatedAt: timestamppb.New(time.Unix(10, 0)), Content: content}},
+		}
+		require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Event: "created", Kind: "entry", Cursor: fmt.Sprintf("pg:%d", i), Time: time.Unix(10, 0), Data: testFullResourceData(t, record)}))
+	}
+	require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Event: "deleted", Kind: "entry", Cursor: "pg:9", Data: []byte(`{"entry":"entry-1","entry_content_type":"support-ticket/v2"}`)}))
+	require.NoError(t, p.Flush(ctx))
+	var rows []ProjectionRow
+	for _, batch := range sink.batches {
+		rows = append(rows, batch.Projections...)
+		require.Empty(t, batch.ProjectionFailures)
+	}
+	require.Len(t, rows, 3, "support-ticket/v3 is not selected by the chain")
+	for i, row := range rows {
+		require.Equal(t, "support_ticket_steps", row.TableName)
+		require.Equal(t, "support_ticket_steps_duration", row.ProjectionName)
+		require.Equal(t, []string{"duration_ms", "step"}, row.ColumnNames)
+		require.True(t, row.Multi)
+		if i < 2 {
+			require.Equal(t, []any{uint64(1), "plan"}, row.Values)
+		}
+	}
+	require.Equal(t, "entry-1", rows[2].ResourceID)
+	require.True(t, rows[2].IsDeleted, "deleting an entry writes a tombstone to the shared table")
+}
+
+func TestProcessorRecordsChainFailuresUnderTheLogicManifest(t *testing.T) {
+	dir := t.TempDir()
+	path := filepath.Join(dir, "projections.yaml")
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join([]string{testChainRoot, testChainReuse, testChainReplace}, "---\n")), 0o600))
+	cfg := testConfig()
+	cfg.PayloadMode = PayloadProjected
+	cfg.ProjectionPaths = []string{path}
+	sink := &fakeSink{}
+	p, err := NewProcessor(cfg, sink)
+	require.NoError(t, err)
+	require.NoError(t, p.SetLeaseGeneration(1))
+	ctx := context.Background()
+	for i, contentType := range []string{"support-ticket/v1", "support-ticket/v2"} {
+		// A step must be a string, so the replacing logic rejects this content.
+		content, err := structpb.NewValue([]any{42})
+		require.NoError(t, err)
+		id := fmt.Sprintf("entry-%d", i)
+		record := &pb.AnalyticsRecord{
+			Reference: &pb.AnalyticsResourceReference{Kind: pb.AnalyticsResourceKind_ANALYTICS_RESOURCE_KIND_ENTRY, Id: id}, SnapshotAvailable: true,
+			Record: &pb.AnalyticsRecord_Entry{Entry: &pb.AnalyticsEntryRecord{Id: id, ConversationId: "conversation-1", ContentType: contentType, CreatedAt: timestamppb.New(time.Unix(10, 0)), Content: content}},
+		}
+		require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Event: "created", Kind: "entry", Cursor: fmt.Sprintf("pg:%d", i), Time: time.Unix(10, 0), Data: testFullResourceData(t, record)}))
+	}
+	require.NoError(t, p.Flush(ctx))
+	var failures []ProjectionFailureRow
+	for _, batch := range sink.batches {
+		require.Empty(t, batch.Projections)
+		failures = append(failures, batch.ProjectionFailures...)
+	}
+	require.Len(t, failures, 2)
+	for _, failure := range failures {
+		require.Equal(t, "support_ticket_steps_duration", failure.ProjectionName)
+		require.Equal(t, "type_mismatch", failure.ErrorCode)
 	}
 }

@@ -103,6 +103,13 @@ type projectionSpec struct {
 	Rows           string                      `json:",omitempty"     yaml:"rows,omitempty"`
 	Columns        map[string]projectionColumn `yaml:"columns"`
 	ProjectionRego string                      `yaml:"projectionRego"`
+	// The chain fields below are omitted from the digest when empty so manifests written
+	// before projection chains existed keep their digests.
+	Table                  string                      `json:",omitempty" yaml:"table,omitempty"`
+	Previous               string                      `json:",omitempty" yaml:"previous,omitempty"`
+	ProjectionRegoReplaces string                      `json:",omitempty" yaml:"projectionRegoReplaces,omitempty"`
+	ProjectionRegoFrom     string                      `json:",omitempty" yaml:"projectionRegoFrom,omitempty"`
+	AddColumns             map[string]projectionColumn `json:",omitempty" yaml:"addColumns,omitempty"`
 }
 
 type projectionSelector struct {
@@ -122,22 +129,72 @@ type projectionClickHouseOptions struct {
 	MaxDynamicTypes int `yaml:"maxDynamicTypes,omitempty"`
 }
 
+// Projection is one loaded AnalyticsProjection manifest. Manifests form chains: the first
+// manifest of a chain defines the table, and each later manifest names the manifest before it.
+// After loading, TableName, RowMode, ColumnNames, and Columns describe the chain's shared
+// table, so every manifest in a chain writes the same column set.
 type Projection struct {
-	Name          string
-	Digest        string
-	Resource      string
-	Selector      string
-	TableName     string
-	RowMode       string
-	ColumnNames   []string
-	Columns       map[string]projectionColumn
-	prepared      *rego.PreparedEvalQuery
-	useAttributes bool
+	Name     string
+	Digest   string
+	Resource string
+	// Selector is the content type or memory kind the manifest adds to its chain. It is
+	// empty for later manifests that only replace logic or add columns.
+	Selector    string
+	TableName   string
+	RowMode     string
+	ColumnNames []string
+	Columns     map[string]projectionColumn
+	// Previous names the manifest before this one; it is empty for the first manifest of a chain.
+	Previous               string
+	ProjectionRegoReplaces string
+	ProjectionRegoFrom     string
+	AddColumns             map[string]projectionColumn
+	prepared               *rego.PreparedEvalQuery
+	useAttributes          bool
+	// logic is the manifest whose projection logic this manifest uses: itself when it
+	// defines projectionRego (or attribute mapping), the resolved projectionRegoFrom target,
+	// or nil when it only adds columns.
+	logic *Projection
+}
+
+// ProjectionTable is one projection chain and the table its manifests write to.
+type ProjectionTable struct {
+	Name     string
+	Resource string
+	RowMode  string
+	// Manifests lists the chain in order, starting with the manifest that defines the table.
+	Manifests []*Projection
+	// ColumnNames is sorted; Columns holds the first manifest's columns plus every addColumns.
+	ColumnNames []string
+	Columns     map[string]projectionColumn
+	// ColumnOrder is the physical column order: the first manifest's columns sorted by name,
+	// then each manifest's addColumns sorted by name, in chain order.
+	ColumnOrder []string
+	// ColumnOwners maps each column to the manifest that declared it.
+	ColumnOwners map[string]string
+	// Logic maps each covered content type or memory kind to the manifest whose logic
+	// projects it.
+	Logic map[string]*Projection
 }
 
 type ProjectionSet struct {
 	Items  []*Projection
+	Tables []*ProjectionTable
 	Digest string
+	routes map[string][]*Projection
+}
+
+// Match returns the manifests whose logic projects resources of the given kind and
+// selector, one per table, ordered by table name.
+func (s *ProjectionSet) Match(resource, selector string) []*Projection {
+	if s == nil {
+		return nil
+	}
+	return s.routes[projectionRouteKey(resource, selector)]
+}
+
+func projectionRouteKey(resource, selector string) string {
+	return resource + "\x00" + selector
 }
 
 type ProjectionRow struct {
@@ -226,6 +283,9 @@ func LoadProjectionSet(ctx context.Context, paths []string) (*ProjectionSet, err
 		return nil, errors.New("no AnalyticsProjection resources found in projection paths")
 	}
 	sort.Slice(set.Items, func(i, j int) bool { return set.Items[i].Name < set.Items[j].Name })
+	if err := set.link(); err != nil {
+		return nil, err
+	}
 	h := sha256.New()
 	for _, item := range set.Items {
 		_, _ = h.Write([]byte(item.Name + "\x00" + item.Digest + "\n"))
@@ -307,53 +367,85 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 	if manifest.Spec.Resource == "memory" {
 		selector = manifest.Spec.Selector.Kind
 	}
-	if strings.TrimSpace(selector) == "" || (manifest.Spec.Selector.ContentType != "" && manifest.Spec.Selector.Kind != "") {
-		return nil, errors.New("selector must define exactly one non-empty contentType or kind matching the resource")
-	}
-	if manifest.Spec.Resource == "entry" && manifest.Spec.Selector.Kind != "" || manifest.Spec.Resource == "memory" && manifest.Spec.Selector.ContentType != "" {
-		return nil, errors.New("entry projections select contentType and memory projections select kind")
-	}
-	switch manifest.Spec.Rows {
-	case "", ProjectionRowsOne:
-		// Normalize the default so an explicit `rows: one` has the same digest as an omitted field.
-		manifest.Spec.Rows = ""
-	case ProjectionRowsMany:
-	default:
-		return nil, fmt.Errorf("spec.rows must be %s or %s", ProjectionRowsOne, ProjectionRowsMany)
-	}
-	if len(manifest.Spec.Columns) == 0 {
-		return nil, errors.New("spec.columns must not be empty")
-	}
-	columnNames := make([]string, 0, len(manifest.Spec.Columns))
-	for name, column := range manifest.Spec.Columns {
-		if !projectionColumnPattern.MatchString(name) {
-			return nil, fmt.Errorf("column %q must match %s", name, projectionColumnPattern)
+	hasSelector := manifest.Spec.Selector.ContentType != "" || manifest.Spec.Selector.Kind != ""
+	if manifest.Spec.Previous == "" || hasSelector {
+		if strings.TrimSpace(selector) == "" || (manifest.Spec.Selector.ContentType != "" && manifest.Spec.Selector.Kind != "") {
+			return nil, errors.New("selector must define exactly one non-empty contentType or kind matching the resource")
 		}
-		if _, reserved := projectionReservedColumns[name]; reserved {
-			return nil, fmt.Errorf("column %q is reserved", name)
+		if manifest.Spec.Resource == "entry" && manifest.Spec.Selector.Kind != "" || manifest.Spec.Resource == "memory" && manifest.Spec.Selector.ContentType != "" {
+			return nil, errors.New("entry projections select contentType and memory projections select kind")
 		}
-		if err := validateProjectionColumn(name, column, capabilities); err != nil {
+	}
+	hasRego := strings.TrimSpace(manifest.Spec.ProjectionRego) != ""
+	if hasRego && manifest.Spec.ProjectionRegoFrom != "" {
+		return nil, errors.New("spec.projectionRego and spec.projectionRegoFrom are mutually exclusive")
+	}
+	var rows string
+	if manifest.Spec.Previous == "" {
+		if manifest.Spec.ProjectionRegoReplaces != "" || manifest.Spec.ProjectionRegoFrom != "" || len(manifest.Spec.AddColumns) > 0 {
+			return nil, errors.New("spec.projectionRegoReplaces, spec.projectionRegoFrom, and spec.addColumns require spec.previous")
+		}
+		if manifest.Spec.Table != "" {
+			if !projectionNamePattern.MatchString(manifest.Spec.Table) {
+				return nil, fmt.Errorf("spec.table %q must match %s", manifest.Spec.Table, projectionNamePattern)
+			}
+			if isReservedProjectionTableName(manifest.Spec.Table) {
+				return nil, fmt.Errorf("spec.table %q is reserved", manifest.Spec.Table)
+			}
+		}
+		switch manifest.Spec.Rows {
+		case "", ProjectionRowsOne:
+			// Normalize the default so an explicit `rows: one` has the same digest as an omitted field.
+			manifest.Spec.Rows = ""
+		case ProjectionRowsMany:
+		default:
+			return nil, fmt.Errorf("spec.rows must be %s or %s", ProjectionRowsOne, ProjectionRowsMany)
+		}
+		if len(manifest.Spec.Columns) == 0 {
+			return nil, errors.New("spec.columns must not be empty")
+		}
+		for name, column := range manifest.Spec.Columns {
+			if err := validateProjectionColumnDeclaration(name, column, capabilities); err != nil {
+				return nil, err
+			}
+		}
+		rows = manifest.Spec.Rows
+		if rows == "" {
+			rows = ProjectionRowsOne
+		}
+		if !hasRego {
+			if manifest.Spec.Resource != "memory" {
+				return nil, errors.New("entry projections require projectionRego")
+			}
+			if rows == ProjectionRowsMany {
+				return nil, errors.New("spec.rows many requires projectionRego")
+			}
+		}
+	} else {
+		if err := validateLaterProjectionManifest(manifest, hasSelector, hasRego, capabilities); err != nil {
 			return nil, err
 		}
-		columnNames = append(columnNames, name)
 	}
-	sort.Strings(columnNames)
 	canonical, _ := json.Marshal(manifest)
 	digestBytes := sha256.Sum256(canonical)
 	digest := hex.EncodeToString(digestBytes[:])
-	rows := manifest.Spec.Rows
-	if rows == "" {
-		rows = ProjectionRowsOne
+	table := manifest.Spec.Table
+	if table == "" {
+		table = manifest.Metadata.Name
 	}
-	projection := &Projection{Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, Selector: selector, TableName: manifest.Metadata.Name, RowMode: rows, ColumnNames: columnNames, Columns: manifest.Spec.Columns}
-	if strings.TrimSpace(manifest.Spec.ProjectionRego) == "" {
-		if manifest.Spec.Resource != "memory" {
-			return nil, errors.New("entry projections require projectionRego")
-		}
-		if rows == ProjectionRowsMany {
-			return nil, errors.New("spec.rows many requires projectionRego")
-		}
-		projection.useAttributes = true
+	projection := &Projection{
+		Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, TableName: table, RowMode: rows,
+		Previous: manifest.Spec.Previous, ProjectionRegoReplaces: manifest.Spec.ProjectionRegoReplaces, ProjectionRegoFrom: manifest.Spec.ProjectionRegoFrom, AddColumns: manifest.Spec.AddColumns,
+	}
+	if hasSelector || manifest.Spec.Previous == "" {
+		projection.Selector = selector
+	}
+	if manifest.Spec.Previous == "" {
+		projection.setColumns(manifest.Spec.Columns)
+	}
+	if !hasRego {
+		// A first memory manifest without projectionRego maps MemoryKindVersion attributes.
+		projection.useAttributes = manifest.Spec.Previous == ""
 		return projection, nil
 	}
 	if len(manifest.Spec.ProjectionRego) > 256<<10 {
@@ -372,6 +464,247 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 	}
 	projection.prepared = &query
 	return projection, nil
+}
+
+// validateLaterProjectionManifest checks a manifest that sets spec.previous. Such a manifest
+// inherits its table, columns, and row mode and must declare at least one change.
+func validateLaterProjectionManifest(manifest projectionManifest, hasSelector, hasRego bool, capabilities projectionProviderCapabilities) error {
+	spec := manifest.Spec
+	if !projectionNamePattern.MatchString(spec.Previous) || spec.Previous == manifest.Metadata.Name {
+		return fmt.Errorf("spec.previous %q must name another projection", spec.Previous)
+	}
+	if len(spec.Columns) > 0 || spec.Rows != "" || spec.Table != "" {
+		return errors.New("a manifest with spec.previous inherits its table, columns, and rows; it must not declare spec.columns, spec.rows, or spec.table (use spec.addColumns to add columns)")
+	}
+	if spec.ProjectionRegoReplaces != "" && !hasRego {
+		return errors.New("spec.projectionRegoReplaces requires a complete projectionRego")
+	}
+	if spec.ProjectionRegoFrom != "" && !hasSelector {
+		return errors.New("spec.projectionRegoFrom requires a selector for the content type or kind it adds")
+	}
+	if hasSelector && !hasRego && spec.ProjectionRegoFrom == "" {
+		return errors.New("a selector on a manifest with spec.previous requires projectionRego or projectionRegoFrom")
+	}
+	if hasRego && !hasSelector && spec.ProjectionRegoReplaces == "" {
+		return errors.New("projectionRego on a manifest with spec.previous requires a selector or spec.projectionRegoReplaces")
+	}
+	if !hasSelector && spec.ProjectionRegoReplaces == "" && len(spec.AddColumns) == 0 {
+		return errors.New("a manifest with spec.previous must add a selector, replace logic, or add columns")
+	}
+	for name, column := range spec.AddColumns {
+		if err := validateProjectionColumnDeclaration(name, column, capabilities); err != nil {
+			return err
+		}
+		if !column.Nullable {
+			return fmt.Errorf("added column %q must be nullable", name)
+		}
+	}
+	return nil
+}
+
+func validateProjectionColumnDeclaration(name string, column projectionColumn, capabilities projectionProviderCapabilities) error {
+	if !projectionColumnPattern.MatchString(name) {
+		return fmt.Errorf("column %q must match %s", name, projectionColumnPattern)
+	}
+	if _, reserved := projectionReservedColumns[name]; reserved {
+		return fmt.Errorf("column %q is reserved", name)
+	}
+	return validateProjectionColumn(name, column, capabilities)
+}
+
+func (p *Projection) setColumns(columns map[string]projectionColumn) {
+	p.Columns = columns
+	p.ColumnNames = make([]string, 0, len(columns))
+	for name := range columns {
+		p.ColumnNames = append(p.ColumnNames, name)
+	}
+	sort.Strings(p.ColumnNames)
+}
+
+// link resolves projection chains, validates them, and builds the selector routes.
+func (s *ProjectionSet) link() error {
+	byName := make(map[string]*Projection, len(s.Items))
+	for _, item := range s.Items {
+		byName[item.Name] = item
+	}
+	children := map[string][]*Projection{}
+	for _, item := range s.Items {
+		if item.Previous == "" {
+			continue
+		}
+		if byName[item.Previous] == nil {
+			return fmt.Errorf("projection %q names previous manifest %q, which is not configured; keep every earlier manifest of a chain in the projection paths", item.Name, item.Previous)
+		}
+		children[item.Previous] = append(children[item.Previous], item)
+	}
+	for parent, kids := range children {
+		if len(kids) > 1 {
+			names := make([]string, len(kids))
+			for i, kid := range kids {
+				names[i] = kid.Name
+			}
+			sort.Strings(names)
+			return fmt.Errorf("projection chain branches at %q: %s all name it as spec.previous; a chain must stay linear", parent, strings.Join(names, ", "))
+		}
+	}
+	visited := map[string]bool{}
+	tablesByName := map[string]*ProjectionTable{}
+	s.Tables = nil
+	s.routes = map[string][]*Projection{}
+	for _, root := range s.Items {
+		if root.Previous != "" {
+			continue
+		}
+		chain := []*Projection{root}
+		visited[root.Name] = true
+		for next := children[root.Name]; len(next) == 1; next = children[next[0].Name] {
+			chain = append(chain, next[0])
+			visited[next[0].Name] = true
+		}
+		table, err := linkProjectionChain(chain)
+		if err != nil {
+			return err
+		}
+		if existing, ok := tablesByName[table.Name]; ok {
+			return fmt.Errorf("projections %q and %q both write to table %q; start a chain with spec.previous to share a table", existing.Manifests[0].Name, root.Name, table.Name)
+		}
+		tablesByName[table.Name] = table
+		s.Tables = append(s.Tables, table)
+	}
+	var unvisited []string
+	for _, item := range s.Items {
+		if !visited[item.Name] {
+			unvisited = append(unvisited, item.Name)
+		}
+	}
+	if len(unvisited) > 0 {
+		return fmt.Errorf("projections %s form a cycle; every chain must start with a manifest without spec.previous", strings.Join(unvisited, ", "))
+	}
+	sort.Slice(s.Tables, func(i, j int) bool { return s.Tables[i].Name < s.Tables[j].Name })
+	for _, table := range s.Tables {
+		selectors := make([]string, 0, len(table.Logic))
+		for selector := range table.Logic {
+			selectors = append(selectors, selector)
+		}
+		sort.Strings(selectors)
+		for _, selector := range selectors {
+			key := projectionRouteKey(table.Resource, selector)
+			s.routes[key] = append(s.routes[key], table.Logic[selector])
+		}
+	}
+	return nil
+}
+
+func linkProjectionChain(chain []*Projection) (*ProjectionTable, error) {
+	root := chain[0]
+	table := &ProjectionTable{
+		Name: root.TableName, Resource: root.Resource, RowMode: root.RowMode, Manifests: chain,
+		Columns: map[string]projectionColumn{}, ColumnOwners: map[string]string{}, Logic: map[string]*Projection{},
+	}
+	for _, name := range root.ColumnNames {
+		table.Columns[name] = root.Columns[name]
+		table.ColumnOwners[name] = root.Name
+		table.ColumnOrder = append(table.ColumnOrder, name)
+	}
+	root.logic = root
+	table.Logic[root.Selector] = root
+	position := map[string]int{root.Name: 0}
+	for i, manifest := range chain[1:] {
+		index := i + 1
+		position[manifest.Name] = index
+		if manifest.Resource != table.Resource {
+			return nil, fmt.Errorf("projection %q has resource %q, but its chain projects %q", manifest.Name, manifest.Resource, table.Resource)
+		}
+		resolve := func(field, reference string) (*Projection, error) {
+			at, ok := position[reference]
+			if !ok || at >= index {
+				return nil, fmt.Errorf("projection %q spec.%s %q must name an earlier manifest in the same chain", manifest.Name, field, reference)
+			}
+			if chain[at].logic == nil {
+				return nil, fmt.Errorf("projection %q spec.%s %q names a manifest without projection logic", manifest.Name, field, reference)
+			}
+			return chain[at].logic, nil
+		}
+		added := make([]string, 0, len(manifest.AddColumns))
+		for name := range manifest.AddColumns {
+			if owner, exists := table.ColumnOwners[name]; exists {
+				return nil, fmt.Errorf("projection %q adds column %q, which %q already declares", manifest.Name, name, owner)
+			}
+			added = append(added, name)
+		}
+		sort.Strings(added)
+		for _, name := range added {
+			table.Columns[name] = manifest.AddColumns[name]
+			table.ColumnOwners[name] = manifest.Name
+			table.ColumnOrder = append(table.ColumnOrder, name)
+		}
+		switch {
+		case manifest.ProjectionRegoReplaces != "":
+			replaced, err := resolve("projectionRegoReplaces", manifest.ProjectionRegoReplaces)
+			if err != nil {
+				return nil, err
+			}
+			manifest.logic = manifest
+			if manifest.Selector != "" {
+				if table.Logic[manifest.Selector] != replaced {
+					return nil, fmt.Errorf("projection %q replaces the logic of %q for %q, but %q is not projected by that logic", manifest.Name, manifest.ProjectionRegoReplaces, manifest.Selector, manifest.Selector)
+				}
+				table.Logic[manifest.Selector] = manifest
+				continue
+			}
+			taken := 0
+			for selector, logic := range table.Logic {
+				if logic == replaced {
+					table.Logic[selector] = manifest
+					taken++
+				}
+			}
+			if taken == 0 {
+				return nil, fmt.Errorf("projection %q replaces the logic of %q, but that logic no longer projects any %s", manifest.Name, manifest.ProjectionRegoReplaces, selectorNoun(table.Resource))
+			}
+		case manifest.ProjectionRegoFrom != "":
+			logic, err := resolve("projectionRegoFrom", manifest.ProjectionRegoFrom)
+			if err != nil {
+				return nil, err
+			}
+			manifest.logic = logic
+			if err := table.cover(manifest, logic); err != nil {
+				return nil, err
+			}
+		case manifest.prepared != nil:
+			manifest.logic = manifest
+			if err := table.cover(manifest, manifest); err != nil {
+				return nil, err
+			}
+		}
+	}
+	table.ColumnNames = make([]string, 0, len(table.Columns))
+	for name := range table.Columns {
+		table.ColumnNames = append(table.ColumnNames, name)
+	}
+	sort.Strings(table.ColumnNames)
+	for _, manifest := range chain {
+		manifest.TableName = table.Name
+		manifest.RowMode = table.RowMode
+		manifest.Columns = table.Columns
+		manifest.ColumnNames = table.ColumnNames
+	}
+	return table, nil
+}
+
+func (t *ProjectionTable) cover(manifest, logic *Projection) error {
+	if existing, ok := t.Logic[manifest.Selector]; ok {
+		return fmt.Errorf("projection %q selects %q, which the logic of %q already projects in table %q; use spec.projectionRegoReplaces to replace it", manifest.Name, manifest.Selector, existing.Name, t.Name)
+	}
+	t.Logic[manifest.Selector] = logic
+	return nil
+}
+
+func selectorNoun(resource string) string {
+	if resource == "memory" {
+		return "memory kind"
+	}
+	return "content type"
 }
 
 func isReservedProjectionTableName(name string) bool {
@@ -641,15 +974,20 @@ func (p *Projection) evaluate(ctx context.Context, input map[string]any) ([][]an
 	return rows, ""
 }
 
+// columnValues checks output against the table's columns. Unknown keys are rejected and
+// omitted non-nullable columns fail, while omitted nullable columns are written as NULL so
+// logic written before a chain added columns keeps working.
 func (p *Projection) columnValues(output map[string]any) ([]any, string) {
-	if len(output) != len(p.ColumnNames) {
-		return nil, "column_set_mismatch"
+	for name := range output {
+		if _, known := p.Columns[name]; !known {
+			return nil, "column_set_mismatch"
+		}
 	}
 	values := make([]any, 0, len(p.ColumnNames))
 	for _, name := range p.ColumnNames {
 		column := p.Columns[name]
 		value, present := output[name]
-		if !present {
+		if !present && !column.Nullable {
 			return nil, "column_set_mismatch"
 		}
 		if value == nil {

@@ -131,7 +131,7 @@ A memory projection that sets `rows: many` must define `projectionRego`.
 
 ## Choose stable SQL names
 
-`metadata.name` is the exact physical table name. Each key in `spec.columns` is the exact SQL column name. The processor does not sanitize or prefix either value.
+`metadata.name` is the exact physical table name unless the manifest sets `spec.table` (see [Share a table across content-type versions](#share-a-table-across-content-type-versions)). Each key in `spec.columns` is the exact SQL column name. The processor does not sanitize or prefix either value.
 
 Table and column names must match `^[a-z][a-z0-9_]{0,62}$`. Projection table names cannot use these processor-owned names:
 
@@ -142,7 +142,7 @@ Table and column names must match `^[a-z][a-z0-9_]{0,62}$`. Projection table nam
 
 Names ending with `_current` or `_all` are also reserved for generated views. The processor validates these rules before creating any projection relations.
 
-Use a visible version suffix when the schema changes. For example, replace `support_ticket_v1` with `support_ticket_v2`. A manifest is immutable after the processor registers its digest.
+Use a visible version suffix when the schema changes in a way a [projection chain](#share-a-table-across-content-type-versions) can't express. For example, replace `support_ticket_v1` with `support_ticket_v2`. A manifest is immutable after the processor registers its digest.
 
 Multiple projections can select the same `contentType` or `kind`. Give each projection a different table name.
 
@@ -189,7 +189,7 @@ Memory projections receive these input fields:
 - `value`
 - `attributes`
 
-The `output` rule must return an object with exactly the columns declared by the manifest. For a `rows: many` projection, `output` must return an array of such objects. The processor rejects missing columns, extra columns, invalid types, and null values for columns with `nullable: false`.
+The `output` rule must return an object whose keys are columns of the projection's table. For a `rows: many` projection, `output` must return an array of such objects. The processor rejects unknown keys, invalid types, and missing or null values for columns with `nullable: false`. It writes `NULL` for an omitted column with `nullable: true`.
 
 A memory projection can omit `projectionRego`. In that case, the processor maps persisted `MemoryKindVersion` attributes to columns with matching names.
 
@@ -293,10 +293,90 @@ curl -fsS -X POST "http://localhost:8082/v1/conversations/${CONVERSATION_ID}/ent
 
 The processor creates `support_ticket_v1`, `support_ticket_v1_all`, and `support_ticket_v1_current`. Continue with [Query analytics data](/docs/analytics/querying/) to inspect the row.
 
+## Share a table across content-type versions
+
+When a producer bumps its content-type version, you don't need a new table. Projection manifests can form a chain, like database migrations. The first manifest defines the table. Each later manifest sets `spec.previous` to the name of the manifest before it and writes to the same table, so queries keep reading one table and its `_current` and `_all` views.
+
+This chain starts a version-neutral `support_ticket_steps` table, adds the `support-ticket/v2` content type with the same logic, and then replaces the logic for both versions to fill a new column:
+
+```yaml
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: support_ticket_v1_steps
+spec:
+  resource: entry
+  table: support_ticket_steps
+  selector:
+    contentType: support-ticket/v1
+  rows: many
+  columns:
+    step: { type: string, nullable: false }
+  projectionRego: |
+    package memoryservice.analytics
+    output := [{"step": s.name} | some s in input.content]
+---
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: support_ticket_v2_steps
+spec:
+  resource: entry
+  previous: support_ticket_v1_steps
+  projectionRegoFrom: support_ticket_v1_steps
+  selector:
+    contentType: support-ticket/v2
+---
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: support_ticket_steps_duration
+spec:
+  resource: entry
+  previous: support_ticket_v2_steps
+  addColumns:
+    duration_ms: { type: uint64, nullable: true }
+  projectionRegoReplaces: support_ticket_v1_steps
+  projectionRego: |
+    package memoryservice.analytics
+    output := [{"step": s.name, "duration_ms": object.get(s, "durationMs", null)} | some s in input.content]
+```
+
+The first manifest is an ordinary projection. Set `spec.table` to give the table a version-neutral name; without it, the table is `metadata.name`. A later manifest inherits the table, columns, and `rows` setting, so it must not declare `table`, `columns`, or `rows`. Each later manifest does at least one of these things:
+
+| Change                                             | Fields                                                                                    |
+| -------------------------------------------------- | ----------------------------------------------------------------------------------------- |
+| Add a content type that uses existing logic        | `selector` and `projectionRegoFrom: <earlier manifest>`                                   |
+| Add a content type with its own logic              | `selector` and a complete `projectionRego`                                                |
+| Replace the logic for every content type it covers | `projectionRegoReplaces: <earlier manifest>` and a complete `projectionRego`              |
+| Replace the logic for one content type             | `projectionRegoReplaces: <earlier manifest>`, `selector`, and a complete `projectionRego` |
+| Add columns                                        | `addColumns` with `nullable: true` columns                                                |
+
+Follow these rules:
+
+- Keep every manifest of the chain configured. A fresh install builds the table by applying the chain in order. Logic for content types that are no longer produced stays idle.
+- Keep the chain linear. Two manifests can't name the same previous manifest.
+- `projectionRegoFrom` and `projectionRegoReplaces` must name an earlier manifest in the same chain. `projectionRegoFrom` shares that manifest's logic rather than copying it. `projectionRegoReplaces` replaces the logic that manifest uses. If that manifest reuses another manifest's logic through `projectionRegoFrom`, every content type sharing that logic switches unless you add a `selector`.
+- A content type can use only one logic in a chain. Use `projectionRegoReplaces` to change it.
+- Never edit, reorder, or remove a manifest after the processor registers it. The processor refuses to start if the registered manifests aren't the beginning of the configured chain.
+- Upgrade every processor that writes to the same ClickHouse database before you add a manifest to a chain. Processors from releases without projection chains refuse to start once a table they write has more than one registered manifest, with an error like `projection table "support_ticket_v1" is registered with a different immutable manifest`. They also can't read chain manifests registered under their own exporter ID.
+
+To keep an existing table, add a manifest whose `spec.previous` names its projection. The table keeps its name and rows. To move to a version-neutral name, start a new chain with `spec.table` and run a [projection replay](/docs/analytics/clickhouse/operations/#replay-projections) to fill it. The old table keeps working until readers switch, and you drop it manually afterward.
+
+With `--schema-mode=manage`, the processor adds new columns with `ALTER TABLE ... ADD COLUMN` when it starts and recreates the table's views. Existing rows keep `NULL` in a new column, and rows written by earlier logic keep working, until you run a projection replay with logic that fills it. Changing a column type, renaming or dropping a column, or changing `rows` still requires a new table.
+
+To see each table's chain, its combined columns, and which manifest's logic projects each content type, run:
+
+```bash
+memory-service process clickhouse-projections --projection-path /etc/memory-service/projections
+```
+
+Add `--format json` for machine-readable output.
+
 ## Handle failures and schema changes
 
 Invalid projection output writes a payload-free row to `projection_failures`. The default `continue-generic` policy keeps the generic export moving. Set `--projection-failure-policy=stop` when any projection failure must stop the processor.
 
-To rescan existing entries and memories after adding a new projection version, set a new `--projection-replay-id`. The replay ID must change for each requested rescan.
+To rescan existing entries and memories after adding a new projection version or a manifest that replaces logic, set a new `--projection-replay-id`. The replay ID must change for each requested rescan.
 
 For deployment settings, see the [ClickHouse processor configuration reference](/docs/analytics/clickhouse/configuration/).

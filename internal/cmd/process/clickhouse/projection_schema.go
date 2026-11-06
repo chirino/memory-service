@@ -8,6 +8,7 @@ import (
 	"time"
 	"unicode"
 
+	ch "github.com/ClickHouse/clickhouse-go/v2"
 	"github.com/charmbracelet/log"
 )
 
@@ -30,85 +31,293 @@ func projectionRowsForSortingKey(sortingKey string) string {
 }
 
 func (s *ClickHouseSink) ensureProjectionSchema(ctx context.Context, mode string) error {
-	for _, projection := range s.projections {
-		if s.config.featureDisabled(projection.Resource, disableProjections) {
+	registryReady := false
+	for _, table := range s.projectionTables {
+		if s.config.featureDisabled(table.Resource, disableProjections) {
 			continue
 		}
-		selector := projection.Resource + ":" + projection.Selector
-		var existingCount uint64
-		var existingDigest string
-		err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(), argMax(projection_digest, version) FROM %s.projection_registry WHERE exporter_id=? AND projection_name=?", quoteIdentifier(s.database)), s.config.ExporterID, projection.Name).Scan(&existingCount, &existingDigest)
-		if err != nil {
-			return fmt.Errorf("read projection registry for %s: %w", projection.Name, err)
-		}
-		if existingCount > 0 && existingDigest != projection.Digest {
-			return fmt.Errorf("projection %q already exists with a different immutable digest", projection.Name)
-		}
-		registeredCount, err := s.validateProjectionRegistryOwnership(ctx, projection)
-		if err != nil {
-			return err
-		}
-		if registeredCount == 0 {
-			for _, relation := range []string{projection.TableName, projection.TableName + "_current", projection.TableName + "_all"} {
-				var count uint64
-				if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database=? AND name=?", s.database, relation).Scan(&count); err != nil {
-					return fmt.Errorf("inspect projection relation %s.%s: %w", s.database, relation, err)
-				}
-				if count != 0 {
-					return fmt.Errorf("projection relation %s.%s already exists without an identical registry entry", s.database, relation)
-				}
-			}
-		}
-		if mode == "validate" && existingCount == 0 {
-			return fmt.Errorf("projection %q is missing from the registry", projection.Name)
-		}
-		if mode != "validate" {
-			columns := make([]string, 0, len(projection.ColumnNames))
-			for _, name := range projection.ColumnNames {
-				column := projection.Columns[name]
-				columnType := projectionColumnSQLType(column)
-				if column.Type != "string_array" && column.Type != "variant" {
-					columnType = "Nullable(" + columnType + ")"
-				}
-				columns = append(columns, fmt.Sprintf("`%s` %s", name, columnType))
-			}
-			rowColumns, sortingKey := "", "exporter_id, resource_id"
-			if projection.RowMode == ProjectionRowsMany {
-				rowColumns, sortingKey = "row_index UInt32, row_count UInt32,\n  ", multiRowSortingKey
-			}
-			statement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
-  exporter_id String, batch_id FixedString(64), event_id FixedString(64), resource_id String,
-  conversation_id String, conversation_group_id String,
-  ingest_version UInt64, observed_at DateTime64(9, 'UTC'), is_deleted UInt8,
-  schema_version UInt16,
-  %s%s
-) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (%s)`, quoteIdentifier(s.database), quoteIdentifier(projection.TableName), rowColumns, strings.Join(columns, ",\n  "), sortingKey)
-			if err := s.conn.Exec(ctx, statement); err != nil {
-				return fmt.Errorf("create projection table %s: %w", projection.TableName, err)
-			}
-		}
-		if mode != "validate" && existingCount == 0 {
-			if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version) VALUES (?, ?, ?, ?, ?, ?, ?, ?)", quoteIdentifier(s.database)), s.config.ExporterID, projection.Name, projection.Digest, selector, projection.TableName, "active", time.Now().UTC(), uint64(1)); err != nil {
-				return fmt.Errorf("register projection %s: %w", projection.Name, err)
-			}
-			if _, err := s.validateProjectionRegistryOwnership(ctx, projection); err != nil {
+		if !registryReady {
+			if err := s.ensureProjectionRegistryColumns(ctx, mode); err != nil {
 				return err
 			}
+			registryReady = true
+		}
+		if err := s.ensureProjectionTable(ctx, mode, table); err != nil {
+			return err
 		}
 	}
 	return s.ensureRegisteredProjectionSchemas(ctx, mode)
 }
 
-func (s *ClickHouseSink) validateProjectionRegistryOwnership(ctx context.Context, projection *Projection) (uint64, error) {
-	var registeredCount, registeredDigests uint64
-	var registeredDigest string
-	if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(), uniqExact(projection_digest), any(projection_digest) FROM %s.projection_registry WHERE table_name=?", quoteIdentifier(s.database)), projection.TableName).Scan(&registeredCount, &registeredDigests, &registeredDigest); err != nil {
-		return 0, fmt.Errorf("read projection registry ownership for %s: %w", projection.Name, err)
+// ensureProjectionRegistryColumns adds registry columns introduced after schema V1. They are
+// applied separately from the versioned schema DDL, like insert deduplication settings, so
+// existing databases keep their schema checksum and older processors can still share them.
+func (s *ClickHouseSink) ensureProjectionRegistryColumns(ctx context.Context, mode string) error {
+	var count uint64
+	if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.columns WHERE database=? AND table='projection_registry' AND name='previous'", s.database).Scan(&count); err != nil {
+		return fmt.Errorf("inspect projection registry columns: %w", err)
 	}
-	if registeredCount > 0 && (registeredDigests != 1 || registeredDigest != projection.Digest) {
-		return 0, fmt.Errorf("projection table %q is registered with a different immutable manifest", projection.TableName)
+	if count > 0 {
+		return nil
 	}
-	return registeredCount, nil
+	statement := fmt.Sprintf("ALTER TABLE %s.projection_registry ADD COLUMN IF NOT EXISTS previous String DEFAULT ''", quoteIdentifier(s.database))
+	if mode == "validate" {
+		return fmt.Errorf("ClickHouse table %s.projection_registry is missing column previous; run the processor once with --schema-mode manage or apply: %s", s.database, statement)
+	}
+	if err := s.conn.Exec(ctx, statement); err != nil {
+		return fmt.Errorf("add projection registry previous column: %w", err)
+	}
+	return nil
+}
+
+func (s *ClickHouseSink) ensureProjectionTable(ctx context.Context, mode string, table *ProjectionTable) error {
+	state, err := s.readProjectionChainRegistry(ctx, table)
+	if err != nil {
+		return err
+	}
+	if !state.tableRegistered {
+		for _, relation := range []string{table.Name, table.Name + "_current", table.Name + "_all"} {
+			var count uint64
+			if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database=? AND name=?", s.database, relation).Scan(&count); err != nil {
+				return fmt.Errorf("inspect projection relation %s.%s: %w", s.database, relation, err)
+			}
+			if count != 0 {
+				return fmt.Errorf("projection relation %s.%s already exists without an identical registry entry", s.database, relation)
+			}
+		}
+	}
+	if mode != "validate" {
+		root := table.Manifests[0]
+		columns := make([]string, 0, len(table.ColumnOrder))
+		for _, name := range table.ColumnOrder {
+			if table.ColumnOwners[name] == root.Name {
+				columns = append(columns, projectionColumnDDL(name, table.Columns[name]))
+			}
+		}
+		rowColumns, sortingKey := "", "exporter_id, resource_id"
+		if table.RowMode == ProjectionRowsMany {
+			rowColumns, sortingKey = "row_index UInt32, row_count UInt32,\n  ", multiRowSortingKey
+		}
+		statement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
+  exporter_id String, batch_id FixedString(64), event_id FixedString(64), resource_id String,
+  conversation_id String, conversation_group_id String,
+  ingest_version UInt64, observed_at DateTime64(9, 'UTC'), is_deleted UInt8,
+  schema_version UInt16,
+  %s%s
+) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (%s)`, quoteIdentifier(s.database), quoteIdentifier(table.Name), rowColumns, strings.Join(columns, ",\n  "), sortingKey)
+		if err := s.conn.Exec(ctx, statement); err != nil {
+			return fmt.Errorf("create projection table %s: %w", table.Name, err)
+		}
+	}
+	if err := s.ensureProjectionTableColumns(ctx, mode, table); err != nil {
+		return err
+	}
+	if mode == "validate" {
+		for _, manifest := range table.Manifests {
+			if !state.registeredHere[manifest.Name] {
+				return fmt.Errorf("projection %q is missing from the registry", manifest.Name)
+			}
+		}
+		return nil
+	}
+	var registered []string
+	for _, manifest := range table.Manifests {
+		if state.registeredHere[manifest.Name] {
+			continue
+		}
+		selector := manifest.Resource + ":" + manifest.Selector
+		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version, previous) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name, manifest.Digest, selector, table.Name, "active", time.Now().UTC(), uint64(1), manifest.Previous); err != nil {
+			return fmt.Errorf("register projection %s: %w", manifest.Name, err)
+		}
+		registered = append(registered, manifest.Name)
+	}
+	if len(registered) > 0 {
+		if afterProjectionRegistration != nil {
+			afterProjectionRegistration(ctx, table.Name)
+		}
+		// Re-read the registry so a concurrent exporter registering a divergent chain fails.
+		// Withdraw this attempt's rows so the losing configuration does not block the table.
+		if _, err := s.readProjectionChainRegistry(ctx, table); err != nil {
+			return errors.Join(err, s.withdrawProjectionRegistrations(ctx, registered))
+		}
+	}
+	return nil
+}
+
+// afterProjectionRegistration lets tests register a concurrent exporter's manifests between
+// this exporter's registration and its re-check. It is nil outside tests.
+var afterProjectionRegistration func(ctx context.Context, table string)
+
+// withdrawProjectionRegistrations removes this exporter's registry rows for the named manifests.
+func (s *ClickHouseSink) withdrawProjectionRegistrations(ctx context.Context, names []string) error {
+	predicate, args := fixedStringPredicate("projection_name", names)
+	withdrawCtx := ch.Context(ctx, ch.WithSettings(ch.Settings{"mutations_sync": 2}))
+	if err := s.deletePurgeRows(withdrawCtx, "projection_registry", s.config.ExporterID, predicate, args); err != nil {
+		return fmt.Errorf("withdraw projection registrations %s: %w", strings.Join(names, ", "), err)
+	}
+	return nil
+}
+
+// projectionChainRegistry describes which manifests of a configured chain are registered.
+type projectionChainRegistry struct {
+	tableRegistered bool
+	registeredHere  map[string]bool
+}
+
+// readProjectionChainRegistry checks that the registered manifests of a table, across every
+// exporter, form the beginning of the configured chain with identical digests. Registered
+// manifests can never be edited, reordered, or removed from the configuration.
+func (s *ClickHouseSink) readProjectionChainRegistry(ctx context.Context, table *ProjectionTable) (projectionChainRegistry, error) {
+	state := projectionChainRegistry{registeredHere: map[string]bool{}}
+	registered := map[string]bool{}
+	for _, manifest := range table.Manifests {
+		var count, here, digests, tables uint64
+		var digest, tableName string
+		if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(), countIf(exporter_id=?), uniqExact(projection_digest), any(projection_digest), uniqExact(table_name), any(table_name) FROM %s.projection_registry WHERE projection_name=?", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name).Scan(&count, &here, &digests, &digest, &tables, &tableName); err != nil {
+			return state, fmt.Errorf("read projection registry for %s: %w", manifest.Name, err)
+		}
+		if count == 0 {
+			continue
+		}
+		if digests != 1 || digest != manifest.Digest {
+			return state, fmt.Errorf("projection %q already exists with a different immutable digest", manifest.Name)
+		}
+		if tables != 1 || tableName != table.Name {
+			return state, fmt.Errorf("projection %q is registered for table %q, not %q", manifest.Name, tableName, table.Name)
+		}
+		registered[manifest.Name] = true
+		state.registeredHere[manifest.Name] = here > 0
+	}
+	rows, err := s.conn.Query(ctx, fmt.Sprintf("SELECT DISTINCT projection_name FROM %s.projection_registry WHERE table_name=? ORDER BY projection_name", quoteIdentifier(s.database)), table.Name)
+	if err != nil {
+		return state, fmt.Errorf("read projection registry ownership for %s: %w", table.Name, err)
+	}
+	configured := map[string]bool{}
+	for _, manifest := range table.Manifests {
+		configured[manifest.Name] = true
+	}
+	var unknown []string
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			_ = rows.Close()
+			return state, err
+		}
+		state.tableRegistered = true
+		if !configured[name] {
+			unknown = append(unknown, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return state, err
+	}
+	if err := rows.Close(); err != nil {
+		return state, err
+	}
+	if len(unknown) > 0 {
+		return state, fmt.Errorf("projection table %q is registered with manifests %s that are not in its configured chain; registered manifests cannot be edited, renamed, or removed", table.Name, strings.Join(unknown, ", "))
+	}
+	for i := len(table.Manifests) - 1; i > 0; i-- {
+		if registered[table.Manifests[i].Name] && !registered[table.Manifests[i-1].Name] {
+			return state, fmt.Errorf("projection %q is registered for table %q but its previous manifest %q is not; registered manifests must form the beginning of the configured chain", table.Manifests[i].Name, table.Name, table.Manifests[i-1].Name)
+		}
+	}
+	return state, nil
+}
+
+// ensureProjectionTableColumns adds the table's missing columns in manage mode. Columns added
+// by spec.addColumns are nullable, so ADD COLUMN only changes metadata. Validate mode lists
+// the missing columns instead of changing the table.
+func (s *ClickHouseSink) ensureProjectionTableColumns(ctx context.Context, mode string, table *ProjectionTable) error {
+	rows, err := s.conn.Query(ctx, "SELECT name, type FROM system.columns WHERE database=? AND table=?", s.database, table.Name)
+	if err != nil {
+		return fmt.Errorf("inspect projection table %s columns: %w", table.Name, err)
+	}
+	existing := map[string]string{}
+	for rows.Next() {
+		var name, columnType string
+		if err := rows.Scan(&name, &columnType); err != nil {
+			_ = rows.Close()
+			return err
+		}
+		existing[name] = columnType
+	}
+	if err := rows.Err(); err != nil {
+		_ = rows.Close()
+		return err
+	}
+	if err := rows.Close(); err != nil {
+		return err
+	}
+	if len(existing) == 0 && mode == "validate" {
+		// The table itself is missing; the registry check reports the unregistered manifests.
+		return nil
+	}
+	var missing []string
+	root := table.Manifests[0].Name
+	for _, name := range table.ColumnOrder {
+		actual, ok := existing[name]
+		if !ok {
+			missing = append(missing, name)
+			continue
+		}
+		// Added columns may come from an interrupted earlier start whose manifest was then
+		// changed before registration, so their physical type must match the declaration.
+		if table.ColumnOwners[name] == root {
+			continue
+		}
+		declared := projectionColumnStorageType(table.Columns[name])
+		canonical, err := s.canonicalClickHouseType(ctx, declared)
+		if err != nil {
+			return fmt.Errorf("canonicalize projection table %s column %s type %s: %w", table.Name, name, declared, err)
+		}
+		if actual != canonical {
+			return fmt.Errorf("projection table %s.%s column %s has type %s, but %s declares %s", s.database, table.Name, name, actual, table.ColumnOwners[name], declared)
+		}
+	}
+	if len(missing) == 0 {
+		return nil
+	}
+	if mode == "validate" {
+		statements := make([]string, len(missing))
+		for i, name := range missing {
+			statements[i] = fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s", quoteIdentifier(s.database), quoteIdentifier(table.Name), projectionColumnDDL(name, table.Columns[name]))
+		}
+		// Applying these statements alone is not enough: only manage mode registers the new
+		// manifests and recreates the views, so the statements are a preview of that run.
+		return fmt.Errorf("projection table %s.%s is missing columns %s; run the processor once with --schema-mode manage and a ClickHouse user that can alter tables to add them, register the new manifests, and recreate the views. That run applies: %s", s.database, table.Name, strings.Join(missing, ", "), strings.Join(statements, "; "))
+	}
+	for _, name := range missing {
+		if err := s.conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s.%s ADD COLUMN IF NOT EXISTS %s", quoteIdentifier(s.database), quoteIdentifier(table.Name), projectionColumnDDL(name, table.Columns[name]))); err != nil {
+			return fmt.Errorf("add projection table %s column %s: %w", table.Name, name, err)
+		}
+	}
+	return nil
+}
+
+func projectionColumnDDL(name string, column projectionColumn) string {
+	return fmt.Sprintf("%s %s", quoteIdentifier(name), projectionColumnStorageType(column))
+}
+
+// projectionColumnStorageType is the physical ClickHouse type of a projection column.
+func projectionColumnStorageType(column projectionColumn) string {
+	columnType := projectionColumnSQLType(column)
+	if column.Type != "string_array" && column.Type != "variant" {
+		columnType = "Nullable(" + columnType + ")"
+	}
+	return columnType
+}
+
+// canonicalClickHouseType returns the type name system.columns reports for a declared type.
+// ClickHouse rewrites type names (whitespace, JSON parameter order, and JSON parameters equal
+// to its own defaults are dropped), so the server canonicalizes the declaration.
+func (s *ClickHouseSink) canonicalClickHouseType(ctx context.Context, declared string) (string, error) {
+	var canonical string
+	if err := s.conn.QueryRow(ctx, "SELECT toTypeName(defaultValueOfTypeName(?))", declared).Scan(&canonical); err != nil {
+		return "", err
+	}
+	return canonical, nil
 }
 
 func (s *ClickHouseSink) registeredProjections(ctx context.Context) ([]registeredProjection, error) {
@@ -120,6 +329,7 @@ ORDER BY projection_name`, quoteIdentifier(s.database)), s.config.ExporterID)
 	if err != nil {
 		return nil, err
 	}
+	// Several manifests of one chain share a table; return each table once.
 	result := make([]registeredProjection, 0)
 	resourcesByTable := map[string]string{}
 	for rows.Next() {
@@ -133,9 +343,12 @@ ORDER BY projection_name`, quoteIdentifier(s.database)), s.config.ExporterID)
 			_ = rows.Close()
 			return nil, err
 		}
-		if existing, ok := resourcesByTable[table]; ok && existing != projection.Resource {
-			_ = rows.Close()
-			return nil, fmt.Errorf("registered projection table %q has conflicting resource kinds", table)
+		if existing, ok := resourcesByTable[table]; ok {
+			if existing != projection.Resource {
+				_ = rows.Close()
+				return nil, fmt.Errorf("registered projection table %q has conflicting resource kinds", table)
+			}
+			continue
 		}
 		resourcesByTable[table] = projection.Resource
 		result = append(result, projection)
@@ -207,12 +420,15 @@ FROM %s.projection_registry GROUP BY table_name, selector ORDER BY table_name`, 
 	return result, nil
 }
 
+// validateRegisteredProjection checks a registry row before its table name is used in DDL.
+// The selector expression is empty for chain manifests that only replace logic or add
+// columns; the resource prefix is always present.
 func validateRegisteredProjection(name, table, selector string) (registeredProjection, error) {
-	resource, expression, found := strings.Cut(selector, ":")
-	if !found || expression == "" || (resource != "entry" && resource != "memory") {
+	resource, _, found := strings.Cut(selector, ":")
+	if !found || (resource != "entry" && resource != "memory") {
 		return registeredProjection{}, fmt.Errorf("projection %q has invalid registered selector %q", name, selector)
 	}
-	if !projectionNamePattern.MatchString(name) || table != name || isReservedProjectionTableName(table) {
+	if !projectionNamePattern.MatchString(name) || !projectionNamePattern.MatchString(table) || isReservedProjectionTableName(table) {
 		return registeredProjection{}, fmt.Errorf("projection %q has unsafe registered table name %q", name, table)
 	}
 	return registeredProjection{Name: name, TableName: table, Resource: resource}, nil

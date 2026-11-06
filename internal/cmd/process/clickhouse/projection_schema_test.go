@@ -13,17 +13,24 @@ func TestValidateRegisteredProjection(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, registeredProjection{Name: "history_v1", TableName: "history_v1", Resource: "entry"}, projection)
 
+	// Chain manifests write to their chain's table, and manifests that only replace logic
+	// or add columns register an empty selector expression.
+	projection, err = validateRegisteredProjection("support_ticket_v2_duration", "support_ticket_steps", "entry:")
+	require.NoError(t, err)
+	require.Equal(t, registeredProjection{Name: "support_ticket_v2_duration", TableName: "support_ticket_steps", Resource: "entry"}, projection)
+
 	for _, test := range []struct {
-		name, table, selector string
+		name, projection, table, selector string
 	}{
-		{"unsafe", "safe; DROP TABLE users", "entry:input.resource"},
-		{"resources", "resources", "entry:input.resource"},
-		{"mismatched-name", "safe", "entry:input.resource"},
-		{"bad-resource", "safe", "conversation:input.resource"},
-		{"missing-expression", "safe", "entry:"},
+		{"unsafe-table", "safe", "safe; DROP TABLE users", "entry:input.resource"},
+		{"unsafe-name", "safe; DROP TABLE users", "safe", "entry:input.resource"},
+		{"resources", "safe", "resources", "entry:input.resource"},
+		{"generated-view", "safe", "safe_current", "entry:input.resource"},
+		{"bad-resource", "safe", "safe", "conversation:input.resource"},
+		{"missing-resource", "safe", "safe", "input.resource"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			_, err := validateRegisteredProjection(test.name, test.table, test.selector)
+			_, err := validateRegisteredProjection(test.projection, test.table, test.selector)
 			require.Error(t, err)
 		})
 	}

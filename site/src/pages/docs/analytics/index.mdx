@@ -22,7 +22,7 @@ The repository deployments use `metadata` by default. Use `projected` when analy
 
 ## Understand the exported data
 
-The processor creates generic tables for conversations, lineage, entries, memories, and lifecycle events. A projection adds a deployment-owned table for one exact entry `contentType` or memory `kind`.
+The processor creates generic tables for conversations, lineage, entries, memories, and lifecycle events. A projection adds a deployment-owned table for one exact entry `contentType` or memory `kind`. A [projection chain](projections/#share-a-table-across-content-type-versions) lets later manifests add content types, kinds, and nullable columns to the same table.
 
 Generic resources use these canonical views:
 
@@ -31,7 +31,7 @@ Generic resources use these canonical views:
 
 Projection tables provide both `<name>_current` and `<name>_all` views. Physical tables retain versioned rows until retention or a hard-delete purge removes them. Queries for application dashboards should normally use a canonical view.
 
-Projection names and column names map directly to SQL identifiers. A projection named `support_ticket_v1` creates these relations:
+Projection names and column names map directly to SQL identifiers. A projection named `support_ticket_v1` creates these relations. A manifest that sets `spec.table` uses that name instead, and every manifest of its chain writes to the same relations.
 
 - `support_ticket_v1`, the physical table
 - `support_ticket_v1_all`, the latest logical row including tombstones
