@@ -1128,6 +1128,7 @@ enum AnalyticsResourceKind {
   ANALYTICS_RESOURCE_KIND_CONVERSATION = 1;
   ANALYTICS_RESOURCE_KIND_ENTRY = 2;
   ANALYTICS_RESOURCE_KIND_MEMORY = 4;
+  ANALYTICS_RESOURCE_KIND_MEMBERSHIP = 5;
 }
 
 message AnalyticsResourceReference {
@@ -1190,6 +1191,15 @@ message AnalyticsMemoryRecord {
   bytes logical_id_source = 12;
 }
 
+// Full admin group/user resource; agent event shapes are unchanged.
+message AnalyticsMembershipRecord {
+ string id = 1;
+ string conversation_group_id = 2;
+ string user_id = 3;
+ string access_level = 4;
+ google.protobuf.Timestamp created_at = 5;
+}
+
 message AnalyticsRecord {
   reserved 5;
   reserved "lineage";
@@ -1199,6 +1209,7 @@ message AnalyticsRecord {
     AnalyticsConversationRecord conversation = 3;
     AnalyticsEntryRecord entry = 4;
     AnalyticsMemoryRecord memory = 6;
+    AnalyticsMembershipRecord membership = 7;
   }
 }
 
@@ -1234,6 +1245,8 @@ message CapabilitiesFeatures {
   bool s3_direct_download_enabled = 7;
   uint32 conversation_metadata_filter_version = 8;
   uint32 max_conversation_metadata_filters = 9;
+  // Complete admin current membership snapshots and transactional mutation events.
+  bool analytics_membership_snapshots = 10;
 }
 
 message CapabilitiesAuth {
@@ -1646,7 +1659,10 @@ message AdminCheckpointLease {
 message SubscribeEventsRequest {
   // Optional: subscribe to specific conversation IDs only.
   repeated string conversation_ids = 1;
-  // Optional: filter by event kinds (conversation, entry, response, membership).
+  // Optional: filter by event kinds (conversation, entry, response, membership, memory).
+  // Admin full membership events use AnalyticsMembershipRecord JSON.
+  // Explicit membership with conversation_ids is invalid for admin full/current.
+  // Omitted kinds with conversation_ids exclude memberships in every phase.
   repeated string kinds = 2;
   // Optional: durable replay cursor. Omit for tail-only mode.
   optional string after_cursor = 3;

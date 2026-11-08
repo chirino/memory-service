@@ -67,6 +67,7 @@ func (s *SQLiteStore) AppendOutboxEvents(ctx context.Context, events []registrys
 			CreatedAt: row.CreatedAt,
 		})
 	}
+	s.publishCommittedOutbox(ctx, out)
 	return out, nil
 }
 

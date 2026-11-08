@@ -22,13 +22,13 @@ spec:
   projectionRego: |
     package memoryservice.analytics
     output := {
-      "namespace": object.get(input.attributes, "namespace", null),
-      "subject": object.get(input.attributes, "sub", null),
-      "memory_kind": object.get(input.attributes, "memoryKind", null),
-      "runtime_id": object.get(input.attributes, "runtimeId", null),
-      "runtime_version": object.get(input.attributes, "runtimeVersion", null),
-      "confidence": object.get(input.attributes, "confidence", null),
-      "memory_observed_at": object.get(input.attributes, "observedAt", null),
-      "memory_effective_at": object.get(input.attributes, "effectiveAt", null),
-      "value": input.value,
+      "namespace": object.get(input.record.attributes, "namespace", null),
+      "subject": object.get(input.record.attributes, "sub", null),
+      "memory_kind": object.get(input.record.attributes, "memoryKind", null),
+      "runtime_id": object.get(input.record.attributes, "runtimeId", null),
+      "runtime_version": object.get(input.record.attributes, "runtimeVersion", null),
+      "confidence": object.get(input.record.attributes, "confidence", null),
+      "memory_observed_at": object.get(input.record.attributes, "observedAt", null),
+      "memory_effective_at": object.get(input.record.attributes, "effectiveAt", null),
+      "value": input.record.value,
     }

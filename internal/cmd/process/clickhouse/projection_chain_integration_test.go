@@ -26,7 +26,7 @@ spec:
     step: {type: string, nullable: false}
   projectionRego: |
     package memoryservice.analytics
-    output := {"step": input.content.step}
+    output := {"step": input.record.content.step}
 `
 
 const integrationChainLater = `apiVersion: memory-service/v1alpha1
@@ -49,7 +49,7 @@ spec:
     duration_ms: {type: uint64, nullable: true}
   projectionRego: |
     package memoryservice.analytics
-    output := {"step": input.content.step, "duration_ms": object.get(input.content, "durationMs", null)}
+    output := {"step": input.record.content.step, "duration_ms": object.get(input.record.content, "durationMs", null)}
 `
 
 func writeChainManifest(t *testing.T, dir, name, content string) string {
@@ -65,7 +65,7 @@ func chainEntryRecord(t *testing.T, id, contentType string, content map[string]a
 	require.NoError(t, err)
 	return &pb.AnalyticsRecord{
 		Reference: &pb.AnalyticsResourceReference{Kind: pb.AnalyticsResourceKind_ANALYTICS_RESOURCE_KIND_ENTRY, Id: id}, SnapshotAvailable: true,
-		Record: &pb.AnalyticsRecord_Entry{Entry: &pb.AnalyticsEntryRecord{Id: id, ConversationId: "chain-conversation", ConversationGroupId: "chain-group", ContentType: contentType, CreatedAt: timestamppb.Now(), Content: value}},
+		Record: &pb.AnalyticsRecord_Entry{Entry: &pb.AnalyticsEntryRecord{Id: id, ConversationId: "chain-conversation", ConversationGroupId: testGroup, ContentType: contentType, CreatedAt: timestamppb.Now(), Content: value}},
 	}
 }
 
@@ -135,7 +135,6 @@ func TestClickHouseProjectionChainExtendsExistingTable(t *testing.T) {
 	database, admin := createIntegrationDatabase(t, ctx)
 	cfg := integrationDatabaseConfig(database, "projection-chain", dir, rootPath)
 	cfg.ProjectionRetention = time.Hour
-	cfg.GenericPayloadRetention = time.Hour
 	cfg.TombstoneRetention = 2 * time.Hour
 
 	// A projection created before its chain existed.
@@ -176,7 +175,7 @@ func TestClickHouseProjectionChainExtendsExistingTable(t *testing.T) {
 	processor, err = NewProcessor(cfg, sink)
 	require.NoError(t, err)
 	require.NoError(t, processor.SetLeaseGeneration(3))
-	require.NoError(t, processor.writeBackfillPage(ctx, "entry", []*pb.AnalyticsRecord{chainEntryRecord(t, "e1", "support-ticket/v1", map[string]any{"step": "plan", "durationMs": 3})}))
+	require.NoError(t, bootstrapTestRecords(ctx, processor, "entry", []*pb.AnalyticsRecord{chainEntryRecord(t, "e1", "support-ticket/v1", map[string]any{"step": "plan", "durationMs": 3})}))
 	require.Equal(t, []chainRow{{"e1", "plan", new(uint64(3))}, {"e2", "act", new(uint64(5))}, {"e3", "check", nil}}, readChainRows(t, ctx, admin, database, "support_ticket_chain_v1_current", cfg.ExporterID))
 	var failures uint64
 	require.NoError(t, admin.QueryRow(ctx, "SELECT count() FROM "+quoteIdentifier(database)+".projection_failures WHERE exporter_id=?", cfg.ExporterID).Scan(&failures))
@@ -200,7 +199,7 @@ func TestClickHouseProjectionChainExtendsExistingTable(t *testing.T) {
 	require.ErrorContains(t, err, `projection "support_ticket_chain_duration" already exists with a different immutable digest`)
 
 	// A hard delete purges the rows that any manifest of the chain wrote to the shared table.
-	require.NoError(t, processor.Handle(ctx, processruntime.EventEnvelope{Event: "deleted", Kind: "entry", Cursor: "chain:4", Time: time.Now().UTC(), Data: []byte(`{"entry":"e2","entry_content_type":"support-ticket/v2","change":"hard_deleted"}`)}))
+	require.NoError(t, processor.Handle(ctx, processruntime.EventEnvelope{Event: "deleted", Kind: "entry", Cursor: "chain:4", Time: time.Now().UTC(), Data: []byte(`{"entry":"e2","conversation":"chain-conversation","conversation_group":"` + testGroup + `","entry_content_type":"support-ticket/v2","change":"hard_deleted"}`)}))
 	require.NoError(t, processor.Flush(ctx))
 	require.Equal(t, []chainRow{{"e1", "plan", new(uint64(3))}, {"e3", "check", nil}}, readChainRows(t, ctx, admin, database, "support_ticket_chain_v1_current", cfg.ExporterID))
 	var stored uint64
@@ -253,7 +252,7 @@ spec:
     step: {type: string, nullable: false}
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s} | some s in input.content.steps]
+    output := [{"step": s} | some s in input.record.content.steps]
 ---
 apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
@@ -275,7 +274,7 @@ spec:
     duration_ms: {type: uint64, nullable: true}
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s, "duration_ms": input.content.durationMs} | some s in input.content.steps]
+    output := [{"step": s, "duration_ms": input.record.content.durationMs} | some s in input.record.content.steps]
 `)
 	database, admin := createIntegrationDatabase(t, ctx)
 	cfg := integrationDatabaseConfig(database, "projection-chain-fresh", dir, path)
@@ -288,7 +287,7 @@ spec:
 	require.Equal(t, []string{"step Nullable(String)", "duration_ms Nullable(UInt64)"}, columns[len(columns)-2:])
 	var sortingKey string
 	require.NoError(t, admin.QueryRow(ctx, "SELECT sorting_key FROM system.tables WHERE database=? AND name='steps'", database).Scan(&sortingKey))
-	require.Equal(t, multiRowSortingKey, sortingKey)
+	require.Equal(t, projectionSortingKey(ProjectionRowsMany, "resource"), sortingKey)
 	var relations uint64
 	require.NoError(t, admin.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database=? AND name IN ('steps_all', 'steps_current', 'steps_v1')", database).Scan(&relations))
 	require.Equal(t, uint64(2), relations, "manifest names do not create tables")
@@ -298,7 +297,7 @@ spec:
 	processor, err := NewProcessor(cfg, sink)
 	require.NoError(t, err)
 	require.NoError(t, processor.SetLeaseGeneration(1))
-	require.NoError(t, processor.writeBackfillPage(ctx, "entry", []*pb.AnalyticsRecord{
+	require.NoError(t, bootstrapTestRecords(ctx, processor, "entry", []*pb.AnalyticsRecord{
 		chainEntryRecord(t, "e1", "steps/v1", map[string]any{"steps": []any{"plan", "act"}, "durationMs": 2}),
 		chainEntryRecord(t, "e2", "steps/v2", map[string]any{"steps": []any{"check"}, "durationMs": 4}),
 		chainEntryRecord(t, "e3", "steps/v3", map[string]any{"steps": []any{"ignored"}, "durationMs": 6}),
@@ -307,34 +306,23 @@ spec:
 }
 
 // Databases created before projection chains lack the registry previous column.
-func TestClickHouseProjectionRegistryGainsPreviousColumn(t *testing.T) {
+func TestClickHouseRejectsIncompleteRegistryMetadata(t *testing.T) {
 	requireClickHouseIntegration(t)
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	dir := t.TempDir()
-	require.NoError(t, os.WriteFile(filepath.Join(dir, "password"), []byte("clickhouse"), 0o600))
-	rootPath := writeChainManifest(t, dir, "a-root.yaml", integrationChainRoot)
+	ctx := context.Background()
 	database, admin := createIntegrationDatabase(t, ctx)
-	cfg := integrationDatabaseConfig(database, "projection-registry-upgrade", dir, rootPath)
+	dir, path, _ := writeIntegrationProjection(t, ctx, "registry_shape", "registry/shape")
+	cfg := integrationDatabaseConfig(database, "registry-shape", dir, path)
 	sink, err := OpenSink(ctx, cfg)
 	require.NoError(t, err)
 	require.NoError(t, sink.Close())
 	require.NoError(t, admin.Exec(ctx, "ALTER TABLE "+quoteIdentifier(database)+".projection_registry DROP COLUMN previous"))
-
-	validateCfg := cfg
-	validateCfg.SchemaMode = "validate"
-	_, err = OpenSink(ctx, validateCfg)
-	require.ErrorContains(t, err, "projection_registry is missing column previous")
-
-	cfg.ProjectionPaths = []string{rootPath, writeChainManifest(t, dir, "b-chain.yaml", integrationChainLater)}
-	sink, err = OpenSink(ctx, cfg)
-	require.NoError(t, err, "manage mode adds the column without changing the schema checksum")
-	require.NoError(t, sink.Close())
-	require.Equal(t, [][3]string{
-		{"support_ticket_chain_duration", "support_ticket_chain_v2", "support_ticket_chain_v1"},
-		{"support_ticket_chain_v1", "", "support_ticket_chain_v1"},
-		{"support_ticket_chain_v2", "support_ticket_chain_v1", "support_ticket_chain_v1"},
-	}, readRegistryChain(t, ctx, admin, database, cfg.ExporterID))
+	before := readIntegrationSchemaDDL(t, ctx, admin, database)
+	for _, mode := range []string{"validate", "manage"} {
+		cfg.SchemaMode = mode
+		_, err = OpenSink(ctx, cfg)
+		require.ErrorContains(t, err, "incompatible columns")
+		require.Equal(t, before, readIntegrationSchemaDDL(t, ctx, admin, database))
+	}
 }
 
 func TestClickHouseProjectionChainChecksAddedColumnTypes(t *testing.T) {
@@ -475,7 +463,7 @@ func TestClickHouseMemoryProjectionChainSplitsAKindWithReplay(t *testing.T) {
 	processor, err = NewProcessor(cfg, sink)
 	require.NoError(t, err)
 	require.NoError(t, processor.SetLeaseGeneration(2))
-	require.NoError(t, processor.writeBackfillPage(ctx, "memory", []*pb.AnalyticsRecord{first, second}))
+	require.NoError(t, bootstrapTestRecords(ctx, processor, "memory", []*pb.AnalyticsRecord{first, second}))
 	require.Equal(t, [][3]*string{{text("m1"), text("BILLING"), nil}, {text("m2"), text("shipping"), text("delays")}}, readMemoryChainRows(t, ctx, admin, database, cfg.ExporterID))
 }
 
@@ -513,7 +501,7 @@ spec:
     duration_ms: {type: uint64, nullable: true}
   projectionRego: |
     package memoryservice.analytics
-    output := {"step": input.content.step, "duration_ms": object.get(input.content, "durationMs", null)}
+    output := {"step": input.record.content.step, "duration_ms": object.get(input.record.content, "durationMs", null)}
 ---
 apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
@@ -573,7 +561,7 @@ spec:
 	// Another exporter registers a divergent extension between our registration and re-check.
 	afterProjectionRegistration = func(ctx context.Context, table string) {
 		for _, manifest := range theirSet.Tables[0].Manifests {
-			require.NoError(t, admin.Exec(ctx, "INSERT INTO "+quoteIdentifier(database)+".projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version, previous) VALUES (?, ?, ?, ?, ?, 'active', now64(9), 1, ?)", other.ExporterID, manifest.Name, manifest.Digest, manifest.Resource+":"+manifest.Selector, table, manifest.Previous))
+			require.NoError(t, admin.Exec(ctx, "INSERT INTO "+quoteIdentifier(database)+".projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version, previous,row_mode,ordering) VALUES (?, ?, ?, ?, ?, 'active', now64(9), 1, ?,?,?)", other.ExporterID, manifest.Name, manifest.Digest, manifest.Resource+":"+manifest.Selector, table, manifest.Previous, manifest.RowMode, manifest.Ordering))
 		}
 	}
 	t.Cleanup(func() { afterProjectionRegistration = nil })

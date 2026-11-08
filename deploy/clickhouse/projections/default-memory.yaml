@@ -16,7 +16,7 @@ spec:
   projectionRego: |
     package memoryservice.analytics
     output := {
-      "namespace": object.get(input.attributes, "namespace", null),
-      "subject": object.get(input.attributes, "sub", null),
-      "value": input.value,
+      "namespace": object.get(input.record.attributes, "namespace", null),
+      "subject": object.get(input.record.attributes, "sub", null),
+      "value": input.record.value,
     }

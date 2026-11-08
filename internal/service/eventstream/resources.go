@@ -1,10 +1,13 @@
 package eventstream
 
 import (
+	"context"
 	"encoding/json"
+	"github.com/google/uuid"
 
 	"github.com/chirino/memory-service/internal/model"
 	registryepisodic "github.com/chirino/memory-service/internal/registry/episodic"
+	registryeventbus "github.com/chirino/memory-service/internal/registry/eventbus"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
 )
 
@@ -138,7 +141,7 @@ func AdminMemoryResource(item *registryepisodic.MemoryItem) map[string]any {
 	}
 	result := map[string]any{
 		"id":        item.ID.String(),
-		"namespace": append([]string(nil), item.Namespace...),
+		"namespace": append([]string{}, item.Namespace...),
 		"key":       item.Key,
 		"kind":      item.MemoryKind,
 		"createdAt": item.CreatedAt.UTC(),
@@ -189,4 +192,75 @@ func EventChange(data any) string {
 		return change
 	}
 	return ""
+}
+
+// AdminMembershipResource is the full admin-only group/user resource.
+func AdminMembershipResource(row *model.ConversationMembership) map[string]any {
+	if row == nil {
+		return nil
+	}
+	return map[string]any{"id": model.MembershipResourceID(row.ConversationGroupID, row.UserID), "conversationGroupId": row.ConversationGroupID.String(), "userId": row.UserID, "accessLevel": row.AccessLevel, "createdAt": row.CreatedAt.UTC()}
+}
+
+// EnrichAdminMembership retains revoke summaries even if a newer grant already exists.
+func EnrichAdminMembership(ctx context.Context, store registrystore.MemoryStore, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+	if event.Event == "deleted" {
+		return event, true, nil
+	}
+	var data map[string]any
+	raw, err := json.Marshal(event.Data)
+	if err != nil {
+		return event, false, err
+	}
+	if err = json.Unmarshal(raw, &data); err != nil {
+		return event, false, err
+	}
+	group, _ := data["conversation_group"].(string)
+	user, _ := data["user"].(string)
+	if group == "" || user == "" {
+		return event, true, nil
+	}
+	reader, ok := store.(registrystore.MembershipSnapshotStore)
+	if !ok {
+		return event, false, registrystore.ErrEventSnapshotUnsupported
+	}
+	var row *model.ConversationMembership
+	err = store.InReadTx(ctx, func(tx context.Context) error {
+		var err error
+		row, err = reader.AdminGetEventSnapshotMembership(tx, group, user)
+		return err
+	})
+	if err != nil {
+		return event, false, err
+	}
+	if row != nil {
+		event.Data = AdminMembershipResource(row)
+	}
+	return event, true, nil
+}
+
+// AppendCreatedMemberships records implicit grants inside the caller's mutation transaction.
+func AppendCreatedMemberships(ctx context.Context, store registrystore.MemoryStore, rows []model.ConversationMembership) error {
+	events := make([]registryeventbus.Event, 0, len(rows))
+	for _, row := range rows {
+		events = append(events, MembershipEvent("created", row.ConversationGroupID, row.UserID, row.AccessLevel))
+	}
+	_, _, err := AppendOutboxEvents(ctx, store, events...)
+	return err
+}
+func MembershipEvent(action string, group uuid.UUID, user string, level model.AccessLevel) registryeventbus.Event {
+	data := map[string]any{"conversation_group": group, "user": user}
+	if action != "deleted" {
+		data["role"] = level
+	}
+	return registryeventbus.Event{Kind: "membership", Event: action, Data: data, ConversationGroupID: group, UserIDs: []string{user}}
+}
+
+// OwnershipTransferEvents refreshes both group roles and conversation owner fields.
+func OwnershipTransferEvents(group uuid.UUID, from, to string, conversationIDs []string) []registryeventbus.Event {
+	events := []registryeventbus.Event{MembershipEvent("updated", group, from, model.AccessLevelManager), MembershipEvent("updated", group, to, model.AccessLevelOwner)}
+	for _, id := range conversationIDs {
+		events = append(events, registryeventbus.Event{Event: "updated", Kind: "conversation", ConversationGroupID: group, Data: map[string]any{"conversation": id, "conversation_group": group, "change": "ownership_transferred"}})
+	}
+	return events
 }

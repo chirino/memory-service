@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"reflect"
 	"sort"
 	"strings"
@@ -639,6 +640,12 @@ func (s *SQLiteStore) createConversationWithID(ctx context.Context, userID strin
 		}
 	}
 
+	if forkedAtConversationID == nil {
+		if err := eventstream.AppendCreatedMemberships(ctx, s, membershipsToCopy); err != nil {
+			return nil, err
+		}
+	}
+
 	return &registrystore.CreateConversationResult{
 		Conversation: &registrystore.ConversationDetail{
 			ConversationSummary: registrystore.ConversationSummary{
@@ -1200,7 +1207,11 @@ func (s *SQLiteStore) DeleteMembership(ctx context.Context, userID string, conve
 	}
 	// Cannot delete the owner
 	var m model.ConversationMembership
-	if err := db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).First(&m).Error; err != nil {
+	result := db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).Limit(1).Find(&m)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
 		return &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
 	}
 	if m.AccessLevel == model.AccessLevelOwner {
@@ -1208,11 +1219,16 @@ func (s *SQLiteStore) DeleteMembership(ctx context.Context, userID string, conve
 	}
 
 	// Java parity: removing the pending transfer recipient cancels the transfer.
-	db.
-		Where("conversation_group_id = ? AND to_user_id = ?", groupID, memberUserID).
-		Delete(&model.OwnershipTransfer{})
-
-	db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).Delete(&model.ConversationMembership{})
+	if err := db.Where("conversation_group_id = ? AND to_user_id = ?", groupID, memberUserID).Delete(&model.OwnershipTransfer{}).Error; err != nil {
+		return err
+	}
+	result = db.Where("conversation_group_id = ? AND user_id = ?", groupID, memberUserID).Delete(&model.ConversationMembership{})
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
+	}
 	return nil
 }
 
@@ -1485,51 +1501,46 @@ func (s *SQLiteStore) CreateOwnershipTransfer(ctx context.Context, userID string
 }
 
 func (s *SQLiteStore) AcceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
-	db := s.writeDBFor(ctx, "sqlite store accept transfer")
-	var t model.OwnershipTransfer
-	if err := db.Where("id = ?", transferID).First(&t).Error; err != nil {
+	db := s.dbFor(ctx)
+	var transfer model.OwnershipTransfer
+	result := db.Where("id = ?", transferID).Limit(1).Find(&transfer)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
 		return &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
-	if t.ToUserID != userID {
+	if transfer.ToUserID != userID {
 		return &registrystore.ForbiddenError{}
 	}
-
-	return db.Transaction(func(tx *gorm.DB) error {
-		// Update old owner membership to manager
-		tx.Model(&model.ConversationMembership{}).
-			Where("conversation_group_id = ? AND user_id = ?", t.ConversationGroupID, t.FromUserID).
-			Update("access_level", model.AccessLevelManager)
-
-		// Upsert new owner membership
-		var existing model.ConversationMembership
-		existingResult := tx.
-			Where("conversation_group_id = ? AND user_id = ?", t.ConversationGroupID, t.ToUserID).
-			Limit(1).
-			Find(&existing)
-		if existingResult.Error != nil {
-			return fmt.Errorf("failed to load recipient membership: %w", existingResult.Error)
+	if err := db.Model(&model.ConversationMembership{}).Where("conversation_group_id = ? AND user_id = ?", transfer.ConversationGroupID, transfer.FromUserID).Update("access_level", model.AccessLevelManager).Error; err != nil {
+		return err
+	}
+	var recipient model.ConversationMembership
+	result = db.Where("conversation_group_id = ? AND user_id = ?", transfer.ConversationGroupID, transfer.ToUserID).Limit(1).Find(&recipient)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		recipient = model.ConversationMembership{ConversationGroupID: transfer.ConversationGroupID, UserID: transfer.ToUserID, AccessLevel: model.AccessLevelOwner, CreatedAt: time.Now().UTC()}
+		if err := db.Create(&recipient).Error; err != nil {
+			return err
 		}
-		if existingResult.RowsAffected == 0 {
-			// Create new
-			tx.Create(&model.ConversationMembership{
-				ConversationGroupID: t.ConversationGroupID,
-				UserID:              t.ToUserID,
-				AccessLevel:         model.AccessLevelOwner,
-				CreatedAt:           time.Now(),
-			})
-		} else {
-			tx.Model(&existing).Update("access_level", model.AccessLevelOwner)
-		}
-
-		// Update conversation owner
-		tx.Model(&model.Conversation{}).
-			Where("conversation_group_id = ? AND archived_at IS NULL", t.ConversationGroupID).
-			Update("owner_user_id", t.ToUserID)
-
-		// Delete the transfer record
-		tx.Where("id = ?", transferID).Delete(&model.OwnershipTransfer{})
-		return nil
-	})
+	} else if err := db.Model(&recipient).Update("access_level", model.AccessLevelOwner).Error; err != nil {
+		return err
+	}
+	if err := db.Model(&model.Conversation{}).Where("conversation_group_id = ? AND archived_at IS NULL", transfer.ConversationGroupID).Update("owner_user_id", transfer.ToUserID).Error; err != nil {
+		return err
+	}
+	if err := db.Delete(&transfer).Error; err != nil {
+		return err
+	}
+	var conversationIDs []string
+	if err := db.Model(&model.Conversation{}).Where("conversation_group_id = ? AND archived_at IS NULL", transfer.ConversationGroupID).Order("id").Pluck("id", &conversationIDs).Error; err != nil {
+		return err
+	}
+	_, _, err := eventstream.AppendOutboxEvents(ctx, s, eventstream.OwnershipTransferEvents(transfer.ConversationGroupID, transfer.FromUserID, transfer.ToUserID, conversationIDs)...)
+	return err
 }
 
 func (s *SQLiteStore) DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
@@ -2308,6 +2319,10 @@ func (s *SQLiteStore) autoCreateConversation(ctx context.Context, userID string,
 	}
 	if err := db.Create(&membership).Error; err != nil {
 		return model.Conversation{}, fmt.Errorf("failed to create membership: %w", err)
+	}
+
+	if err := eventstream.AppendCreatedMemberships(ctx, s, []model.ConversationMembership{membership}); err != nil {
+		return model.Conversation{}, err
 	}
 
 	return conv, nil

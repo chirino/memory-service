@@ -599,6 +599,9 @@ type CapabilitiesAuth struct {
 
 // CapabilitiesFeatures defines model for CapabilitiesFeatures.
 type CapabilitiesFeatures struct {
+	// AnalyticsMembershipSnapshots Complete admin current membership snapshots and durable events for owner creation, copied memberships, grants, updates, revokes, and ownership transfers. Absent means unsupported.
+	AnalyticsMembershipSnapshots *bool `json:"analytics_membership_snapshots,omitempty"`
+
 	// ConversationMetadataFilterVersion Version of the repeatable conversation metadata filter contract.
 	ConversationMetadataFilterVersion *int `json:"conversation_metadata_filter_version,omitempty"`
 	CorsEnabled                       bool `json:"cors_enabled"`

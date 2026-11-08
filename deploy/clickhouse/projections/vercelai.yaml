@@ -46,7 +46,7 @@ spec:
     } else := []
 
     output := [row |
-      some message in input.content
+      some message in input.record.content
       row := {
         "role": field(message, "role"),
         "text": message_text(message),

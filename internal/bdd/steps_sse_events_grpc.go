@@ -5,7 +5,10 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"google.golang.org/grpc/codes"
+	"google.golang.org/grpc/status"
 	"io"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
@@ -36,6 +39,8 @@ func init() {
 		ctx.Step(`^the gRPC event cursor should be saved as "([^"]*)"$`, e.saveGRPCEventCursor)
 		ctx.Step(`^the gRPC event cursor should match the Postgres outbox format$`, e.grpcEventCursorShouldMatchPostgresOutboxFormat)
 		ctx.Step(`^the gRPC event data should contain "([^"]*)"$`, e.grpcEventDataShouldContain)
+		ctx.Step(`^"([^"]*)" is connected to the admin gRPC event stream with query "([^"]*)"$`, e.adminGRPCEventStreamWithQuery)
+		ctx.Step(`^the admin gRPC event stream with query "([^"]*)" should fail with "([^"]*)"$`, e.adminGRPCEventStreamShouldFail)
 		ctx.Step(`^the gRPC event data "([^"]*)" should be "([^"]*)"$`, e.grpcEventDataFieldShouldBe)
 
 		ctx.After(func(ctx context.Context, sc *godog.Scenario, err error) (context.Context, error) {
@@ -66,7 +71,7 @@ func (e *grpcEventSteps) openGRPCEventStream(userID string, kinds []string, entr
 	return e.openGRPCEventStreamWithContext(userID, authCtx, kinds, entryChannels, entryContentTypes, entryRoles, afterCursor, detail)
 }
 
-func (e *grpcEventSteps) openGRPCEventStreamWithContext(streamID string, authCtx context.Context, kinds []string, entryChannels []string, entryContentTypes []string, entryRoles []string, afterCursor, detail *string) error {
+func (e *grpcEventSteps) openGRPCEventStreamWithContext(streamID string, authCtx context.Context, kinds []string, entryChannels []string, entryContentTypes []string, entryRoles []string, afterCursor, detail *string, requests ...*pb.SubscribeEventsRequest) error {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 
@@ -87,14 +92,18 @@ func (e *grpcEventSteps) openGRPCEventStreamWithContext(streamID string, authCtx
 
 	ctx, cancel := context.WithCancel(authCtx)
 
-	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, &pb.SubscribeEventsRequest{
+	request := &pb.SubscribeEventsRequest{
 		Kinds:             kinds,
 		EntryChannels:     entryChannels,
 		EntryContentTypes: entryContentTypes,
 		EntryRoles:        entryRoles,
 		AfterCursor:       afterCursor,
 		Detail:            detail,
-	})
+	}
+	if len(requests) > 0 {
+		request = requests[0]
+	}
+	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, request)
 	if err != nil {
 		cancel()
 		_ = conn.Close()
@@ -228,6 +237,16 @@ func (e *grpcEventSteps) userShouldReceiveGRPCEvent(userID, kind, eventType stri
 }
 
 func (e *grpcEventSteps) userShouldReceiveGRPCEventWithDataField(userID, kind, eventType, field, expected string) error {
+	expanded, err := e.s.Expand(expected)
+	if err != nil {
+		return err
+	}
+	expected = expanded
+
+	if field == "userId" || field == "user" || field == "ownerUserId" {
+		expected = e.s.IsolatedUser(expected)
+	}
+
 	e.mu.Lock()
 	stream, ok := e.streams[userID]
 	e.mu.Unlock()
@@ -350,6 +369,16 @@ func (e *grpcEventSteps) grpcEventDataShouldContain(field string) error {
 }
 
 func (e *grpcEventSteps) grpcEventDataFieldShouldBe(field, expected string) error {
+	expanded, err := e.s.Expand(expected)
+	if err != nil {
+		return err
+	}
+	expected = expanded
+
+	if field == "userId" || field == "user" || field == "ownerUserId" {
+		expected = e.s.IsolatedUser(expected)
+	}
+
 	if e.lastEvent == nil {
 		return fmt.Errorf("no gRPC event captured for assertion")
 	}
@@ -360,6 +389,65 @@ func (e *grpcEventSteps) grpcEventDataFieldShouldBe(field, expected string) erro
 	actual := fmt.Sprintf("%v", data[field])
 	if actual != expected {
 		return fmt.Errorf("gRPC event data field %q: expected %q, got %q", field, expected, actual)
+	}
+	return nil
+}
+
+func (e *grpcEventSteps) adminRequest(query string) (*pb.SubscribeEventsRequest, error) {
+	expanded, err := e.s.Expand(query)
+	if err != nil {
+		return nil, err
+	}
+	q, err := url.ParseQuery(expanded)
+	if err != nil {
+		return nil, err
+	}
+	req := &pb.SubscribeEventsRequest{Scope: new(pb.EventScope_EVENT_SCOPE_ADMIN), Justification: new("BDD membership analytics")}
+	if value := q.Get("kinds"); value != "" {
+		req.Kinds = strings.Split(value, ",")
+	}
+	if value := q.Get("conversation_ids"); value != "" {
+		req.ConversationIds = strings.Split(value, ",")
+	}
+	if value := q.Get("detail"); value != "" {
+		req.Detail = &value
+	}
+	if value := q.Get("after"); value != "" {
+		req.AfterCursor = &value
+	}
+	if value := q.Get("initial_state"); value != "" {
+		req.InitialState = &value
+	}
+	return req, nil
+}
+func (e *grpcEventSteps) adminGRPCEventStreamWithQuery(user, query string) error {
+	req, err := e.adminRequest(query)
+	if err != nil {
+		return err
+	}
+	e.s.RegisterCanonicalUsers(user)
+	ctx := metadata.NewOutgoingContext(context.Background(), metadata.Pairs("authorization", "Bearer "+e.s.IsolatedUser(user)))
+	return e.openGRPCEventStreamWithContext(user, ctx, nil, nil, nil, nil, nil, nil, req)
+}
+func (e *grpcEventSteps) adminGRPCEventStreamShouldFail(query, expected string) error {
+	req, err := e.adminRequest(query)
+	if err != nil {
+		return err
+	}
+	addr, _ := e.s.Extra["grpcAddr"].(string)
+	conn, err := grpc.NewClient(addr, grpc.WithTransportCredentials(insecure.NewCredentials()))
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+	ctx, cancel := context.WithTimeout(grpcAuthContext(e.s), 5*time.Second)
+	defer cancel()
+	stream, err := pb.NewEventStreamServiceClient(conn).SubscribeEvents(ctx, req)
+	if err == nil {
+		_, err = stream.Recv()
+	}
+	if status.Code(err) != codes.InvalidArgument || expected != "INVALID_ARGUMENT" {
+		return fmt.Errorf("expected %s, got %v", expected, err)
 	}
 	return nil
 }

@@ -77,6 +77,34 @@ func StreamAdminCurrentState(ctx context.Context, store registrystore.MemoryStor
 			cursor = next
 		}
 	}
+	if selected("membership") && len(conversationIDs) == 0 {
+		memberships, ok := store.(registrystore.MembershipSnapshotStore)
+		if !ok {
+			return registrystore.ErrEventSnapshotUnsupported
+		}
+		var cursor *registrystore.EventSnapshotMembershipCursor
+		for {
+			var rows []model.ConversationMembership
+			var next *registrystore.EventSnapshotMembershipCursor
+			err := store.InReadTx(ctx, func(tx context.Context) error {
+				var err error
+				rows, next, err = memberships.AdminListEventSnapshotMemberships(tx, cursor, currentStatePageSize)
+				return err
+			})
+			if err != nil {
+				return fmt.Errorf("list current memberships: %w", err)
+			}
+			for i := range rows {
+				if err := emit(registryeventbus.Event{Event: "snapshot", Kind: "membership", Data: AdminMembershipResource(&rows[i])}); err != nil {
+					return err
+				}
+			}
+			if next == nil {
+				break
+			}
+			cursor = next
+		}
+	}
 	if selected("memory") {
 		snapshotMemories, ok := episodicStore.(registryepisodic.EventSnapshotStore)
 		if !ok {

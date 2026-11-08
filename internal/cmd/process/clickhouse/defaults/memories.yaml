@@ -1,0 +1,27 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: default_memories
+spec:
+  resource: memory
+  table: memories
+  rows: one
+  columns:
+    namespace: {type: string_array, nullable: false}
+    key: {type: string, nullable: false}
+    kind: {type: string, nullable: false}
+    revision: {type: int64, nullable: false}
+    created_at: {type: timestamp, nullable: false}
+    expires_at: {type: timestamp, nullable: true}
+    archived: {type: bool, nullable: false}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "namespace": input.record.namespace,
+      "key": input.record.key,
+      "kind": input.record.kind,
+      "revision": input.record.revision,
+      "created_at": input.record.createdAt,
+      "expires_at": object.get(input.record, "expiresAt", null),
+      "archived": input.record.archived,
+    }

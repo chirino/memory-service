@@ -33,14 +33,12 @@ const (
 
 const (
 	disableLifecycleEvents = "lifecycle_events"
-	disableLineage         = "lineage"
 	disableProjections     = "projections"
 )
 
 var disableFeatureResources = map[string]map[string]struct{}{
 	disableLifecycleEvents: {"conversations": {}, "entries": {}, "memories": {}},
-	disableLineage:         {"conversations": {}},
-	disableProjections:     {"entries": {}, "memories": {}},
+	disableProjections:     {"conversations": {}, "entries": {}, "memories": {}},
 }
 
 var identifierPattern = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
@@ -48,6 +46,7 @@ var replayIDPattern = regexp.MustCompile(`^[A-Za-z0-9._-]{1,128}$`)
 
 // Config controls one analytics export.
 type Config struct {
+	ExportMemberships          bool
 	ExporterID                 string
 	Addresses                  []string
 	Protocol                   string
@@ -70,7 +69,6 @@ type Config struct {
 	PurgeMode                  string
 	LifecycleRetention         time.Duration
 	TombstoneRetention         time.Duration
-	GenericPayloadRetention    time.Duration
 	ProjectionRetention        time.Duration
 	ProjectionFailureRetention time.Duration
 	TailOnlyDevelopment        bool
@@ -97,7 +95,7 @@ func (c *Config) setDefaults() {
 		c.PayloadMode = PayloadMetadata
 	}
 	if c.ProjectionFailurePolicy == "" {
-		c.ProjectionFailurePolicy = "continue-generic"
+		c.ProjectionFailurePolicy = "record"
 	}
 	if c.RetentionMode == "" {
 		c.RetentionMode = RetentionManaged
@@ -164,13 +162,7 @@ func (c *Config) Validate() error {
 	}
 	switch c.PayloadMode {
 	case PayloadMetadata:
-		if len(c.ProjectionPaths) > 0 {
-			return errors.New("projection paths require projected or full payload mode")
-		}
 	case PayloadProjected:
-		if len(c.ProjectionPaths) == 0 {
-			return errors.New("projected payload mode requires at least one --projection-path")
-		}
 	case PayloadFull:
 		if !c.AllowDecryptedContent {
 			return errors.New("full payload mode requires --allow-decrypted-content")
@@ -178,18 +170,15 @@ func (c *Config) Validate() error {
 	default:
 		return errors.New("payload mode must be metadata, projected, or full")
 	}
-	if c.ProjectionFailurePolicy != "continue-generic" && c.ProjectionFailurePolicy != "stop" {
-		return errors.New("projection failure policy must be continue-generic or stop")
+	if c.ProjectionFailurePolicy != "record" && c.ProjectionFailurePolicy != "stop" {
+		return errors.New("projection failure policy must be record or stop")
 	}
 	if c.ProjectionReplayID != "" {
-		if len(c.ProjectionPaths) == 0 {
-			return errors.New("projection replay ID requires at least one --projection-path")
-		}
 		if !replayIDPattern.MatchString(c.ProjectionReplayID) {
 			return errors.New("projection replay ID must contain only letters, digits, dots, underscores, or hyphens and be at most 128 characters")
 		}
-		if c.featureDisabled("entry", disableProjections) && c.featureDisabled("memory", disableProjections) {
-			return errors.New("projection replay requires entry or memory projection output to be enabled")
+		if c.featureDisabled("entry", disableProjections) && c.featureDisabled("memory", disableProjections) && c.featureDisabled("conversation", disableProjections) && !c.ExportMemberships {
+			return errors.New("projection replay requires an enabled projection or membership output")
 		}
 	}
 	if len(c.resourceKinds()) == 0 {
@@ -197,24 +186,20 @@ func (c *Config) Validate() error {
 	}
 	for name, value := range map[string]time.Duration{
 		"lifecycle retention": c.LifecycleRetention, "tombstone retention": c.TombstoneRetention,
-		"generic payload retention": c.GenericPayloadRetention, "projection retention": c.ProjectionRetention,
+		"projection retention":         c.ProjectionRetention,
 		"projection failure retention": c.ProjectionFailureRetention,
 	} {
 		if value < 0 {
 			return fmt.Errorf("%s must not be negative", name)
 		}
 	}
-	if c.RetentionMode == RetentionExternal && (c.LifecycleRetention != 0 || c.TombstoneRetention != 0 || c.GenericPayloadRetention != 0 || c.ProjectionRetention != 0 || c.ProjectionFailureRetention != 0) {
+	if c.RetentionMode == RetentionExternal && (c.LifecycleRetention != 0 || c.TombstoneRetention != 0 || c.ProjectionRetention != 0 || c.ProjectionFailureRetention != 0) {
 		return errors.New("ClickHouse retention durations require managed retention mode")
 	}
-	if c.TombstoneRetention > 0 {
-		if c.GenericPayloadRetention == 0 || c.GenericPayloadRetention > c.TombstoneRetention {
-			return errors.New("generic payload retention must be positive and no greater than tombstone retention when tombstone retention is enabled")
-		}
-		if len(c.ProjectionPaths) > 0 && (c.ProjectionRetention == 0 || c.ProjectionRetention > c.TombstoneRetention) {
-			return errors.New("projection retention must be positive and no greater than tombstone retention when tombstone retention is enabled")
-		}
+	if c.TombstoneRetention > 0 && (c.ProjectionRetention == 0 || c.ProjectionRetention > c.TombstoneRetention) {
+		return errors.New("projection retention must be positive and no greater than tombstone retention")
 	}
+
 	if c.BatchEvents < 1 || c.BatchEvents > 100000 {
 		return errors.New("batch events must be between 1 and 100000")
 	}
@@ -253,19 +238,23 @@ func (c Config) resourceKinds() []string {
 	if !c.resourceDisabled("memory") {
 		kinds = append(kinds, "memory")
 	}
+	if c.ExportMemberships {
+		kinds = append(kinds, "membership")
+	}
 	return kinds
 }
 
 func (c Config) subscriptionKinds() []string {
 	if c.PurgeMode != PurgeExternal {
-		// Disabled resources can still have older rows that a later hard delete
-		// must remove. Conversation deletes can also cover dependent entry rows.
-		return []string{"conversation", "entry", "memory"}
+		return []string{"conversation", "entry", "memory", "membership"}
 	}
 	return c.resourceKinds()
 }
 
 func (c Config) exportsResourceKind(kind string) bool {
+	if kind == "membership" {
+		return c.ExportMemberships
+	}
 	return (kind == "conversation" || kind == "entry" || kind == "memory") && !c.resourceDisabled(kind)
 }
 
@@ -278,6 +267,9 @@ func (c Config) resourceDisabled(kind string) bool {
 }
 
 func (c Config) featureDisabled(kind, feature string) bool {
+	if kind == "membership" {
+		return !c.ExportMemberships || stringSliceContains(c.Disable, "*:"+feature)
+	}
 	resource, ok := externalResourceName(kind)
 	if !ok || c.resourceDisabled(kind) {
 		return true
@@ -293,11 +285,14 @@ func (c Config) enabledOutputs() []string {
 		}
 		plural, _ := externalResourceName(resource)
 		outputs = append(outputs, plural)
-		for _, feature := range []string{disableLifecycleEvents, disableLineage, disableProjections} {
+		for _, feature := range []string{disableLifecycleEvents, disableProjections} {
 			if _, applies := disableFeatureResources[feature][plural]; applies && !c.featureDisabled(resource, feature) {
 				outputs = append(outputs, plural+":"+feature)
 			}
 		}
+	}
+	if c.ExportMemberships {
+		outputs = append(outputs, "memberships")
 	}
 	return outputs
 }
@@ -318,7 +313,7 @@ func normalizeDisableSelectors(values []string) ([]string, error) {
 			} else {
 				applicable, ok := disableFeatureResources[feature]
 				if !ok || feature == "" {
-					return nil, fmt.Errorf("invalid ClickHouse disable selector %q; features are lifecycle_events, lineage, or projections", selector)
+					return nil, fmt.Errorf("invalid ClickHouse disable selector %q; features are lifecycle_events or projections", selector)
 				}
 				if resource != "*" {
 					if _, ok := internalResourceName(resource); !ok {

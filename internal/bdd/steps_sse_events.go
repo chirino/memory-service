@@ -269,6 +269,16 @@ func (e *sseEventSteps) userShouldReceiveSSEEventDefault(userID, kind, event str
 }
 
 func (e *sseEventSteps) userShouldReceiveSSEEventWithDataField(userID, kind, eventType, field, expected string) error {
+	expanded, err := e.s.Expand(expected)
+	if err != nil {
+		return err
+	}
+	expected = expanded
+
+	if field == "userId" || field == "user" || field == "ownerUserId" {
+		expected = e.s.IsolatedUser(expected)
+	}
+
 	e.mu.Lock()
 	stream, ok := e.streams[userID]
 	e.mu.Unlock()
@@ -418,6 +428,16 @@ func (e *sseEventSteps) sseEventDataShouldContain(field string) error {
 }
 
 func (e *sseEventSteps) sseEventDataFieldShouldBe(field, expected string) error {
+	expanded, err := e.s.Expand(expected)
+	if err != nil {
+		return err
+	}
+	expected = expanded
+
+	if field == "userId" || field == "user" || field == "ownerUserId" {
+		expected = e.s.IsolatedUser(expected)
+	}
+
 	if e.lastEvent == nil {
 		return fmt.Errorf("no SSE event captured for assertion")
 	}

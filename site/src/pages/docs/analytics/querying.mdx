@@ -21,7 +21,9 @@ docker compose exec -T clickhouse clickhouse-client \
   --password memory-service-analytics
 ```
 
-Prefix table names with the configured database. The repository examples use `memory_service`.
+The first activity queries use the packaged metadata projections. Content queries require the corresponding explicit domain manifests; explicit paths replace the packaged set, so include your metadata manifests when using both.
+
+Prefix table names with the configured database. The repository examples use `memory_service_analytics`.
 
 ## Find the available relations
 
@@ -30,7 +32,7 @@ List processor-owned tables, generated views, and user projections:
 <SqlTest
   query={`SELECT name, engine
 FROM system.tables
-WHERE database = 'memory_service'
+WHERE database = 'memory_service_analytics'
 ORDER BY name;`}
   columns={["name", "engine"]}
   minRows={1}
@@ -46,7 +48,7 @@ List registered projections, their selectors, and the tables they write to. In a
   previous,
   state,
   updated_at
-FROM memory_service.projection_registry FINAL
+FROM memory_service_analytics.projection_registry FINAL
 ORDER BY table_name, projection_name;`}
   columns={["projection_name", "selector", "table_name", "previous", "state", "updated_at"]}
   minRows={1}
@@ -66,7 +68,7 @@ Rank current conversations by entry count and show how long each conversation re
     count() AS entry_count,
     min(created_at) AS first_entry_at,
     max(created_at) AS last_entry_at
-  FROM memory_service.entries_current
+  FROM memory_service_analytics.entries_current
   GROUP BY exporter_id, conversation_id
 )
 SELECT
@@ -74,11 +76,11 @@ SELECT
   a.entry_count,
   dateDiff('second', a.first_entry_at, a.last_entry_at) AS active_seconds,
   a.last_entry_at
-FROM memory_service.conversations_current AS c
+FROM memory_service_analytics.conversations_current AS c
 INNER JOIN entry_activity AS a
   ON c.exporter_id = a.exporter_id
  AND c.resource_id = a.conversation_id
-WHERE c.is_archived = 0
+WHERE c.archived = 0
 ORDER BY a.entry_count DESC, a.last_entry_at DESC
 LIMIT 20;`}
   columns={["conversation_id", "entry_count", "active_seconds", "last_entry_at"]}
@@ -98,7 +100,7 @@ Build a daily activity series from lifecycle events:
   countIf(resource_kind = 'entry' AND action = 'created') AS entries_created,
   countIf(resource_kind = 'memory' AND action = 'created') AS memories_created,
   countIf(action = 'deleted') AS resources_deleted
-FROM memory_service.lifecycle_events_current
+FROM memory_service_analytics.lifecycle_events_current
 WHERE occurred_at >= now() - INTERVAL 30 DAY
 GROUP BY day
 ORDER BY day;`}
@@ -120,7 +122,7 @@ Compare the source occurrence time with the time when the processor observed eac
   quantileTDigest(0.50)(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS p50_delay_ms,
   quantileTDigest(0.95)(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS p95_delay_ms,
   max(greatest(0, dateDiff('millisecond', occurred_at, observed_at))) AS max_delay_ms
-FROM memory_service.lifecycle_events_current
+FROM memory_service_analytics.lifecycle_events_current
 WHERE occurred_at >= now() - INTERVAL 24 HOUR
 GROUP BY hour, resource_kind
 ORDER BY hour, resource_kind;`}
@@ -138,7 +140,7 @@ Inspect the newest received event when you need one current value:
   observed_at AS newest_event_observed_at,
   greatest(0, dateDiff('second', occurred_at, observed_at)) AS estimated_delivery_delay_seconds,
   dateDiff('second', observed_at, now()) AS seconds_since_last_observation
-FROM memory_service.lifecycle_events_current
+FROM memory_service_analytics.lifecycle_events_current
 ORDER BY observed_at DESC, ingest_version DESC
 LIMIT 1;`}
   columns={[
@@ -166,7 +168,7 @@ Group conversations by creation week, then compare their entry counts and active
     count() AS entry_count,
     min(created_at) AS first_entry_at,
     max(created_at) AS last_entry_at
-  FROM memory_service.entries_current
+  FROM memory_service_analytics.entries_current
   GROUP BY exporter_id, conversation_id
 )
 SELECT
@@ -178,7 +180,7 @@ SELECT
   quantileTDigest(0.50)(
     dateDiff('second', a.first_entry_at, a.last_entry_at)
   ) AS median_active_seconds
-FROM memory_service.conversations_current AS c
+FROM memory_service_analytics.conversations_current AS c
 INNER JOIN conversation_activity AS a
   ON c.exporter_id = a.exporter_id
  AND c.resource_id = a.conversation_id
@@ -207,7 +209,7 @@ Lifecycle events retain the entry `contentType` without storing the original con
   count() AS entries,
   uniqExact(conversation_id) AS conversations,
   max(occurred_at) AS last_seen_at
-FROM memory_service.lifecycle_events_current
+FROM memory_service_analytics.lifecycle_events_current
 WHERE resource_kind = 'entry'
   AND action = 'created'
   AND occurred_at >= now() - INTERVAL 30 DAY
@@ -219,9 +221,25 @@ ORDER BY entries DESC, content_type;`}
 
 Use this breakdown to decide which entry types need typed projections. Create those tables with the [projection guide](/docs/analytics/projections/).
 
+## Join group memberships
+
+Enable `--export-memberships` for group-access reporting. Join on exporter and group, and use a semi-join when counting conversations to avoid multiplying counts by member count:
+
+```sql
+SELECT c.resource_id, c.created_at, c.updated_at, c.archived
+FROM memory_service_analytics.conversations_current c
+LEFT SEMI JOIN (
+  SELECT exporter_id, conversation_group_id
+  FROM memory_service_analytics.conversation_memberships_current
+  WHERE user_id='report-user'
+) m ON c.exporter_id=m.exporter_id AND c.conversation_group_id=m.conversation_group_id;
+```
+
+Membership analytics lag source changes. Applications still authorize through live Memory Service access checks.
+
 ## Query the bundled example-app projections
 
-The container image includes individual projection files under `/etc/memory-service/clickhouse/projections`. They cover the entry content types and memory kinds used by the Java, Python, and TypeScript examples. The repository's `compose.yaml` enables the entire directory.
+The container image includes individual projection files under `/etc/memory-service/clickhouse/projections`. They cover the entry content types and memory kinds used by the Java, Python, and TypeScript examples, plus the opt-in `conversation_details` reporting table. The local development processor uses the packaged metadata defaults unless explicit paths are configured.
 
 For another deployment, set projected mode and load the bundled projection directory:
 
@@ -231,6 +249,8 @@ MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=/etc/memory-service/clickhouse/project
 ```
 
 Restart the processor after changing these settings. Existing resources require a [projection replay](/docs/analytics/clickhouse/operations/#replay-projections); new resources are projected as the processor receives their events.
+
+This directory replaces the packaged set. It does not include the default `conversations`, `entries`, or `memories` tables. To retain them, include the metadata manifest directory as another path, as shown in [conversation reporting fields](/docs/analytics/projections/#add-conversation-reporting-fields).
 
 Compare projected history entries with the richer LangChain4j history format:
 
@@ -249,7 +269,7 @@ FROM (
     attachment_count,
     toUInt64(0) AS tool_call_count,
     observed_at
-  FROM memory_service.history_v1_current
+  FROM memory_service_analytics.history_v1_current
   UNION ALL
   SELECT
     'history/lc4j' AS content_type,
@@ -257,7 +277,7 @@ FROM (
     attachment_count,
     tool_call_count,
     observed_at
-  FROM memory_service.history_lc4j_v1_current
+  FROM memory_service_analytics.history_lc4j_v1_current
 )
 GROUP BY content_type
 ORDER BY entries DESC, content_type;`}
@@ -279,11 +299,11 @@ The history event projections write one row for each recorded event. Count tool 
   max(observed_at) AS latest_call_at
 FROM (
   SELECT tool_name, resource_id, observed_at
-  FROM memory_service.history_lc4j_events_v1_current
+  FROM memory_service_analytics.history_lc4j_events_v1_current
   WHERE event_type = 'BeforeToolExecution'
   UNION ALL
   SELECT tool_name, resource_id, observed_at
-  FROM memory_service.history_vercelai_events_v1_current
+  FROM memory_service_analytics.history_vercelai_events_v1_current
   WHERE event_type = 'BeforeToolExecution'
 )
 GROUP BY tool_name
@@ -302,11 +322,11 @@ Sum token usage by model from completion events:
   sum(output_tokens) AS output_tokens
 FROM (
   SELECT model_name, input_tokens, output_tokens
-  FROM memory_service.history_lc4j_events_v1_current
+  FROM memory_service_analytics.history_lc4j_events_v1_current
   WHERE event_type = 'ChatCompleted'
   UNION ALL
   SELECT model_name, input_tokens, output_tokens
-  FROM memory_service.history_vercelai_events_v1_current
+  FROM memory_service_analytics.history_vercelai_events_v1_current
   WHERE event_type = 'ChatCompleted'
 )
 GROUP BY model_name
@@ -329,13 +349,13 @@ The chat memory projections write one row for each message. Compare message role
   uniqExact(resource_id) AS entries
 FROM (
   SELECT 'Spring AI' AS framework, role, resource_id
-  FROM memory_service.spring_ai_messages_v1_current
+  FROM memory_service_analytics.spring_ai_messages_v1_current
   UNION ALL
   SELECT 'Vercel AI' AS framework, role, resource_id
-  FROM memory_service.vercelai_messages_v1_current
+  FROM memory_service_analytics.vercelai_messages_v1_current
   UNION ALL
   SELECT 'LangChain4j' AS framework, message_type AS role, resource_id
-  FROM memory_service.lc4j_messages_v1_current
+  FROM memory_service_analytics.lc4j_messages_v1_current
 )
 GROUP BY framework, role
 ORDER BY framework, messages DESC, role;`}
@@ -356,7 +376,7 @@ Group recent projection failures without exposing source payloads:
   count() AS failed_resources,
   sum(attempt_count) AS attempts,
   max(last_seen_at) AS latest_failure_at
-FROM memory_service.projection_failures FINAL
+FROM memory_service_analytics.projection_failures FINAL
 WHERE last_seen_at >= now() - INTERVAL 24 HOUR
 GROUP BY projection_name, error_code
 ORDER BY latest_failure_at DESC;`}

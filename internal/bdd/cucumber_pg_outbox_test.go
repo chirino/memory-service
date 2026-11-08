@@ -16,8 +16,7 @@ import (
 
 // Broad datastore suites keep their default config; outbox event delivery is covered by
 // dedicated runners (TestFeaturesPgOutbox, TestFeaturesSQLiteOutbox,
-// TestFeaturesMongoOutbox). PostgreSQL is the only gRPC outbox suite; SQLite and Mongo
-// outbox coverage is REST-only.
+// TestFeaturesMongoOutbox). Membership parity runs on all stores and transports.
 func TestFeaturesPgOutbox(t *testing.T) {
 	var missing []string
 	if !buildcaps.PostgreSQL {
@@ -64,6 +63,8 @@ func TestFeaturesPgOutbox(t *testing.T) {
 	}, 1)
 
 	featureFiles := []string{
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-rest.feature"),
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-grpc.feature"),
 		filepath.Join("testdata", "features", "sse-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
 		filepath.Join("testdata", "features-pg-outbox", "sse-events-pg-outbox-rest.feature"),

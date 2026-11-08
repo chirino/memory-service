@@ -15,7 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// REST-only outbox coverage; see TestFeaturesPgOutbox for the outbox runner matrix.
+// Shared REST/gRPC membership coverage and the REST outbox suites.
 func TestFeaturesMongoOutbox(t *testing.T) {
 	var missing []string
 	if !buildcaps.MongoDB {
@@ -65,6 +65,8 @@ func TestFeaturesMongoOutbox(t *testing.T) {
 	grpcAddr := fmt.Sprintf("localhost:%d", srv.Running.Port)
 
 	featureFiles := []string{
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-rest.feature"),
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-grpc.feature"),
 		filepath.Join("testdata", "features", "sse-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),
 		filepath.Join("testdata", "features-mongo", "entries-seq-retry-archive-rest.feature"),

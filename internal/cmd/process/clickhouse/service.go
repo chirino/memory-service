@@ -17,9 +17,16 @@ import (
 	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/emptypb"
 )
 
+type capabilityClient interface {
+	GetCapabilities(context.Context, *emptypb.Empty, ...grpc.CallOption) (*pb.CapabilitiesResponse, error)
+}
+
 type StartOptions struct {
+	Capabilities       capabilityClient
 	Endpoint           string
 	ClientID           string
 	APIKey             string
@@ -78,8 +85,9 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		return nil, err
 	}
 	events, checkpoints := opts.Events, opts.Checkpoints
+	capabilities := opts.Capabilities
 	var conn *grpc.ClientConn
-	if events == nil || checkpoints == nil {
+	if events == nil || checkpoints == nil || opts.Config.ExportMemberships && capabilities == nil {
 		conn, err = processruntime.DialGRPCWithConfig(opts.Endpoint, processruntime.GRPCDialConfig{
 			TLS: opts.GRPCTLS, CAFile: opts.GRPCCAFile, AllowInsecure: opts.AllowInsecureGRPC,
 			MaxReceiveBytes: opts.Config.MaxRecordBytes + 4<<20,
@@ -88,12 +96,33 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 			_ = sink.Close()
 			return nil, err
 		}
+		if capabilities == nil {
+			capabilities = pb.NewSystemServiceClient(conn)
+		}
 		auth := processruntime.GRPCAuth{APIKey: opts.APIKey, BearerToken: opts.BearerToken, ClientID: opts.ClientID}
 		if events == nil {
 			events = processruntime.GRPCEventClient{Client: pb.NewEventStreamServiceClient(conn), Auth: auth}
 		}
 		if checkpoints == nil {
 			checkpoints = processruntime.GRPCCheckpointClient{Client: pb.NewAdminCheckpointServiceClient(conn), Auth: auth}
+		}
+	}
+	if opts.Config.ExportMemberships {
+		capabilityCtx := ctx
+		if opts.APIKey != "" {
+			capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "x-api-key", opts.APIKey)
+		}
+		if opts.BearerToken != "" {
+			capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "authorization", "Bearer "+opts.BearerToken)
+		}
+		capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "x-client-id", opts.ClientID)
+		response, capErr := capabilities.GetCapabilities(capabilityCtx, &emptypb.Empty{})
+		if capErr != nil || !response.GetFeatures().GetAnalyticsMembershipSnapshots() {
+			if conn != nil {
+				_ = conn.Close()
+			}
+			_ = sink.Close()
+			return nil, errors.New("membership export requires source capability analytics_membership_snapshots")
 		}
 	}
 	runCtx, cancel := context.WithCancel(ctx)

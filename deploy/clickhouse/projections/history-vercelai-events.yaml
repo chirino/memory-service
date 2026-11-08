@@ -23,7 +23,7 @@ spec:
   projectionRego: |
     package memoryservice.analytics
 
-    item := input.content[0]
+    item := input.record.content[0]
 
     field(value, key) := result if {
       is_object(value)

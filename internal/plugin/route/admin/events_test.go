@@ -70,7 +70,7 @@ func TestEnrichAdminMemoryEventMissingPreservesSummary(t *testing.T) {
 	enriched, ok, err := enrichAdminEvent(context.Background(), nil, store, "full", event)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Equal(t, 1, store.getCalls)
+	require.Zero(t, store.getCalls)
 	require.Equal(t, raw, enriched.Data)
 }
 

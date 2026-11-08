@@ -75,6 +75,10 @@ export type CapabilitiesFeatures = {
   private_source_urls_enabled: boolean;
   s3_direct_download_enabled: boolean;
   /**
+   * Complete admin current membership snapshots and durable events for owner creation, copied memberships, grants, updates, revokes, and ownership transfers. Absent means unsupported.
+   */
+  analytics_membership_snapshots?: boolean;
+  /**
    * Version of the repeatable conversation metadata filter contract.
    */
   conversation_metadata_filter_version?: number;

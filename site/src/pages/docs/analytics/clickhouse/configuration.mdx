@@ -15,6 +15,8 @@ The `memory-service process clickhouse` command accepts CLI flags or environment
 
 This page covers the analytics processor. See [Service configuration](/docs/configuration/) for the Memory Service server.
 
+Existing exporters must follow the [analytics cutover procedure](/docs/analytics/clickhouse/operations/#cut-over-an-existing-analytics-installation). This release cannot reuse the previous analytics schema or checkpoint.
+
 ## Memory Service connection
 
 | Setting                                                                          | Default  | Description                                          |
@@ -53,10 +55,9 @@ The supported feature selectors are:
 | Feature            | Valid resources                        | Effect                                                                      |
 | ------------------ | -------------------------------------- | --------------------------------------------------------------------------- |
 | `lifecycle_events` | `conversations`, `entries`, `memories` | Do not write matching rows to `lifecycle_events`.                           |
-| `lineage`          | `conversations`                        | Do not backfill `conversation_lineage`.                                     |
-| `projections`      | `entries`, `memories`                  | Do not create or populate configured projections for the selected resource. |
+| `projections`      | `conversations`, `entries`, `memories` | Do not create or populate configured projections for the selected resource. |
 
-For example, this setting keeps current-state rows but omits all lifecycle events:
+For example, this setting keeps projection rows but omits all lifecycle events:
 
 ```bash
 MEMORY_SERVICE_CLICKHOUSE_DISABLE=*:lifecycle_events
@@ -67,14 +68,13 @@ as `entries:lineage`. A bare resource selector also disables all features for th
 The common processor schema remains present, so tables for disabled outputs can remain empty.
 Rows written before an output was disabled remain until a purge or TTL removes them.
 
-Disabling an output can reuse the current checkpoint. Enabling lifecycle, lineage, or a full
-resource after events were skipped requires a checkpoint and ClickHouse data reset or a new
-exporter ID. To enable projections again, set a new projection replay ID so the processor scans
-current entries and memories.
+Disabling output or removing a whole table can reuse the current checkpoint. Adding projections or enabling output requires a new `--projection-replay-id`, including membership enablement. The scan writes retained current state and catches up before committing its new configuration.
+
+Membership output is off by default. Enable it with `--export-memberships` or `MEMORY_SERVICE_CLICKHOUSE_EXPORT_MEMBERSHIPS=true`. The fixed membership table exists even when empty. The exporter checks the source capability before bootstrap; public membership responses and agent events are unchanged.
 
 Managed and record-only purge modes continue to consume hard-delete notifications for disabled
 resources. These notifications remove rows written before the output was disabled without
-writing new lifecycle or current-state rows. Conversation hard deletes also remove dependent
+writing new lifecycle or projection rows. Conversation hard deletes also remove dependent
 entry analytics. External purge mode subscribes only to enabled resources. At least one
 resource kind must remain enabled.
 
@@ -128,19 +128,21 @@ Configure either the direct password or the password file. The processor rejects
 | <Cfg p="--allow-decrypted-content" e="MEMORY_SERVICE_CLICKHOUSE_ALLOW_DECRYPTED_CONTENT" /> | `false`    | Required for `full` mode.                             |
 | <Cfg p="--metadata-key" e="MEMORY_SERVICE_CLICKHOUSE_METADATA_KEY" />                       | None       | Repeatable allowlist entry for conversation metadata. |
 
-`--metadata-key` selects the exact top-level conversation metadata keys that the processor writes to ClickHouse. The admin event stream still sends the complete conversation resource to the processor. Unlisted metadata is discarded before the processor creates ClickHouse rows. This setting does not select entry content or memory values.
+`--metadata-key` selects the exact top-level conversation metadata keys exposed to Rego. Only declared projection columns are written to ClickHouse. The admin event stream still sends the complete conversation resource to the processor. Unlisted metadata is discarded before the processor creates ClickHouse rows. This setting does not select entry content or memory values.
 
 The processor stores Memory Service source identifiers directly so an analytics result contains the identifiers needed to retrieve the original resource through the Memory Service API. Treat ClickHouse readers as trusted to see those identifiers. Payload mode and metadata allowlists still control whether content and user-defined metadata cross the analytics boundary.
 
 ## Projections
 
-| Setting                                                                                         | Default            | Description                                                                                       |
-| ----------------------------------------------------------------------------------------------- | ------------------ | ------------------------------------------------------------------------------------------------- |
-| <Cfg p="--projection-path" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH" />                     | None               | Projection YAML file or directory. Repeat the CLI flag or use comma-separated environment values. |
-| <Cfg p="--projection-failure-policy" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY" /> | `continue-generic` | `continue-generic` records the failure. `stop` stops processing.                                  |
-| <Cfg p="--projection-replay-id" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID" />           | None               | New identifier that requests an explicit entry and memory rescan.                                 |
+| Setting                                                                                         | Default  | Description                                                                                       |
+| ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------- |
+| <Cfg p="--projection-path" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH" />                     | None     | Projection YAML file or directory. Repeat the CLI flag or use comma-separated environment values. |
+| <Cfg p="--projection-failure-policy" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY" /> | `record` | `record` records the failure. `stop` stops processing.                                            |
+| <Cfg p="--projection-replay-id" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID" />           | None     | New identifier that requests an explicit current-state rescan.                                    |
 
-Projection paths are valid only in `projected` or `full` mode. A path can identify one YAML file or a directory. For a directory, the processor reads the `*.yaml` and `*.yml` files directly inside it; it does not scan subdirectories. YAML documents with another `kind` are ignored, and at least one `kind: AnalyticsProjection` resource must be found across all configured paths.
+Explicit paths replace the entire packaged metadata projection set in every payload mode. With no paths, the processor loads the packaged conversation, entry, and memory metadata manifests. A path can identify one YAML file or a directory. For a directory, the processor reads the `*.yaml` and `*.yml` files directly inside it; it does not scan subdirectories. YAML documents with another `kind` are ignored, and at least one `kind: AnalyticsProjection` resource must be found across all configured paths.
+
+The default conversation manifest declares exactly `created_at`, `updated_at`, and `archived`, plus the processor-owned common columns. Owner/client/agent and lineage fields remain available in `input.record` for explicit projections. The [conversation details example](/docs/analytics/projections/#add-conversation-reporting-fields) exports them to a separate table and shows how to retain the metadata tables when opting in.
 
 Repeat `--projection-path` to load multiple paths from the CLI. For `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH`, separate multiple paths with commas. See [Create analytics projections](/docs/analytics/projections/) for the manifest format.
 
@@ -170,15 +172,12 @@ The checkpoint advances only after ClickHouse acknowledges every table write in 
 | <Cfg p="--purge-mode" e="MEMORY_SERVICE_CLICKHOUSE_PURGE_MODE" />                                     | `managed` | `managed`, `record-only`, or `external`. |
 | <Cfg p="--lifecycle-retention" e="MEMORY_SERVICE_CLICKHOUSE_LIFECYCLE_RETENTION" />                   | `0`       | Retention for lifecycle events.          |
 | <Cfg p="--tombstone-retention" e="MEMORY_SERVICE_CLICKHOUSE_TOMBSTONE_RETENTION" />                   | `0`       | Retention for deletion tombstones.       |
-| <Cfg p="--generic-payload-retention" e="MEMORY_SERVICE_CLICKHOUSE_GENERIC_PAYLOAD_RETENTION" />       | `0`       | Retention for active generic rows.       |
 | <Cfg p="--projection-retention" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_RETENTION" />                 | `0`       | Retention for active projection rows.    |
 | <Cfg p="--projection-failure-retention" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_RETENTION" /> | `0`       | Retention for projection failure rows.   |
 
 In `managed` retention mode, the processor owns table TTL expressions and coordinates the
 database-wide policy through `retention_policy`. A zero duration leaves that table class
-without a TTL. When tombstone retention is positive, generic active-row retention must also
-be positive and cannot exceed tombstone retention. Projection retention follows the same rule
-when projections are configured.
+without a TTL. Positive tombstone retention requires positive projection retention no longer than tombstone retention, including packaged metadata defaults and fixed memberships.
 
 In `external` retention mode, the processor does not register a retention owner, validate TTL
 expressions, or change TTL DDL. Configure all retention durations as `0`; the processor rejects
@@ -188,16 +187,15 @@ as older active rows.
 
 Purge modes handle hard-delete events differently:
 
-| Mode          | Behavior                                                                                                                   |
-| ------------- | -------------------------------------------------------------------------------------------------------------------------- |
-| `managed`     | Write `purge_queue`, resolve `purge_subjects`, and wait for ClickHouse deletion mutations before advancing the checkpoint. |
-| `record-only` | Write a pending `purge_queue` request and leave deletion to an external worker.                                            |
-| `external`    | Do not write purge requests or execute deletion mutations. The operator owns hard-delete discovery and removal.            |
+| Mode          | Behavior                                                                                                                                   |
+| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `managed`     | Persist typed scope and cutoff in `purge_queue`, write fences, and wait for ClickHouse deletion mutations before advancing the checkpoint. |
+| `record-only` | Write a pending `purge_queue` request and leave deletion to an external worker.                                                            |
+| `external`    | Do not write purge requests or execute deletion mutations. The operator owns hard-delete discovery and removal.                            |
 
-External purge must remove matching generic, typed, lifecycle, projection, projection-failure,
-and deletion-fence rows. Remove each deletion fence only after its dependent rows.
-Switching from `record-only` or `external` back to `managed` requires a reset or a new exporter
-ID because the event checkpoint may have passed unprocessed hard deletes.
+External cleanup covers matching projection, membership, lifecycle, and failure rows using the persisted resource/group scope and cutoff. Preserve identity and group fences independently of normal purge and TTL. Retire fences only after writers and resumable checkpoints are retired.
+
+Switching from delegated deletion back to managed purge requires a fresh analytics database and checkpoint because the cursor may have passed unprocessed hard deletes. This does not reset the operational store.
 
 `deletion_fences` remain active in every purge mode. The built-in current-state views depend on
 them to prevent an older active row from becoming visible after a tombstone expires. The common

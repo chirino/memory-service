@@ -4,7 +4,23 @@ title: Create analytics projections
 description: Map approved entry content or memory values to typed analytics tables.
 ---
 
-Use a projection when analysts need approved fields from an entry or memory. A projection selects one exact entry `contentType` or memory `kind`, evaluates deployment-owned Rego, and writes typed rows for each matching resource. By default, a projection writes one row per resource. Set `rows: many` to write one row per item, such as each message or tool call in an entry.
+Use projections for conversations, entries, and memories. An optional selector matches one exact entry `contentType` or memory `kind`. Omit it for an unconditional table; conversation selectors are not supported. A projection evaluates deployment-owned Rego, and writes typed rows for each matching resource. By default, a projection writes one row per resource. Set `rows: many` to write one row per item, such as each message or tool call in an entry.
+
+## Add conversation reporting fields
+
+The packaged `conversations` projection declares only `created_at`, `updated_at`, and `archived`. The processor also writes its common identity and bookkeeping columns. Owner, client, agent, and fork/started-by IDs remain available to Rego through `input.record`, but the default conversation table does not store them.
+
+To export those fields, use `deploy/clickhouse/projections/conversation-details.yaml`. It declares `owner_user_id`, `client_id`, `agent_id`, `forked_at_conversation_id`, `forked_at_entry_id`, `started_by_conversation_id`, and `started_by_entry_id`, plus the three lifecycle fields. It writes to `conversation_details`, so it can coexist with `conversations`.
+
+Explicit paths replace the entire packaged set. To retain all three metadata tables and add conversation details, set these values with the repository root as the working directory:
+
+```bash
+MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=projected
+MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=internal/cmd/process/clickhouse/defaults,deploy/clickhouse/projections/conversation-details.yaml
+MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID=conversation-details
+```
+
+Pass these as environment variables to the processor, keeping its connection and authentication settings. Use a fresh replay ID when adding the projection to an existing exporter. In a container, mount `internal/cmd/process/clickhouse/defaults` and use its mounted path for the first value. The image includes the details example at `/etc/memory-service/clickhouse/projections/conversation-details.yaml`.
 
 ## Create a projection manifest
 
@@ -39,7 +55,7 @@ spec:
   projectionRego: |
     package memoryservice.analytics
 
-    ticket := input.content[0]
+    ticket := input.record.content[0]
 
     output := {
       "details": ticket.details,
@@ -80,7 +96,7 @@ spec:
   projectionRego: |
     package memoryservice.analytics
 
-    ticket := input.content[0]
+    ticket := input.record.content[0]
 
     output := [row |
       some step in object.get(ticket, "steps", [])
@@ -127,7 +143,7 @@ Inside an array comprehension, a reference to a missing field such as `step.acti
 
 The processor validates all rows before writing any of them. If one row has a missing column or an invalid value, the whole resource is recorded in `projection_failures` and none of its rows are written. A single resource can produce at most `1024` rows.
 
-A memory projection that sets `rows: many` must define `projectionRego`.
+Every root projection must define `projectionRego`, including memory projections.
 
 ## Choose stable SQL names
 
@@ -135,10 +151,8 @@ A memory projection that sets `rows: many` must define `projectionRego`.
 
 Table and column names must match `^[a-z][a-z0-9_]{0,62}$`. Projection table names cannot use these processor-owned names:
 
-- `schema_versions`, `lifecycle_events`, `resources`, and `deletion_fences`
-- `deletion_fence_writer`, `conversations`, `conversation_lineage`, `entries`, and `memories`
-- `projection_registry`, `retention_policy`, and `projection_failures`
-- `purge_subjects` and `purge_queue`
+- `schema_versions`, `lifecycle_events`, `deletion_fences`, `projection_registry`, `retention_policy`, `projection_failures`, `purge_queue`, and `conversation_memberships`
+- names ending in `_current` or `_all`
 
 Names ending with `_current` or `_all` are also reserved for generated views. The processor validates these rules before creating any projection relations.
 
@@ -174,24 +188,13 @@ Native JSON supports arbitrary nesting. Use `clickhouse.maxDynamicPaths` and `cl
 
 ## Understand the Rego contract
 
-Entry projections receive these input fields:
+All expressions receive `input.resource` and `input.record`. There are no flat aliases. The record contains the current admin resource fields allowed by the selected payload mode, with canonical UTC timestamp strings and exact integers. Conversation metadata is filtered by `--metadata-key` before evaluation.
 
-- `resource`
-- `contentType`
-- `channel`
-- `content`
-
-Memory projections receive these input fields:
-
-- `resource`
-- `kind`
-- `revision`
-- `value`
-- `attributes`
+Conversations expose identities, owner/client/agent, timestamps, archive state, fork and started-by fields. Entries expose identities, channel, content type, timestamps, epoch, and sequence. Memories expose namespace, key, kind, revision, timestamps, and archive state. Projected mode adds entry content and memory value/attributes; full mode also adds conversation title and entry indexed content. Optional absent fields stay absent. A missing source snapshot records a `snapshot_unavailable` failure instead of exposing the summary as a resource.
 
 The `output` rule must return an object whose keys are columns of the projection's table. For a `rows: many` projection, `output` must return an array of such objects. The processor rejects unknown keys, invalid types, and missing or null values for columns with `nullable: false`. It writes `NULL` for an omitted column with `nullable: true`.
 
-A memory projection can omit `projectionRego`. In that case, the processor maps persisted `MemoryKindVersion` attributes to columns with matching names.
+Memory roots use explicit Rego, such as `output := input.record.attributes`. Attribute mapping is never implicit.
 
 ## Load projection manifests
 
@@ -314,7 +317,7 @@ spec:
     step: { type: string, nullable: false }
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s.name} | some s in input.content]
+    output := [{"step": s.name} | some s in input.record.content]
 ---
 apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
@@ -339,7 +342,7 @@ spec:
   projectionRegoReplaces: support_ticket_v1_steps
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s.name, "duration_ms": object.get(s, "durationMs", null)} | some s in input.content]
+    output := [{"step": s.name, "duration_ms": object.get(s, "durationMs", null)} | some s in input.record.content]
 ```
 
 The first manifest is an ordinary projection. Set `spec.table` to give the table a version-neutral name; without it, the table is `metadata.name`. A later manifest inherits the table, columns, and `rows` setting, so it must not declare `table`, `columns`, or `rows`. Each later manifest does at least one of these things:
@@ -375,8 +378,31 @@ Add `--format json` for machine-readable output.
 
 ## Handle failures and schema changes
 
-Invalid projection output writes a payload-free row to `projection_failures`. The default `continue-generic` policy keeps the generic export moving. Set `--projection-failure-policy=stop` when any projection failure must stop the processor.
+Invalid projection output writes a payload-free row to `projection_failures`. The default `record` policy records the failure and continues processing. Set `--projection-failure-policy=stop` when any projection failure must stop the processor.
 
 To rescan existing entries and memories after adding a new projection version or a manifest that replaces logic, set a new `--projection-replay-id`. The replay ID must change for each requested rescan.
 
 For deployment settings, see the [ClickHouse processor configuration reference](/docs/analytics/clickhouse/configuration/).
+
+## Project conversation relationships and choose a layout
+
+```yaml
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata: { name: workflow_conversations }
+spec:
+  resource: conversation
+  clickhouse: { ordering: conversation }
+  columns:
+    parent_id: { type: string, nullable: true }
+    owner: { type: string, nullable: false, clickhouse: { lowCardinality: true } }
+  projectionRego: |
+    package memoryservice.analytics
+    output := {"parent_id": object.get(input.record, "startedByConversationId", null), "owner": input.record.ownerUserId}
+```
+
+`ordering: resource` is the default. It sorts by exporter/resource, followed by row index for multi-row tables. `ordering: conversation` adds the immutable conversation ID before resource ID and is available for conversations and entries. The processor fixes engine, partitioning, and replacement version. Mutable fields never enter the key. Measure the query plan before choosing conversation ordering.
+
+Only string columns support `lowCardinality: true`. The physical type becomes `LowCardinality(Nullable(String))`; active output still obeys logical nullability. Ordering belongs to the root, while encoding belongs to the manifest declaring each column. Changing either for an existing table requires a new table and replay.
+
+An unconditional chain may replace its logic or add nullable columns, but cannot later introduce a selector. Selected and unconditional tables can both receive the same observation.

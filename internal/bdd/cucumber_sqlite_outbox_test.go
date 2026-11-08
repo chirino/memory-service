@@ -8,7 +8,7 @@ import (
 	"github.com/chirino/memory-service/internal/config"
 )
 
-// REST-only outbox coverage; see TestFeaturesPgOutbox for the outbox runner matrix.
+// Shared REST/gRPC membership coverage and the REST outbox suites.
 func TestFeaturesSQLiteOutbox(t *testing.T) {
 	if !buildcaps.SQLite {
 		requireCapabilities(t, "sqlite")
@@ -31,6 +31,8 @@ func TestFeaturesSQLiteOutbox(t *testing.T) {
 	cfg.Listener.EnableTLS = false
 
 	featureFiles := []string{
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-rest.feature"),
+		filepath.Join("testdata", "features-outbox", "analytics-membership-events-grpc.feature"),
 		filepath.Join("testdata", "features", "eviction-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-rest.feature"),
 		filepath.Join("testdata", "features", "sse-events-replay-rest.feature"),

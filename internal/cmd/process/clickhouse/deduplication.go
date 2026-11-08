@@ -16,7 +16,7 @@ func (s *ClickHouseSink) configureInsertDeduplication(ctx context.Context, mode 
 	if err := s.conn.QueryRow(ctx, "SELECT toUInt64(value) FROM system.merge_tree_settings WHERE name='non_replicated_deduplication_window'").Scan(&defaultWindow); err != nil {
 		return fmt.Errorf("read ClickHouse deduplication default: %w", err)
 	}
-	tables := []string{"lifecycle_events", "resources", "deletion_fences", "conversations", "conversation_lineage", "entries", "memories", "projection_failures", "purge_queue", "purge_subjects"}
+	tables := []string{"lifecycle_events", "deletion_fences", "conversation_memberships", "projection_failures", "purge_queue"}
 	projections, err := s.registeredProjections(ctx)
 	if err != nil {
 		return err

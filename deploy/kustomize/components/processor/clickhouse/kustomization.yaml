@@ -8,10 +8,10 @@ configMapGenerator:
   - name: memory-service-config
     behavior: merge
     literals:
-      - MEMORY_SERVICE_ROLES_ADMIN_CLIENTS=clickhouse_processor
+      - MEMORY_SERVICE_ROLES_ADMIN_CLIENTS=clickhouse_analytics
 
 secretGenerator:
   - name: memory-service-secret
     behavior: merge
     literals:
-      - MEMORY_SERVICE_API_KEYS_CLICKHOUSE_PROCESSOR=clickhouse-processor-key
+      - MEMORY_SERVICE_API_KEYS_CLICKHOUSE_ANALYTICS=clickhouse-analytics-key

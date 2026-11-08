@@ -2124,6 +2124,10 @@ components:
           type: boolean
         s3_direct_download_enabled:
           type: boolean
+        analytics_membership_snapshots:
+          type: boolean
+          default: false
+          description: Complete admin current membership snapshots and durable events for owner creation, copied memberships, grants, updates, revokes, and ownership transfers. Absent means unsupported.
         conversation_metadata_filter_version:
           type: integer
           minimum: 1

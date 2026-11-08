@@ -12,30 +12,23 @@ ClickHouse is the supported analytics provider. The processor reads the admin du
 
 The payload mode controls which source data crosses into the analytics system.
 
-| Mode        | Data written                                                                            | Use it for                                                             |
-| ----------- | --------------------------------------------------------------------------------------- | ---------------------------------------------------------------------- |
-| `metadata`  | Source identifiers, timestamps, lifecycle fields, routing fields, and selected metadata | Operational dashboards that do not need entry content or memory values |
-| `projected` | Metadata plus fields released by immutable projection manifests                         | Domain analytics with an explicit schema and data boundary             |
-| `full`      | Decrypted source snapshots                                                              | Controlled environments that require the complete source record        |
+| Mode        | Data written                                                                           | Use it for                        |
+| ----------- | -------------------------------------------------------------------------------------- | --------------------------------- |
+| `metadata`  | Resource identities, timestamps, routing fields, and allowlisted conversation metadata | Operational dashboards            |
+| `projected` | Metadata plus entry content and memory values/attributes available to Rego             | Approved domain fields            |
+| `full`      | Also makes conversation title and entry indexed content available to Rego              | Explicit full-content projections |
 
-The repository deployments use `metadata` by default. Use `projected` when analysts need approved fields from an entry `contentType` or a memory `kind`. Full mode requires `--allow-decrypted-content` because Memory Service field encryption does not extend to ClickHouse.
+Every application table is a projection. Without projection paths, the processor loads packaged metadata-only manifests for `conversations`, `entries`, and `memories`. These defaults store no titles, content, memory values, or arbitrary JSON. Explicit paths replace that entire set. Even in full mode, only columns selected by a manifest are persisted; full mode requires `--allow-decrypted-content`.
+
+The default `conversations` projection declares exactly `created_at`, `updated_at`, and `archived`, in addition to processor-owned identity and bookkeeping columns. Owner, client, agent, and fork/started-by IDs remain available in `input.record` for [opt-in conversation reporting](/docs/analytics/projections/#add-conversation-reporting-fields).
 
 ## Understand the exported data
 
-The processor creates generic tables for conversations, lineage, entries, memories, and lifecycle events. A projection adds a deployment-owned table for one exact entry `contentType` or memory `kind`. A [projection chain](projections/#share-a-table-across-content-type-versions) lets later manifests add content types, kinds, and nullable columns to the same table.
+Conversations, entries, and memories use the same [projection pipeline](projections/). Opt-in conversation projections can expose fork and started-by relationships as typed columns. There is no generic payload copy or separate lineage table.
 
-Generic resources use these canonical views:
+Each projection creates a physical table and two views. `<table>_all` selects the latest snapshot, including a tombstone. `<table>_current` excludes deleted resources and conversation groups. Multi-row projections return the rows of the latest snapshot. Use current views for dashboards; physical tables retain older versions until TTL or purge removes them.
 
-- `conversations_current`, `entries_current`, and similar resource views return the latest logical non-deleted row.
-- `resources_all` returns the latest logical generic row, including a deletion tombstone when one is current.
-
-Projection tables provide both `<name>_current` and `<name>_all` views. Physical tables retain versioned rows until retention or a hard-delete purge removes them. Queries for application dashboards should normally use a canonical view.
-
-Projection names and column names map directly to SQL identifiers. A projection named `support_ticket_v1` creates these relations. A manifest that sets `spec.table` uses that name instead, and every manifest of its chain writes to the same relations.
-
-- `support_ticket_v1`, the physical table
-- `support_ticket_v1_all`, the latest logical row including tombstones
-- `support_ticket_v1_current`, the current non-deleted row
+`lifecycle_events_current` contains durable lifecycle observations. Opt-in `--export-memberships` populates the fixed `conversation_memberships_current` relation for group-access reports. Membership analytics are eventually consistent; applications must still check access against live Memory Service.
 
 ## Follow the analytics workflow
 
@@ -48,12 +41,14 @@ Projection names and column names map directly to SQL identifiers. A projection 
   </a>
   <a href="projections/" class="card p-4 hover:border-primary-500 transition-colors">
     <h3 class="font-semibold text-gray-900 dark:text-white">Create projections</h3>
-    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">Map approved entry or memory fields to typed tables.</p>
+    <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
+      Map approved conversation, entry, or memory fields to typed tables.
+    </p>
   </a>
   <a href="querying/" class="card p-4 hover:border-primary-500 transition-colors">
     <h3 class="font-semibold text-gray-900 dark:text-white">Query analytics data</h3>
     <p class="text-sm text-gray-600 dark:text-gray-400 mt-1">
-      Query generic tables, lifecycle events, Variant values, and nested JSON.
+      Query typed projections, lifecycle events, Variant values, and nested JSON.
     </p>
   </a>
   <a href="clickhouse/configuration/" class="card p-4 hover:border-primary-500 transition-colors">

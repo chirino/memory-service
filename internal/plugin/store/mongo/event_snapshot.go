@@ -4,7 +4,9 @@ package mongo
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"go.mongodb.org/mongo-driver/v2/mongo"
 
 	"github.com/chirino/memory-service/internal/model"
 	registrystore "github.com/chirino/memory-service/internal/registry/store"
@@ -159,3 +161,48 @@ func (s *MongoStore) AdminListEventSnapshotEntries(ctx context.Context, after *r
 	last := rows[len(rows)-1]
 	return rows, &registrystore.EventSnapshotEntryCursor{CreatedAt: last.CreatedAt, ID: last.ID.String()}, nil
 }
+
+func (s *MongoStore) AdminListEventSnapshotMemberships(ctx context.Context, after *registrystore.EventSnapshotMembershipCursor, limit int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	filter := bson.M{}
+	if after != nil {
+		filter["$or"] = bson.A{bson.M{"conversation_group_id": bson.M{"$gt": after.GroupID}}, bson.M{"conversation_group_id": after.GroupID, "user_id": bson.M{"$gt": after.UserID}}}
+	}
+	cur, err := s.memberships().Find(ctx, filter, options.Find().SetSort(bson.D{{Key: "conversation_group_id", Value: 1}, {Key: "user_id", Value: 1}}).SetLimit(int64(limit+1)))
+	if err != nil {
+		return nil, nil, err
+	}
+	defer cur.Close(ctx)
+	var docs []memberDoc
+	if err := cur.All(ctx, &docs); err != nil {
+		return nil, nil, err
+	}
+	more := len(docs) > limit
+	if more {
+		docs = docs[:limit]
+	}
+	rows := make([]model.ConversationMembership, 0, len(docs))
+	for _, doc := range docs {
+		rows = append(rows, model.ConversationMembership{ConversationGroupID: strToUUID(doc.ConversationGroupID), UserID: doc.UserID, AccessLevel: doc.AccessLevel, CreatedAt: doc.CreatedAt})
+	}
+	if !more {
+		return rows, nil, nil
+	}
+	last := docs[len(docs)-1]
+	return rows, &registrystore.EventSnapshotMembershipCursor{GroupID: last.ConversationGroupID, UserID: last.UserID}, nil
+}
+func (s *MongoStore) AdminGetEventSnapshotMembership(ctx context.Context, groupID, userID string) (*model.ConversationMembership, error) {
+	var doc memberDoc
+	err := s.memberships().FindOne(ctx, bson.M{"conversation_group_id": groupID, "user_id": userID}).Decode(&doc)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return &model.ConversationMembership{ConversationGroupID: strToUUID(doc.ConversationGroupID), UserID: doc.UserID, AccessLevel: doc.AccessLevel, CreatedAt: doc.CreatedAt}, nil
+}
+
+func (s *MongoStore) SupportsAnalyticsMembershipSnapshots() bool { return s.OutboxEnabled() }

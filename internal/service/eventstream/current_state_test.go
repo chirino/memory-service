@@ -49,6 +49,7 @@ type currentStateMemoryStore struct {
 	registrystore.MemoryStore
 	conversations []registrystore.ConversationSummary
 	entries       []model.Entry
+	memberships   []model.ConversationMembership
 }
 
 func (s *currentStateMemoryStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
@@ -74,4 +75,35 @@ func (s *currentStateEpisodicStore) InReadTx(ctx context.Context, fn func(contex
 
 func (s *currentStateEpisodicStore) AdminListEventSnapshotMemories(context.Context, registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
 	return registryepisodic.AdminMemoryPage{Items: s.items}, nil
+}
+
+func (s *currentStateMemoryStore) SupportsAnalyticsMembershipSnapshots() bool { return true }
+func (s *currentStateMemoryStore) AdminListEventSnapshotMemberships(context.Context, *registrystore.EventSnapshotMembershipCursor, int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	return s.memberships, nil, nil
+}
+func (s *currentStateMemoryStore) AdminGetEventSnapshotMembership(context.Context, string, string) (*model.ConversationMembership, error) {
+	return nil, nil
+}
+
+func TestMembershipCurrentStateAndConversationFiltering(t *testing.T) {
+	group := uuid.New()
+	store := &currentStateMemoryStore{memberships: []model.ConversationMembership{{ConversationGroupID: group, UserID: "owner/é", AccessLevel: model.AccessLevelOwner, CreatedAt: time.Now().UTC()}}}
+	for _, filtered := range []bool{false, true} {
+		var conversationIDs map[string]bool
+		if filtered {
+			conversationIDs = map[string]bool{"conversation": true}
+		}
+		var events []registryeventbus.Event
+		err := StreamAdminCurrentState(context.Background(), store, nil, map[string]bool{"membership": true}, conversationIDs, NewEntryEventFilter(nil, nil, nil), func(event registryeventbus.Event) error { events = append(events, event); return nil })
+		require.NoError(t, err)
+		if filtered {
+			require.Empty(t, events)
+		} else {
+			require.Len(t, events, 1)
+			record := events[0].Data.(map[string]any)
+			require.Equal(t, model.MembershipResourceID(group, "owner/é"), record["id"])
+			require.Equal(t, group.String(), record["conversationGroupId"])
+			require.NotContains(t, record, "conversationId")
+		}
+	}
 }

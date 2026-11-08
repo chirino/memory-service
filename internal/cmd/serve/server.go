@@ -497,7 +497,7 @@ func BuildServer(ctx context.Context, cfg *config.Config) (*Server, error) {
 			security.GRPCIdentityRateLimitStreamInterceptor(rateLimiter),
 		),
 	)
-	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg})
+	pb.RegisterSystemServiceServer(grpcServer, &grpcserver.SystemServer{Config: cfg, Store: store})
 	pb.RegisterConversationsServiceServer(grpcServer, &grpcserver.ConversationsServer{Store: store, EventBus: eventBus})
 	pb.RegisterEntriesServiceServer(grpcServer, &grpcserver.EntriesServer{Store: store, EventBus: eventBus})
 	pb.RegisterAdminEntriesServiceServer(grpcServer, &grpcserver.AdminEntriesServer{Store: store})
