@@ -1580,9 +1580,18 @@ func (s *PostgresStore) CreateOwnershipTransfer(ctx context.Context, userID stri
 }
 
 func (s *PostgresStore) AcceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
-	db := s.dbFor(ctx)
+	return s.InWriteTx(ctx, func(tx context.Context) error {
+		return s.acceptTransfer(tx, userID, transferID)
+	})
+}
+
+func (s *PostgresStore) acceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
+	db, err := s.writeDBFor(ctx, "accept ownership transfer")
+	if err != nil {
+		return err
+	}
 	var transfer model.OwnershipTransfer
-	result := db.Where("id = ?", transferID).Limit(1).Find(&transfer)
+	result := db.Clauses(clause.Locking{Strength: "UPDATE"}).Where("id = ?", transferID).Limit(1).Find(&transfer)
 	if result.Error != nil {
 		return result.Error
 	}
@@ -1611,14 +1620,18 @@ func (s *PostgresStore) AcceptTransfer(ctx context.Context, userID string, trans
 	if err := db.Model(&model.Conversation{}).Where("conversation_group_id = ? AND archived_at IS NULL", transfer.ConversationGroupID).Update("owner_user_id", transfer.ToUserID).Error; err != nil {
 		return err
 	}
-	if err := db.Delete(&transfer).Error; err != nil {
-		return err
+	result = db.Delete(&transfer)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected != 1 {
+		return &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
 	}
 	var conversationIDs []string
 	if err := db.Model(&model.Conversation{}).Where("conversation_group_id = ? AND archived_at IS NULL", transfer.ConversationGroupID).Order("id").Pluck("id", &conversationIDs).Error; err != nil {
 		return err
 	}
-	_, _, err := eventstream.AppendOutboxEvents(ctx, s, eventstream.OwnershipTransferEvents(transfer.ConversationGroupID, transfer.FromUserID, transfer.ToUserID, conversationIDs)...)
+	_, _, err = eventstream.AppendOutboxEvents(ctx, s, eventstream.OwnershipTransferEvents(transfer.ConversationGroupID, transfer.FromUserID, transfer.ToUserID, conversationIDs)...)
 	return err
 }
 

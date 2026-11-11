@@ -3,6 +3,7 @@ package eventstream
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -43,6 +44,45 @@ func TestStreamAdminCurrentStateEmitsAdminResources(t *testing.T) {
 	require.Equal(t, groupID.String(), events[0].Data.(map[string]any)["conversationGroupId"])
 	require.Equal(t, clientID, events[1].Data.(map[string]any)["clientId"])
 	require.Equal(t, "profile/v1", events[2].Data.(map[string]any)["kind"])
+}
+
+type pagedMembershipStore struct {
+	currentStateMemoryStore
+	calls int
+}
+
+func (s *pagedMembershipStore) AdminListEventSnapshotMemberships(_ context.Context, after *registrystore.EventSnapshotMembershipCursor, limit int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	s.calls++
+	start := 0
+	if after != nil {
+		for start < len(s.memberships) && s.memberships[start].UserID <= after.UserID {
+			start++
+		}
+	}
+	end := min(start+limit, len(s.memberships))
+	if end == len(s.memberships) {
+		return s.memberships[start:end], nil, nil
+	}
+	last := s.memberships[end-1]
+	return s.memberships[start:end], &registrystore.EventSnapshotMembershipCursor{GroupID: last.ConversationGroupID.String(), UserID: last.UserID}, nil
+}
+
+func TestMembershipCurrentStateTraversesMultiplePages(t *testing.T) {
+	s := &pagedMembershipStore{}
+	group := uuid.New()
+	for i := range currentStatePageSize*2 + 1 {
+		s.memberships = append(s.memberships, model.ConversationMembership{ConversationGroupID: group, UserID: fmt.Sprintf("member-%04d", i), AccessLevel: model.AccessLevelReader, CreatedAt: time.Now().UTC()})
+	}
+	seen := map[string]bool{}
+	err := StreamAdminCurrentState(context.Background(), s, nil, map[string]bool{"membership": true}, nil, NewEntryEventFilter(nil, nil, nil), func(e registryeventbus.Event) error {
+		id := e.Data.(map[string]any)["id"].(string)
+		require.False(t, seen[id])
+		seen[id] = true
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, seen, currentStatePageSize*2+1)
+	require.Equal(t, 3, s.calls)
 }
 
 type currentStateMemoryStore struct {

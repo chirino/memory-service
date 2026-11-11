@@ -1,5 +1,13 @@
 services:
   memory-service:
+    depends_on: !override
+      postgres:
+        condition: service_healthy
     environment:
       MEMORY_SERVICE_OIDC_ISSUER: ""
       MEMORY_SERVICE_OIDC_DISCOVERY_URL: ""
+      MEMORY_SERVICE_TRUSTED_USER_ID_CLIENTS: agent
+      MEMORY_SERVICE_ATTACHMENTS_KIND: db
+      MEMORY_SERVICE_CACHE_KIND: none
+      MEMORY_SERVICE_VECTOR_KIND: none
+      MEMORY_SERVICE_EMBEDDING_KIND: none

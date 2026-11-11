@@ -338,10 +338,12 @@ tasks:
   dev:clickhouse-processor:
     desc: Run the ClickHouse analytics processor against the local stack.
     env:
+      COMPOSE_FILE: compose.yaml:deploy/clickhouse/compose-smoke.yaml
       MEMORY_SERVICE_GRPC_ENDPOINT: '{{.MEMORY_SERVICE_GRPC_ENDPOINT | default "localhost:8082"}}'
       MEMORY_SERVICE_PROCESS_CLIENT_ID: clickhouse_analytics
       MEMORY_SERVICE_API_KEY: clickhouse-analytics-key
       MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC: "true"
+      MEMORY_SERVICE_PROCESS_HEALTH_ADDRESS: 127.0.0.1:8086
       MEMORY_SERVICE_PROCESS_AFTER_CURSOR: start
       MEMORY_SERVICE_CLICKHOUSE_ADDRESS: '{{.MEMORY_SERVICE_CLICKHOUSE_ADDRESS | default "localhost:9002"}}'
       MEMORY_SERVICE_CLICKHOUSE_PROTOCOL: native
@@ -351,8 +353,9 @@ tasks:
       MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE: "true"
       MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE: metadata
     cmds:
-      - docker compose up -d postgres redis clickhouse memory-service
       - docker compose stop clickhouse-processor >/dev/null 2>&1 || true
+      - docker compose up -d --build --wait postgres clickhouse memory-service
+      - docker compose exec -T clickhouse clickhouse-client --user clickhouse --password clickhouse --multiquery < deploy/clickhouse/init.sql
       - go run . process clickhouse
 
   test:clickhouse:compose-smoke:
@@ -365,8 +368,10 @@ tasks:
       MEMORY_SERVICE_EMBEDDING_KIND: none
       POSTGRES_HOST_PORT: "55432"
     cmds:
+      - docker compose stop clickhouse-processor >/dev/null 2>&1 || true
       - docker compose up -d --wait postgres clickhouse
       - docker compose up -d --build --wait --no-deps memory-service
+      - docker compose exec -T clickhouse clickhouse-client --user clickhouse --password clickhouse --multiquery < deploy/clickhouse/init.sql
       - docker compose up -d --wait --no-deps clickhouse-processor
       - |
         before=$(docker compose exec -T clickhouse clickhouse-client --user memory_service_analytics --password memory-service-analytics --query "SELECT count() FROM memory_service_analytics.conversations_current WHERE exporter_id='clickhouse_analytics'")
@@ -529,6 +534,21 @@ tasks:
       - kubectl apply -k deploy/kustomize/envs/kind/overlays/{{.OVERLAY}}
       - task: secrets
       - kubectl set env deployment/memory-service -n memory-service --from=secret/memory-service
+      - task: kind:clickhouse:provision
+
+  kind:clickhouse:provision:
+    desc: Apply analytics database grants to new or retained local kind ClickHouse storage
+    cmds:
+      - |
+        if kubectl get statefulset/clickhouse -n memory-service >/dev/null 2>&1; then
+          kubectl rollout status statefulset/clickhouse -n memory-service --timeout=5m
+          kubectl exec -i -n memory-service clickhouse-0 -- \
+            clickhouse-client --user clickhouse --password clickhouse --multiquery \
+            < deploy/kustomize/components/analytics/clickhouse/init.sql
+          if kubectl get deployment/clickhouse-processor -n memory-service >/dev/null 2>&1; then
+            kubectl rollout restart deployment/clickhouse-processor -n memory-service
+          fi
+        fi
 
   kind:undeploy:
     desc: "Remove the deployed overlay (usage: task kind:undeploy OVERLAY={{.OVERLAY}})"

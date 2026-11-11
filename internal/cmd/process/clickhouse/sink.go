@@ -33,6 +33,8 @@ type ClickHouseSink struct {
 	retentionErrors     chan error
 }
 
+var errPurgeScopeConflict = errors.New("purge identity has conflicting immutable scope")
+
 func OpenSink(ctx context.Context, cfg Config) (*ClickHouseSink, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -133,6 +135,17 @@ func (s *ClickHouseSink) EnsureSchema(ctx context.Context, mode string) error {
 	if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(),uniqExact(checksum),any(checksum),countIf(component!='clickhouse-export') FROM %s.schema_versions", quoteIdentifier(s.database))).Scan(&count, &distinct, &checksum, &other); err != nil {
 		return err
 	}
+	if count == 0 && mode != "validate" && tables == 1 {
+		// A crash may leave only our exact, empty registry before its claim was
+		// inserted. Validate its physical definition before finishing that claim.
+		if err := s.validateInfrastructure(ctx, true); err != nil {
+			return err
+		}
+		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.schema_versions (component,checksum,applied_at) VALUES (?,?,?)", quoteIdentifier(s.database)), "clickhouse-export", expected, time.Now().UTC()); err != nil {
+			return err
+		}
+		count, distinct, checksum = 1, 1, expected
+	}
 	if count == 0 || distinct != 1 || other != 0 || checksum != expected {
 		return errors.New("incompatible analytics schema checksum; use a fresh database and checkpoint")
 	}
@@ -171,9 +184,12 @@ func (s *ClickHouseSink) ResolvePurge(ctx context.Context, purge PurgeRow) (Purg
 		return purge, err
 	}
 	if prior.ResourceKind != purge.ResourceKind || prior.AnalyticsResourceID != purge.AnalyticsResourceID || prior.ConversationID != purge.ConversationID || prior.ConversationGroupID != purge.ConversationGroupID || prior.Scope != purge.Scope {
-		return purge, errors.New("purge identity has conflicting immutable scope")
+		return purge, errPurgeScopeConflict
 	}
-	return prior, validatePurge(prior)
+	if err := validatePurge(prior); err != nil {
+		return prior, fmt.Errorf("%w: invalid persisted purge", errPurgeScopeConflict)
+	}
+	return prior, nil
 }
 func validatePurge(p PurgeRow) error {
 	if p.ExporterID == "" || p.PurgeID == "" || p.AnalyticsResourceID == "" || p.CutoffIngestVersion == 0 {
@@ -296,6 +312,18 @@ func (s *ClickHouseSink) processPurges(ctx context.Context, batch Batch) error {
 		if err := validatePurge(purge); err != nil {
 			return err
 		}
+		if purge.ResourceKind == "membership" && purge.Scope == purgeResource && !s.config.ExportMemberships {
+			hasRows, err := s.hasMembershipPurgeRows(ctx, purge)
+			if err != nil {
+				return s.failPurge(purge, err)
+			}
+			if !hasRows {
+				if err := s.completePurge(ctx, purge); err != nil {
+					return s.failPurge(purge, err)
+				}
+				continue
+			}
+		}
 		for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
 			kindColumn, idColumn := "resource_kind", "analytics_resource_id"
 			fixedKind := ""
@@ -313,17 +341,47 @@ func (s *ClickHouseSink) processPurges(ctx context.Context, batch Batch) error {
 				return s.failPurge(purge, err)
 			}
 		}
-		if err := s.writePurge(ctx, purge, true); err != nil {
+		if err := s.completePurge(ctx, purge); err != nil {
 			return s.failPurge(purge, err)
 		}
-		processorPurges.WithLabelValues(purge.ExporterID, purge.ResourceKind, "success").Inc()
-		processorPurgeDelay.WithLabelValues(purge.ExporterID, purge.ResourceKind).Set(max(0, time.Since(purge.RequestedAt).Seconds()))
 	}
 	return nil
 }
+
+func (s *ClickHouseSink) hasMembershipPurgeRows(ctx context.Context, purge PurgeRow) (bool, error) {
+	var parts []string
+	var args []any
+	for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
+		identity := "resource_kind='membership' AND analytics_resource_id=?"
+		if table == "conversation_memberships" {
+			identity = "resource_id=?"
+		}
+		parts = append(parts, fmt.Sprintf("(SELECT 1 FROM %s.%s WHERE exporter_id=? AND %s AND ingest_version<=? LIMIT 1)", quoteIdentifier(s.database), quoteIdentifier(table), identity))
+		args = append(args, purge.ExporterID, purge.AnalyticsResourceID, purge.CutoffIngestVersion)
+	}
+	var count uint64
+	err := s.conn.QueryRow(ctx, "SELECT count() FROM ("+strings.Join(parts, " UNION ALL ")+")", args...).Scan(&count)
+	return count > 0, err
+}
+
+func (s *ClickHouseSink) completePurge(ctx context.Context, purge PurgeRow) error {
+	if err := s.writePurge(ctx, purge, true); err != nil {
+		return err
+	}
+	processorPurges.WithLabelValues(purge.ExporterID, purge.ResourceKind, "success").Inc()
+	processorPurgeDelay.WithLabelValues(purge.ExporterID, purge.ResourceKind).Set(max(0, time.Since(purge.RequestedAt).Seconds()))
+	return nil
+}
 func (s *ClickHouseSink) purgeTable(ctx context.Context, table, kindColumn, idColumn, fixedKind string, purge PurgeRow) error {
-	predicate := "ingest_version <= ? AND "
-	args := []any{purge.CutoffIngestVersion}
+	predicate := ""
+	var args []any
+	// Membership identities can be granted again. Other hard-deleted identities
+	// are retired, so remove replayed rows even when a new lease gave them a
+	// version higher than the original purge's persisted cutoff.
+	if purge.ResourceKind == "membership" && purge.Scope == purgeResource {
+		predicate = "ingest_version <= ? AND "
+		args = append(args, purge.CutoffIngestVersion)
+	}
 	if purge.Scope == purgeGroup {
 		predicate += "conversation_group_id=?"
 		args = append(args, purge.ConversationGroupID)

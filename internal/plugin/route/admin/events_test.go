@@ -64,14 +64,28 @@ func TestEnrichAdminMemoryEventSummaryDoesNotLoadMemory(t *testing.T) {
 
 func TestEnrichAdminMemoryEventMissingPreservesSummary(t *testing.T) {
 	store := &adminEventEpisodicStore{}
-	raw := json.RawMessage(`{"memory":"00000000-0000-4000-8000-000000000001","change":"hard_deleted"}`)
-	event := registryeventbus.Event{Event: "deleted", Kind: "memory", Data: raw}
+	raw := json.RawMessage(`{"memory":"00000000-0000-4000-8000-000000000001","change":"updated"}`)
+	event := registryeventbus.Event{Event: "updated", Kind: "memory", Data: raw}
 
 	enriched, ok, err := enrichAdminEvent(context.Background(), nil, store, "full", event)
 	require.NoError(t, err)
 	require.True(t, ok)
-	require.Zero(t, store.getCalls)
+	require.Equal(t, 1, store.getCalls)
 	require.Equal(t, raw, enriched.Data)
+}
+
+func TestEnrichAdminTerminalEventsPreserveChangeWithoutReload(t *testing.T) {
+	for _, change := range []string{"hard_deleted", "evicted"} {
+		store := &adminEventEpisodicStore{err: errors.New("must not load a newer resource")}
+		raw := json.RawMessage(`{"memory":"00000000-0000-4000-8000-000000000001","change":"` + change + `"}`)
+		event := registryeventbus.Event{Event: "deleted", Kind: "memory", Data: raw}
+		enriched, ok, err := enrichAdminEvent(context.Background(), nil, store, "full", event)
+		require.NoError(t, err)
+		require.True(t, ok)
+		require.Zero(t, store.getCalls)
+		require.Equal(t, raw, enriched.Data)
+		require.Equal(t, change, enriched.Change)
+	}
 }
 
 func TestEnrichAdminMemoryEventReturnsStoreFailure(t *testing.T) {

@@ -15,7 +15,7 @@ querying the same table and views when a producer bumps its content-type version
 
 This implements [GitHub issue #760](https://github.com/chirino/memory-service/issues/760)
 and extends the typed projections of
-[Enhancement 404](404-clickhouse-analytics-export.md#typed-projections).
+[Enhancement 404](../superseded/404-clickhouse-analytics-export.md#typed-projections).
 
 ## Motivation
 
@@ -319,7 +319,7 @@ through `ProjectionSet.Match` and runs the documented registry query, including
 | `internal/cmd/process/clickhouse/*_test.go` | Unit and integration tests. |
 | `internal/sitebdd/steps_clickhouse.go` | Route doc fixtures through `ProjectionSet.Match`; start ClickHouse with the shared test helper. |
 | `internal/testutil/testclickhouse/` | Shared ClickHouse test container, pinned to the `compose.yaml` image. |
-| `docs/enhancements/implemented/404-clickhouse-analytics-export.md` | Point the projection section at chains. |
+| `docs/enhancements/superseded/404-clickhouse-analytics-export.md` | Point the projection section at chains. |
 | `site/src/pages/docs/analytics/projections.mdx` | Document chains and output checks. |
 | `site/src/pages/docs/analytics/clickhouse/operations.mdx` | Schema management, inspection, and replay for chains. |
 | `site/src/pages/docs/analytics/index.mdx` | Chains and `spec.table` in the relation overview. |

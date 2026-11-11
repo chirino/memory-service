@@ -28,8 +28,9 @@ subjects through a resource catalog. The analytics-only compatibility break remo
 paths and their old-layout/checkpoint branches.
 
 This replaces the export-format assumptions of
-[Enhancement 404](404-clickhouse-analytics-export.md) while retaining the useful
+[Enhancement 404](../superseded/404-clickhouse-analytics-export.md) while retaining the useful
 chain behavior of [Enhancement 117](117-clickhouse-projection-chains.md).
+SQLite publishes committed outbox rows through an ordered relay outside the writer lock and retries failed publications.
 The implementation includes the common pipeline, conversation projections, layout options,
 and membership export for group-access reporting. Queries using conversation IDs
 that have already passed a live access check do not require membership analytics.
@@ -145,7 +146,7 @@ all modes; a full snapshot requires an explicit JSON column and Rego.
 
 Remove the implicit memory `columns <- attributes` evaluator path: every chain root requires
 `projectionRego`. Rename failure policy `continue-generic` to `record`, keeping `stop` as
-the other choice. `record` writes a payload-free failure row and continues; it never adds
+the other choice for Rego and output validation errors. Missing source snapshots are recorded under both policies because deletion may already have removed the source during catch-up. `record` writes a payload-free failure row and continues; it never adds
 an alternative payload capture. Do not keep the old policy name as an alias.
 
 Direct lineage is available through opt-in projection columns, including the conversation
@@ -251,7 +252,7 @@ write newer observations; latest-snapshot views still produce one logical result
 ### One current checkpoint and replay protocol
 
 Checkpoints store the active projection digest/output settings, completed replay
-ID, safe cursor, observation sequence, and bootstrap state. Require all current fields;
+ID, safe cursor, and bootstrap state. The observation sequence is process-local and never serialized, so buffered events do not trigger checkpoint writes. Require all current fields;
 there is no legacy/custom capture field or inference for an older checkpoint.
 
 For a replay, attach one pending target to the existing `scanning`, `catchup`, and `complete`
@@ -334,8 +335,8 @@ There are two purge scopes, always isolated by exporter:
 
 | Scope | Table predicate |
 | --- | --- |
-| Resource | Exact resource kind and ID, plus `ingest_version <= cutoff_ingest_version`. Registry ownership supplies kind for projection tables. |
-| Conversation group | Exact canonical group UUID on every group-dependent table, plus the same version cutoff. |
+| Resource | Exact resource kind and ID. Membership revokes also require `ingest_version <= cutoff_ingest_version` to preserve newer grants. Retired resource IDs remove all versions. Registry ownership supplies kind for projection tables. |
+| Conversation group | Exact canonical group UUID on every group-dependent table, without a version cutoff, so higher-version replayed observations are also removed. |
 
 Persist source event/purge identity, resource kind/ID, conversation/group identity, scope,
 and a non-null `cutoff_ingest_version UInt64` in `purge_queue` and every status update.
@@ -357,7 +358,7 @@ an already persisted complete status.
 Reusing a purge ID reuses its persisted scope/cutoff rather than the retry's newly allocated
 version; conflicting scope is fatal. Resolve that original deletion version before freezing
 replayed deletion rows/fences, so replaying an old revoke cannot advance its fence past a
-newer grant. Cutoff-bound cleanup preserves newer grants/incarnations even if an external
+newer grant. Cutoff-bound membership cleanup preserves newer grants even if an external
 worker executes an old request after they were exported. No null historical-cutoff branch
 or old queue status reader is needed.
 
@@ -485,7 +486,7 @@ Required acceptance coverage uses existing unit, ClickHouse, store, and event-st
   and orphan relations fail/recover without losing cleanup coverage.
 - Deletion: direct kind/ID/group predicates work with no resource catalog, including zero-row
   projections and configured-out tables. Interrupt cleanup between tables, restart using only
-  the queue, and verify exact cutoffs, maximum fences, and preservation of newer grants.
+  the queue, and verify membership cutoffs, maximum fences, preservation of newer grants, and removal of group/resource rows replayed under a higher lease generation.
   Cross-kind matching IDs never cause cross-deletion. Cover all purge modes and TTL/merge behavior.
 - Membership: all stores/transports and owner/grant/transfer/update/revoke/re-share/group-delete
   paths agree, including mutations during scans, unsupported source capability, and every

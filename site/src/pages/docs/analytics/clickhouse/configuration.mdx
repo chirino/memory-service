@@ -63,8 +63,7 @@ For example, this setting keeps projection rows but omits all lifecycle events:
 MEMORY_SERVICE_CLICKHOUSE_DISABLE=*:lifecycle_events
 ```
 
-The processor rejects unknown resources, unknown features, and unsupported combinations such
-as `entries:lineage`. A bare resource selector also disables all features for that resource.
+The processor rejects unknown resources and features, including the removed `lineage` feature. A bare resource selector also disables all features for that resource.
 The common processor schema remains present, so tables for disabled outputs can remain empty.
 Rows written before an output was disabled remain until a purge or TTL removes them.
 
@@ -134,11 +133,11 @@ The processor stores Memory Service source identifiers directly so an analytics 
 
 ## Projections
 
-| Setting                                                                                         | Default  | Description                                                                                       |
-| ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------- |
-| <Cfg p="--projection-path" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH" />                     | None     | Projection YAML file or directory. Repeat the CLI flag or use comma-separated environment values. |
-| <Cfg p="--projection-failure-policy" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY" /> | `record` | `record` records the failure. `stop` stops processing.                                            |
-| <Cfg p="--projection-replay-id" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID" />           | None     | New identifier that requests an explicit current-state rescan.                                    |
+| Setting                                                                                         | Default  | Description                                                                                                                                |
+| ----------------------------------------------------------------------------------------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| <Cfg p="--projection-path" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH" />                     | None     | Projection YAML file or directory. Repeat the CLI flag or use comma-separated environment values.                                          |
+| <Cfg p="--projection-failure-policy" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY" /> | `record` | `record` records the failure. `stop` halts on Rego or output validation errors; missing source snapshots are recorded under both policies. |
+| <Cfg p="--projection-replay-id" e="MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID" />           | None     | New identifier that requests an explicit current-state rescan.                                                                             |
 
 Explicit paths replace the entire packaged metadata projection set in every payload mode. With no paths, the processor loads the packaged conversation, entry, and memory metadata manifests. A path can identify one YAML file or a directory. For a directory, the processor reads the `*.yaml` and `*.yml` files directly inside it; it does not scan subdirectories. YAML documents with another `kind` are ignored, and at least one `kind: AnalyticsProjection` resource must be found across all configured paths.
 
@@ -193,7 +192,7 @@ Purge modes handle hard-delete events differently:
 | `record-only` | Write a pending `purge_queue` request and leave deletion to an external worker.                                                            |
 | `external`    | Do not write purge requests or execute deletion mutations. The operator owns hard-delete discovery and removal.                            |
 
-External cleanup covers matching projection, membership, lifecycle, and failure rows using the persisted resource/group scope and cutoff. Preserve identity and group fences independently of normal purge and TTL. Retire fences only after writers and resumable checkpoints are retired.
+External cleanup covers matching projection, membership, lifecycle, and failure rows using the persisted resource/group scope. Apply the persisted version cutoff only to membership revokes so later grants survive; cleanup for retired resource IDs and groups removes all matching versions, including replayed observations. Preserve identity and group fences independently of normal purge and TTL. Retire fences only after writers and resumable checkpoints are retired.
 
 Switching from delegated deletion back to managed purge requires a fresh analytics database and checkpoint because the cursor may have passed unprocessed hard deletes. This does not reset the operational store.
 

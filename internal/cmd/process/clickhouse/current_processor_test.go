@@ -52,15 +52,87 @@ func TestObservationVersionsOrderRepeatedResourcesInOneBatch(t *testing.T) {
 	require.Equal(t, "3", p.state.SafeCursor)
 	require.NotContains(t, fmt.Sprint(sink.batches), "private-title")
 	require.NotContains(t, fmt.Sprint(sink.batches), "private-metadata")
-	p.state.ObservationSequence = ^uint32(0)
+	p.observationSequence = ^uint32(0)
 	require.ErrorContains(t, p.Handle(ctx, conversationEvent("4")), "sequence exhausted")
 	require.Equal(t, "3", p.state.SafeCursor)
 	require.Error(t, p.SetLeaseGeneration(uint64(1)<<32))
 }
 
+func TestBufferedObservationsDoNotRewriteCheckpoint(t *testing.T) {
+	p := testProcessor(t, testConfig(), &fakeSink{}, 1)
+	before := completeCheckpoint(t, p, "saved")
+	for _, cursor := range []string{"1", "2", "3"} {
+		require.NoError(t, p.Handle(context.Background(), conversationEvent(cursor)))
+		after, err := p.Snapshot()
+		require.NoError(t, err)
+		require.JSONEq(t, string(before), string(after), "buffered events must not cause runtime checkpoint writes")
+	}
+	require.NoError(t, p.Flush(context.Background()))
+	after, err := p.Snapshot()
+	require.NoError(t, err)
+	require.NotEqual(t, string(before), string(after))
+	require.NotContains(t, string(after), "observationSequence")
+}
+
 type frozenRetrySink struct {
 	fakeSink
 	attempts []Batch
+}
+
+type purgeLookupRetrySink struct {
+	fakeSink
+	attempts    int
+	lookupError error
+}
+
+func (s *purgeLookupRetrySink) ResolvePurge(_ context.Context, p PurgeRow) (PurgeRow, error) {
+	s.attempts++
+	if s.lookupError != nil {
+		return p, s.lookupError
+	}
+	if s.attempts == 1 {
+		return p, errors.New("temporary lookup failure")
+	}
+	return p, nil
+}
+
+func TestPurgeLookupRetriesBeforeAdvancingCursor(t *testing.T) {
+	sink := &purgeLookupRetrySink{}
+	p := testProcessor(t, testConfig(), sink, 1)
+	event := processruntime.EventEnvelope{Kind: "conversation", Event: "deleted", Cursor: "delete", Data: json.RawMessage(`{"conversation":"deleted","conversation_group":"` + testGroup + `"}`)}
+	require.NoError(t, p.Handle(context.Background(), event))
+	require.Equal(t, 2, sink.attempts)
+	require.Empty(t, p.state.SafeCursor)
+	require.Len(t, p.pending.Purges, 1)
+	require.NoError(t, p.Flush(context.Background()))
+	require.Equal(t, "delete", p.state.SafeCursor)
+}
+
+func TestPurgeLookupCancellationAndConflictsKeepCheckpoint(t *testing.T) {
+	for _, conflict := range []bool{false, true} {
+		t.Run(fmt.Sprint(conflict), func(t *testing.T) {
+			sink := &purgeLookupRetrySink{lookupError: errors.New("temporary outage")}
+			if conflict {
+				sink.lookupError = errPurgeScopeConflict
+			}
+			p := testProcessor(t, testConfig(), sink, 1)
+			before := completeCheckpoint(t, p, "saved")
+			ctx, cancel := context.WithTimeout(context.Background(), 30*time.Millisecond)
+			defer cancel()
+			event := processruntime.EventEnvelope{Kind: "conversation", Event: "deleted", Cursor: "delete", Data: json.RawMessage(`{"conversation":"deleted","conversation_group":"` + testGroup + `"}`)}
+			err := p.Handle(ctx, event)
+			if conflict {
+				require.ErrorIs(t, err, errPurgeScopeConflict)
+				require.Equal(t, 1, sink.attempts)
+			} else {
+				require.ErrorIs(t, err, context.DeadlineExceeded)
+			}
+			after, err := p.Snapshot()
+			require.NoError(t, err)
+			require.JSONEq(t, string(before), string(after))
+			require.Empty(t, sink.batches)
+		})
+	}
 }
 
 func (s *frozenRetrySink) WriteBatch(ctx context.Context, b Batch) error {
@@ -227,7 +299,7 @@ func TestRetentionAndFailureConfiguration(t *testing.T) {
 	require.NoError(t, cfg.Validate())
 }
 
-func TestMissingIdentityIsFatalAndStopPreservesCursor(t *testing.T) {
+func TestMissingIdentityIsFatalAndSnapshotAbsenceIsRecorded(t *testing.T) {
 	for _, policy := range []string{"record", "stop"} {
 		cfg := testConfig()
 		cfg.ProjectionFailurePolicy = policy
@@ -239,17 +311,21 @@ func TestMissingIdentityIsFatalAndStopPreservesCursor(t *testing.T) {
 		require.Empty(t, sink.batches)
 		event := processruntime.EventEnvelope{Kind: "conversation", Event: "updated", Cursor: "summary", Data: json.RawMessage(`{"conversation":"c","conversation_group":"` + testGroup + `"}`)}
 		err = p.Handle(context.Background(), event)
-		if policy == "stop" {
-			require.ErrorContains(t, err, "snapshot_unavailable")
-			require.Empty(t, p.state.SafeCursor)
-		} else {
-			require.NoError(t, err)
-			require.NoError(t, p.Flush(context.Background()))
-			require.Equal(t, "summary", p.state.SafeCursor)
-			require.Len(t, sink.batches[0].ProjectionFailures, 1)
-			require.Empty(t, sink.batches[0].Projections)
-		}
+		require.NoError(t, err)
+		require.NoError(t, p.Flush(context.Background()))
+		require.Equal(t, "summary", p.state.SafeCursor)
+		require.Len(t, sink.batches[0].ProjectionFailures, 1)
+		require.Empty(t, sink.batches[0].Projections)
 	}
+}
+
+func TestStopPolicyStillRejectsInvalidProjectionOutput(t *testing.T) {
+	cfg := testConfig()
+	cfg.ProjectionFailurePolicy = "stop"
+	p := testProcessor(t, cfg, &fakeSink{}, 1)
+	event := processruntime.EventEnvelope{Kind: "memory", Event: "created", Cursor: "bad", Data: json.RawMessage(`{"id":"memory","namespace":"wrong-type","key":"key","kind":"kind","revision":1,"createdAt":"2026-01-01T00:00:00Z"}`)}
+	require.ErrorContains(t, p.Handle(context.Background(), event), "invalid_string_array")
+	require.Empty(t, p.state.SafeCursor)
 }
 
 func TestDefaultMemoryProjectionPreservesIntegerPrecision(t *testing.T) {

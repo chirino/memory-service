@@ -432,6 +432,9 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, episo
 }
 
 func enrichAdminEvent(ctx context.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+	if change := eventstream.EventChange(event.Data); change != "" {
+		event.Change = change
+	}
 	if detail != "full" || event.Kind == "stream" || event.Event == "deleted" || eventstream.EventChange(event.Data) == "hard_deleted" || eventstream.EventChange(event.Data) == "evicted" {
 		return event, true, nil
 	}

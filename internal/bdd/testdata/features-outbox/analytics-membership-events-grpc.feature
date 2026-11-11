@@ -41,3 +41,77 @@ Feature: Admin membership snapshots and filtering over gRPC
     And "alice" should not receive a gRPC event with kind "membership" and event "snapshot" within 1 seconds
     When I share the conversation with user "bob" and access level "reader"
     Then "alice" should not receive a gRPC event with kind "membership" and event "created" within 1 seconds
+
+  Scenario: gRPC role updates and revokes preserve a later grant during replay
+    Given "alice" is connected to the admin gRPC event stream with query "kinds=membership&detail=full"
+    When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
+    """
+    conversation_id: "${conversationId}"
+    user_id: "bob"
+    access_level: READER
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "membership" and event "created" where data "userId" is "bob"
+    When I send gRPC request "ConversationMembershipsService/UpdateMembership" with body:
+    """
+    conversation_id: "${conversationId}"
+    member_user_id: "bob"
+    access_level: WRITER
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "membership" and event "updated" where data "accessLevel" is "writer"
+    And the gRPC event cursor should be saved as "beforeRevoke"
+    When I send gRPC request "ConversationMembershipsService/DeleteMembership" with body:
+    """
+    conversation_id: "${conversationId}"
+    member_user_id: "bob"
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "membership" and event "deleted" where data "user" is "bob"
+    When I send gRPC request "ConversationMembershipsService/ShareConversation" with body:
+    """
+    conversation_id: "${conversationId}"
+    user_id: "bob"
+    access_level: MANAGER
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "membership" and event "created" where data "accessLevel" is "manager"
+    Given "alice" is connected to the admin gRPC event stream with query "kinds=membership&detail=full&after=${beforeRevoke}"
+    Then "alice" should receive a gRPC event with kind "membership" and event "deleted" where data "user" is "bob"
+    And "alice" should receive a gRPC event with kind "membership" and event "created" where data "accessLevel" is "manager"
+
+  Scenario: gRPC ownership transfer publishes both roles and refreshed conversation owner
+    Given I share the conversation with user "bob" and access level "reader"
+    And "alice" is connected to the admin gRPC event stream with query "kinds=membership,conversation&detail=full"
+    When I send gRPC request "OwnershipTransfersService/CreateOwnershipTransfer" with body:
+    """
+    conversation_id: "${conversationId}"
+    new_owner_user_id: "bob"
+    """
+    Then the gRPC response should not have an error
+    And set "transferId" to the gRPC response field "id"
+    Given I am authenticated as user "bob"
+    When I send gRPC request "OwnershipTransfersService/AcceptOwnershipTransfer" with body:
+    """
+    transfer_id: "${transferId | base64_to_hex_string}"
+    """
+    Then the gRPC response should not have an error
+    And "alice" should receive a gRPC event with kind "membership" and event "updated" where data "userId" is "alice"
+    And the gRPC event data "accessLevel" should be "manager"
+    And "alice" should receive a gRPC event with kind "membership" and event "updated" where data "userId" is "bob"
+    And the gRPC event data "accessLevel" should be "owner"
+    And "alice" should receive a gRPC event with kind "conversation" and event "updated" where data "ownerUserId" is "bob"
+
+  Scenario: A hard-deleted group is reported on the admin gRPC stream
+    Given I share the conversation with user "bob" and access level "reader"
+    And "alice" is connected to the admin gRPC event stream with query "kinds=conversation,membership&detail=full"
+    And I am authenticated as admin user "alice"
+    And the conversation was archived 100 days ago
+    When I call POST "/v1/admin/evict" with body:
+    """
+    {"retentionPeriod":"P90D","resourceTypes":["conversations"],"justification":"Verify membership group deletion"}
+    """
+    Then the response status should be 204
+    And "alice" should receive a gRPC event with kind "conversation" and event "deleted" where data "conversation" is "${conversationId}"
+    And the gRPC event data should contain "conversation_group"
+    And the gRPC event data should contain "members"

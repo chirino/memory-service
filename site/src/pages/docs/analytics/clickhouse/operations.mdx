@@ -16,7 +16,7 @@ On PostgreSQL, monitor `memory_service_outbox_unsequenced_oldest_age_seconds` if
 
 ## Manage schemas
 
-`--schema-mode=manage` claims an empty dedicated database with the current fingerprint and creates owned objects. Matching interrupted infrastructure initialization can finish on restart. `validate` checks the current schema without DDL. Neither mode adopts an older or unowned nonempty database.
+`--schema-mode=manage` claims an empty dedicated database with the current fingerprint and creates owned objects. Matching interrupted infrastructure initialization can finish on restart, including a crash that left only the exact current empty schema registry before its checksum was stored. `validate` checks the current schema without DDL. Neither mode adopts an older or unowned nonempty database.
 
 The registry stores the schema checksum and application time. It has no numeric schema version. Projection registration requires explicit row mode and ordering. The processor rejects conflicting manifests, physical types, keys, engines, partitioning, missing registry metadata, and orphan user relations. It never infers an old layout or drops an orphan automatically.
 
@@ -48,7 +48,7 @@ Translate custom projections to `input.record` and declare `projectionRego` on e
 
 With no projection paths, the packaged defaults create `conversations`, `entries`, and `memories`. The conversation table has only `created_at`, `updated_at`, and `archived`, plus processor-owned columns. Owner, client, agent, and lineage fields need the [opt-in conversation details projection](/docs/analytics/projections/#add-conversation-reporting-fields). Explicit paths replace the entire packaged set. Update dashboards that used generic payload columns or the dedicated lineage table.
 
-Provision an empty, dedicated ClickHouse database and grant the analytics user access to it, including the [schema and server-settings permissions](/docs/analytics/clickhouse/configuration/#clickhouse-connection). If you reuse a ClickHouse server or volume, apply the new database and grants explicitly; changing the repository's initialization SQL alone is not a cutover procedure. Leave the old database intact.
+Provision an empty, dedicated ClickHouse database and grant the analytics user access to it, including the [schema and server-settings permissions](/docs/analytics/clickhouse/configuration/#clickhouse-connection). If you reuse a ClickHouse server or volume, apply the new database and grants explicitly; changing the repository's initialization SQL alone is not a cutover procedure. Leave the old database intact. The bundled `task kind:deploy` reapplies these grants even when ClickHouse retains an existing data volume. If you apply the local kind overlay manually, run `task kind:clickhouse:provision` afterward.
 
 Choose a new Memory Service client ID with the `admin` role and matching credentials. This ID owns a fresh checkpoint. Also choose a fresh exporter ID, which namespaces ClickHouse rows. For example, these settings name a new dataset; substitute names that have never been used in your deployment:
 
@@ -92,9 +92,9 @@ Live exporters sharing a database must agree on managed retention values. Heartb
 
 ## Process deletions
 
-Managed purge writes the complete typed scope and ingestion cutoff into `purge_queue`, writes identity/group fences, removes matching rows, waits for mutations, and records `complete` before checkpoint advancement. Cleanup uses exact kind/ID or canonical group UUID, always scoped by exporter and cutoff. It needs no resource catalog. Replayed deletes reuse the original cutoff so an older revoke cannot erase a newer grant.
+Managed purge writes the complete typed scope and ingestion cutoff into `purge_queue`, writes identity/group fences, removes matching rows, waits for mutations, and records `complete` before checkpoint advancement. Cleanup uses exact kind/ID or canonical group UUID, always scoped by exporter. Membership revokes also use the stored cutoff to preserve later grants; purges for retired resource IDs and groups remove every matching version, including rows replayed under a new lease. Transient purge lookups retry without advancing the checkpoint; a conflicting stored scope stops the exporter. Cleanup needs no resource catalog. Replayed deletes reuse the original cutoff so an older revoke cannot erase a newer grant.
 
-Record-only mode persists pending work for an external worker. External mode writes no queue request and delegates physical cleanup. Disabled outputs still receive cleanup notifications in managed and record-only modes.
+Record-only mode persists pending work for an external worker. External mode writes no queue request and delegates physical cleanup. Disabled outputs still receive cleanup notifications in managed and record-only modes. With membership export off, managed cleanup skips mutations when no matching historical membership rows exist; disabling an output never skips rows retained from an earlier enabled run.
 
 ```sql
 SELECT purge_id, resource_kind, analytics_resource_id, conversation_group_id,
@@ -126,6 +126,6 @@ An enabled membership exporter first checks `features.analytics_membership_snaps
 
 ## Diagnose projection failures
 
-The default `record` policy writes payload-free diagnostics to `projection_failures` and continues. `stop` halts processing. Failures include typed resource identities and ingestion versions. Compare error codes with the source shape and declared columns; source payloads are never stored in diagnostics.
+The default `record` policy writes payload-free diagnostics to `projection_failures` and continues. `stop` halts on Rego or output validation errors. A missing source snapshot is recorded and skipped under both policies so normal catch-up can reach its later deletion event. Failures include typed resource identities and ingestion versions. Compare error codes with the source shape and declared columns; source payloads are never stored in diagnostics.
 
 See [Query analytics data](/docs/analytics/querying/) and the [configuration reference](/docs/analytics/clickhouse/configuration/).

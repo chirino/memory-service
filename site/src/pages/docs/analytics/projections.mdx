@@ -135,7 +135,7 @@ Multi-row tables add two processor-owned columns:
 | `row_index` | `UInt32` | Zero-based position of the row in the `output` array.   |
 | `row_count` | `UInt32` | Number of rows that the same resource version produced. |
 
-`row_index` and `row_count` are reserved column names for every projection. Rows are keyed by `(exporter_id, resource_id, row_index)`, so a query can order the rows for one resource by `row_index`. When the Rego skips items, `row_index` counts only the rows it returned. Declare a column when analysts need the item's original position.
+`row_index` and `row_count` are reserved column names for every projection. With resource ordering, rows are keyed by `(exporter_id, resource_id, row_index)`. Conversation ordering uses `(exporter_id, conversation_id, resource_id, row_index)`, so a query can order the rows for one resource by `row_index`. When the Rego skips items, `row_index` counts only the rows it returned. Declare a column when analysts need the item's original position.
 
 Every version of a resource replaces all of its earlier rows. The `_current` and `_all` views return the rows from the newest version only. If an update returns fewer rows than before, the extra rows from the earlier version disappear from both views. An empty array writes no visible rows and hides the rows of earlier versions. A deleted resource leaves a single tombstone row in the `_all` view.
 
@@ -218,7 +218,7 @@ The message tables store one row for each message in a chat-memory entry, in con
 
 The history event tables store one row for each recorded event of an agent response. Each row includes the entry `role`, `event_type`, streamed `text`, and, for tool events, `tool_call_id`, `tool_name`, `tool_input`, and `tool_output`. `tool_input` and `tool_output` hold canonical JSON strings; the LangChain4j table decodes tool arguments and results that contain JSON. Completion events add `model_name`, `finish_reason`, `input_tokens`, `output_tokens`, and `total_tokens`. In the Vercel AI table, step events also report usage, so filter on `event_type = 'ChatCompleted'` before you sum tokens. The per-entry history tables remain available for entry-level counts.
 
-The repository's `compose.yaml` loads the entire directory in `projected` mode. For another container deployment, set `MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=projected` and `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=/etc/memory-service/clickhouse/projections` on the processor.
+The repository's `clickhouse-processor` Compose service uses the packaged metadata defaults. The bundled directory is opt-in. For another container deployment, set `MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=projected` and `MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH=/etc/memory-service/clickhouse/projections` on the processor.
 
 To load selected bundled projections, provide their file paths as a comma-separated environment value. This example enables the LangChain4j history and cognition memory projections:
 
@@ -248,7 +248,7 @@ docker compose \
   up -d --force-recreate clickhouse-processor
 ```
 
-Projected mode requires at least one `kind: AnalyticsProjection` resource. A directory path loads the `*.yaml` and `*.yml` files directly inside that directory. Other resource kinds and subdirectories are ignored.
+Projected mode also uses the packaged metadata defaults when no paths are supplied. Explicit paths must contain at least one `kind: AnalyticsProjection` resource and replace that entire default set. A directory path loads the `*.yaml` and `*.yml` files directly inside that directory. Other resource kinds and subdirectories are ignored.
 
 To load multiple files or directories from the CLI, repeat `--projection-path`:
 
@@ -362,7 +362,6 @@ Follow these rules:
 - `projectionRegoFrom` and `projectionRegoReplaces` must name an earlier manifest in the same chain. `projectionRegoFrom` shares that manifest's logic rather than copying it. `projectionRegoReplaces` replaces the logic that manifest uses. If that manifest reuses another manifest's logic through `projectionRegoFrom`, every content type sharing that logic switches unless you add a `selector`.
 - A content type can use only one logic in a chain. Use `projectionRegoReplaces` to change it.
 - Never edit, reorder, or remove a manifest after the processor registers it. The processor refuses to start if the registered manifests aren't the beginning of the configured chain.
-- Upgrade every processor that writes to the same ClickHouse database before you add a manifest to a chain. Processors from releases without projection chains refuse to start once a table they write has more than one registered manifest, with an error like `projection table "support_ticket_v1" is registered with a different immutable manifest`. They also can't read chain manifests registered under their own exporter ID.
 
 To keep an existing table, add a manifest whose `spec.previous` names its projection. The table keeps its name and rows. To move to a version-neutral name, start a new chain with `spec.table` and run a [projection replay](/docs/analytics/clickhouse/operations/#replay-projections) to fill it. The old table keeps working until readers switch, and you drop it manually afterward.
 
@@ -378,7 +377,7 @@ Add `--format json` for machine-readable output.
 
 ## Handle failures and schema changes
 
-Invalid projection output writes a payload-free row to `projection_failures`. The default `record` policy records the failure and continues processing. Set `--projection-failure-policy=stop` when any projection failure must stop the processor.
+Invalid projection output writes a payload-free row to `projection_failures`. The default `record` policy records the failure and continues processing. Set `--projection-failure-policy=stop` to halt on Rego or output validation errors. Missing source snapshots are recorded and skipped under either policy because a later deletion may already have removed the resource during replay.
 
 To rescan existing entries and memories after adding a new projection version or a manifest that replaces logic, set a new `--projection-replay-id`. The replay ID must change for each requested rescan.
 

@@ -82,3 +82,17 @@ Feature: Complete membership analytics over admin REST events
     And "alice" should receive an SSE event with kind "membership" and event "created" where data "userId" is "bob"
     And the SSE event data "conversationGroupId" should be "${childGroupId}"
     And the SSE event data "accessLevel" should be "reader"
+
+  Scenario: A hard-deleted group is reported on the admin REST stream
+    Given I share the conversation with user "bob" and access level "reader"
+    And "alice" is connected to the admin SSE event stream with query "kinds=conversation,membership&detail=full"
+    And I am authenticated as admin user "alice"
+    And the conversation was archived 100 days ago
+    When I call POST "/v1/admin/evict" with body:
+    """
+    {"retentionPeriod":"P90D","resourceTypes":["conversations"],"justification":"Verify membership group deletion"}
+    """
+    Then the response status should be 204
+    And "alice" should receive an SSE event with kind "conversation" and event "deleted" where data "conversation" is "${conversationId}"
+    And the SSE event data should contain "conversation_group"
+    And the SSE event data should contain "members"

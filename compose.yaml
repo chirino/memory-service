@@ -57,7 +57,7 @@ services:
       - -c
       - max_wal_senders=8
     ports:
-      - "5432:5432"
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
     environment:
       POSTGRES_DB: memory_service
       POSTGRES_USER: postgres
@@ -433,12 +433,18 @@ services:
   # ============================================================================
 
   clickhouse:
-    profiles: ["langfuse"]
+    profiles: ["langfuse", "analytics"]
     image: clickhouse/clickhouse-server:26.8.8.8
     environment:
       CLICKHOUSE_DB: default
       CLICKHOUSE_USER: clickhouse
       CLICKHOUSE_PASSWORD: clickhouse
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: "1"
+    ports:
+      - "${CLICKHOUSE_NATIVE_HOST_PORT:-9002}:9000"
+      - "${CLICKHOUSE_HTTP_HOST_PORT:-8123}:8123"
+    volumes:
+      - ./deploy/clickhouse/init.sql:/docker-entrypoint-initdb.d/20-memory-service-analytics.sql:ro
     tmpfs:
       - /var/lib/clickhouse
       - /var/log/clickhouse-server
@@ -447,6 +453,37 @@ services:
       interval: 10s
       timeout: 5s
       retries: 10
+
+  clickhouse-processor:
+    profiles: ["analytics"]
+    image: ghcr.io/chirino/memory-service:latest
+    entrypoint: ["/memory-service"]
+    command: ["process", "clickhouse"]
+    environment:
+      MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
+      MEMORY_SERVICE_PROCESS_CLIENT_ID: clickhouse_analytics
+      MEMORY_SERVICE_API_KEY: clickhouse-analytics-key
+      MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC: "true"
+      MEMORY_SERVICE_CLICKHOUSE_ADDRESS: clickhouse:9000
+      MEMORY_SERVICE_CLICKHOUSE_DATABASE: memory_service_analytics
+      MEMORY_SERVICE_CLICKHOUSE_USERNAME: memory_service_analytics
+      MEMORY_SERVICE_CLICKHOUSE_PASSWORD_FILE: /run/clickhouse/password
+      MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE: "true"
+      MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE: metadata
+    volumes:
+      - ./deploy/clickhouse/analytics-password:/run/clickhouse/password:ro
+    ports:
+      - "8086:8081"
+    depends_on:
+      memory-service:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8081/readyz"]
+      interval: 2s
+      timeout: 3s
+      retries: 60
 
   langfuse-worker:
     profiles: ["langfuse"]

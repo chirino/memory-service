@@ -2041,7 +2041,7 @@ export type AdminSubscribeEventsData = {
      */
     after?: string;
     /**
-     * With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields. Memberships use AdminMembership with group/user identity; deleted resources retain summary identities. Agent membership event data is unchanged.
+     * With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields. Memberships use [AdminMembership](#/components/schemas/AdminMembership) with group/user identity. Deleted, hard-deleted, and evicted events retain their summary identities and lifecycle change instead of reloading current resources. Agent membership event data is unchanged.
      */
     detail?: "summary" | "full";
     /**

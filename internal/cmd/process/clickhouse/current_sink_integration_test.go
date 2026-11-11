@@ -112,6 +112,36 @@ func TestClickHouseMembershipRevokeRegrantAndPersistedCutoff(t *testing.T) {
 	_, err = sink.ResolvePurge(ctx, prior)
 	require.ErrorContains(t, err, "conflicting immutable scope")
 }
+
+func TestClickHousePurgeReplayRemovesNewLeaseObservations(t *testing.T) {
+	for _, kind := range []string{"conversation", "memory"} {
+		t.Run(kind, func(t *testing.T) {
+			ctx, sink, cfg, admin := currentSink(t, nil)
+			deleted := processruntime.EventEnvelope{Kind: kind, Event: "deleted", Cursor: "delete", Change: "hard_deleted"}
+			missing := processruntime.EventEnvelope{Kind: "entry", Event: "created", Cursor: "create", Data: json.RawMessage(`{"entry":"deleted-entry","conversation":"conversation-1","conversation_group":"` + testGroup + `"}`)}
+			if kind == "conversation" {
+				deleted.Data = json.RawMessage(`{"conversation":"conversation-1","conversation_group":"` + testGroup + `"}`)
+			} else {
+				missing.Kind = "memory"
+				missing.Data = json.RawMessage(`{"memory":"deleted-memory","memoryKind":"default/v1"}`)
+				deleted.Data = missing.Data
+			}
+			old := testProcessor(t, cfg, sink, 1)
+			require.NoError(t, old.Handle(ctx, missing))
+			require.NoError(t, old.Handle(ctx, deleted))
+			// The process died after persisting a pending purge but before saving its checkpoint.
+			require.NoError(t, sink.writePurge(ctx, old.pending.Purges[0], false))
+			replayed := testProcessor(t, cfg, sink, 2)
+			require.NoError(t, replayed.Handle(ctx, missing))
+			require.NoError(t, replayed.Handle(ctx, deleted))
+			require.Greater(t, replayed.pending.ProjectionFailures[0].IngestVersion, replayed.pending.Purges[0].CutoffIngestVersion)
+			require.NoError(t, replayed.Flush(ctx))
+			for _, table := range []string{"lifecycle_events", "projection_failures"} {
+				require.Zero(t, countRows(t, ctx, admin, cfg.Database, table, "exporter_id=?", cfg.ExporterID), table)
+			}
+		})
+	}
+}
 func TestClickHouseDirectGroupPurgeAndLateWriteFence(t *testing.T) {
 	ctx, sink, cfg, admin := currentSink(t, nil)
 	p := testProcessor(t, cfg, sink, 1)
@@ -293,6 +323,52 @@ func TestClickHouseCreatesFreshDatabase(t *testing.T) {
 	fresh, err := OpenSink(ctx, cfg)
 	require.NoError(t, err)
 	require.NoError(t, fresh.Close())
+}
+
+func TestClickHouseResumesEmptyCurrentRegistry(t *testing.T) {
+	ctx, sink, cfg, admin := currentSink(t, nil)
+	require.NoError(t, sink.Close())
+	require.NoError(t, admin.Exec(ctx, "DROP DATABASE "+quoteIdentifier(cfg.Database)))
+	for _, statement := range schemaStatements(cfg.Database)[:2] {
+		require.NoError(t, admin.Exec(ctx, statement))
+	}
+	before := readIntegrationSchemaDDL(t, ctx, admin, cfg.Database)
+	cfg.SchemaMode = "validate"
+	_, err := OpenSink(ctx, cfg)
+	require.Error(t, err)
+	require.Equal(t, before, readIntegrationSchemaDDL(t, ctx, admin, cfg.Database))
+	require.Zero(t, countRows(t, ctx, admin, cfg.Database, "schema_versions", ""))
+	cfg.SchemaMode = "manage"
+	restarted, err := OpenSink(ctx, cfg)
+	require.NoError(t, err)
+	require.NoError(t, restarted.Close())
+	require.Equal(t, uint64(1), countRows(t, ctx, admin, cfg.Database, "schema_versions", ""))
+}
+
+func TestClickHouseDisabledMembershipAvoidsEmptyMutations(t *testing.T) {
+	ctx, sink, cfg, admin := currentSink(t, nil)
+	id := model.MembershipResourceID(uuid.MustParse(testGroup), "previous-member")
+	revoke := processruntime.EventEnvelope{Kind: "membership", Event: "deleted", Cursor: "revoke", Data: json.RawMessage(`{"conversation_group":"` + testGroup + `","user":"previous-member"}`)}
+	mutations := func() uint64 {
+		var count uint64
+		require.NoError(t, admin.QueryRow(ctx, "SELECT count() FROM system.mutations WHERE database=?", cfg.Database).Scan(&count))
+		return count
+	}
+	before := mutations()
+	p := testProcessor(t, cfg, sink, 1)
+	require.NoError(t, p.Handle(ctx, revoke))
+	require.NoError(t, p.Flush(ctx))
+	require.Equal(t, before, mutations(), "an exporter that has never exported memberships needs no ALTER DELETE")
+	// Disabling the output must still clean up rows from earlier enabled runs.
+	now := time.Now().UTC()
+	batchID := strings.Repeat("h", 64)
+	require.NoError(t, sink.WriteBatch(ctx, Batch{ID: batchID, ExporterID: cfg.ExporterID, Lifecycle: []LifecycleRow{{Common: Common{ExporterID: cfg.ExporterID, BatchID: batchID, EventID: batchID, IngestVersion: 1, ObservedAt: now}, OccurredAt: now, ResourceKind: "membership", AnalyticsResourceID: id, ConversationGroupID: testGroup}}}))
+	p = testProcessor(t, cfg, sink, 2)
+	revoke.Cursor = "revoke-again"
+	require.NoError(t, p.Handle(ctx, revoke))
+	require.NoError(t, p.Flush(ctx))
+	require.Zero(t, countRows(t, ctx, admin, cfg.Database, "lifecycle_events", "resource_kind='membership'"))
+	require.Greater(t, mutations(), before)
 }
 
 func TestClickHouseExpiredRetentionOwnerCannotResumeWrites(t *testing.T) {

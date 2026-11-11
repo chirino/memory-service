@@ -7903,6 +7903,9 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 }
 
 func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
+	if change := eventstream.EventChange(event.Data); change != "" {
+		event.Change = change
+	}
 	if detail != "full" || event.Kind == "stream" || event.Event == "deleted" || eventstream.EventChange(event.Data) == "hard_deleted" || eventstream.EventChange(event.Data) == "evicted" {
 		return event, true, nil
 	}

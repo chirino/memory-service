@@ -38,26 +38,26 @@ type bootstrapCheckpoint struct {
 	Target              *replayTarget `json:"target"`
 }
 type checkpoint struct {
-	ExporterID          string              `json:"exporterId"`
-	SafeCursor          string              `json:"lastEventCursor"`
-	ObservationSequence uint32              `json:"observationSequence"`
-	ProjectionDigest    string              `json:"projectionDigest"`
-	Projections         map[string]string   `json:"projections"`
-	ProjectionReplayID  string              `json:"projectionReplayId"`
-	EnabledOutputs      []string            `json:"enabledOutputs"`
-	PurgeMode           string              `json:"purgeMode"`
-	Bootstrap           bootstrapCheckpoint `json:"bootstrap"`
+	ExporterID         string              `json:"exporterId"`
+	SafeCursor         string              `json:"lastEventCursor"`
+	ProjectionDigest   string              `json:"projectionDigest"`
+	Projections        map[string]string   `json:"projections"`
+	ProjectionReplayID string              `json:"projectionReplayId"`
+	EnabledOutputs     []string            `json:"enabledOutputs"`
+	PurgeMode          string              `json:"purgeMode"`
+	Bootstrap          bootstrapCheckpoint `json:"bootstrap"`
 }
 type Processor struct {
-	mu              sync.Mutex
-	cfg             Config
-	sink            Sink
-	state           checkpoint
-	pending         *Batch
-	bytes           int
-	observations    int
-	leaseGeneration uint64
-	projections     *ProjectionSet
+	mu                  sync.Mutex
+	cfg                 Config
+	sink                Sink
+	state               checkpoint
+	pending             *Batch
+	bytes               int
+	observations        int
+	leaseGeneration     uint64
+	observationSequence uint32
+	projections         *ProjectionSet
 }
 
 func NewProcessor(cfg Config, sink Sink) (*Processor, error) {
@@ -105,7 +105,7 @@ func (p *Processor) SetLeaseGeneration(generation uint64) error {
 		return errors.New("cannot change lease generation with a pending batch")
 	}
 	p.leaseGeneration = generation
-	p.state.ObservationSequence = 0
+	p.observationSequence = 0
 	processorLeaseGeneration.WithLabelValues(p.cfg.ExporterID).Set(float64(generation))
 	return nil
 }
@@ -116,7 +116,7 @@ func (p *Processor) Load(raw json.RawMessage) error {
 	if err := json.Unmarshal(raw, &fields); err != nil {
 		return errors.New("invalid ClickHouse checkpoint")
 	}
-	for _, field := range []string{"exporterId", "lastEventCursor", "observationSequence", "projectionDigest", "projections", "projectionReplayId", "enabledOutputs", "purgeMode", "bootstrap"} {
+	for _, field := range []string{"exporterId", "lastEventCursor", "projectionDigest", "projections", "projectionReplayId", "enabledOutputs", "purgeMode", "bootstrap"} {
 		if value, ok := fields[field]; !ok || string(value) == "null" {
 			return fmt.Errorf("incompatible ClickHouse checkpoint: %s required; use a fresh checkpoint", field)
 		}
@@ -387,10 +387,10 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 	if p.leaseGeneration == 0 {
 		return errors.New("checkpoint lease generation is not initialized")
 	}
-	if p.state.ObservationSequence == ^uint32(0) {
+	if p.observationSequence == ^uint32(0) {
 		return errors.New("observation sequence exhausted; restart for a new lease generation")
 	}
-	p.state.ObservationSequence++
+	p.observationSequence++
 	p.observations++
 	if p.pending == nil {
 		var err error
@@ -399,7 +399,7 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 			return err
 		}
 	}
-	version := p.leaseGeneration<<32 | uint64(p.state.ObservationSequence)
+	version := p.leaseGeneration<<32 | uint64(p.observationSequence)
 	cursor := o.Cursor
 	if cursor == "" {
 		cursor = "bootstrap:" + o.ID
@@ -424,7 +424,7 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 		}
 		if !resolved {
 			var err error
-			purge, err = p.sink.ResolvePurge(ctx, purge)
+			purge, err = p.resolvePurge(ctx, purge)
 			if err != nil {
 				return err
 			}
@@ -503,9 +503,36 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 	}
 	return nil
 }
+func (p *Processor) resolvePurge(ctx context.Context, purge PurgeRow) (PurgeRow, error) {
+	if err := validatePurge(purge); err != nil {
+		return purge, err
+	}
+	backoff := p.cfg.RetryMin
+	for {
+		resolved, err := p.sink.ResolvePurge(ctx, purge)
+		if err == nil || errors.Is(err, errPurgeScopeConflict) {
+			return resolved, err
+		}
+		if ctx.Err() != nil {
+			return purge, ctx.Err()
+		}
+		log.Warn("ClickHouse purge lookup retry", "errorType", fmt.Sprintf("%T", err), "retryIn", backoff)
+		timer := time.NewTimer(backoff/2 + time.Duration(mathrand.Int64N(int64(backoff))))
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return purge, ctx.Err()
+		case <-timer.C:
+		}
+		backoff = min(backoff*2, p.cfg.RetryMax)
+	}
+}
+
 func (p *Processor) recordProjectionFailure(common Common, o observation, name, code string) error {
 	processorProjectionResults.WithLabelValues(p.cfg.ExporterID, name, code).Inc()
-	if p.cfg.ProjectionFailurePolicy == "stop" {
+	// An earlier event may outlive its resource during catch-up. Record that
+	// expected absence and continue to the following delete, even in stop mode.
+	if p.cfg.ProjectionFailurePolicy == "stop" && code != "snapshot_unavailable" {
 		return fmt.Errorf("analytics projection %s failed with %s", name, code)
 	}
 	p.pending.ProjectionFailures = append(p.pending.ProjectionFailures, ProjectionFailureRow{Common: common, ResourceKind: o.Kind, AnalyticsResourceID: o.ID, ConversationID: o.ConversationID, ConversationGroupID: o.GroupID, ProjectionName: name, ErrorCode: code, AttemptCount: 1, FirstSeenAt: common.ObservedAt, LastSeenAt: common.ObservedAt})
