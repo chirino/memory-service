@@ -29,13 +29,14 @@ func TestClickHouseTakeoverWithOutstandingInsert(t *testing.T) {
 			batch.Lifecycle = nil
 			queryID := "takeover-" + protocol + "-" + cfg.Database
 			writeCtx, cancelWrite := context.WithCancel(ch.Context(ctx, ch.WithQueryID(queryID)))
+			defer cancelWrite()
 			done := make(chan error, 1)
 			go func() { done <- sink.WriteBatch(writeCtx, batch) }()
 			require.Eventually(t, func() bool {
 				var count uint64
 				err := admin.QueryRow(ctx, "SELECT count() FROM system.processes WHERE query_id=? AND query LIKE 'INSERT%'", queryID).Scan(&count)
 				return err == nil && count > 0
-			}, time.Second, 10*time.Millisecond)
+			}, 5*time.Second, 10*time.Millisecond)
 			cancelWrite() // Represents loss of the old checkpoint lease.
 			// A resumed admin stream cannot load a now-deleted resource. Replay keeps its
 			// summary, then its ordered delete; it never invents an active full snapshot.

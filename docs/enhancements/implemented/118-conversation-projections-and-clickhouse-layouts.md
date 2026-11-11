@@ -439,8 +439,8 @@ Emit durable events in the mutation transaction for owner creation, copied membe
 new groups, grants, updates, revokes, and both role changes in an ownership transfer. A
 snapshot alone or an incidental conversation event cannot supply those changes reliably.
 Ownership transfers also emit conversation updates for the owner fields they change. SQLite
-publishes committed outbox rows in append order before releasing its process-local writer
-lock; routes suppress duplicate publication. Publication hooks are discarded on rollback.
+publishes committed outbox rows in append order through a relay outside its process-local
+writer lock. Routes suppress duplicate publication. Publication hooks are discarded on rollback.
 PostgreSQL and MongoDB retain their existing durable relays.
 
 Advertise `features.analytics_membership_snapshots` only when the active store and durable
