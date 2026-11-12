@@ -8,6 +8,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -312,18 +313,6 @@ func (s *ClickHouseSink) processPurges(ctx context.Context, batch Batch) error {
 		if err := validatePurge(purge); err != nil {
 			return err
 		}
-		if purge.ResourceKind == "membership" && purge.Scope == purgeResource && !s.config.ExportMemberships {
-			hasRows, err := s.hasMembershipPurgeRows(ctx, purge)
-			if err != nil {
-				return s.failPurge(purge, err)
-			}
-			if !hasRows {
-				if err := s.completePurge(ctx, purge); err != nil {
-					return s.failPurge(purge, err)
-				}
-				continue
-			}
-		}
 		for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
 			kindColumn, idColumn := "resource_kind", "analytics_resource_id"
 			fixedKind := ""
@@ -348,7 +337,9 @@ func (s *ClickHouseSink) processPurges(ctx context.Context, batch Batch) error {
 	return nil
 }
 
-func (s *ClickHouseSink) hasMembershipPurgeRows(ctx context.Context, purge PurgeRow) (bool, error) {
+// HasMembershipRows reports whether an earlier membership export left rows for
+// resourceID. The processor calls it only while membership export is off.
+func (s *ClickHouseSink) HasMembershipRows(ctx context.Context, exporterID, resourceID string) (bool, error) {
 	var parts []string
 	var args []any
 	for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
@@ -356,12 +347,36 @@ func (s *ClickHouseSink) hasMembershipPurgeRows(ctx context.Context, purge Purge
 		if table == "conversation_memberships" {
 			identity = "resource_id=?"
 		}
-		parts = append(parts, fmt.Sprintf("(SELECT 1 FROM %s.%s WHERE exporter_id=? AND %s AND ingest_version<=? LIMIT 1)", quoteIdentifier(s.database), quoteIdentifier(table), identity))
-		args = append(args, purge.ExporterID, purge.AnalyticsResourceID, purge.CutoffIngestVersion)
+		parts = append(parts, fmt.Sprintf("(SELECT 1 FROM %s.%s WHERE exporter_id=? AND %s LIMIT 1)", quoteIdentifier(s.database), quoteIdentifier(table), identity))
+		args = append(args, exporterID, resourceID)
 	}
 	var count uint64
 	err := s.conn.QueryRow(ctx, "SELECT count() FROM ("+strings.Join(parts, " UNION ALL ")+")", args...).Scan(&count)
 	return count > 0, err
+}
+
+// MaxIngestVersion returns the highest row version stored for exporterID across
+// every versioned table, including registered projection tables.
+func (s *ClickHouseSink) MaxIngestVersion(ctx context.Context, exporterID string) (uint64, error) {
+	projections, err := s.registeredProjections(ctx)
+	if err != nil {
+		return 0, err
+	}
+	tables := []string{"lifecycle_events", "deletion_fences", "conversation_memberships", "projection_failures"}
+	for _, projection := range projections {
+		if !slices.Contains(tables, projection.TableName) {
+			tables = append(tables, projection.TableName)
+		}
+	}
+	parts := []string{fmt.Sprintf("SELECT max(cutoff_ingest_version) AS v FROM %s.purge_queue WHERE exporter_id=?", quoteIdentifier(s.database))}
+	args := []any{exporterID}
+	for _, table := range tables {
+		parts = append(parts, fmt.Sprintf("SELECT max(ingest_version) AS v FROM %s.%s WHERE exporter_id=?", quoteIdentifier(s.database), quoteIdentifier(table)))
+		args = append(args, exporterID)
+	}
+	var version uint64
+	err = s.conn.QueryRow(ctx, "SELECT toUInt64(max(v)) FROM ("+strings.Join(parts, " UNION ALL ")+")", args...).Scan(&version)
+	return version, err
 }
 
 func (s *ClickHouseSink) completePurge(ctx context.Context, purge PurgeRow) error {

@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"net"
 	"net/http"
 	"strings"
@@ -71,30 +72,38 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 	if err := opts.Config.Validate(); err != nil {
 		return nil, err
 	}
-	sink := opts.Sink
-	if sink == nil {
-		opened, err := OpenSink(ctx, opts.Config)
-		if err != nil {
-			return nil, err
-		}
-		sink = opened
-	}
-	processor, err := NewProcessor(opts.Config, sink)
+	// Build the processor first so startup can reject a stored checkpoint, or an
+	// unsupported source, before OpenSink claims an empty ClickHouse database.
+	processor, err := newProcessor(opts.Config)
 	if err != nil {
-		_ = sink.Close()
+		if opts.Sink != nil {
+			_ = opts.Sink.Close()
+		}
 		return nil, err
 	}
 	events, checkpoints := opts.Events, opts.Checkpoints
 	capabilities := opts.Capabilities
 	var conn *grpc.ClientConn
+	// StartProcessor owns opts.Sink, so early failures close it too.
+	closeConn := func() {
+		if conn != nil {
+			_ = conn.Close()
+		}
+	}
+	abort := func(err error) (*RunningProcessor, error) {
+		closeConn()
+		if opts.Sink != nil {
+			_ = opts.Sink.Close()
+		}
+		return nil, err
+	}
 	if events == nil || checkpoints == nil || opts.Config.ExportMemberships && capabilities == nil {
 		conn, err = processruntime.DialGRPCWithConfig(opts.Endpoint, processruntime.GRPCDialConfig{
 			TLS: opts.GRPCTLS, CAFile: opts.GRPCCAFile, AllowInsecure: opts.AllowInsecureGRPC,
 			MaxReceiveBytes: opts.Config.MaxRecordBytes + 4<<20,
 		})
 		if err != nil {
-			_ = sink.Close()
-			return nil, err
+			return abort(err)
 		}
 		if capabilities == nil {
 			capabilities = pb.NewSystemServiceClient(conn)
@@ -118,13 +127,22 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "x-client-id", opts.ClientID)
 		response, capErr := capabilities.GetCapabilities(capabilityCtx, &emptypb.Empty{})
 		if capErr != nil || !response.GetFeatures().GetAnalyticsMembershipSnapshots() {
-			if conn != nil {
-				_ = conn.Close()
-			}
-			_ = sink.Close()
-			return nil, errors.New("membership export requires source capability analytics_membership_snapshots")
+			return abort(errors.New("membership export requires source capability analytics_membership_snapshots"))
 		}
 	}
+	if err := precheckCheckpoint(ctx, checkpoints, opts.ClientID, opts.Config); err != nil {
+		return abort(err)
+	}
+	sink := opts.Sink
+	if sink == nil {
+		opened, err := OpenSink(ctx, opts.Config)
+		if err != nil {
+			closeConn()
+			return nil, err
+		}
+		sink = opened
+	}
+	processor.sink = sink
 	runCtx, cancel := context.WithCancel(ctx)
 	var ready atomic.Bool
 	setReady := func(value bool) {
@@ -201,6 +219,29 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		close(running.done)
 	}()
 	return running, nil
+}
+
+// precheckCheckpoint validates a stored checkpoint without touching ClickHouse.
+// The runtime loads it again under the lease.
+func precheckCheckpoint(ctx context.Context, checkpoints processruntime.CheckpointClient, clientID string, cfg Config) error {
+	stored, err := checkpoints.Get(ctx, clientID)
+	if errors.Is(err, processruntime.ErrCheckpointNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read checkpoint for client ID %q: %w", clientID, err)
+	}
+	if stored.ContentType != "" && stored.ContentType != checkpointContentType {
+		return fmt.Errorf("checkpoint for client ID %q was written by a different or previous ClickHouse exporter (content type %q); use a new client ID and a new empty analytics database", clientID, stored.ContentType)
+	}
+	probe, err := newProcessor(cfg)
+	if err != nil {
+		return err
+	}
+	if err := probe.Load(stored.Value); err != nil {
+		return fmt.Errorf("load checkpoint for client ID %q: %w", clientID, err)
+	}
+	return nil
 }
 
 func clickHouseRuntimeConfig(opts StartOptions, onReady func(bool)) processruntime.Config {

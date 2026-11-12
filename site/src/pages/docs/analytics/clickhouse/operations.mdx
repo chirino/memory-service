@@ -50,6 +50,14 @@ With no projection paths, the packaged defaults create `conversations`, `entries
 
 Provision an empty, dedicated ClickHouse database and grant the analytics user access to it, including the [schema and server-settings permissions](/docs/analytics/clickhouse/configuration/#clickhouse-connection). If you reuse a ClickHouse server or volume, apply the new database and grants explicitly; changing the repository's initialization SQL alone is not a cutover procedure. Leave the old database intact. The bundled `task kind:deploy` reapplies these grants even when ClickHouse retains an existing data volume. If you apply the local kind overlay manually, run `task kind:clickhouse:provision` afterward.
 
+The repository's `deploy/clickhouse/init.sql` is fixed to `memory_service_analytics`. For another database name, run these statements as a ClickHouse administrator, replacing `analytics_rebuild` and `memory_service_analytics` with your database and analytics user:
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics_rebuild;
+GRANT CREATE DATABASE, CREATE TABLE, DROP TABLE, CREATE VIEW, DROP VIEW, SELECT, INSERT, ALTER ON analytics_rebuild.* TO memory_service_analytics;
+GRANT SELECT ON system.merge_tree_settings TO memory_service_analytics;
+```
+
 Choose a new Memory Service client ID with the `admin` role and matching credentials. This ID owns a fresh checkpoint. Also choose a fresh exporter ID, which namespaces ClickHouse rows. For example, these settings name a new dataset; substitute names that have never been used in your deployment:
 
 ```bash
@@ -63,11 +71,13 @@ export MEMORY_SERVICE_PROCESS_AFTER_CURSOR=start
 
 Keep the connection, TLS, authentication, and retention settings appropriate for your deployment. Replace the old API key with credentials for the new client. Do not copy or overwrite the previous checkpoint. Leave `--tail-only-development` off so the new dataset receives a current-state scan. A fresh dataset needs no projection replay ID.
 
+The exporter refuses to start when its client ID holds a checkpoint from the previous exporter, and when the dataset already holds rows from the current or a later checkpoint lease, which happens after a checkpoint is lost or deleted. Both errors ask for a new client ID and a new empty database. Rebuild the dataset rather than reusing the old identities.
+
 ### Bootstrap, verify, and switch readers
 
 Start the new exporter. It initializes the empty database, scans retained current state, and catches up before entering live delivery. Keep outbox history available for the full scan and catch-up period.
 
-Read the new client's checkpoint with `GET /v1/admin/checkpoints/analytics-rebuild` using that client's admin credentials. The processor-defined `value.bootstrap.state` must reach `complete`, and `value.lastEventCursor` must be nonempty. Readiness alone is insufficient because it reports lease ownership and subscription health.
+Read the new client's checkpoint with `GET /v1/admin/checkpoints/analytics-rebuild` using that client's admin credentials. The processor-defined `value.bootstrap.state` must reach `complete`. Readiness alone is insufficient because it reports lease ownership and subscription health. `value.lastEventCursor` is already set when the scan starts, to the outbox cursor where it began (`start` on an empty outbox), so a nonempty value does not show live delivery. The test record change below does.
 
 Before switching readers:
 
@@ -94,7 +104,7 @@ Live exporters sharing a database must agree on managed retention values. Heartb
 
 Managed purge writes the complete typed scope and ingestion cutoff into `purge_queue`, writes identity/group fences, removes matching rows, waits for mutations, and records `complete` before checkpoint advancement. Cleanup uses exact kind/ID or canonical group UUID, always scoped by exporter. Membership revokes also use the stored cutoff to preserve later grants; purges for retired resource IDs and groups remove every matching version, including rows replayed under a new lease. Transient purge lookups retry without advancing the checkpoint; a conflicting stored scope stops the exporter. Cleanup needs no resource catalog. Replayed deletes reuse the original cutoff so an older revoke cannot erase a newer grant.
 
-Record-only mode persists pending work for an external worker. External mode writes no queue request and delegates physical cleanup. Disabled outputs still receive cleanup notifications in managed and record-only modes. With membership export off, managed cleanup skips mutations when no matching historical membership rows exist; disabling an output never skips rows retained from an earlier enabled run.
+Record-only mode persists pending work for an external worker. External mode writes no queue request and delegates physical cleanup. Disabled outputs still receive cleanup notifications in managed and record-only modes. With membership export off, a revoke writes no fence and queues no purge unless an earlier enabled run left rows for that membership, so removed users' IDs are not retained. Rows from an earlier enabled run are still purged.
 
 ```sql
 SELECT purge_id, resource_kind, analytics_resource_id, conversation_group_id,

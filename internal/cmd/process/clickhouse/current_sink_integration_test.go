@@ -369,6 +369,64 @@ func TestClickHouseDisabledMembershipAvoidsEmptyMutations(t *testing.T) {
 	require.NoError(t, p.Flush(ctx))
 	require.Zero(t, countRows(t, ctx, admin, cfg.Database, "lifecycle_events", "resource_kind='membership'"))
 	require.Greater(t, mutations(), before)
+	// Without membership export, no revoke stores the removed user's identity in
+	// a fence. Only the purge that removed earlier rows is queued.
+	require.Zero(t, countRows(t, ctx, admin, cfg.Database, "deletion_fences", "resource_id=?", id))
+	require.Equal(t, uint64(2), countRows(t, ctx, admin, cfg.Database, "purge_queue", "analytics_resource_id=?", id), "one pending and one complete row for the second revoke only")
+	require.Equal(t, uint64(1), countRows(t, ctx, admin, cfg.Database, "purge_queue", "analytics_resource_id=? AND status='complete'", id))
+}
+
+func TestClickHouseMaxIngestVersionCoversStoredRows(t *testing.T) {
+	ctx, sink, cfg, _ := currentSink(t, nil)
+	version, err := sink.MaxIngestVersion(ctx, cfg.ExporterID)
+	require.NoError(t, err)
+	require.Zero(t, version)
+	p := testProcessor(t, cfg, sink, 3)
+	require.NoError(t, p.Handle(ctx, conversationEvent("1")))
+	require.NoError(t, p.Handle(ctx, processruntime.EventEnvelope{Kind: "conversation", Event: "deleted", Cursor: "2", Data: json.RawMessage(`{"conversation":"conversation-1","conversation_group":"` + testGroup + `"}`)}))
+	require.NoError(t, p.Flush(ctx))
+	version, err = sink.MaxIngestVersion(ctx, cfg.ExporterID)
+	require.NoError(t, err)
+	require.Equal(t, uint64(3), version>>32)
+	other, err := sink.MaxIngestVersion(ctx, "other-exporter")
+	require.NoError(t, err)
+	require.Zero(t, other)
+	restarted := testProcessor(t, cfg, sink, 2)
+	completeCheckpoint(t, restarted, "2")
+	_, err = restarted.Bootstrap(ctx, nil, func(context.Context) error { return nil })
+	require.ErrorContains(t, err, "lost or reset")
+}
+
+func TestClickHouseInsertDeduplicationSettings(t *testing.T) {
+	ctx, sink, cfg, admin := currentSink(t, nil)
+	require.NoError(t, sink.Close())
+	window := func(table string) string {
+		return readIntegrationSchemaDDL(t, ctx, admin, cfg.Database)[table]
+	}
+	// An existing table with deduplication disabled is refused in validate mode
+	// without changes, and repaired in manage mode.
+	for _, table := range []string{"lifecycle_events", "conversations"} {
+		t.Run(table, func(t *testing.T) {
+			qualified := quoteIdentifier(cfg.Database) + "." + quoteIdentifier(table)
+			require.NoError(t, admin.Exec(ctx, "ALTER TABLE "+qualified+" MODIFY SETTING non_replicated_deduplication_window=0"))
+			before := readIntegrationSchemaDDL(t, ctx, admin, cfg.Database)
+			validate := cfg
+			validate.SchemaMode = "validate"
+			_, err := OpenSink(ctx, validate)
+			require.ErrorContains(t, err, "disabled insert deduplication")
+			require.Equal(t, before, readIntegrationSchemaDDL(t, ctx, admin, cfg.Database))
+			opened, err := OpenSink(ctx, cfg)
+			require.NoError(t, err)
+			require.NoError(t, opened.Close())
+			require.Contains(t, window(table), "non_replicated_deduplication_window = 1000")
+		})
+	}
+	// Manage mode keeps a window the operator tuned.
+	require.NoError(t, admin.Exec(ctx, "ALTER TABLE "+quoteIdentifier(cfg.Database)+".lifecycle_events MODIFY SETTING non_replicated_deduplication_window=23"))
+	opened, err := OpenSink(ctx, cfg)
+	require.NoError(t, err)
+	require.NoError(t, opened.Close())
+	require.Contains(t, window("lifecycle_events"), "non_replicated_deduplication_window = 23")
 }
 
 func TestClickHouseExpiredRetentionOwnerCannotResumeWrites(t *testing.T) {

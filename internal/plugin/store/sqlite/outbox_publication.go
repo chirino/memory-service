@@ -104,14 +104,33 @@ func (s *SQLiteStore) runOutboxRelay(relay *sqliteOutboxRelay, cancel context.Ca
 	defer cancel()
 	event := operationevent.New("job.sqlite.outbox.relay")
 	event.EmitStart()
+	defer event.EmitTerminal(operationevent.ResultCanceled)
+	// A recovered panic restarts the loop from the last published row. Stopping
+	// would silently drop live delivery back to unretried route publication.
+	restart := 100 * time.Millisecond
+	for relay.ctx.Err() == nil {
+		recovered, stack := s.relayOutboxRows(relay, bus, &after)
+		if recovered == nil {
+			return
+		}
+		operationevent.LogRecoveredPanic(event, "", recovered, stack)
+		timer := time.NewTimer(restart)
+		select {
+		case <-relay.ctx.Done():
+			timer.Stop()
+			return
+		case <-timer.C:
+		}
+		restart = min(restart*2, 5*time.Second)
+	}
+}
+
+// relayOutboxRows publishes rows after *after until relay.ctx ends. It returns
+// a recovered panic and its stack instead of unwinding the relay goroutine.
+func (s *SQLiteStore) relayOutboxRows(relay *sqliteOutboxRelay, bus registryeventbus.EventBus, after *int64) (recovered any, stack []byte) {
 	defer func() {
-		if recovered := recover(); recovered != nil {
-			stack := debug.Stack()
-			operationevent.LogRecoveredPanic(event, "", recovered, stack)
-			event.SetReason("panic")
-			event.EmitTerminal(operationevent.ResultFailed)
-		} else {
-			event.EmitTerminal(operationevent.ResultCanceled)
+		if value := recover(); value != nil {
+			recovered, stack = value, debug.Stack()
 		}
 	}()
 	backoff := 100 * time.Millisecond
@@ -120,7 +139,7 @@ func (s *SQLiteStore) runOutboxRelay(relay *sqliteOutboxRelay, cancel context.Ca
 		err := s.InReadTx(relay.ctx, func(tx context.Context) error {
 			// Unlike client replay, this live publisher can keep advancing after
 			// retention removes a previously published cursor's marker row.
-			return s.dbFor(tx).Where("seq > ?", after).Order("seq ASC").Limit(256).Find(&rows).Error
+			return s.dbFor(tx).Where("seq > ?", *after).Order("seq ASC").Limit(256).Find(&rows).Error
 		})
 		if err == nil {
 			for _, row := range rows {
@@ -128,7 +147,7 @@ func (s *SQLiteStore) runOutboxRelay(relay *sqliteOutboxRelay, cancel context.Ca
 				if err != nil {
 					break
 				}
-				after = row.Seq
+				*after = row.Seq
 			}
 		}
 		if relay.ctx.Err() != nil {
@@ -160,6 +179,7 @@ func (s *SQLiteStore) runOutboxRelay(relay *sqliteOutboxRelay, cancel context.Ca
 		case <-timer.C:
 		}
 	}
+	return
 }
 
 type sqliteDurableBus struct{ registryeventbus.EventBus }

@@ -61,17 +61,28 @@ type Processor struct {
 }
 
 func NewProcessor(cfg Config, sink Sink) (*Processor, error) {
-	if err := cfg.Validate(); err != nil {
-		return nil, err
-	}
 	if sink == nil {
 		return nil, errors.New("ClickHouse sink is required")
+	}
+	p, err := newProcessor(cfg)
+	if err != nil {
+		return nil, err
+	}
+	p.sink = sink
+	return p, nil
+}
+
+// newProcessor builds a processor without a sink so startup can validate a
+// stored checkpoint before claiming a ClickHouse database.
+func newProcessor(cfg Config) (*Processor, error) {
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
 	projections, err := LoadProjectionSet(context.Background(), cfg.ProjectionPaths)
 	if err != nil {
 		return nil, err
 	}
-	p := &Processor{cfg: cfg, sink: sink, projections: projections}
+	p := &Processor{cfg: cfg, projections: projections}
 	target := p.configuredTarget()
 	p.state = checkpoint{ExporterID: cfg.ExporterID, ProjectionDigest: target.ProjectionDigest, Projections: target.Projections, EnabledOutputs: target.EnabledOutputs, PurgeMode: cfg.PurgeMode, Bootstrap: bootstrapCheckpoint{State: "new"}}
 	return p, nil
@@ -225,6 +236,9 @@ func (p *Processor) Snapshot() (json.RawMessage, error) {
 }
 
 func (p *Processor) Bootstrap(ctx context.Context, events processruntime.EventClient, save func(context.Context) error) (string, error) {
+	if err := p.checkStoredGenerations(ctx); err != nil {
+		return "", err
+	}
 	p.mu.Lock()
 	state := p.state.Bootstrap
 	safe := p.state.SafeCursor
@@ -314,6 +328,34 @@ func (p *Processor) Bootstrap(ctx context.Context, events processruntime.EventCl
 			}
 		}
 	}
+}
+
+// ingestVersionReader reports the highest row version an exporter has stored.
+type ingestVersionReader interface {
+	MaxIngestVersion(ctx context.Context, exporterID string) (uint64, error)
+}
+
+// checkStoredGenerations refuses to write when the dataset already holds rows
+// from this or a later lease generation. Row versions are generation<<32 |
+// sequence, so a lost or reset checkpoint restarts at generation 1 and its new
+// rows would silently lose to older rows in the _current views.
+func (p *Processor) checkStoredGenerations(ctx context.Context) error {
+	reader, ok := p.sink.(ingestVersionReader)
+	if !ok || p.leaseGeneration == 0 {
+		return nil
+	}
+	var stored uint64
+	if err := p.retrySinkLookup(ctx, "version", func() error {
+		var err error
+		stored, err = reader.MaxIngestVersion(ctx, p.cfg.ExporterID)
+		return err
+	}); err != nil {
+		return err
+	}
+	if generation := stored >> 32; generation >= p.leaseGeneration {
+		return fmt.Errorf("analytics dataset already holds rows from checkpoint lease generation %d for exporter %q, but the current lease is generation %d; the checkpoint was probably lost or reset. Use a new client ID and a new empty analytics database", generation, p.cfg.ExporterID, p.leaseGeneration)
+	}
+	return nil
 }
 func (p *Processor) developmentTail(ctx context.Context, events processruntime.EventClient, save func(context.Context) error) (string, error) {
 	stream, err := events.Subscribe(ctx, processruntime.SubscribeRequest{Kinds: p.cfg.subscriptionKinds(), Detail: "full", Scope: "admin", EntryChannels: clickHouseEntryChannels, Justification: "ClickHouse analytics development tail"})
@@ -405,7 +447,18 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 		cursor = "bootstrap:" + o.ID
 	}
 	common := Common{ExporterID: p.cfg.ExporterID, BatchID: p.pending.ID, EventID: eventID(p.cfg.ExporterID, cursor, o.Kind, o.Action, o.Change), SourceCursor: o.Cursor, IngestVersion: version, ObservedAt: p.pending.ObservedAt}
-	if o.HardDeleted && p.cfg.PurgeMode != PurgeExternal {
+	// With membership export off, no membership rows are written, so a revoke
+	// needs no fence. It needs a purge only for rows left by an earlier export.
+	// Skipping both keeps removed user IDs out of fences and the purge queue.
+	retiredMembership := o.Kind == "membership" && !p.cfg.ExportMemberships
+	purgeRequired := o.HardDeleted && p.cfg.PurgeMode != PurgeExternal
+	if purgeRequired && retiredMembership {
+		var err error
+		if purgeRequired, err = p.hasMembershipRows(ctx, o.ID); err != nil {
+			return err
+		}
+	}
+	if purgeRequired {
 		scope := purgeResource
 		if o.Kind == "conversation" {
 			scope = purgeGroup
@@ -432,7 +485,7 @@ func (p *Processor) appendObservation(ctx context.Context, o observation) error 
 		}
 		common.IngestVersion = purge.CutoffIngestVersion
 	}
-	if o.Deleted {
+	if o.Deleted && !retiredMembership {
 		p.pending.Fences = append(p.pending.Fences, FenceRow{Common: common, ResourceKind: o.Kind, ResourceID: o.ID, ConversationID: o.ConversationID, ConversationGroupID: o.GroupID})
 		if o.Kind == "conversation" && o.HardDeleted {
 			p.pending.Fences = append(p.pending.Fences, FenceRow{Common: common, ResourceKind: "conversation_group", ResourceID: o.GroupID, ConversationGroupID: o.GroupID})
@@ -507,21 +560,56 @@ func (p *Processor) resolvePurge(ctx context.Context, purge PurgeRow) (PurgeRow,
 	if err := validatePurge(purge); err != nil {
 		return purge, err
 	}
+	resolved := purge
+	err := p.retrySinkLookup(ctx, "purge", func() error {
+		var err error
+		resolved, err = p.sink.ResolvePurge(ctx, purge)
+		return err
+	})
+	if err != nil && !errors.Is(err, errPurgeScopeConflict) {
+		return purge, err
+	}
+	return resolved, err
+}
+
+// membershipRowChecker reports whether an earlier membership export left rows
+// for a membership identity.
+type membershipRowChecker interface {
+	HasMembershipRows(ctx context.Context, exporterID, resourceID string) (bool, error)
+}
+
+func (p *Processor) hasMembershipRows(ctx context.Context, resourceID string) (bool, error) {
+	checker, ok := p.sink.(membershipRowChecker)
+	if !ok {
+		return true, nil
+	}
+	var found bool
+	err := p.retrySinkLookup(ctx, "membership", func() error {
+		var err error
+		found, err = checker.HasMembershipRows(ctx, p.cfg.ExporterID, resourceID)
+		return err
+	})
+	return found, err
+}
+
+// retrySinkLookup retries a ClickHouse read with backoff until it succeeds,
+// returns a purge scope conflict, or ctx ends.
+func (p *Processor) retrySinkLookup(ctx context.Context, lookup string, fn func() error) error {
 	backoff := p.cfg.RetryMin
 	for {
-		resolved, err := p.sink.ResolvePurge(ctx, purge)
+		err := fn()
 		if err == nil || errors.Is(err, errPurgeScopeConflict) {
-			return resolved, err
+			return err
 		}
 		if ctx.Err() != nil {
-			return purge, ctx.Err()
+			return ctx.Err()
 		}
-		log.Warn("ClickHouse purge lookup retry", "errorType", fmt.Sprintf("%T", err), "retryIn", backoff)
+		log.Warn("ClickHouse lookup retry", "lookup", lookup, "errorType", fmt.Sprintf("%T", err), "retryIn", backoff)
 		timer := time.NewTimer(backoff/2 + time.Duration(mathrand.Int64N(int64(backoff))))
 		select {
 		case <-ctx.Done():
 			timer.Stop()
-			return purge, ctx.Err()
+			return ctx.Err()
 		case <-timer.C:
 		}
 		backoff = min(backoff*2, p.cfg.RetryMax)

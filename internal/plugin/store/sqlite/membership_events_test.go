@@ -195,6 +195,42 @@ func TestSQLiteOutboxRetriesWithoutDroppingEvents(t *testing.T) {
 	require.Equal(t, "2", bus.snapshot()[1].OutboxCursor)
 }
 
+type panickingMembershipBus struct {
+	membershipCaptureBus
+	attempts atomic.Int32
+}
+
+func (b *panickingMembershipBus) Publish(ctx context.Context, event registryeventbus.Event) error {
+	if b.attempts.Add(1) == 1 {
+		panic("event bus panic")
+	}
+	return b.membershipCaptureBus.Publish(ctx, event)
+}
+
+func TestSQLiteOutboxRelayRestartsAfterPanic(t *testing.T) {
+	cfg := &config.Config{DatastoreType: "sqlite", DBURL: filepath.Join(t.TempDir(), "panic.db"), DatastoreMigrateAtStart: true, OutboxEnabled: true, EncryptionDBDisabled: true}
+	ctx, cancel := context.WithCancel(config.WithContext(context.Background(), cfg))
+	defer cancel()
+	require.NoError(t, (&sqliteMigrator{}).Migrate(ctx))
+	h, err := getSharedHandle(ctx)
+	require.NoError(t, err)
+	store := &SQLiteStore{handle: h, db: h.db, cfg: cfg}
+	bus := &panickingMembershipBus{}
+	require.NoError(t, store.StartOutboxRelay(ctx, bus))
+	require.NoError(t, store.InWriteTx(ctx, func(tx context.Context) error {
+		for _, id := range []string{"first", "second"} {
+			if _, err := store.CreateConversationWithID(tx, "owner", "client", id, "title", nil, nil, nil, nil); err != nil {
+				return err
+			}
+		}
+		return nil
+	}))
+	require.Eventually(t, func() bool { return len(bus.snapshot()) == 2 }, 3*time.Second, time.Millisecond)
+	require.Equal(t, "1", bus.snapshot()[0].OutboxCursor)
+	require.Equal(t, "2", bus.snapshot()[1].OutboxCursor)
+	require.True(t, store.RelayPublishesOutboxEvents(), "the relay must keep owning publication after a recovered panic")
+}
+
 func TestSQLiteMembershipSnapshotsCrossPageAndGroupBoundaries(t *testing.T) {
 	cfg := &config.Config{DatastoreType: "sqlite", DBURL: filepath.Join(t.TempDir(), "pages.db"), DatastoreMigrateAtStart: true, OutboxEnabled: true, EncryptionDBDisabled: true}
 	ctx := config.WithContext(context.Background(), cfg)

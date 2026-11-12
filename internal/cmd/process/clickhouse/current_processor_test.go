@@ -349,3 +349,109 @@ func TestDefaultMemoryProjectionPreservesIntegerPrecision(t *testing.T) {
 	require.ErrorIs(t, p.Handle(ctx, event), context.Canceled)
 	require.Nil(t, p.pending)
 }
+
+type membershipRowsSink struct {
+	fakeSink
+	hasRows bool
+	checked []string
+}
+
+func (s *membershipRowsSink) HasMembershipRows(_ context.Context, exporterID, resourceID string) (bool, error) {
+	s.checked = append(s.checked, exporterID+"/"+resourceID)
+	return s.hasRows, nil
+}
+
+func TestDisabledMembershipRevokeStoresNoUserIdentity(t *testing.T) {
+	ctx := context.Background()
+	user := "carol-secret-user"
+	id := model.MembershipResourceID(uuid.MustParse(testGroup), user)
+	revoke := processruntime.EventEnvelope{Kind: "membership", Event: "deleted", Cursor: "1", Data: json.RawMessage(`{"conversation_group":"` + testGroup + `","user":"` + user + `"}`)}
+	for _, mode := range []string{PurgeManaged, PurgeRecordOnly} {
+		sink := &membershipRowsSink{}
+		cfg := testConfig()
+		cfg.PurgeMode = mode
+		p := testProcessor(t, cfg, sink, 1)
+		require.NoError(t, p.Handle(ctx, revoke))
+		require.NoError(t, p.Flush(ctx))
+		require.Equal(t, []string{"test/" + id}, sink.checked)
+		for _, b := range sink.batches {
+			require.Empty(t, b.Fences, "a revoke without exported memberships must not store a fence")
+			require.Empty(t, b.Purges, "a revoke without exported memberships must not queue a purge")
+		}
+		require.Equal(t, "1", p.state.SafeCursor)
+
+		// Rows from an earlier enabled export still need a purge, but no fence.
+		sink = &membershipRowsSink{hasRows: true}
+		p = testProcessor(t, cfg, sink, 2)
+		require.NoError(t, p.Handle(ctx, revoke))
+		require.NoError(t, p.Flush(ctx))
+		require.Len(t, sink.batches, 1)
+		require.Empty(t, sink.batches[0].Fences)
+		require.Len(t, sink.batches[0].Purges, 1)
+		require.Equal(t, id, sink.batches[0].Purges[0].AnalyticsResourceID)
+	}
+	// External purge mode never queues purges, so it needs no lookup either.
+	sink := &membershipRowsSink{hasRows: true}
+	cfg := testConfig()
+	cfg.PurgeMode = PurgeExternal
+	p := testProcessor(t, cfg, sink, 1)
+	require.NoError(t, p.Handle(ctx, revoke))
+	require.NoError(t, p.Flush(ctx))
+	require.Empty(t, sink.checked)
+	for _, b := range sink.batches {
+		require.Empty(t, b.Fences)
+		require.Empty(t, b.Purges)
+	}
+}
+
+type storedVersionSink struct {
+	fakeSink
+	version  uint64
+	failures int
+}
+
+func (s *storedVersionSink) MaxIngestVersion(context.Context, string) (uint64, error) {
+	if s.failures > 0 {
+		s.failures--
+		return 0, errors.New("temporary version lookup failure")
+	}
+	return s.version, nil
+}
+
+func TestBootstrapRefusesGenerationNotAboveStoredRows(t *testing.T) {
+	ctx := context.Background()
+	for _, generation := range []uint64{1, 3} {
+		p := testProcessor(t, testConfig(), &storedVersionSink{version: uint64(3)<<32 | 5}, generation)
+		completeCheckpoint(t, p, "pg:10")
+		_, err := p.Bootstrap(ctx, nil, func(context.Context) error { t.Fatal("refused bootstrap must not save"); return nil })
+		require.ErrorContains(t, err, "lost or reset")
+		require.ErrorContains(t, err, "new client ID")
+	}
+	sink := &storedVersionSink{version: uint64(3)<<32 | 5, failures: 1}
+	p := testProcessor(t, testConfig(), sink, 4)
+	completeCheckpoint(t, p, "pg:10")
+	cursor, err := p.Bootstrap(ctx, nil, func(context.Context) error { return nil })
+	require.NoError(t, err)
+	require.Equal(t, "pg:10", cursor)
+	require.Zero(t, sink.failures, "transient lookup failures are retried")
+}
+
+func TestTailOnlyDevelopmentStartsAtLiveBoundary(t *testing.T) {
+	cfg := testConfig()
+	cfg.TailOnlyDevelopment = true
+	sink := &fakeSink{}
+	p := testProcessor(t, cfg, sink, 1)
+	client := &fixedEventClient{events: []processruntime.EventEnvelope{
+		{Kind: "stream", Event: "phase", Data: json.RawMessage(`{"phase":"live"}`)},
+		{Kind: "stream", Event: "phase", Cursor: "pg:42", Data: json.RawMessage(`{"phase":"replay"}`)},
+		{Kind: "stream", Event: "phase", Cursor: "pg:42", Data: json.RawMessage(`{"phase":"live"}`)},
+	}}
+	saves := 0
+	cursor, err := p.Bootstrap(context.Background(), client, func(context.Context) error { saves++; return nil })
+	require.NoError(t, err)
+	require.Equal(t, "pg:42", cursor)
+	require.Equal(t, 1, saves)
+	require.Equal(t, "pg:42", p.state.SafeCursor)
+	require.Equal(t, bootstrapCheckpoint{State: "complete", BackfillStartCursor: "pg:42"}, p.state.Bootstrap)
+	require.Empty(t, sink.batches, "tail-only mode skips the current-state scan")
+}

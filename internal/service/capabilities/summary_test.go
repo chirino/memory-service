@@ -1,10 +1,14 @@
 package capabilities
 
 import (
+	"context"
 	"runtime/debug"
 	"testing"
 
 	"github.com/chirino/memory-service/internal/config"
+	"github.com/chirino/memory-service/internal/model"
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
+	"github.com/stretchr/testify/require"
 )
 
 func TestBuildSummaryMapsConfiguredCapabilities(t *testing.T) {
@@ -106,5 +110,39 @@ func TestBuildSummaryFallsBackToDevVersion(t *testing.T) {
 	summary := buildSummary(&config.Config{}, nil, false)
 	if summary.Version != "dev" {
 		t.Fatalf("expected dev version fallback, got %q", summary.Version)
+	}
+}
+
+type membershipSnapshotSource struct {
+	registrystore.MemoryStore
+	supported bool
+}
+
+func (s membershipSnapshotSource) SupportsAnalyticsMembershipSnapshots() bool { return s.supported }
+func (membershipSnapshotSource) AdminListEventSnapshotMemberships(context.Context, *registrystore.EventSnapshotMembershipCursor, int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	return nil, nil, nil
+}
+func (membershipSnapshotSource) AdminGetEventSnapshotMembership(context.Context, string, string) (*model.ConversationMembership, error) {
+	return nil, nil
+}
+
+type plainMemoryStore struct{ registrystore.MemoryStore }
+
+func TestBuildAdvertisesMembershipSnapshotsOnlyWithOutboxAndSupport(t *testing.T) {
+	for name, tc := range map[string]struct {
+		outbox bool
+		stores []registrystore.MemoryStore
+		want   bool
+	}{
+		"supported with outbox":    {outbox: true, stores: []registrystore.MemoryStore{membershipSnapshotSource{supported: true}}, want: true},
+		"supported without outbox": {outbox: false, stores: []registrystore.MemoryStore{membershipSnapshotSource{supported: true}}},
+		"unsupported source":       {outbox: true, stores: []registrystore.MemoryStore{membershipSnapshotSource{}}},
+		"store without snapshots":  {outbox: true, stores: []registrystore.MemoryStore{plainMemoryStore{}}},
+		"no store":                 {outbox: true},
+	} {
+		t.Run(name, func(t *testing.T) {
+			summary := Build(&config.Config{OutboxEnabled: tc.outbox}, tc.stores...)
+			require.Equal(t, tc.want, summary.Features.AnalyticsMembershipSnapshots)
+		})
 	}
 }

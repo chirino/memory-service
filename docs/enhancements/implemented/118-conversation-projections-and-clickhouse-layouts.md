@@ -81,6 +81,9 @@ Use the stable checkpoint content type
 `application/vnd.memory-service.clickhouse-checkpoint+json`, with no version parameter or
 body version field. Validate the one current checkpoint structure, including required
 fields and rejection of unknown fields. Do not infer missing fields or read old shapes.
+Startup validates a stored checkpoint before opening the ClickHouse sink, so a rejected
+checkpoint never claims an empty database. A different content type means the client ID
+belongs to another or previous exporter; the error asks for a new client ID and database.
 Keep the existing manifest `apiVersion: memory-service/v1alpha1` label; introduce no new
 manifest version. Manifests must use the current fields and record input. Rewrite bundled
 expressions, regenerate digests, and update examples/queries. Source content-type and
@@ -241,7 +244,10 @@ observation gets a greater version even for another update to the same resource 
 same batch. A replayed deletion with an existing purge request reuses that request's
 original deletion version, as specified below. Keep the existing lease-generation bounds
 and stop before sequence wrap; a restart acquires a new generation. Remove `Batch.Version`, `BatchSequence`,
-`hasPendingMultiRowSnapshot`, and repeated-resource early flushing.
+`hasPendingMultiRowSnapshot`, and repeated-resource early flushing. Before bootstrap, read the
+exporter's highest stored version and refuse to write unless the current lease generation is
+greater. A lost or reset checkpoint restarts at generation 1, and its rows would otherwise
+lose to older rows in the current views without any error.
 
 Batches are transport/retry units only: bounded by events, rows, bytes, and delay. Freeze
 their rows, per-observation versions, batch ID, and deduplication tokens across retries.
@@ -371,6 +377,12 @@ cleanup/checkpoint advancement, including for disabled outputs and configured-ou
 - Group fences use kind `conversation_group` and the canonical UUID as resource ID.
   Group UUIDs are never reused, so a group fence hides every dependent row at any version.
 
+With membership export disabled, a revoke writes no identity fence because no membership
+rows are written to hide. It queues a purge only when an earlier export left rows for that
+identity. Membership IDs encode the user ID, so this keeps removed users out of fences and
+the purge queue. Enabling export later requires a replay whose current-state scan omits
+revoked members.
+
 Current views select the latest observation before applying deletion rules. Archive state
 is not deletion. A group purge directly covers entry/conversation projections, memberships,
 lifecycle rows, and failures. Ungrouped memories have no group match. Test missing group
@@ -490,8 +502,13 @@ Required acceptance coverage uses existing unit, ClickHouse, store, and event-st
   Cross-kind matching IDs never cause cross-deletion. Cover all purge modes and TTL/merge behavior.
 - Membership: all stores/transports and owner/grant/transfer/update/revoke/re-share/group-delete
   paths agree, including mutations during scans, unsupported source capability, and every
-  snapshot/replay/live filtering phase. Disabled export leaves fixed tables empty but still
-  supports cleanup after prior enablement.
+  snapshot/replay/live filtering phase. Disabled export leaves fixed tables empty, stores no
+  fence or queue row for a revoke, and still purges rows left by prior enablement.
+- Recovery: a stored checkpoint with another content type or invalid content fails before
+  ClickHouse is opened, and bootstrap refuses a lease generation that is not above the stored rows.
+  Insert deduplication settings are refused in validate mode, repaired in manage mode, and
+  keep operator-tuned windows. The SQLite relay restarts after a recovered panic without
+  dropping events.
 
 Inject an old INSERT after purge to verify current-view fences. Separately test real
 outstanding native/HTTP requests during lease loss and exporter takeover, followed by
