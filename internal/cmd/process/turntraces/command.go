@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
+	processruntime "github.com/chirino/memory-service/internal/cmd/process/runtime"
 	"github.com/chirino/memory-service/internal/runtimeversion"
 	"github.com/urfave/cli/v3"
 )
@@ -64,7 +65,7 @@ func Command() *cli.Command {
 				Endpoint:           cmd.String("endpoint"),
 				ClientID:           cmd.String("client-id"),
 				APIKey:             cmd.String("api-key"),
-				BearerToken:        cmd.String("bearer-token"),
+				OIDC:               processruntime.OIDCConfigFromCommand(cmd),
 				Scope:              scope,
 				AfterCursor:        cmd.String("after-cursor"),
 				CheckpointInterval: cmd.Duration("checkpoint-interval"),
@@ -84,28 +85,12 @@ func Command() *cli.Command {
 }
 
 func flags() []cli.Flag {
-	return []cli.Flag{
+	return append(processruntime.AuthFlags(), []cli.Flag{
 		&cli.StringFlag{
 			Name:     "endpoint",
 			Sources:  cli.EnvVars("MEMORY_SERVICE_GRPC_ENDPOINT"),
 			Usage:    "gRPC Memory Service endpoint",
 			Required: true,
-		},
-		&cli.StringFlag{
-			Name:     "client-id",
-			Sources:  cli.EnvVars("MEMORY_SERVICE_PROCESS_CLIENT_ID"),
-			Usage:    "Stable checkpoint client ID and processor identity",
-			Required: true,
-		},
-		&cli.StringFlag{
-			Name:    "api-key",
-			Sources: cli.EnvVars("MEMORY_SERVICE_API_KEY"),
-			Usage:   "Memory Service API key",
-		},
-		&cli.StringFlag{
-			Name:    "bearer-token",
-			Sources: cli.EnvVars("MEMORY_SERVICE_BEARER_TOKEN"),
-			Usage:   "Bearer token for gRPC authorization",
 		},
 		&cli.StringFlag{
 			Name:    "after-cursor",
@@ -181,7 +166,7 @@ func flags() []cli.Flag {
 			Sources: cli.EnvVars("MEMORY_SERVICE_TURN_TRACES_DROP_ON_EXPORT_FAILURE"),
 			Usage:   "Advance checkpoints even if span export fails",
 		},
-	}
+	}...)
 }
 
 func runtimeVersion() string {

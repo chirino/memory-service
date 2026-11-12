@@ -11,7 +11,6 @@ memory-service process turn-traces \
   --endpoint localhost:8082 \
   --client-id turn-traces \
   --api-key "$MEMORY_SERVICE_API_KEY" \
-  --bearer-token "$MEMORY_SERVICE_BEARER_TOKEN" \
   --scope admin
 ```
 
@@ -42,6 +41,40 @@ export OTEL_EXPORTER_OTLP_HEADERS="Authorization=Basic ${AUTH_STRING},x-langfuse
 ```
 
 The root span exports turn input/output text from history entries to Langfuse trace and observation input/output fields. The child `memory-service.llm` span uses context entry text as generation input and the closing AI history text as generation output. The processor also exports IDs, cursors, counts, status, timestamps, and processor identity. It does not export attachment bytes or provider payloads that are not already represented in the Memory Service entries.
+
+## Authentication
+
+Both `process turn-traces` and `process clickhouse` require an API key or OAuth2 client credentials. Configure one authentication mode. The processor client ID also identifies the OAuth client and checkpoint owner. The client needs the Memory Service `admin` role for admin event streams, checkpoints, and context lookups.
+
+| Flag | Environment variable | Default | Purpose |
+| --- | --- | --- | --- |
+| `--client-id` | `MEMORY_SERVICE_PROCESS_CLIENT_ID` | Required | Processor identity and OAuth client ID. |
+| `--api-key` | `MEMORY_SERVICE_API_KEY` | None | API key, mutually exclusive with OIDC. |
+| `--oidc-issuer` | `MEMORY_SERVICE_PROCESS_OIDC_ISSUER` | None | Discover the token endpoint through `/.well-known/openid-configuration`. |
+| `--oidc-token-url` | `MEMORY_SERVICE_PROCESS_OIDC_TOKEN_URL` | None | Explicit token endpoint instead of issuer discovery. |
+| Environment only | `MEMORY_SERVICE_PROCESS_OIDC_CLIENT_SECRET` | None | OAuth client secret. |
+| `--oidc-client-secret-file` | `MEMORY_SERVICE_PROCESS_OIDC_CLIENT_SECRET_FILE` | None | Secret file instead of the secret environment variable. |
+| `--oidc-audience` | `MEMORY_SERVICE_PROCESS_OIDC_AUDIENCE` | None | OAuth `audience` form parameter. |
+| `--oidc-scope` | `MEMORY_SERVICE_PROCESS_OIDC_SCOPE` | None | Repeatable scope flag, or comma-separated environment values. Sent space-separated. |
+| `--oidc-ca-file` | `MEMORY_SERVICE_PROCESS_OIDC_CA_FILE` | None | PEM CA bundle for discovery and token requests. |
+| `--oidc-tls-insecure-skip-verify` | `MEMORY_SERVICE_PROCESS_OIDC_TLS_INSECURE_SKIP_VERIFY` | `false` | Skip OIDC TLS verification for development. |
+| `--allow-insecure-oidc` | `MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_OIDC` | `false` | Permit non-loopback plaintext HTTP for development. |
+
+OIDC requires exactly one endpoint setting and one secret source. Loopback HTTP endpoints are allowed. The `PROCESS_` environment prefix keeps server OIDC settings separate from processor authentication.
+
+For example, use a mounted secret file with issuer discovery:
+
+```bash
+memory-service process turn-traces \
+  --endpoint localhost:8082 \
+  --client-id turn-traces \
+  --oidc-issuer http://localhost:8080/realms/memory-service \
+  --oidc-client-secret-file /run/secrets/processor-client-secret \
+  --oidc-audience memory-service \
+  --oidc-scope openid --oidc-scope profile --oidc-scope email
+```
+
+The processor obtains its first access token before startup completes and fails startup if the grant fails. Tokens must include a positive `expires_in`. One background worker renews the shared cached token before expiry with a new client-credentials grant. Requests and stream opens keep using a valid token while renewal is pending or fails. Only requests with expired or rejected tokens wait for renewal, and each wait respects the request cancellation or deadline. Concurrent requests share one renewal. A rejected token triggers one retry with a new token. A stream rejected after delivering events reconnects from the saved cursor. Later token endpoint failures retry with exponential backoff until the processor stops. A prolonged outage can still exhaust a checkpoint lease and stop the ClickHouse processor.
 
 ## In-Process Lifecycle
 

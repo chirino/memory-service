@@ -5,6 +5,7 @@ import (
 	"os"
 	"time"
 
+	processruntime "github.com/chirino/memory-service/internal/cmd/process/runtime"
 	"github.com/urfave/cli/v3"
 )
 
@@ -31,7 +32,7 @@ func Command() *cli.Command {
 				cfg.ExporterID = cmd.String("client-id")
 			}
 			running, err := StartProcessor(ctx, StartOptions{
-				Endpoint: cmd.String("endpoint"), ClientID: cmd.String("client-id"), APIKey: cmd.String("api-key"), BearerToken: cmd.String("bearer-token"),
+				Endpoint: cmd.String("endpoint"), ClientID: cmd.String("client-id"), APIKey: cmd.String("api-key"), OIDC: processruntime.OIDCConfigFromCommand(cmd),
 				AfterCursor: cmd.String("after-cursor"), CheckpointInterval: cmd.Duration("checkpoint-interval"), Config: cfg,
 				LeaseTTL:      cmd.Duration("lease-ttl"),
 				HealthAddress: cmd.String("health-address"),
@@ -51,13 +52,10 @@ func Command() *cli.Command {
 }
 
 func flags() []cli.Flag {
-	return []cli.Flag{
+	return append(processruntime.AuthFlags(), []cli.Flag{
 		&cli.BoolFlag{Name: "export-memberships", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_EXPORT_MEMBERSHIPS"), Usage: "export complete group memberships"},
 		&cli.StringFlag{Name: "endpoint", Sources: cli.EnvVars("MEMORY_SERVICE_GRPC_ENDPOINT"), Required: true},
-		&cli.StringFlag{Name: "client-id", Sources: cli.EnvVars("MEMORY_SERVICE_PROCESS_CLIENT_ID"), Required: true},
 		&cli.StringFlag{Name: "exporter-id", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_EXPORTER_ID")},
-		&cli.StringFlag{Name: "api-key", Sources: cli.EnvVars("MEMORY_SERVICE_API_KEY")},
-		&cli.StringFlag{Name: "bearer-token", Sources: cli.EnvVars("MEMORY_SERVICE_BEARER_TOKEN")},
 		&cli.StringFlag{Name: "after-cursor", Sources: cli.EnvVars("MEMORY_SERVICE_PROCESS_AFTER_CURSOR"), Value: "start"},
 		&cli.DurationFlag{Name: "checkpoint-interval", Sources: cli.EnvVars("MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL"), Value: time.Second},
 		&cli.DurationFlag{Name: "lease-ttl", Sources: cli.EnvVars("MEMORY_SERVICE_PROCESS_LEASE_TTL"), Value: 30 * time.Second},
@@ -95,5 +93,5 @@ func flags() []cli.Flag {
 		&cli.DurationFlag{Name: "projection-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_RETENTION")},
 		&cli.DurationFlag{Name: "projection-failure-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_RETENTION")},
 		&cli.BoolFlag{Name: "tail-only-development", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_TAIL_ONLY_DEVELOPMENT")},
-	}
+	}...)
 }

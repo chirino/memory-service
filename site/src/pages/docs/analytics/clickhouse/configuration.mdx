@@ -24,12 +24,31 @@ Existing exporters must follow the [analytics cutover procedure](/docs/analytics
 | <Cfg p="--endpoint" e="MEMORY_SERVICE_GRPC_ENDPOINT" />                          | Required | Memory Service gRPC endpoint.                        |
 | <Cfg p="--client-id" e="MEMORY_SERVICE_PROCESS_CLIENT_ID" />                     | Required | Authenticated processor client and checkpoint owner. |
 | <Cfg p="--api-key" e="MEMORY_SERVICE_API_KEY" />                                 | None     | API key for the processor client.                    |
-| <Cfg p="--bearer-token" e="MEMORY_SERVICE_BEARER_TOKEN" />                       | None     | Bearer token used instead of an API key.             |
 | <Cfg p="--grpc-tls" e="MEMORY_SERVICE_PROCESS_GRPC_TLS" />                       | `false`  | Enable TLS for the Memory Service gRPC connection.   |
 | <Cfg p="--grpc-ca-file" e="MEMORY_SERVICE_PROCESS_GRPC_CA_FILE" />               | None     | PEM CA bundle for the gRPC server.                   |
 | <Cfg p="--allow-insecure-grpc" e="MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC" /> | `false`  | Permit plaintext gRPC for development.               |
 
 The client must have the Memory Service `admin` role. A second processor with the same client ID cannot acquire the checkpoint lease.
+
+## OIDC authentication
+
+Configure either an API key or OAuth2 client credentials. OIDC uses the processor client ID as the OAuth `client_id`. The authenticated client must have the Memory Service `admin` role.
+
+| Setting                                                                                              | Default | Description                                                                         |
+| ---------------------------------------------------------------------------------------------------- | ------- | ----------------------------------------------------------------------------------- |
+| <Cfg p="--oidc-issuer" e="MEMORY_SERVICE_PROCESS_OIDC_ISSUER" />                                     | None    | Issuer for token endpoint discovery through `/.well-known/openid-configuration`.    |
+| <Cfg p="--oidc-token-url" e="MEMORY_SERVICE_PROCESS_OIDC_TOKEN_URL" />                               | None    | Explicit token endpoint instead of discovery.                                       |
+| <Cfg p="environment only" e="MEMORY_SERVICE_PROCESS_OIDC_CLIENT_SECRET" />                           | None    | OAuth client secret.                                                                |
+| <Cfg p="--oidc-client-secret-file" e="MEMORY_SERVICE_PROCESS_OIDC_CLIENT_SECRET_FILE" />             | None    | Secret file instead of the secret environment variable.                             |
+| <Cfg p="--oidc-audience" e="MEMORY_SERVICE_PROCESS_OIDC_AUDIENCE" />                                 | None    | OAuth `audience` form parameter.                                                    |
+| <Cfg p="--oidc-scope" e="MEMORY_SERVICE_PROCESS_OIDC_SCOPE" />                                       | None    | Repeatable scope flag, or comma-separated environment values. Sent space-separated. |
+| <Cfg p="--oidc-ca-file" e="MEMORY_SERVICE_PROCESS_OIDC_CA_FILE" />                                   | None    | PEM CA bundle for discovery and token requests.                                     |
+| <Cfg p="--oidc-tls-insecure-skip-verify" e="MEMORY_SERVICE_PROCESS_OIDC_TLS_INSECURE_SKIP_VERIFY" /> | `false` | Skip OIDC TLS verification for development.                                         |
+| <Cfg p="--allow-insecure-oidc" e="MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_OIDC" />                     | `false` | Permit non-loopback plaintext HTTP for development.                                 |
+
+OIDC requires exactly one of the issuer and token URL, plus exactly one secret source. Non-loopback HTTP requires the explicit development opt-in. The `PROCESS_` environment prefix separates processor authentication from server OIDC settings.
+
+The processor obtains a token at startup, then one background worker renews the shared cached token before expiry. Token responses must include a positive `expires_in`. Calls and stream opens keep using a valid token during renewal, including the membership capability check. Only requests with expired or rejected tokens wait for the shared renewal, and each wait respects request cancellation and deadlines. A rejected token triggers one retry with a new token. Streams rejected after delivering events reconnect from the saved cursor. Later token endpoint failures retry with exponential backoff until the processor stops. An outage that exhausts the checkpoint lease still stops the processor to preserve exclusive ownership.
 
 ## Export behavior
 

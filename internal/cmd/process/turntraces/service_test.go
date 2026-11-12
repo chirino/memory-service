@@ -4,13 +4,24 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
+	"net"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
+	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	processruntime "github.com/chirino/memory-service/internal/cmd/process/runtime"
+	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/stretchr/testify/require"
+	"google.golang.org/grpc"
+	"google.golang.org/grpc/metadata"
+	"google.golang.org/protobuf/types/known/structpb"
 )
 
 func TestStartProcessorWithInjectedClientsCanShutdown(t *testing.T) {
@@ -283,4 +294,206 @@ func (c *memoryCheckpointClient) putCount() int {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	return c.puts
+}
+
+func TestProcessorRunsAcrossOIDCTokenLifetimes(t *testing.T) {
+	var issued, requests atomic.Int32
+	tokens := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		request := requests.Add(1)
+		if request == 2 || request == 3 {
+			http.Error(w, "temporarily unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": fmt.Sprint(issued.Add(1)), "expires_in": 1, "token_type": "Bearer"})
+	}))
+	defer tokens.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	server := grpc.NewServer(grpc.StreamInterceptor(func(srv any, stream grpc.ServerStream, info *grpc.StreamServerInfo, next grpc.StreamHandler) error {
+		md, _ := metadata.FromIncomingContext(stream.Context())
+		authorization := md.Get("authorization")
+		require.Len(t, authorization, 1)
+		token, err := strconv.Atoi(strings.TrimPrefix(authorization[0], "Bearer "))
+		require.NoError(t, err)
+		require.Greater(t, token, 0)
+		require.LessOrEqual(t, token, int(issued.Load()))
+		return next(srv, stream)
+	}))
+	pb.RegisterEventStreamServiceServer(server, emptyEventServer{})
+	go func() { _ = server.Serve(listener) }()
+	defer server.Stop()
+	running, err := StartProcessor(t.Context(), StartOptions{
+		Endpoint: listener.Addr().String(), ClientID: "processor", Scope: "user",
+		OIDC:        processruntime.OIDCConfig{TokenURL: tokens.URL, ClientSecret: "secret"},
+		Checkpoints: newMemoryCheckpointClient(), Sink: &captureSink{},
+	})
+	require.NoError(t, err)
+	t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		defer cancel()
+		require.NoError(t, running.Shutdown(ctx))
+	})
+	require.Eventually(t, func() bool { return issued.Load() >= 4 }, 10*time.Second, 50*time.Millisecond)
+}
+
+type emptyEventServer struct {
+	pb.UnimplementedEventStreamServiceServer
+}
+
+func (emptyEventServer) SubscribeEvents(*pb.SubscribeEventsRequest, pb.EventStreamService_SubscribeEventsServer) error {
+	return nil
+}
+
+type shutdownFlushSink struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (s shutdownFlushSink) EmitTurnSpan(ctx context.Context, _ SpanData) error {
+	close(s.started)
+	select {
+	case <-s.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+type shutdownCheckpointServer struct {
+	pb.UnimplementedAdminCheckpointServiceServer
+	checkpoint *pb.AdminCheckpoint
+	writes     chan string
+}
+
+func (s *shutdownCheckpointServer) GetCheckpoint(context.Context, *pb.GetCheckpointRequest) (*pb.AdminCheckpoint, error) {
+	return s.checkpoint, nil
+}
+
+func (s *shutdownCheckpointServer) PutCheckpoint(ctx context.Context, req *pb.PutCheckpointRequest) (*pb.AdminCheckpoint, error) {
+	md, _ := metadata.FromIncomingContext(ctx)
+	s.writes <- strings.Join(md.Get("authorization"), ",")
+	return &pb.AdminCheckpoint{ClientId: req.ClientId, ContentType: req.ContentType, Value: req.Value}, nil
+}
+
+func TestShutdownRenewsOIDCDuringFinalFlush(t *testing.T) {
+	for _, mode := range []string{"shutdown", "parent cancellation", "shutdown deadline"} {
+		t.Run(mode, func(t *testing.T) {
+			renewing, canceled, releaseGrant := make(chan struct{}), make(chan struct{}), make(chan struct{})
+			var requests atomic.Int32
+			connectionClosed := make(chan struct{}, 1)
+			tokens := httptest.NewUnstartedServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if requests.Add(1) == 1 {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, `{"access_token":"old","expires_in":1,"token_type":"Bearer"}`)
+					return
+				}
+				require.NoError(t, r.ParseForm())
+				close(renewing)
+				select {
+				case <-releaseGrant:
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = io.WriteString(w, `{"access_token":"renewed","expires_in":300,"token_type":"Bearer"}`)
+				case <-r.Context().Done():
+					close(canceled)
+				}
+			}))
+			tokens.Config.ConnState = func(_ net.Conn, state http.ConnState) {
+				if state == http.StateClosed {
+					select {
+					case connectionClosed <- struct{}{}:
+					default:
+					}
+				}
+			}
+			tokens.Start()
+			defer tokens.Close()
+			seed := NewProcessor(Config{}, &captureSink{})
+			require.NoError(t, seed.Handle(t.Context(), entryEnvelope("cursor", "user", "conversation", "history", "history", "USER", time.Now().Add(-time.Minute))))
+			raw, err := seed.Snapshot()
+			require.NoError(t, err)
+			var value any
+			require.NoError(t, json.Unmarshal(raw, &value))
+			protoValue, err := structpb.NewValue(value)
+			require.NoError(t, err)
+			checkpoints := &shutdownCheckpointServer{checkpoint: &pb.AdminCheckpoint{ContentType: contentType, Value: protoValue}, writes: make(chan string, 1)}
+			listener, err := net.Listen("tcp", "127.0.0.1:0")
+			require.NoError(t, err)
+			server := grpc.NewServer()
+			pb.RegisterAdminCheckpointServiceServer(server, checkpoints)
+			go func() { _ = server.Serve(listener) }()
+			defer server.Stop()
+			ctx, cancel := context.WithCancel(t.Context())
+			defer cancel()
+			flush := shutdownFlushSink{started: make(chan struct{}), release: make(chan struct{})}
+			events := &blockingEventClient{}
+			running, err := StartProcessor(ctx, StartOptions{
+				ClientID: "processor", Endpoint: listener.Addr().String(), Scope: "user", Events: events, Sink: flush,
+				CheckpointInterval: time.Hour, TurnTraces: Config{IdleTimeout: time.Millisecond},
+				OIDC: processruntime.OIDCConfig{TokenURL: tokens.URL, ClientSecret: "secret"},
+			})
+			require.NoError(t, err)
+			expiredBy := time.Now().Add(1200 * time.Millisecond)
+			var releaseOnce sync.Once
+			defer func() {
+				releaseOnce.Do(func() { close(flush.release) })
+				shutdownCtx, stop := context.WithTimeout(context.Background(), time.Second)
+				defer stop()
+				_ = running.Shutdown(shutdownCtx)
+			}()
+			select {
+			case <-renewing:
+			case <-time.After(2 * time.Second):
+				t.Fatal("early token renewal did not start")
+			}
+			finished := make(chan error, 1)
+			if mode == "parent cancellation" {
+				cancel()
+				go func() { finished <- running.Wait() }()
+			} else {
+				shutdownCtx, stop := context.WithTimeout(t.Context(), 3*time.Second)
+				if mode == "shutdown deadline" {
+					stop()
+					shutdownCtx, stop = context.WithTimeout(t.Context(), 50*time.Millisecond)
+				}
+				defer stop()
+				go func() { finished <- running.Shutdown(shutdownCtx) }()
+			}
+			select {
+			case <-flush.started:
+			case <-time.After(time.Second):
+				t.Fatal("final flush did not start")
+			}
+			if mode == "shutdown deadline" {
+				require.ErrorIs(t, <-finished, context.DeadlineExceeded)
+				select {
+				case <-canceled:
+				case <-time.After(time.Second):
+					t.Fatal("shutdown timeout did not cancel token renewal")
+				}
+				releaseOnce.Do(func() { close(flush.release) })
+				require.NoError(t, running.Wait())
+				return
+			}
+			// Keep Flush blocked beyond the old token's actual expiry.
+			timer := time.NewTimer(time.Until(expiredBy))
+			defer timer.Stop()
+			<-timer.C
+			close(releaseGrant)
+			releaseOnce.Do(func() { close(flush.release) })
+			require.NoError(t, <-finished)
+			// Completing runtime cleanup must also stop renewal and release its idle connection.
+			select {
+			case <-connectionClosed:
+			case <-time.After(time.Second):
+				t.Fatal("completed cleanup left the token connection open")
+			}
+			select {
+			case token := <-checkpoints.writes:
+				require.Equal(t, "Bearer renewed", token)
+			default:
+				t.Fatal("final checkpoint was not saved after token expiry")
+			}
+		})
+	}
 }

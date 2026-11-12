@@ -2,6 +2,12 @@
 
 ## Unreleased
 
+### Breaking processor authentication change
+
+`process clickhouse` and `process turn-traces` no longer accept `--bearer-token` or read `MEMORY_SERVICE_BEARER_TOKEN`. Replace fixed tokens with OAuth2 client credentials or an API key. Set `--client-id`, one of `--oidc-issuer` and `--oidc-token-url`, and either `MEMORY_SERVICE_PROCESS_OIDC_CLIENT_SECRET` or `--oidc-client-secret-file`. One background worker renews tokens before expiry. Requests keep using a valid token during renewal. Expired or rejected tokens wait for the shared renewal with request cancellation and deadlines. Rejected tokens trigger one retry with a new grant. API keys and OIDC settings cannot be combined.
+
+See [Processor authentication](processors.md#authentication) for all settings and an example.
+
 ### Clean-break datastore and compatibility reset
 
 This release intentionally drops backward compatibility with pre-release datastore layouts,
