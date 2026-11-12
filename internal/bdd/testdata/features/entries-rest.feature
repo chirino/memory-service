@@ -266,6 +266,110 @@ Feature: Entries REST API
     And the response body field "epochIncremented" should be "true"
     And the sync response entry should not be null
 
+  # An agent compacts its context window (here: four messages replaced by one summary) and flushes
+  # the result with /entries/sync. The compacted context must be stored in a new epoch, be readable
+  # back from the Memory Service, and the pre-compaction epoch must stay intact.
+  Scenario: Compacted context is persisted in a new epoch and readable after sync
+    Given I am authenticated as agent with API key "test-agent-key"
+    # Epoch 1: the uncompacted context. The conversation already exists, so this is not an increment.
+    When I sync context entries with request:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [
+        {"type": "text", "text": "Question 1"},
+        {"type": "text", "text": "Answer 1"},
+        {"type": "text", "text": "Question 2"},
+        {"type": "text", "text": "Answer 2"}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "1"
+    And the response body field "epochIncremented" should be "false"
+    # Compaction: the four messages are replaced by a single summary, so the context diverges.
+    When I sync context entries with request:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [
+        {"type": "text", "text": "Summary of questions 1 and 2"}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "2"
+    And the response body field "noOp" should be "false"
+    And the response body field "epochIncremented" should be "true"
+    And the response body field "entry.content[0].text" should be "Summary of questions 1 and 2"
+    # The agent keeps going: the summary is a prefix of the new context, so only the delta is
+    # stored, in the same epoch 2.
+    When I sync context entries with request:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [
+        {"type": "text", "text": "Summary of questions 1 and 2"},
+        {"type": "text", "text": "Question 3"}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "2"
+    And the response body field "epochIncremented" should be "false"
+    And the response body field "entry.content[0].text" should be "Question 3"
+    # The latest epoch holds exactly the compacted context, in order, with no pre-compaction messages.
+    When I list context entries for the conversation with epoch "latest"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Summary of questions 1 and 2"
+    And entry at index 1 should have content "Question 3"
+    # Omitting the epoch returns the same result: the default is the latest epoch.
+    When I call GET "/v1/conversations/${conversationId}/entries?channel=context"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Summary of questions 1 and 2"
+    And entry at index 1 should have content "Question 3"
+    # The pre-compaction context is preserved unchanged as epoch 1.
+    When I list context entries for the conversation with epoch "1"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And the response body field "data[0].content[0].text" should be "Question 1"
+    And the response body field "data[0].content[1].text" should be "Answer 1"
+    And the response body field "data[0].content[2].text" should be "Question 2"
+    And the response body field "data[0].content[3].text" should be "Answer 2"
+    And the response body field "data[0].content[4]" should be null
+    # epoch=all returns both epochs: one entry for epoch 1 plus two for epoch 2.
+    When I list context entries for the conversation with epoch "all"
+    Then the response status should be 200
+    And the response should contain 3 entries
+    # A second compaction opens epoch 3 and leaves epoch 2 untouched, so "latest" is not stale.
+    When I sync context entries with request:
+    """
+    {
+      "channel": "CONTEXT",
+      "contentType": "test.v1",
+      "content": [
+        {"type": "text", "text": "Summary of questions 1 to 3"}
+      ]
+    }
+    """
+    Then the response status should be 200
+    And the response body field "epoch" should be "3"
+    And the response body field "epochIncremented" should be "true"
+    When I list context entries for the conversation with epoch "latest"
+    Then the response status should be 200
+    And the response should contain 1 entry
+    And entry at index 0 should have content "Summary of questions 1 to 3"
+    When I list context entries for the conversation with epoch "2"
+    Then the response status should be 200
+    And the response should contain 2 entries
+    And entry at index 0 should have content "Summary of questions 1 and 2"
+    And entry at index 1 should have content "Question 3"
+
   Scenario: Sync context entries with empty content clears memory by creating an empty epoch
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has a context entry "Memory to clear" with epoch 1 and contentType "test.v1"

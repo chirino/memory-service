@@ -436,6 +436,157 @@ Feature: Entries gRPC API
     And the gRPC response should have entry
     And the gRPC response field "entry.content[0]" should be "Updated epoch entry"
 
+  # An agent compacts its context window (here: four messages replaced by one summary) and flushes
+  # the result with SyncEntries. The compacted context must be stored in a new epoch, be readable
+  # back through ListEntries with each epoch_filter, and the pre-compaction epoch must stay intact.
+  Scenario: Compacted context via gRPC is persisted in a new epoch and readable after sync
+    Given I am authenticated as agent with API key "test-agent-key"
+    # Epoch 1: the uncompacted context. The conversation already exists, so this is not an increment.
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: CONTEXT
+      content_type: "test.v1"
+      content { string_value: "Question 1" }
+      content { string_value: "Answer 1" }
+      content { string_value: "Question 2" }
+      content { string_value: "Answer 2" }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "epoch" should be "1"
+    And the gRPC response field "epochIncremented" should be false
+    # Compaction: the four messages are replaced by a single summary, so the context diverges.
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: CONTEXT
+      content_type: "test.v1"
+      content { string_value: "Summary of questions 1 and 2" }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "epoch" should be "2"
+    And the gRPC response field "noOp" should be false
+    And the gRPC response field "epochIncremented" should be true
+    And the gRPC response field "entry.content[0]" should be "Summary of questions 1 and 2"
+    # The agent keeps going: the summary is a prefix of the new context, so only the delta is
+    # stored, in the same epoch 2.
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: CONTEXT
+      content_type: "test.v1"
+      content { string_value: "Summary of questions 1 and 2" }
+      content { string_value: "Question 3" }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "epoch" should be "2"
+    And the gRPC response field "epochIncremented" should be false
+    And the gRPC response field "entry.content[0]" should be "Question 3"
+    # The latest epoch holds exactly the compacted context, in order, with no pre-compaction messages.
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    epoch_filter: "latest"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0]" should be "Summary of questions 1 and 2"
+    And the gRPC response field "entries[0].epoch" should be "2"
+    And the gRPC response field "entries[1].content[0]" should be "Question 3"
+    And the gRPC response field "entries[1].epoch" should be "2"
+    # Omitting epoch_filter returns the same result: the default is the latest epoch.
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0]" should be "Summary of questions 1 and 2"
+    And the gRPC response field "entries[1].content[0]" should be "Question 3"
+    # The pre-compaction context is preserved unchanged as epoch 1.
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    epoch_filter: "1"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].epoch" should be "1"
+    And the gRPC response field "entries[0].content" should have size 4
+    And the gRPC response field "entries[0].content[0]" should be "Question 1"
+    And the gRPC response field "entries[0].content[1]" should be "Answer 1"
+    And the gRPC response field "entries[0].content[2]" should be "Question 2"
+    And the gRPC response field "entries[0].content[3]" should be "Answer 2"
+    # epoch_filter "all" returns both epochs: one entry for epoch 1 plus two for epoch 2.
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    epoch_filter: "all"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 3 entries
+    # A second compaction opens epoch 3 and leaves epoch 2 untouched, so "latest" is not stale.
+    When I send gRPC request "EntriesService/SyncEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    entry {
+      channel: CONTEXT
+      content_type: "test.v1"
+      content { string_value: "Summary of questions 1 to 3" }
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response field "epoch" should be "3"
+    And the gRPC response field "epochIncremented" should be true
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    epoch_filter: "latest"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 1 entry
+    And the gRPC response field "entries[0].content[0]" should be "Summary of questions 1 to 3"
+    And the gRPC response field "entries[0].epoch" should be "3"
+    When I send gRPC request "EntriesService/ListEntries" with body:
+    """
+    conversation_id: "${conversationId}"
+    channel: CONTEXT
+    epoch_filter: "2"
+    page {
+      page_size: 10
+    }
+    """
+    Then the gRPC response should not have an error
+    And the gRPC response should contain 2 entries
+    And the gRPC response field "entries[0].content[0]" should be "Summary of questions 1 and 2"
+    And the gRPC response field "entries[1].content[0]" should be "Question 3"
+
   Scenario: Sync context entries via gRPC with empty content clears memory
     Given I am authenticated as agent with API key "test-agent-key"
     And the conversation has a context entry "Memory to clear" with epoch 1 and contentType "test.v1"
