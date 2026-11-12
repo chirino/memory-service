@@ -432,7 +432,8 @@ Feature: Entries REST API
     And the response body field "data[0].content[2]" should be null
     And set "epoch3EntryId" to the json response field "data[0].id"
     # Replaying the epoch-3 context is a no-op. This only holds if the state sync reads (including
-    # its cache) was refreshed by the second compaction; a stale view would open epoch 4 instead.
+    # its cache, on runners that configure one) was refreshed by the second compaction; a stale view
+    # would open epoch 4 instead.
     When I sync context entries with request:
     """
     {
