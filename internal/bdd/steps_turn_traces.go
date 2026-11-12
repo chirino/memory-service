@@ -2,11 +2,15 @@ package bdd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/http"
+	"net/http/httptest"
 	"strings"
 	"sync"
 	"time"
 
+	processruntime "github.com/chirino/memory-service/internal/cmd/process/runtime"
 	"github.com/chirino/memory-service/internal/cmd/process/turntraces"
 	"github.com/chirino/memory-service/internal/testutil/cucumber"
 	"github.com/cucumber/godog"
@@ -35,10 +39,11 @@ func init() {
 }
 
 type turnTraceSteps struct {
-	s       *cucumber.TestScenario
-	running *turntraces.RunningProcessor
-	sink    *captureTurnTraceSink
-	last    *turntraces.SpanData
+	s           *cucumber.TestScenario
+	running     *turntraces.RunningProcessor
+	tokenServer *httptest.Server
+	sink        *captureTurnTraceSink
+	last        *turntraces.SpanData
 }
 
 type captureTurnTraceSink struct {
@@ -81,10 +86,16 @@ func (t *turnTraceSteps) processorIsRunningForUserWithScope(userID, scope string
 	// processor as that client as well. A distinct processor client would need
 	// admin scope to observe another client's context.
 	clientID := t.s.IsolatedClientID("test-agent-key")
+	// The fixture-auth server accepts isolated subjects as tokens. Serve them
+	// through a grant endpoint so the processor uses its production OAuth path.
+	t.tokenServer = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": subject, "token_type": "Bearer", "expires_in": 300})
+	}))
 	running, err := turntraces.StartProcessor(context.Background(), turntraces.StartOptions{
 		Endpoint:           addr,
 		ClientID:           clientID,
-		BearerToken:        subject,
+		OIDC:               processruntime.OIDCConfig{TokenURL: t.tokenServer.URL, ClientSecret: "bdd-secret"},
 		Scope:              scope,
 		AfterCursor:        "start",
 		CheckpointInterval: 100 * time.Millisecond,
@@ -97,6 +108,8 @@ func (t *turnTraceSteps) processorIsRunningForUserWithScope(userID, scope string
 		},
 	})
 	if err != nil {
+		t.tokenServer.Close()
+		t.tokenServer = nil
 		return err
 	}
 	t.running = running
@@ -119,6 +132,10 @@ func (t *turnTraceSteps) shutdown(ctx context.Context) error {
 	defer cancel()
 	err := t.running.Shutdown(shutdownCtx)
 	t.running = nil
+	if t.tokenServer != nil {
+		t.tokenServer.Close()
+		t.tokenServer = nil
+	}
 	return err
 }
 

@@ -18,7 +18,6 @@ import (
 	"github.com/chirino/memory-service/internal/operationevent"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"google.golang.org/grpc"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/types/known/emptypb"
 )
 
@@ -31,7 +30,7 @@ type StartOptions struct {
 	Endpoint           string
 	ClientID           string
 	APIKey             string
-	BearerToken        string
+	OIDC               processruntime.OIDCConfig
 	AfterCursor        string
 	CheckpointInterval time.Duration
 	LeaseTTL           time.Duration
@@ -49,6 +48,7 @@ type RunningProcessor struct {
 	cancel context.CancelFunc
 	done   chan struct{}
 	conn   *grpc.ClientConn
+	auth   *processruntime.GRPCAuth
 	sink   Sink
 	health *http.Server
 	mu     sync.Mutex
@@ -84,8 +84,10 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 	events, checkpoints := opts.Events, opts.Checkpoints
 	capabilities := opts.Capabilities
 	var conn *grpc.ClientConn
+	var auth *processruntime.GRPCAuth
 	// StartProcessor owns opts.Sink, so early failures close it too.
 	closeConn := func() {
+		auth.Close()
 		if conn != nil {
 			_ = conn.Close()
 		}
@@ -98,8 +100,13 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		return nil, err
 	}
 	if events == nil || checkpoints == nil || opts.Config.ExportMemberships && capabilities == nil {
+		var authErr error
+		auth, authErr = processruntime.NewGRPCAuth(ctx, opts.ClientID, opts.APIKey, opts.OIDC)
+		if authErr != nil {
+			return abort(authErr)
+		}
 		conn, err = processruntime.DialGRPCWithConfig(opts.Endpoint, processruntime.GRPCDialConfig{
-			TLS: opts.GRPCTLS, CAFile: opts.GRPCCAFile, AllowInsecure: opts.AllowInsecureGRPC,
+			Auth: auth, TLS: opts.GRPCTLS, CAFile: opts.GRPCCAFile, AllowInsecure: opts.AllowInsecureGRPC,
 			MaxReceiveBytes: opts.Config.MaxRecordBytes + 4<<20,
 		})
 		if err != nil {
@@ -108,24 +115,15 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		if capabilities == nil {
 			capabilities = pb.NewSystemServiceClient(conn)
 		}
-		auth := processruntime.GRPCAuth{APIKey: opts.APIKey, BearerToken: opts.BearerToken, ClientID: opts.ClientID}
 		if events == nil {
-			events = processruntime.GRPCEventClient{Client: pb.NewEventStreamServiceClient(conn), Auth: auth}
+			events = processruntime.GRPCEventClient{Client: pb.NewEventStreamServiceClient(conn)}
 		}
 		if checkpoints == nil {
-			checkpoints = processruntime.GRPCCheckpointClient{Client: pb.NewAdminCheckpointServiceClient(conn), Auth: auth}
+			checkpoints = processruntime.GRPCCheckpointClient{Client: pb.NewAdminCheckpointServiceClient(conn)}
 		}
 	}
 	if opts.Config.ExportMemberships {
-		capabilityCtx := ctx
-		if opts.APIKey != "" {
-			capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "x-api-key", opts.APIKey)
-		}
-		if opts.BearerToken != "" {
-			capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "authorization", "Bearer "+opts.BearerToken)
-		}
-		capabilityCtx = metadata.AppendToOutgoingContext(capabilityCtx, "x-client-id", opts.ClientID)
-		response, capErr := capabilities.GetCapabilities(capabilityCtx, &emptypb.Empty{})
+		response, capErr := capabilities.GetCapabilities(ctx, &emptypb.Empty{})
 		if capErr != nil || !response.GetFeatures().GetAnalyticsMembershipSnapshots() {
 			return abort(errors.New("membership export requires source capability analytics_membership_snapshots"))
 		}
@@ -163,9 +161,7 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		listener, listenErr := net.Listen("tcp", opts.HealthAddress)
 		if listenErr != nil {
 			cancel()
-			if conn != nil {
-				_ = conn.Close()
-			}
+			closeConn()
 			_ = sink.Close()
 			return nil, listenErr
 		}
@@ -181,7 +177,7 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 	if opts.Config.BatchDelay > 0 && (runner.Config.CheckpointInterval == 0 || opts.Config.BatchDelay < runner.Config.CheckpointInterval) {
 		runner.Config.CheckpointInterval = opts.Config.BatchDelay
 	}
-	running := &RunningProcessor{cancel: cancel, done: make(chan struct{}), conn: conn, sink: sink, health: healthServer}
+	running := &RunningProcessor{cancel: cancel, done: make(chan struct{}), conn: conn, auth: auth, sink: sink, health: healthServer}
 	go func() {
 		runEvent := operationevent.New("job.process.clickhouse")
 		runEvent.SetClientID(opts.Config.ExporterID)
@@ -193,6 +189,7 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		runEvent.EmitStart()
 		err := runner.Run(runCtx)
 		cancel()
+		auth.Close()
 		if err != nil {
 			runEvent.SetReason("processor_failed")
 			runEvent.EnrichError(err)
@@ -294,6 +291,7 @@ func (p *RunningProcessor) Shutdown(ctx context.Context) error {
 		case <-ctx.Done():
 			result = ctx.Err()
 		}
+		p.auth.Close()
 		if p.conn != nil {
 			if err := p.conn.Close(); result == nil {
 				result = err

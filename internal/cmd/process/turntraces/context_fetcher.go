@@ -8,16 +8,13 @@ import (
 	"time"
 
 	"github.com/charmbracelet/log"
-	processruntime "github.com/chirino/memory-service/internal/cmd/process/runtime"
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
 	"github.com/google/uuid"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/protobuf/encoding/protojson"
 )
 
 type grpcAdminContextFetcher struct {
 	client pb.AdminEntriesServiceClient
-	auth   processruntime.GRPCAuth
 }
 
 func (f grpcAdminContextFetcher) FetchContextEntries(ctx context.Context, conversationID string, upToEntryID string) ([]ContextEntryData, error) {
@@ -32,7 +29,7 @@ func (f grpcAdminContextFetcher) FetchContextEntries(ctx context.Context, conver
 	var out []ContextEntryData
 	pageToken := ""
 	for {
-		resp, err := f.client.ListEntries(authContext(ctx, f.auth), &pb.AdminListEntriesRequest{
+		resp, err := f.client.ListEntries(ctx, &pb.AdminListEntriesRequest{
 			ConversationId: conversationID,
 			Channel:        pb.Channel_CONTEXT,
 			EpochFilter:    "all",
@@ -118,21 +115,4 @@ func uuidFromBytes(value []byte) (string, error) {
 
 func ptrInt64(value int64) *int64 {
 	return &value
-}
-
-func authContext(ctx context.Context, auth processruntime.GRPCAuth) context.Context {
-	pairs := make([]string, 0, 6)
-	if auth.BearerToken != "" {
-		pairs = append(pairs, "authorization", "Bearer "+auth.BearerToken)
-	}
-	if auth.APIKey != "" {
-		pairs = append(pairs, "x-api-key", auth.APIKey)
-	}
-	if auth.ClientID != "" {
-		pairs = append(pairs, "x-client-id", auth.ClientID)
-	}
-	if len(pairs) == 0 {
-		return ctx
-	}
-	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
