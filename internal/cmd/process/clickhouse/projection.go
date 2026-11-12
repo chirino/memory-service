@@ -4,16 +4,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"embed"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"math"
+	"math/big"
 	"os"
 	"path/filepath"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -57,23 +60,17 @@ var (
 	projectionReservedColumns = map[string]struct{}{
 		"exporter_id": {}, "batch_id": {}, "event_id": {}, "resource_id": {}, "ingest_version": {},
 		"conversation_id": {}, "conversation_group_id": {}, "observed_at": {}, "is_deleted": {},
-		"schema_version": {}, "row_index": {}, "row_count": {},
+		"row_index": {}, "row_count": {},
 	}
 	projectionReservedTableNames = map[string]struct{}{
-		"schema_versions":       {},
-		"lifecycle_events":      {},
-		"resources":             {},
-		"deletion_fences":       {},
-		"deletion_fence_writer": {},
-		"conversations":         {},
-		"conversation_lineage":  {},
-		"entries":               {},
-		"memories":              {},
-		"projection_registry":   {},
-		"retention_policy":      {},
-		"projection_failures":   {},
-		"purge_subjects":        {},
-		"purge_queue":           {},
+		"schema_versions":          {},
+		"lifecycle_events":         {},
+		"deletion_fences":          {},
+		"projection_registry":      {},
+		"retention_policy":         {},
+		"projection_failures":      {},
+		"purge_queue":              {},
+		"conversation_memberships": {},
 	}
 )
 
@@ -96,20 +93,25 @@ type projectionMetadata struct {
 	Name string `yaml:"name"`
 }
 
+//go:embed defaults/*.yaml
+var defaultProjectionFiles embed.FS
+
+type projectionTableOptions struct {
+	Ordering string `yaml:"ordering"`
+}
+
 type projectionSpec struct {
-	Resource string             `yaml:"resource"`
-	Selector projectionSelector `yaml:"selector"`
-	// Rows is omitted from the digest when empty so single-row manifests keep their digests.
-	Rows           string                      `json:",omitempty"     yaml:"rows,omitempty"`
-	Columns        map[string]projectionColumn `yaml:"columns"`
-	ProjectionRego string                      `yaml:"projectionRego"`
-	// The chain fields below are omitted from the digest when empty so manifests written
-	// before projection chains existed keep their digests.
-	Table                  string                      `json:",omitempty" yaml:"table,omitempty"`
-	Previous               string                      `json:",omitempty" yaml:"previous,omitempty"`
-	ProjectionRegoReplaces string                      `json:",omitempty" yaml:"projectionRegoReplaces,omitempty"`
-	ProjectionRegoFrom     string                      `json:",omitempty" yaml:"projectionRegoFrom,omitempty"`
-	AddColumns             map[string]projectionColumn `json:",omitempty" yaml:"addColumns,omitempty"`
+	ClickHouse             *projectionTableOptions     `yaml:"clickhouse,omitempty"`
+	Resource               string                      `yaml:"resource"`
+	Selector               projectionSelector          `yaml:"selector"`
+	Rows                   string                      `json:",omitempty"           yaml:"rows,omitempty"`
+	Columns                map[string]projectionColumn `yaml:"columns"`
+	ProjectionRego         string                      `yaml:"projectionRego"`
+	Table                  string                      `json:",omitempty"           yaml:"table,omitempty"`
+	Previous               string                      `json:",omitempty"           yaml:"previous,omitempty"`
+	ProjectionRegoReplaces string                      `json:",omitempty"           yaml:"projectionRegoReplaces,omitempty"`
+	ProjectionRegoFrom     string                      `json:",omitempty"           yaml:"projectionRegoFrom,omitempty"`
+	AddColumns             map[string]projectionColumn `json:",omitempty"           yaml:"addColumns,omitempty"`
 }
 
 type projectionSelector struct {
@@ -125,8 +127,9 @@ type projectionColumn struct {
 }
 
 type projectionClickHouseOptions struct {
-	MaxDynamicPaths int `yaml:"maxDynamicPaths,omitempty"`
-	MaxDynamicTypes int `yaml:"maxDynamicTypes,omitempty"`
+	LowCardinality  bool `yaml:"lowCardinality,omitempty"`
+	MaxDynamicPaths int  `yaml:"maxDynamicPaths,omitempty"`
+	MaxDynamicTypes int  `yaml:"maxDynamicTypes,omitempty"`
 }
 
 // Projection is one loaded AnalyticsProjection manifest. Manifests form chains: the first
@@ -137,6 +140,7 @@ type Projection struct {
 	Name     string
 	Digest   string
 	Resource string
+	Ordering string
 	// Selector is the content type or memory kind the manifest adds to its chain. It is
 	// empty for later manifests that only replace logic or add columns.
 	Selector    string
@@ -150,7 +154,6 @@ type Projection struct {
 	ProjectionRegoFrom     string
 	AddColumns             map[string]projectionColumn
 	prepared               *rego.PreparedEvalQuery
-	useAttributes          bool
 	// logic is the manifest whose projection logic this manifest uses: itself when it
 	// defines projectionRego (or attribute mapping), the resolved projectionRegoFrom target,
 	// or nil when it only adds columns.
@@ -162,6 +165,7 @@ type ProjectionTable struct {
 	Name     string
 	Resource string
 	RowMode  string
+	Ordering string
 	// Manifests lists the chain in order, starting with the manifest that defines the table.
 	Manifests []*Projection
 	// ColumnNames is sorted; Columns holds the first manifest's columns plus every addColumns.
@@ -190,7 +194,12 @@ func (s *ProjectionSet) Match(resource, selector string) []*Projection {
 	if s == nil {
 		return nil
 	}
-	return s.routes[projectionRouteKey(resource, selector)]
+	matched := append([]*Projection(nil), s.routes[projectionRouteKey(resource, selector)]...)
+	if selector != "" {
+		matched = append(matched, s.routes[projectionRouteKey(resource, "")]...)
+	}
+	sort.Slice(matched, func(i, j int) bool { return matched[i].TableName < matched[j].TableName })
+	return matched
 }
 
 func projectionRouteKey(resource, selector string) string {
@@ -214,9 +223,8 @@ type ProjectionRow struct {
 }
 
 type ProjectionFailureRow struct {
-	ExporterID          string
-	BatchID             string
-	EventID             string
+	Common
+	ResourceKind        string
 	AnalyticsResourceID string
 	ConversationID      string
 	ConversationGroupID string
@@ -225,7 +233,6 @@ type ProjectionFailureRow struct {
 	AttemptCount        uint32
 	FirstSeenAt         time.Time
 	LastSeenAt          time.Time
-	Version             uint64
 }
 
 func LoadProjectionSet(ctx context.Context, paths []string) (*ProjectionSet, error) {
@@ -235,8 +242,22 @@ func LoadProjectionSet(ctx context.Context, paths []string) (*ProjectionSet, err
 	if err != nil {
 		return nil, err
 	}
+	if len(paths) == 0 {
+		entries, readErr := defaultProjectionFiles.ReadDir("defaults")
+		if readErr != nil {
+			return nil, readErr
+		}
+		for _, entry := range entries {
+			files = append(files, "defaults/"+entry.Name())
+		}
+	}
 	for _, path := range files {
-		raw, err := os.ReadFile(path)
+		var raw []byte
+		if len(paths) == 0 {
+			raw, err = defaultProjectionFiles.ReadFile(path)
+		} else {
+			raw, err = os.ReadFile(path)
+		}
 		if err != nil {
 			return nil, fmt.Errorf("read analytics projection %s: %w", path, err)
 		}
@@ -360,15 +381,18 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 	if isReservedProjectionTableName(manifest.Metadata.Name) {
 		return nil, fmt.Errorf("metadata.name %q is reserved", manifest.Metadata.Name)
 	}
-	if manifest.Spec.Resource != "entry" && manifest.Spec.Resource != "memory" {
-		return nil, errors.New("spec.resource must be entry or memory")
+	if manifest.Spec.Resource != "entry" && manifest.Spec.Resource != "memory" && manifest.Spec.Resource != "conversation" {
+		return nil, errors.New("spec.resource must be entry, memory, or conversation")
 	}
 	selector := manifest.Spec.Selector.ContentType
 	if manifest.Spec.Resource == "memory" {
 		selector = manifest.Spec.Selector.Kind
 	}
 	hasSelector := manifest.Spec.Selector.ContentType != "" || manifest.Spec.Selector.Kind != ""
-	if manifest.Spec.Previous == "" || hasSelector {
+	if hasSelector {
+		if manifest.Spec.Resource == "conversation" {
+			return nil, errors.New("conversation projections cannot declare selectors")
+		}
 		if strings.TrimSpace(selector) == "" || (manifest.Spec.Selector.ContentType != "" && manifest.Spec.Selector.Kind != "") {
 			return nil, errors.New("selector must define exactly one non-empty contentType or kind matching the resource")
 		}
@@ -414,16 +438,24 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 			rows = ProjectionRowsOne
 		}
 		if !hasRego {
-			if manifest.Spec.Resource != "memory" {
-				return nil, errors.New("entry projections require projectionRego")
-			}
-			if rows == ProjectionRowsMany {
-				return nil, errors.New("spec.rows many requires projectionRego")
-			}
+			return nil, errors.New("projection roots require projectionRego")
 		}
 	} else {
 		if err := validateLaterProjectionManifest(manifest, hasSelector, hasRego, capabilities); err != nil {
 			return nil, err
+		}
+	}
+	ordering := "resource"
+	if manifest.Spec.ClickHouse != nil {
+		if manifest.Spec.Previous != "" {
+			return nil, errors.New("spec.clickhouse belongs to the chain root")
+		}
+		ordering = manifest.Spec.ClickHouse.Ordering
+		if ordering != "resource" && ordering != "conversation" {
+			return nil, errors.New("spec.clickhouse.ordering must be resource or conversation")
+		}
+		if ordering == "conversation" && manifest.Spec.Resource == "memory" {
+			return nil, errors.New("memory projections cannot use conversation ordering")
 		}
 	}
 	canonical, _ := json.Marshal(manifest)
@@ -434,7 +466,7 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 		table = manifest.Metadata.Name
 	}
 	projection := &Projection{
-		Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, TableName: table, RowMode: rows,
+		Name: manifest.Metadata.Name, Digest: digest, Resource: manifest.Spec.Resource, TableName: table, RowMode: rows, Ordering: ordering,
 		Previous: manifest.Spec.Previous, ProjectionRegoReplaces: manifest.Spec.ProjectionRegoReplaces, ProjectionRegoFrom: manifest.Spec.ProjectionRegoFrom, AddColumns: manifest.Spec.AddColumns,
 	}
 	if hasSelector || manifest.Spec.Previous == "" {
@@ -444,8 +476,6 @@ func compileProjection(ctx context.Context, manifest projectionManifest, capabil
 		projection.setColumns(manifest.Spec.Columns)
 	}
 	if !hasRego {
-		// A first memory manifest without projectionRego maps MemoryKindVersion attributes.
-		projection.useAttributes = manifest.Spec.Previous == ""
 		return projection, nil
 	}
 	if len(manifest.Spec.ProjectionRego) > 256<<10 {
@@ -598,7 +628,7 @@ func (s *ProjectionSet) link() error {
 func linkProjectionChain(chain []*Projection) (*ProjectionTable, error) {
 	root := chain[0]
 	table := &ProjectionTable{
-		Name: root.TableName, Resource: root.Resource, RowMode: root.RowMode, Manifests: chain,
+		Name: root.TableName, Resource: root.Resource, RowMode: root.RowMode, Ordering: root.Ordering, Manifests: chain,
 		Columns: map[string]projectionColumn{}, ColumnOwners: map[string]string{}, Logic: map[string]*Projection{},
 	}
 	for _, name := range root.ColumnNames {
@@ -614,6 +644,9 @@ func linkProjectionChain(chain []*Projection) (*ProjectionTable, error) {
 		position[manifest.Name] = index
 		if manifest.Resource != table.Resource {
 			return nil, fmt.Errorf("projection %q has resource %q, but its chain projects %q", manifest.Name, manifest.Resource, table.Resource)
+		}
+		if root.Selector == "" && (manifest.Selector != "" || manifest.ProjectionRegoFrom != "") {
+			return nil, fmt.Errorf("unconditional chain %q cannot introduce selectors", root.Name)
 		}
 		resolve := func(field, reference string) (*Projection, error) {
 			at, ok := position[reference]
@@ -686,6 +719,7 @@ func linkProjectionChain(chain []*Projection) (*ProjectionTable, error) {
 	for _, manifest := range chain {
 		manifest.TableName = table.Name
 		manifest.RowMode = table.RowMode
+		manifest.Ordering = table.Ordering
 		manifest.Columns = table.Columns
 		manifest.ColumnNames = table.ColumnNames
 	}
@@ -713,13 +747,21 @@ func isReservedProjectionTableName(name string) bool {
 }
 
 func validateProjectionColumn(name string, column projectionColumn, capabilities projectionProviderCapabilities) error {
+	if column.ClickHouse != nil {
+		if column.ClickHouse.LowCardinality && column.Type != "string" {
+			return fmt.Errorf("column %q lowCardinality requires string type", name)
+		}
+		if column.Type != "json" && (column.ClickHouse.MaxDynamicPaths != 0 || column.ClickHouse.MaxDynamicTypes != 0) {
+			return fmt.Errorf("column %q JSON bounds require json type", name)
+		}
+	}
 	switch column.Type {
 	case "variant":
 		if !capabilities.Variant {
 			return fmt.Errorf("column %q type %q is not supported by analytics provider %q", name, column.Type, capabilities.Name)
 		}
-		if column.ClickHouse != nil {
-			return fmt.Errorf("column %q clickhouse options are only supported for type json", name)
+		if column.ClickHouse != nil && column.Type != "string" {
+			return fmt.Errorf("column %q clickhouse options require json or string type", name)
 		}
 		if len(column.Variants) < 2 {
 			return fmt.Errorf("column %q type variant requires at least two variants", name)
@@ -763,8 +805,8 @@ func validateProjectionColumn(name string, column projectionColumn, capabilities
 		if len(column.Variants) > 0 {
 			return fmt.Errorf("column %q variants are only supported for type variant", name)
 		}
-		if column.ClickHouse != nil {
-			return fmt.Errorf("column %q clickhouse options are only supported for type json", name)
+		if column.ClickHouse != nil && column.Type != "string" {
+			return fmt.Errorf("column %q clickhouse options require json or string type", name)
 		}
 	}
 	return nil
@@ -824,10 +866,7 @@ func validateProjectionModule(module *ast.Module) error {
 	if !hasOutput {
 		return errors.New("projectionRego must define an `output` rule")
 	}
-	allowedInput := map[ast.String]struct{}{
-		"resource": {}, "contentType": {}, "channel": {}, "content": {},
-		"kind": {}, "revision": {}, "value": {}, "attributes": {},
-	}
+	allowedInput := map[ast.String]struct{}{"resource": {}, "record": {}}
 	badBuiltins := map[string]struct{}{}
 	badInputs := map[string]struct{}{}
 	ast.WalkTerms(module, func(term *ast.Term) bool {
@@ -922,17 +961,7 @@ func (p *Projection) TombstoneRow(base ProjectionRow) ProjectionRow {
 }
 
 func (p *Projection) evaluate(ctx context.Context, input map[string]any) ([][]any, string) {
-	if p.useAttributes {
-		attributes, ok := input["attributes"].(map[string]any)
-		if !ok {
-			return nil, "attributes_unavailable"
-		}
-		values, code := p.columnValues(attributes)
-		if code != "" {
-			return nil, code
-		}
-		return [][]any{values}, ""
-	}
+
 	results, err := p.prepared.Eval(ctx, rego.EvalInput(input))
 	if err != nil {
 		return nil, "rego_evaluation_failed"
@@ -1048,7 +1077,7 @@ func normalizeProjectionValue(column projectionColumn, value any) (any, string) 
 		return value, typeCode(ok)
 	case "float64":
 		number, ok := numericFloat64(value)
-		if !ok {
+		if !ok || math.IsNaN(number) || math.IsInf(number, 0) {
 			return nil, "type_mismatch"
 		}
 		return number, ""
@@ -1128,20 +1157,36 @@ func containsString(values []string, target string) bool {
 }
 
 func integralNumber(value any, signed bool) (any, bool) {
-	number, ok := numericFloat64(value)
-	if !ok || math.Trunc(number) != number {
+	switch value.(type) {
+	case int, int64, uint64, float64, float32, json.Number:
+	default:
+		return nil, false
+	}
+	literal := fmt.Sprint(value)
+	// Bound decimal expansion before parsing an untrusted Rego number.
+	if len(literal) > 256 {
+		return nil, false
+	}
+	if index := strings.IndexAny(literal, "eE"); index >= 0 {
+		exponent, err := strconv.Atoi(literal[index+1:])
+		if err != nil || exponent > 512 || exponent < -512 {
+			return nil, false
+		}
+	}
+	number, ok := new(big.Rat).SetString(literal)
+	if !ok || !number.IsInt() {
 		return nil, false
 	}
 	if signed {
-		if number < math.MinInt64 || number > math.MaxInt64 {
+		if !number.Num().IsInt64() {
 			return nil, false
 		}
-		return int64(number), true
+		return number.Num().Int64(), true
 	}
-	if number < 0 || number > math.MaxUint64 {
+	if !number.Num().IsUint64() {
 		return nil, false
 	}
-	return uint64(number), true
+	return number.Num().Uint64(), true
 }
 
 func numericFloat64(value any) (float64, bool) {

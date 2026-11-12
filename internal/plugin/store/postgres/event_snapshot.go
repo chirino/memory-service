@@ -124,3 +124,36 @@ func (s *PostgresStore) AdminListEventSnapshotEntries(ctx context.Context, after
 	last := rows[len(rows)-1]
 	return rows, &registrystore.EventSnapshotEntryCursor{CreatedAt: last.CreatedAt, ID: last.ID.String()}, nil
 }
+
+func (s *PostgresStore) AdminListEventSnapshotMemberships(ctx context.Context, after *registrystore.EventSnapshotMembershipCursor, limit int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	if limit <= 0 || limit > 500 {
+		limit = 500
+	}
+	q := s.dbFor(ctx).Model(&model.ConversationMembership{})
+	if after != nil {
+		q = q.Where("conversation_group_id > ? OR (conversation_group_id = ? AND user_id > ?)", after.GroupID, after.GroupID, after.UserID)
+	}
+	var rows []model.ConversationMembership
+	if err := q.Order("conversation_group_id ASC, user_id ASC").Limit(limit + 1).Find(&rows).Error; err != nil {
+		return nil, nil, err
+	}
+	if len(rows) <= limit {
+		return rows, nil, nil
+	}
+	rows = rows[:limit]
+	last := rows[len(rows)-1]
+	return rows, &registrystore.EventSnapshotMembershipCursor{GroupID: last.ConversationGroupID.String(), UserID: last.UserID}, nil
+}
+func (s *PostgresStore) AdminGetEventSnapshotMembership(ctx context.Context, groupID, userID string) (*model.ConversationMembership, error) {
+	var row model.ConversationMembership
+	result := s.dbFor(ctx).Where("conversation_group_id = ? AND user_id = ?", groupID, userID).Limit(1).Find(&row)
+	if result.Error != nil {
+		return nil, result.Error
+	}
+	if result.RowsAffected == 0 {
+		return nil, nil
+	}
+	return &row, nil
+}
+
+func (s *PostgresStore) SupportsAnalyticsMembershipSnapshots() bool { return s.OutboxEnabled() }

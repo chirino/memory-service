@@ -1,0 +1,31 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: default_entries
+spec:
+  resource: entry
+  table: entries
+  rows: one
+  columns:
+    user_id: {type: string, nullable: true}
+    client_id: {type: string, nullable: true}
+    agent_id: {type: string, nullable: true}
+    channel: {type: string, nullable: false}
+    content_type: {type: string, nullable: false}
+    created_at: {type: timestamp, nullable: false}
+    indexed_at: {type: timestamp, nullable: true}
+    epoch: {type: int64, nullable: true}
+    seq: {type: uint64, nullable: true}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "user_id": object.get(input.record, "userId", null),
+      "client_id": object.get(input.record, "clientId", null),
+      "agent_id": object.get(input.record, "agentId", null),
+      "channel": input.record.channel,
+      "content_type": input.record.contentType,
+      "created_at": input.record.createdAt,
+      "indexed_at": object.get(input.record, "indexedAt", null),
+      "epoch": object.get(input.record, "epoch", null),
+      "seq": object.get(input.record, "seq", null),
+    }

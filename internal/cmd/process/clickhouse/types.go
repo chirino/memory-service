@@ -12,7 +12,6 @@ type Common struct {
 	SourceCursor  string
 	IngestVersion uint64
 	ObservedAt    time.Time
-	SchemaVersion uint16
 }
 
 type LifecycleRow struct {
@@ -27,21 +26,20 @@ type LifecycleRow struct {
 	ContentType         string
 	MemoryKind          string
 	SnapshotAvailable   bool
-	SummaryJSON         string
 }
 
-type ResourceRow struct {
+type FenceRow struct {
 	Common
+	ResourceKind        string
 	ResourceID          string
 	ConversationID      string
 	ConversationGroupID string
-	ResourceType        string
-	CreatedAt           time.Time
-	UpdatedAt           time.Time
-	IsArchived          bool
-	IsDeleted           bool
-	PayloadJSON         string
 }
+
+const (
+	purgeResource = "resource"
+	purgeGroup    = "conversation_group"
+)
 
 type PurgeRow struct {
 	ExporterID          string
@@ -52,7 +50,19 @@ type PurgeRow struct {
 	AnalyticsResourceID string
 	ConversationID      string
 	ConversationGroupID string
+	Scope               string
+	CutoffIngestVersion uint64
 	RequestedAt         time.Time
+}
+
+type MembershipRow struct {
+	Common
+	ResourceID          string
+	ConversationGroupID string
+	UserID              string
+	AccessLevel         string
+	CreatedAt           *time.Time
+	IsDeleted           bool
 }
 
 type Batch struct {
@@ -60,17 +70,18 @@ type Batch struct {
 	ExporterID         string
 	FirstCursor        string
 	LastCursor         string
-	Version            uint64
 	ObservedAt         time.Time
 	Lifecycle          []LifecycleRow
-	Resources          []ResourceRow
+	Fences             []FenceRow
 	Purges             []PurgeRow
+	Memberships        []MembershipRow
 	Projections        []ProjectionRow
 	ProjectionFailures []ProjectionFailureRow
 }
 
 type Sink interface {
-	EnsureSchema(ctx context.Context, mode string) error
-	WriteBatch(ctx context.Context, batch Batch) error
+	EnsureSchema(context.Context, string) error
+	ResolvePurge(context.Context, PurgeRow) (PurgeRow, error)
+	WriteBatch(context.Context, Batch) error
 	Close() error
 }

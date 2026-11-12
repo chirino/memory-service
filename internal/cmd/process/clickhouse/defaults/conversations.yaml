@@ -1,0 +1,19 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: default_conversations
+spec:
+  resource: conversation
+  table: conversations
+  rows: one
+  columns:
+    created_at: {type: timestamp, nullable: false}
+    updated_at: {type: timestamp, nullable: false}
+    archived: {type: bool, nullable: false}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "created_at": input.record.createdAt,
+      "updated_at": input.record.updatedAt,
+      "archived": input.record.archived,
+    }

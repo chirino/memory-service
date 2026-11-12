@@ -16,7 +16,7 @@ spec:
       clickhouse: {maxDynamicPaths: 512, maxDynamicTypes: 16}
   projectionRego: |
     package memoryservice.analytics
-    item := input.content[0]
+    item := input.record.content[0]
     output := {
       "checkpoint_id": item.checkpoint_id,
       "checkpoint_namespace": object.get(item, "checkpoint_ns", ""),

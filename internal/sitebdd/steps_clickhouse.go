@@ -102,7 +102,7 @@ func (s *SiteScenario) loadClickHouseFixture(doc *godog.DocString) error {
 		s.ScenarioUID = strings.ReplaceAll(uuid.NewString(), "-", "")[:8]
 	}
 	s.clickHouseDatabase = "sitebdd_" + s.ScenarioUID
-	projectionPath := s.ProjectRoot + "/deploy/clickhouse/projections"
+	projectionPaths := []string{s.ProjectRoot + "/deploy/clickhouse/projections", s.ProjectRoot + "/internal/cmd/process/clickhouse/defaults"}
 	admin, err := ch.Open(&ch.Options{
 		Addr: []string{s.ClickHouse.address},
 		Auth: ch.Auth{Database: "default", Username: "clickhouse", Password: "clickhouse"},
@@ -125,14 +125,14 @@ func (s *SiteScenario) loadClickHouseFixture(doc *godog.DocString) error {
 		Password:                "clickhouse",
 		AllowInsecureClickHouse: true,
 		PayloadMode:             clickhouseprocessor.PayloadProjected,
-		ProjectionPaths:         []string{projectionPath},
+		ProjectionPaths:         projectionPaths,
 	}
 	sink, err := clickhouseprocessor.OpenSink(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("create ClickHouse analytics schema: %w", err)
 	}
 	defer sink.Close()
-	projections, err := clickhouseprocessor.LoadProjectionSet(ctx, []string{projectionPath})
+	projections, err := clickhouseprocessor.LoadProjectionSet(ctx, projectionPaths)
 	if err != nil {
 		return fmt.Errorf("load ClickHouse fixture projections: %w", err)
 	}
@@ -158,8 +158,8 @@ func (s *SiteScenario) executeClickHouseQuery(doc *godog.DocString) error {
 	if s.clickHouseConn == nil {
 		return fmt.Errorf("ClickHouse fixture is not loaded")
 	}
-	query := strings.ReplaceAll(doc.Content, "memory_service.", "`"+s.clickHouseDatabase+"`.")
-	query = strings.ReplaceAll(query, "database = 'memory_service'", "database = '"+s.clickHouseDatabase+"'")
+	query := strings.ReplaceAll(doc.Content, "memory_service_analytics.", "`"+s.clickHouseDatabase+"`.")
+	query = strings.ReplaceAll(query, "database = 'memory_service_analytics'", "database = '"+s.clickHouseDatabase+"'")
 	ctx, cancel := context.WithTimeout(context.Background(), 20*time.Second)
 	defer cancel()
 	rows, err := s.clickHouseConn.Query(ctx, query)
@@ -202,33 +202,37 @@ func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections *cl
 	const exporterID = "site-docs"
 	batchID := fixtureID("batch")
 	version := uint64(1)
-	batch := clickhouseprocessor.Batch{ID: batchID, ExporterID: exporterID, Version: version, ObservedAt: anchor}
+	batch := clickhouseprocessor.Batch{ID: batchID, ExporterID: exporterID, ObservedAt: anchor}
 	addLifecycle := func(kind, resourceID, action, conversationID, groupID, contentType, memoryKind string, occurredAt time.Time) {
-		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID(kind + ":" + resourceID + ":" + action), SourceCursor: "fixture", IngestVersion: version, ObservedAt: occurredAt.Add(2 * time.Second), SchemaVersion: 1}
-		batch.Lifecycle = append(batch.Lifecycle, clickhouseprocessor.LifecycleRow{Common: common, OccurredAt: occurredAt, ResourceKind: kind, AnalyticsResourceID: resourceID, Action: action, Change: action, ConversationID: conversationID, ConversationGroupID: groupID, ContentType: contentType, MemoryKind: memoryKind, SnapshotAvailable: action != "deleted", SummaryJSON: "{}"})
+		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID(kind + ":" + resourceID + ":" + action), SourceCursor: "fixture", IngestVersion: version, ObservedAt: occurredAt.Add(2 * time.Second)}
+		batch.Lifecycle = append(batch.Lifecycle, clickhouseprocessor.LifecycleRow{Common: common, OccurredAt: occurredAt, ResourceKind: kind, AnalyticsResourceID: resourceID, Action: action, Change: action, ConversationID: conversationID, ConversationGroupID: groupID, ContentType: contentType, MemoryKind: memoryKind, SnapshotAvailable: action != "deleted"})
 	}
 	for _, conversation := range fixture.Conversations {
 		createdAt, err := relativeTime(anchor, conversation.CreatedAgo)
 		if err != nil {
 			return batch, err
 		}
-		groupID := "group-" + conversation.ID
-		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("conversation:" + conversation.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: createdAt.Add(2 * time.Second), SchemaVersion: 1}
-		batch.Resources = append(batch.Resources, clickhouseprocessor.ResourceRow{Common: common, ResourceID: conversation.ID, ConversationID: conversation.ID, ConversationGroupID: groupID, ResourceType: "conversation", CreatedAt: createdAt, UpdatedAt: createdAt, IsArchived: conversation.Archived, PayloadJSON: "{}"})
+		groupID := uuid.NewSHA1(uuid.Nil, []byte(conversation.ID)).String()
+		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("conversation:" + conversation.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: createdAt.Add(2 * time.Second)}
+		record := map[string]any{"id": conversation.ID, "ownerUserId": "fixture-owner", "clientId": "fixture-client", "conversationGroupId": groupID, "createdAt": createdAt.Format(time.RFC3339Nano), "updatedAt": createdAt.Format(time.RFC3339Nano), "archived": conversation.Archived}
+		projected, err := fixtureProjectionRows(ctx, projections, "conversation", "", clickhouseprocessor.ProjectionRow{Common: common, ResourceID: conversation.ID, ConversationID: conversation.ID, ConversationGroupID: groupID}, record)
+		if err != nil {
+			return batch, err
+		}
+		batch.Projections = append(batch.Projections, projected...)
 		addLifecycle("conversation", conversation.ID, "created", conversation.ID, groupID, "", "", createdAt)
 		for _, entry := range conversation.Entries {
 			entryAt, err := relativeTime(anchor, entry.CreatedAgo)
 			if err != nil {
 				return batch, err
 			}
-			entryCommon := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("entry:" + entry.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: entryAt.Add(2 * time.Second), SchemaVersion: 1}
-			batch.Resources = append(batch.Resources, clickhouseprocessor.ResourceRow{Common: entryCommon, ResourceID: entry.ID, ConversationID: conversation.ID, ConversationGroupID: groupID, ResourceType: "entry", CreatedAt: entryAt, UpdatedAt: entryAt, PayloadJSON: "{}"})
+			entryCommon := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("entry:" + entry.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: entryAt.Add(2 * time.Second)}
 			addLifecycle("entry", entry.ID, "created", conversation.ID, groupID, entry.ContentType, "", entryAt)
 			content := make([]any, len(entry.Content))
 			for i, block := range entry.Content {
 				content[i] = block
 			}
-			input := map[string]any{"resource": "entry", "contentType": entry.ContentType, "channel": "HISTORY", "content": content}
+			input := map[string]any{"resource": "entry", "contentType": entry.ContentType, "channel": "HISTORY", "content": content, "id": entry.ID, "conversationId": conversation.ID, "conversationGroupId": groupID, "createdAt": entryAt.Format(time.RFC3339Nano)}
 			base := clickhouseprocessor.ProjectionRow{Common: entryCommon, ResourceID: entry.ID, ConversationID: conversation.ID, ConversationGroupID: groupID}
 			rows, err := fixtureProjectionRows(ctx, projections, "entry", entry.ContentType, base, input)
 			if err != nil {
@@ -242,10 +246,9 @@ func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections *cl
 		if err != nil {
 			return batch, err
 		}
-		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("memory:" + memory.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: createdAt.Add(2 * time.Second), SchemaVersion: 1}
-		batch.Resources = append(batch.Resources, clickhouseprocessor.ResourceRow{Common: common, ResourceID: memory.ID, ResourceType: "memory", CreatedAt: createdAt, UpdatedAt: createdAt, PayloadJSON: "{}"})
+		common := clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: fixtureID("memory:" + memory.ID), SourceCursor: "fixture", IngestVersion: version, ObservedAt: createdAt.Add(2 * time.Second)}
 		addLifecycle("memory", memory.ID, "created", "", "", "", memory.Kind, createdAt)
-		input := map[string]any{"resource": "memory", "kind": memory.Kind, "value": memory.Value, "attributes": memory.Attributes}
+		input := map[string]any{"resource": "memory", "kind": memory.Kind, "value": memory.Value, "attributes": memory.Attributes, "id": memory.ID, "namespace": []any{}, "key": memory.ID, "revision": int64(1), "createdAt": createdAt.Format(time.RFC3339Nano), "archived": false}
 		rows, err := fixtureProjectionRows(ctx, projections, "memory", memory.Kind, clickhouseprocessor.ProjectionRow{Common: common, ResourceID: memory.ID}, input)
 		if err != nil {
 			return batch, fmt.Errorf("project fixture memory %s: %w", memory.ID, err)
@@ -264,7 +267,7 @@ func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections *cl
 		if err != nil {
 			return batch, err
 		}
-		batch.ProjectionFailures = append(batch.ProjectionFailures, clickhouseprocessor.ProjectionFailureRow{ExporterID: exporterID, BatchID: batchID, EventID: failure.EventID, AnalyticsResourceID: "fixture-resource", ProjectionName: failure.ProjectionName, ErrorCode: failure.ErrorCode, AttemptCount: failure.AttemptCount, FirstSeenAt: lastSeenAt, LastSeenAt: lastSeenAt, Version: version})
+		batch.ProjectionFailures = append(batch.ProjectionFailures, clickhouseprocessor.ProjectionFailureRow{Common: clickhouseprocessor.Common{ExporterID: exporterID, BatchID: batchID, EventID: failure.EventID, IngestVersion: version, ObservedAt: lastSeenAt}, ResourceKind: "entry", AnalyticsResourceID: "fixture-resource", ProjectionName: failure.ProjectionName, ErrorCode: failure.ErrorCode, AttemptCount: failure.AttemptCount, FirstSeenAt: lastSeenAt, LastSeenAt: lastSeenAt})
 	}
 	return batch, nil
 }
@@ -274,7 +277,7 @@ func fixtureBatch(ctx context.Context, fixture analyticsFixture, projections *cl
 func fixtureProjectionRows(ctx context.Context, projections *clickhouseprocessor.ProjectionSet, resource, selector string, base clickhouseprocessor.ProjectionRow, input map[string]any) ([]clickhouseprocessor.ProjectionRow, error) {
 	var result []clickhouseprocessor.ProjectionRow
 	for _, projection := range projections.Match(resource, selector) {
-		rows, code := projection.Rows(ctx, base, input)
+		rows, code := projection.Rows(ctx, base, map[string]any{"resource": resource, "record": input})
 		if code != "" {
 			return nil, fmt.Errorf("projection %s failed with %s", projection.Name, code)
 		}

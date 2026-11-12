@@ -356,6 +356,7 @@ func inEpisodicWrite(ctx context.Context, store registryepisodic.EpisodicStore, 
 // --- System Service ---
 
 type SystemServer struct {
+	Store registrystore.MemoryStore
 	pb.UnimplementedSystemServiceServer
 	Config *config.Config
 }
@@ -376,7 +377,7 @@ func (s *SystemServer) GetCapabilities(ctx context.Context, _ *emptypb.Empty) (*
 	if err := requireGRPCOIDCScope(ctx, security.PermissionSystemRead); err != nil {
 		return nil, err
 	}
-	return mapCapabilitiesSummary(servicecapabilities.Build(s.Config)), nil
+	return mapCapabilitiesSummary(servicecapabilities.Build(s.Config, s.Store)), nil
 }
 
 func hasCapabilitiesAccessGRPC(ctx context.Context) bool {
@@ -403,6 +404,7 @@ func mapCapabilitiesSummary(summary servicecapabilities.Summary) *pb.Capabilitie
 		},
 		Features: &pb.CapabilitiesFeatures{
 			OutboxEnabled:                     summary.Features.OutboxEnabled,
+			AnalyticsMembershipSnapshots:      summary.Features.AnalyticsMembershipSnapshots,
 			SemanticSearchEnabled:             summary.Features.SemanticSearchEnabled,
 			FulltextSearchEnabled:             summary.Features.FulltextSearchEnabled,
 			CorsEnabled:                       summary.Features.CorsEnabled,
@@ -2726,7 +2728,7 @@ func (s *MembershipsServer) ShareConversation(ctx context.Context, req *pb.Share
 		if err != nil {
 			return nil, err
 		}
-		if s.EventBus != nil && membership != nil {
+		if membership != nil {
 			events := []registryeventbus.Event{{
 				Event: "created",
 				Kind:  "membership",
@@ -2780,7 +2782,7 @@ func (s *MembershipsServer) UpdateMembership(ctx context.Context, req *pb.Update
 		if err != nil {
 			return nil, err
 		}
-		if s.EventBus != nil && membership != nil {
+		if membership != nil {
 			events := []registryeventbus.Event{{
 				Event: "updated",
 				Kind:  "membership",
@@ -2836,7 +2838,7 @@ func (s *MembershipsServer) DeleteMembership(ctx context.Context, req *pb.Delete
 		if err := s.Store.DeleteMembership(txCtx, userID, convID, req.GetMemberUserId()); err != nil {
 			return err
 		}
-		if s.EventBus != nil {
+		{
 			events := []registryeventbus.Event{{
 				Event: "deleted",
 				Kind:  "membership",
@@ -7156,6 +7158,13 @@ func (s *EventStreamServer) SubscribeEvents(req *pb.SubscribeEventsRequest, stre
 		return status.Error(codes.InvalidArgument, "initial_state must be one of: none, current")
 	}
 	adminScope := req.GetScope() == pb.EventScope_EVENT_SCOPE_ADMIN
+	if adminScope && detail == "full" && len(req.GetConversationIds()) > 0 {
+		for _, kind := range req.GetKinds() {
+			if kind == "membership" {
+				return status.Error(codes.InvalidArgument, "full membership events cannot be filtered by conversation_ids")
+			}
+		}
+	}
 	switch req.GetScope() {
 	case pb.EventScope_EVENT_SCOPE_UNSPECIFIED, pb.EventScope_EVENT_SCOPE_AUTHORIZED, pb.EventScope_EVENT_SCOPE_ADMIN:
 	default:
@@ -7894,7 +7903,10 @@ func (s *EventStreamServer) enrichGRPCEvent(ctx context.Context, userID string, 
 }
 
 func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
-	if detail != "full" || event.Kind == "stream" {
+	if change := eventstream.EventChange(event.Data); change != "" {
+		event.Change = change
+	}
+	if detail != "full" || event.Kind == "stream" || event.Event == "deleted" || eventstream.EventChange(event.Data) == "hard_deleted" || eventstream.EventChange(event.Data) == "evicted" {
 		return event, true, nil
 	}
 	data, ok := decodeGRPCEventData(event.Data)
@@ -7903,6 +7915,8 @@ func (s *EventStreamServer) enrichGRPCAdminEvent(ctx context.Context, detail str
 	}
 	event.Change = eventstream.EventChange(event.Data)
 	switch event.Kind {
+	case "membership":
+		return eventstream.EnrichAdminMembership(ctx, s.Store, event)
 	case "conversation":
 		conversationID, ok := decodeGRPCConversationIDField(data, "conversation")
 		if !ok {

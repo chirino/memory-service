@@ -3,6 +3,7 @@ package eventstream
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"testing"
 	"time"
 
@@ -45,10 +46,50 @@ func TestStreamAdminCurrentStateEmitsAdminResources(t *testing.T) {
 	require.Equal(t, "profile/v1", events[2].Data.(map[string]any)["kind"])
 }
 
+type pagedMembershipStore struct {
+	currentStateMemoryStore
+	calls int
+}
+
+func (s *pagedMembershipStore) AdminListEventSnapshotMemberships(_ context.Context, after *registrystore.EventSnapshotMembershipCursor, limit int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	s.calls++
+	start := 0
+	if after != nil {
+		for start < len(s.memberships) && s.memberships[start].UserID <= after.UserID {
+			start++
+		}
+	}
+	end := min(start+limit, len(s.memberships))
+	if end == len(s.memberships) {
+		return s.memberships[start:end], nil, nil
+	}
+	last := s.memberships[end-1]
+	return s.memberships[start:end], &registrystore.EventSnapshotMembershipCursor{GroupID: last.ConversationGroupID.String(), UserID: last.UserID}, nil
+}
+
+func TestMembershipCurrentStateTraversesMultiplePages(t *testing.T) {
+	s := &pagedMembershipStore{}
+	group := uuid.New()
+	for i := range currentStatePageSize*2 + 1 {
+		s.memberships = append(s.memberships, model.ConversationMembership{ConversationGroupID: group, UserID: fmt.Sprintf("member-%04d", i), AccessLevel: model.AccessLevelReader, CreatedAt: time.Now().UTC()})
+	}
+	seen := map[string]bool{}
+	err := StreamAdminCurrentState(context.Background(), s, nil, map[string]bool{"membership": true}, nil, NewEntryEventFilter(nil, nil, nil), func(e registryeventbus.Event) error {
+		id := e.Data.(map[string]any)["id"].(string)
+		require.False(t, seen[id])
+		seen[id] = true
+		return nil
+	})
+	require.NoError(t, err)
+	require.Len(t, seen, currentStatePageSize*2+1)
+	require.Equal(t, 3, s.calls)
+}
+
 type currentStateMemoryStore struct {
 	registrystore.MemoryStore
 	conversations []registrystore.ConversationSummary
 	entries       []model.Entry
+	memberships   []model.ConversationMembership
 }
 
 func (s *currentStateMemoryStore) InReadTx(ctx context.Context, fn func(context.Context) error) error {
@@ -74,4 +115,35 @@ func (s *currentStateEpisodicStore) InReadTx(ctx context.Context, fn func(contex
 
 func (s *currentStateEpisodicStore) AdminListEventSnapshotMemories(context.Context, registryepisodic.AdminMemoryQuery) (registryepisodic.AdminMemoryPage, error) {
 	return registryepisodic.AdminMemoryPage{Items: s.items}, nil
+}
+
+func (s *currentStateMemoryStore) SupportsAnalyticsMembershipSnapshots() bool { return true }
+func (s *currentStateMemoryStore) AdminListEventSnapshotMemberships(context.Context, *registrystore.EventSnapshotMembershipCursor, int) ([]model.ConversationMembership, *registrystore.EventSnapshotMembershipCursor, error) {
+	return s.memberships, nil, nil
+}
+func (s *currentStateMemoryStore) AdminGetEventSnapshotMembership(context.Context, string, string) (*model.ConversationMembership, error) {
+	return nil, nil
+}
+
+func TestMembershipCurrentStateAndConversationFiltering(t *testing.T) {
+	group := uuid.New()
+	store := &currentStateMemoryStore{memberships: []model.ConversationMembership{{ConversationGroupID: group, UserID: "owner/é", AccessLevel: model.AccessLevelOwner, CreatedAt: time.Now().UTC()}}}
+	for _, filtered := range []bool{false, true} {
+		var conversationIDs map[string]bool
+		if filtered {
+			conversationIDs = map[string]bool{"conversation": true}
+		}
+		var events []registryeventbus.Event
+		err := StreamAdminCurrentState(context.Background(), store, nil, map[string]bool{"membership": true}, conversationIDs, NewEntryEventFilter(nil, nil, nil), func(event registryeventbus.Event) error { events = append(events, event); return nil })
+		require.NoError(t, err)
+		if filtered {
+			require.Empty(t, events)
+		} else {
+			require.Len(t, events, 1)
+			record := events[0].Data.(map[string]any)
+			require.Equal(t, model.MembershipResourceID(group, "owner/é"), record["id"])
+			require.Equal(t, group.String(), record["conversationGroupId"])
+			require.NotContains(t, record, "conversationId")
+		}
+	}
 }

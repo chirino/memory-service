@@ -4,9 +4,11 @@ import (
 	"context"
 	"crypto/sha256"
 	"crypto/tls"
+	"database/sql"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -32,6 +34,8 @@ type ClickHouseSink struct {
 	retentionErrors     chan error
 }
 
+var errPurgeScopeConflict = errors.New("purge identity has conflicting immutable scope")
+
 func OpenSink(ctx context.Context, cfg Config) (*ClickHouseSink, error) {
 	if err := cfg.Validate(); err != nil {
 		return nil, err
@@ -49,14 +53,19 @@ func OpenSink(ctx context.Context, cfg Config) (*ClickHouseSink, error) {
 		protocol = ch.HTTP
 	}
 	options := &ch.Options{
-		Protocol:    protocol,
-		Addr:        append([]string(nil), cfg.Addresses...),
-		Auth:        ch.Auth{Database: cfg.Database, Username: cfg.Username, Password: password},
+		Protocol: protocol,
+		Addr:     append([]string(nil), cfg.Addresses...),
+		// Owned SQL is qualified, so startup can claim a database that does not exist yet.
+		Auth:        ch.Auth{Username: cfg.Username, Password: password},
 		TLS:         cloneTLS(tlsConfig),
 		DialTimeout: 10 * time.Second,
 		ReadTimeout: 30 * time.Second,
 		Settings:    ch.Settings{"async_insert": 0},
 		Compression: &ch.Compression{Method: ch.CompressionLZ4},
+	}
+	projections, err := LoadProjectionSet(ctx, cfg.ProjectionPaths)
+	if err != nil {
+		return nil, err
 	}
 	conn, err := ch.Open(options)
 	if err != nil {
@@ -65,11 +74,6 @@ func OpenSink(ctx context.Context, cfg Config) (*ClickHouseSink, error) {
 	if err := conn.Ping(ctx); err != nil {
 		_ = conn.Close()
 		return nil, fmt.Errorf("ping ClickHouse: %w", err)
-	}
-	projections, err := LoadProjectionSet(ctx, cfg.ProjectionPaths)
-	if err != nil {
-		_ = conn.Close()
-		return nil, err
 	}
 	sink := &ClickHouseSink{conn: conn, database: cfg.Database, projections: projections.Items, projectionTables: projections.Tables, config: cfg, retentionOwner: uuid.NewString(), retentionErrors: make(chan error, 1)}
 	if err := sink.EnsureSchema(ctx, cfg.SchemaMode); err != nil {
@@ -98,444 +102,323 @@ func cloneTLS(value *tls.Config) *tls.Config {
 	return value.Clone()
 }
 
+// EnsureSchema claims only an empty database or validates this exact current baseline.
 func (s *ClickHouseSink) EnsureSchema(ctx context.Context, mode string) error {
-	if s == nil || s.conn == nil {
-		return errors.New("ClickHouse connection is required")
-	}
 	statements := schemaStatements(s.database)
-	checksum := sha256.Sum256([]byte(fmt.Sprint(statements[2:], deletionFenceMaterializedViewStatement(s.database))))
-	expectedChecksum := hex.EncodeToString(checksum[:])
-	if mode == "validate" {
-		for _, table := range []string{"schema_versions", "lifecycle_events", "resources", "deletion_fences", "deletion_fence_writer", "conversations", "conversation_lineage", "entries", "memories", "projection_registry", "retention_policy", "projection_failures", "purge_subjects", "purge_queue"} {
-			var count uint64
-			if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database=? AND name=?", s.database, table).Scan(&count); err != nil {
-				return fmt.Errorf("validate ClickHouse table %s: %w", table, err)
+	sum := sha256.Sum256([]byte(strings.Join(statements[1:], "\n")))
+	expected := hex.EncodeToString(sum[:])
+	var tables, registry uint64
+	if err := s.conn.QueryRow(ctx, "SELECT count(),countIf(name='schema_versions') FROM system.tables WHERE database=?", s.database).Scan(&tables, &registry); err != nil {
+		return err
+	}
+	if registry == 0 {
+		if mode == "validate" || tables != 0 {
+			return errors.New("incompatible or unowned analytics database; use an empty dedicated database and fresh checkpoint")
+		}
+		for _, statement := range statements[:2] {
+			if err := s.conn.Exec(ctx, statement); err != nil {
+				return fmt.Errorf("initialize analytics schema: %w", err)
 			}
-			if count != 1 {
-				return fmt.Errorf("required ClickHouse table %s.%s is missing", s.database, table)
-			}
 		}
-		return s.validateSchemaVersion(ctx, expectedChecksum)
-	}
-	for _, statement := range statements[:2] {
-		if err := s.conn.Exec(ctx, statement); err != nil {
-			return fmt.Errorf("apply ClickHouse schema: %w", err)
+		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.schema_versions (component,checksum,applied_at) VALUES (?,?,?)", quoteIdentifier(s.database)), "clickhouse-export", expected, time.Now().UTC()); err != nil {
+			return err
 		}
 	}
-	var existing, other uint64
-	query := fmt.Sprintf("SELECT countIf(schema_version=?), countIf(schema_version!=?) FROM `%s`.schema_versions WHERE component=?", s.database)
-	if err := s.conn.QueryRow(ctx, query, uint16(schemaVersion), uint16(schemaVersion), "clickhouse-export").Scan(&existing, &other); err != nil {
-		return fmt.Errorf("read ClickHouse schema state: %w", err)
+	var fields string
+	if err := s.conn.QueryRow(ctx, "SELECT arrayStringConcat(arraySort(groupArray(name)),',') FROM system.columns WHERE database=? AND table='schema_versions'", s.database).Scan(&fields); err != nil {
+		return err
 	}
-	if other > 0 {
-		return fmt.Errorf("unsupported prerelease ClickHouse schema detected; reset database %s before starting the exporter", s.database)
+	if fields != "applied_at,checksum,component" {
+		return errors.New("incompatible analytics schema registry; use a fresh database and checkpoint")
 	}
-	for _, statement := range statements[2:] {
-		if err := s.conn.Exec(ctx, statement); err != nil {
-			return fmt.Errorf("apply ClickHouse schema: %w", err)
-		}
-	}
-	if err := s.conn.Exec(ctx, deletionFenceMaterializedViewStatement(s.database)); err != nil {
-		return fmt.Errorf("create ClickHouse deletion fence writer: %w", err)
-	}
-	if existing == 0 {
-		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO `%s`.schema_versions VALUES (?, ?, ?, ?)", s.database), "clickhouse-export", uint16(schemaVersion), expectedChecksum, time.Now().UTC()); err != nil {
-			return fmt.Errorf("record ClickHouse schema version: %w", err)
-		}
-	}
-	return s.validateSchemaVersion(ctx, expectedChecksum)
-}
-
-func (s *ClickHouseSink) validateSchemaVersion(ctx context.Context, expectedChecksum string) error {
-	var count, distinct uint64
+	var count, distinct, other uint64
 	var checksum string
-	err := s.conn.QueryRow(ctx, fmt.Sprintf(`SELECT count(), uniqExact(checksum), any(checksum)
-		FROM %s.schema_versions WHERE component=? AND schema_version=?`, "`"+s.database+"`"), "clickhouse-export", uint16(schemaVersion)).Scan(&count, &distinct, &checksum)
-	if err != nil {
-		return fmt.Errorf("validate ClickHouse schema version: %w", err)
+	if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(),uniqExact(checksum),any(checksum),countIf(component!='clickhouse-export') FROM %s.schema_versions", quoteIdentifier(s.database))).Scan(&count, &distinct, &checksum, &other); err != nil {
+		return err
 	}
-	if count == 0 {
-		return fmt.Errorf("required ClickHouse schema version %d is missing", schemaVersion)
+	if count == 0 && mode != "validate" && tables == 1 {
+		// A crash may leave only our exact, empty registry before its claim was
+		// inserted. Validate its physical definition before finishing that claim.
+		if err := s.validateInfrastructure(ctx, true); err != nil {
+			return err
+		}
+		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.schema_versions (component,checksum,applied_at) VALUES (?,?,?)", quoteIdentifier(s.database)), "clickhouse-export", expected, time.Now().UTC()); err != nil {
+			return err
+		}
+		count, distinct, checksum = 1, 1, expected
 	}
-	if distinct != 1 || checksum != expectedChecksum {
-		return fmt.Errorf("ClickHouse schema version %d checksum mismatch", schemaVersion)
+	if count == 0 || distinct != 1 || other != 0 || checksum != expected {
+		return errors.New("incompatible analytics schema checksum; use a fresh database and checkpoint")
+	}
+	if err := s.validateInfrastructure(ctx, mode != "validate"); err != nil {
+		return err
+	}
+	if mode != "validate" {
+		for _, statement := range statements[2:] {
+			if err := s.conn.Exec(ctx, statement); err != nil {
+				return fmt.Errorf("initialize analytics object: %w", err)
+			}
+		}
+	}
+	for _, name := range []string{"lifecycle_events", "deletion_fences", "projection_registry", "retention_policy", "projection_failures", "purge_queue", "conversation_memberships", "lifecycle_events_current", "conversation_memberships_current"} {
+		var count uint64
+		if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.tables WHERE database=? AND name=?", s.database, name).Scan(&count); err != nil {
+			return err
+		}
+		if count != 1 {
+			return fmt.Errorf("required analytics relation %s is missing; initialize in manage mode", name)
+		}
 	}
 	return nil
 }
 
+func (s *ClickHouseSink) ResolvePurge(ctx context.Context, purge PurgeRow) (PurgeRow, error) {
+	if err := validatePurge(purge); err != nil {
+		return purge, err
+	}
+	prior := purge
+	err := s.conn.QueryRow(ctx, fmt.Sprintf(`SELECT resource_kind,analytics_resource_id,conversation_id,conversation_group_id,purge_scope,cutoff_ingest_version,requested_at FROM %s.purge_queue FINAL WHERE exporter_id=? AND purge_id=?`, quoteIdentifier(s.database)), purge.ExporterID, purge.PurgeID).Scan(&prior.ResourceKind, &prior.AnalyticsResourceID, &prior.ConversationID, &prior.ConversationGroupID, &prior.Scope, &prior.CutoffIngestVersion, &prior.RequestedAt)
+	if errors.Is(err, sql.ErrNoRows) {
+		return purge, nil
+	}
+	if err != nil {
+		return purge, err
+	}
+	if prior.ResourceKind != purge.ResourceKind || prior.AnalyticsResourceID != purge.AnalyticsResourceID || prior.ConversationID != purge.ConversationID || prior.ConversationGroupID != purge.ConversationGroupID || prior.Scope != purge.Scope {
+		return purge, errPurgeScopeConflict
+	}
+	if err := validatePurge(prior); err != nil {
+		return prior, fmt.Errorf("%w: invalid persisted purge", errPurgeScopeConflict)
+	}
+	return prior, nil
+}
+func validatePurge(p PurgeRow) error {
+	if p.ExporterID == "" || p.PurgeID == "" || p.AnalyticsResourceID == "" || p.CutoffIngestVersion == 0 {
+		return errors.New("invalid purge identity or cutoff")
+	}
+	if p.ResourceKind != "conversation" && p.ResourceKind != "entry" && p.ResourceKind != "memory" && p.ResourceKind != "membership" {
+		return errors.New("invalid purge resource kind")
+	}
+	switch p.Scope {
+	case purgeResource:
+	case purgeGroup:
+		group, err := uuid.Parse(p.ConversationGroupID)
+		if p.ResourceKind != "conversation" || err != nil || group == uuid.Nil {
+			return errors.New("invalid group purge scope")
+		}
+	default:
+		return errors.New("invalid purge scope")
+	}
+	return nil
+}
+func commonValues(c Common) []any {
+	return []any{c.ExporterID, c.BatchID, c.EventID, c.SourceCursor, c.IngestVersion, c.ObservedAt}
+}
+
+const commonInsertColumns = "exporter_id,batch_id,event_id,source_cursor,ingest_version,observed_at"
+
+func (s *ClickHouseSink) sendRows(ctx context.Context, token, table, columns string, rows [][]any) error {
+	if len(rows) == 0 {
+		return nil
+	}
+	insert, err := s.conn.PrepareBatch(insertContext(ctx, token), fmt.Sprintf("INSERT INTO %s.%s (%s)", quoteIdentifier(s.database), quoteIdentifier(table), columns))
+	if err != nil {
+		return fmt.Errorf("prepare analytics batch: %w", err)
+	}
+	defer insert.Close()
+	for _, row := range rows {
+		if err := insert.Append(row...); err != nil {
+			return fmt.Errorf("append analytics row: %w", err)
+		}
+	}
+	return insert.Send()
+}
 func (s *ClickHouseSink) WriteBatch(ctx context.Context, batch Batch) error {
 	if err := s.retentionOwnershipError(); err != nil {
 		return err
 	}
-	if len(batch.Lifecycle) == 0 && len(batch.Resources) == 0 && len(batch.Projections) == 0 && len(batch.ProjectionFailures) == 0 && len(batch.Purges) == 0 {
+	if batchRowCount(&batch) == 0 {
 		return nil
 	}
 	if err := s.renewRetentionOwnership(ctx); err != nil {
 		return err
 	}
-	if len(batch.Lifecycle) > 0 {
-		settingsCtx := insertContext(ctx, batch.ID+":lifecycle:v1")
-		insert, err := s.conn.PrepareBatch(settingsCtx, fmt.Sprintf("INSERT INTO `%s`.lifecycle_events", s.database))
-		if err != nil {
-			return fmt.Errorf("prepare lifecycle batch: %w", err)
-		}
-		defer insert.Close()
-		for _, row := range batch.Lifecycle {
-			c := row.Common
-			if err := insert.Append(c.ExporterID, c.BatchID, c.EventID, c.SourceCursor, c.IngestVersion, c.ObservedAt, c.SchemaVersion, row.OccurredAt, row.ResourceKind, row.AnalyticsResourceID, row.Action, row.Change, row.ConversationID, row.ConversationGroupID, row.ContentType, row.MemoryKind, boolByte(row.SnapshotAvailable), row.SummaryJSON); err != nil {
-				return err
-			}
-		}
-		if err := insert.Send(); err != nil {
-			return fmt.Errorf("send lifecycle batch: %w", err)
-		}
-	}
-	if len(batch.Resources) > 0 {
-		if err := s.writeResourceTable(ctx, batch, "resources", batch.Resources); err != nil {
+	for _, purge := range batch.Purges {
+		if err := s.writePurge(ctx, purge, false); err != nil {
 			return err
 		}
-		if err := s.writeDeletionFences(ctx, batch); err != nil {
-			return err
-		}
-		for _, target := range []struct{ resourceType, table string }{
-			{"conversation", "conversations"},
-			{"lineage", "conversation_lineage"},
-			{"entry", "entries"},
-			{"memory", "memories"},
-		} {
-			rows := make([]ResourceRow, 0)
-			for _, row := range batch.Resources {
-				if row.ResourceType == target.resourceType {
-					rows = append(rows, row)
-				}
-			}
-			if len(rows) > 0 {
-				if err := s.writeResourceTable(ctx, batch, target.table, rows); err != nil {
-					return err
-				}
-			}
-		}
 	}
-	if len(batch.Purges) > 0 && s.config.PurgeMode != PurgeExternal {
-		settingsCtx := insertContext(ctx, batch.ID+":purges:v1")
-		insert, err := s.conn.PrepareBatch(settingsCtx, fmt.Sprintf("INSERT INTO `%s`.purge_queue", s.database))
-		if err != nil {
-			return fmt.Errorf("prepare purge batch: %w", err)
-		}
-		defer insert.Close()
-		for _, row := range batch.Purges {
-			if err := insert.Append(row.ExporterID, row.BatchID, row.PurgeID, row.EventID, row.ResourceKind, row.AnalyticsResourceID, row.RequestedAt, nil, "pending", "", uint64(1)); err != nil {
-				return err
-			}
-		}
-		if err := insert.Send(); err != nil {
-			return fmt.Errorf("send purge batch: %w", err)
-		}
+	rows := make([][]any, 0, len(batch.Fences))
+	for _, row := range batch.Fences {
+		rows = append(rows, append(commonValues(row.Common), row.ResourceKind, row.ResourceID, row.ConversationID, row.ConversationGroupID))
+	}
+	if err := s.sendRows(ctx, batch.ID+":fences", "deletion_fences", commonInsertColumns+",resource_kind,resource_id,conversation_id,conversation_group_id", rows); err != nil {
+		return err
+	}
+	rows = nil
+	for _, row := range batch.Lifecycle {
+		rows = append(rows, append(commonValues(row.Common), row.OccurredAt, row.ResourceKind, row.AnalyticsResourceID, row.Action, row.Change, row.ConversationID, row.ConversationGroupID, row.ContentType, row.MemoryKind, boolByte(row.SnapshotAvailable)))
+	}
+	if err := s.sendRows(ctx, batch.ID+":lifecycle", "lifecycle_events", commonInsertColumns+",occurred_at,resource_kind,analytics_resource_id,action,change,conversation_id,conversation_group_id,content_type,memory_kind,snapshot_available", rows); err != nil {
+		return err
+	}
+	rows = nil
+	for _, row := range batch.Memberships {
+		rows = append(rows, append(commonValues(row.Common), row.ResourceID, row.ConversationGroupID, row.UserID, row.AccessLevel, row.CreatedAt, boolByte(row.IsDeleted)))
+	}
+	if err := s.sendRows(ctx, batch.ID+":memberships", "conversation_memberships", commonInsertColumns+",resource_id,conversation_group_id,user_id,access_level,created_at,is_deleted", rows); err != nil {
+		return err
 	}
 	if err := s.writeProjectionRows(ctx, batch); err != nil {
 		return err
 	}
-	if len(batch.ProjectionFailures) > 0 {
-		insert, err := s.conn.PrepareBatch(insertContext(ctx, batch.ID+":projection-failures:v1"), fmt.Sprintf("INSERT INTO `%s`.projection_failures (exporter_id, batch_id, event_id, analytics_resource_id, conversation_id, conversation_group_id, projection_name, error_code, attempt_count, first_seen_at, last_seen_at, version)", s.database))
-		if err != nil {
-			return fmt.Errorf("prepare projection failure batch: %w", err)
-		}
-		defer insert.Close()
-		for _, row := range batch.ProjectionFailures {
-			if err := insert.Append(row.ExporterID, row.BatchID, row.EventID, row.AnalyticsResourceID, row.ConversationID, row.ConversationGroupID, row.ProjectionName, row.ErrorCode, row.AttemptCount, row.FirstSeenAt, row.LastSeenAt, row.Version); err != nil {
-				return err
-			}
-		}
-		if err := insert.Send(); err != nil {
-			return fmt.Errorf("send projection failure batch: %w", err)
-		}
+	rows = nil
+	for _, row := range batch.ProjectionFailures {
+		rows = append(rows, append(commonValues(row.Common), row.ResourceKind, row.AnalyticsResourceID, row.ConversationID, row.ConversationGroupID, row.ProjectionName, row.ErrorCode, row.AttemptCount, row.FirstSeenAt, row.LastSeenAt))
 	}
-	if len(batch.Purges) > 0 && s.config.PurgeMode == PurgeManaged {
-		if err := s.processPurges(ctx, batch); err != nil {
-			return err
-		}
+	if err := s.sendRows(ctx, batch.ID+":failures", "projection_failures", commonInsertColumns+",resource_kind,analytics_resource_id,conversation_id,conversation_group_id,projection_name,error_code,attempt_count,first_seen_at,last_seen_at", rows); err != nil {
+		return err
+	}
+	if s.config.PurgeMode == PurgeManaged {
+		return s.processPurges(ctx, batch)
 	}
 	return nil
 }
 
-func (s *ClickHouseSink) writeResourceTable(ctx context.Context, batch Batch, table string, rows []ResourceRow) error {
-	settingsCtx := insertContext(ctx, batch.ID+":"+table+":v1")
-	insert, err := s.conn.PrepareBatch(settingsCtx, fmt.Sprintf("INSERT INTO `%s`.%s", s.database, table))
-	if err != nil {
-		return fmt.Errorf("prepare %s batch: %w", table, err)
-	}
-	defer insert.Close()
-	for _, row := range rows {
-		c := row.Common
-		if err := insert.Append(c.ExporterID, c.BatchID, c.EventID, c.SourceCursor, c.IngestVersion, c.ObservedAt, c.SchemaVersion, row.ResourceID, row.ConversationID, row.ConversationGroupID, row.ResourceType, row.CreatedAt, row.UpdatedAt, boolByte(row.IsArchived), boolByte(row.IsDeleted), row.PayloadJSON); err != nil {
-			return err
-		}
-	}
-	if err := insert.Send(); err != nil {
-		return fmt.Errorf("send %s batch: %w", table, err)
-	}
-	return nil
-}
+const purgeInsertColumns = "exporter_id,batch_id,purge_id,event_id,resource_kind,analytics_resource_id,conversation_id,conversation_group_id,purge_scope,cutoff_ingest_version,requested_at,completed_at,status,status_code,status_version"
 
-func (s *ClickHouseSink) writeDeletionFences(ctx context.Context, batch Batch) error {
-	if deletionFenceCount(batch.Resources) == 0 {
-		return nil
+func (s *ClickHouseSink) writePurge(ctx context.Context, purge PurgeRow, complete bool) error {
+	if err := validatePurge(purge); err != nil {
+		return err
 	}
-	insert, err := s.conn.PrepareBatch(insertContext(ctx, batch.ID+":deletion-fences:v1"), fmt.Sprintf("INSERT INTO `%s`.deletion_fences (exporter_id, batch_id, event_id, resource_type, resource_id, conversation_id, conversation_group_id, ingest_version, observed_at)", s.database))
-	if err != nil {
-		return fmt.Errorf("prepare deletion fence batch: %w", err)
+	status, code, version := "pending", "", uint8(0)
+	var completed *time.Time
+	if complete {
+		status = "complete"
+		code = "mutations_complete"
+		version = 1
+		now := time.Now().UTC()
+		completed = &now
 	}
-	defer insert.Close()
-	for _, row := range batch.Resources {
-		if !row.IsDeleted {
-			continue
-		}
-		if err := insert.Append(row.ExporterID, row.BatchID, row.EventID, row.ResourceType, row.ResourceID, row.ConversationID, row.ConversationGroupID, row.IngestVersion, row.ObservedAt); err != nil {
-			return err
-		}
-	}
-	if err := insert.Send(); err != nil {
-		return fmt.Errorf("send deletion fence batch: %w", err)
-	}
-	return nil
+	row := []any{purge.ExporterID, purge.BatchID, purge.PurgeID, purge.EventID, purge.ResourceKind, purge.AnalyticsResourceID, purge.ConversationID, purge.ConversationGroupID, purge.Scope, purge.CutoffIngestVersion, purge.RequestedAt, completed, status, code, version}
+	return s.sendRows(ctx, purge.PurgeID+":"+status, "purge_queue", purgeInsertColumns, [][]any{row})
 }
-
-func deletionFenceCount(rows []ResourceRow) int {
-	count := 0
-	for _, row := range rows {
-		if row.IsDeleted {
-			count++
-		}
-	}
-	return count
-}
-
 func (s *ClickHouseSink) processPurges(ctx context.Context, batch Batch) error {
-	mutationCtx := ch.Context(ctx, ch.WithSettings(ch.Settings{"mutations_sync": 2}))
-	registeredProjections, err := s.registeredProjections(ctx)
+	projections, err := s.registeredProjections(ctx)
 	if err != nil {
-		return fmt.Errorf("load registered projections for purge: %w", err)
+		return err
 	}
+	mutationCtx := ch.Context(ctx, ch.WithSettings(ch.Settings{"mutations_sync": 2}))
 	for _, purge := range batch.Purges {
-		var priorStatus string
-		_ = s.conn.QueryRow(ctx, fmt.Sprintf("SELECT argMax(status,status_version) FROM %s.purge_queue WHERE exporter_id=? AND purge_id=?", quoteIdentifier(s.database)), purge.ExporterID, purge.PurgeID).Scan(&priorStatus)
-		if priorStatus == "ready" {
-			if err := s.completePurge(ctx, purge); err != nil {
-				return err
+		if err := validatePurge(purge); err != nil {
+			return err
+		}
+		for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
+			kindColumn, idColumn := "resource_kind", "analytics_resource_id"
+			fixedKind := ""
+			if table == "conversation_memberships" {
+				kindColumn = ""
+				idColumn = "resource_id"
+				fixedKind = "membership"
 			}
-			continue
-		}
-		subjects, err := s.loadPurgeSubjects(ctx, purge)
-		if err != nil {
-			return s.failPurge(purge, err)
-		}
-		if err := s.persistPurgeSubjects(ctx, purge, subjects); err != nil {
-			return s.failPurge(purge, fmt.Errorf("persist purge subjects: %w", err))
-		}
-		if err := s.mergePersistedPurgeSubjects(ctx, purge, subjects); err != nil {
-			return s.failPurge(purge, fmt.Errorf("load persisted purge subjects: %w", err))
-		}
-		allResourceIDs := flattenPurgeSubjects(subjects)
-		predicate, args := purgePredicate("analytics_resource_id", allResourceIDs, purge, "conversation_id", "conversation_group_id")
-		if err := s.deletePurgeRows(mutationCtx, "lifecycle_events", purge.ExporterID, predicate, args); err != nil {
-			return s.failPurge(purge, fmt.Errorf("purge lifecycle rows: %w", err))
-		}
-		for _, projection := range registeredProjections {
-			predicate, args = purgePredicate("resource_id", subjects[projection.Resource], purge, "conversation_id", "conversation_group_id")
-			if predicate == "" {
-				continue
-			}
-			if err := s.deletePurgeRows(mutationCtx, projection.TableName, purge.ExporterID, predicate, args); err != nil {
-				return s.failPurge(purge, fmt.Errorf("purge projection %s rows: %w", projection.Name, err))
+			if err := s.purgeTable(mutationCtx, table, kindColumn, idColumn, fixedKind, purge); err != nil {
+				return s.failPurge(purge, err)
 			}
 		}
-		predicate, args = purgePredicate("analytics_resource_id", allResourceIDs, purge, "conversation_id", "conversation_group_id")
-		if err := s.deletePurgeRows(mutationCtx, "projection_failures", purge.ExporterID, predicate, args); err != nil {
-			return s.failPurge(purge, fmt.Errorf("purge projection failure rows: %w", err))
-		}
-		// Delete typed and generic discovery sources only after all dependent rows.
-		for _, target := range []struct{ kind, table string }{{"conversation", "conversations"}, {"lineage", "conversation_lineage"}, {"entry", "entries"}, {"memory", "memories"}} {
-			predicate, args = purgePredicate("resource_id", subjects[target.kind], purge, "conversation_id", "conversation_group_id")
-			if predicate != "" {
-				if err := s.deletePurgeRows(mutationCtx, target.table, purge.ExporterID, predicate, args); err != nil {
-					return s.failPurge(purge, fmt.Errorf("purge %s rows: %w", target.kind, err))
-				}
+		for _, projection := range projections {
+			if err := s.purgeTable(mutationCtx, projection.TableName, "", "resource_id", projection.Resource, purge); err != nil {
+				return s.failPurge(purge, err)
 			}
-		}
-		predicate, args = purgePredicate("resource_id", allResourceIDs, purge, "conversation_id", "conversation_group_id")
-		if err := s.deletePurgeRows(mutationCtx, "resources", purge.ExporterID, predicate, args); err != nil {
-			return s.failPurge(purge, fmt.Errorf("purge resource rows: %w", err))
-		}
-		predicate, args = purgePredicate("resource_id", allResourceIDs, purge, "conversation_id", "conversation_group_id")
-		if err := s.deletePurgeRows(mutationCtx, "deletion_fences", purge.ExporterID, predicate, args); err != nil {
-			return s.failPurge(purge, fmt.Errorf("purge deletion fence: %w", err))
-		}
-		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO `%s`.purge_queue VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", s.database), purge.ExporterID, purge.BatchID, purge.PurgeID, purge.EventID, purge.ResourceKind, purge.AnalyticsResourceID, purge.RequestedAt, time.Now().UTC(), "ready", "mutations_complete", uint64(2)); err != nil {
-			return s.failPurge(purge, err)
-		}
-		if err := s.deletePurgeRows(mutationCtx, "purge_subjects", purge.ExporterID, "purge_id=?", []any{purge.PurgeID}); err != nil {
-			return s.failPurge(purge, err)
 		}
 		if err := s.completePurge(ctx, purge); err != nil {
-			return err
+			return s.failPurge(purge, err)
 		}
 	}
 	return nil
+}
+
+// HasMembershipRows reports whether an earlier membership export left rows for
+// resourceID. The processor calls it only while membership export is off.
+func (s *ClickHouseSink) HasMembershipRows(ctx context.Context, exporterID, resourceID string) (bool, error) {
+	var parts []string
+	var args []any
+	for _, table := range []string{"lifecycle_events", "projection_failures", "conversation_memberships"} {
+		identity := "resource_kind='membership' AND analytics_resource_id=?"
+		if table == "conversation_memberships" {
+			identity = "resource_id=?"
+		}
+		parts = append(parts, fmt.Sprintf("(SELECT 1 FROM %s.%s WHERE exporter_id=? AND %s LIMIT 1)", quoteIdentifier(s.database), quoteIdentifier(table), identity))
+		args = append(args, exporterID, resourceID)
+	}
+	var count uint64
+	err := s.conn.QueryRow(ctx, "SELECT count() FROM ("+strings.Join(parts, " UNION ALL ")+")", args...).Scan(&count)
+	return count > 0, err
+}
+
+// MaxIngestVersion returns the highest row version stored for exporterID across
+// every versioned table, including registered projection tables.
+func (s *ClickHouseSink) MaxIngestVersion(ctx context.Context, exporterID string) (uint64, error) {
+	projections, err := s.registeredProjections(ctx)
+	if err != nil {
+		return 0, err
+	}
+	tables := []string{"lifecycle_events", "deletion_fences", "conversation_memberships", "projection_failures"}
+	for _, projection := range projections {
+		if !slices.Contains(tables, projection.TableName) {
+			tables = append(tables, projection.TableName)
+		}
+	}
+	parts := []string{fmt.Sprintf("SELECT max(cutoff_ingest_version) AS v FROM %s.purge_queue WHERE exporter_id=?", quoteIdentifier(s.database))}
+	args := []any{exporterID}
+	for _, table := range tables {
+		parts = append(parts, fmt.Sprintf("SELECT max(ingest_version) AS v FROM %s.%s WHERE exporter_id=?", quoteIdentifier(s.database), quoteIdentifier(table)))
+		args = append(args, exporterID)
+	}
+	var version uint64
+	err = s.conn.QueryRow(ctx, "SELECT toUInt64(max(v)) FROM ("+strings.Join(parts, " UNION ALL ")+")", args...).Scan(&version)
+	return version, err
 }
 
 func (s *ClickHouseSink) completePurge(ctx context.Context, purge PurgeRow) error {
-	if err := s.conn.Exec(insertContext(ctx, purge.PurgeID+":complete:v1"), fmt.Sprintf("INSERT INTO `%s`.purge_queue VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", s.database), purge.ExporterID, purge.BatchID, purge.PurgeID, purge.EventID, purge.ResourceKind, purge.AnalyticsResourceID, purge.RequestedAt, time.Now().UTC(), "complete", "ok", uint64(3)); err != nil {
-		processorPurges.WithLabelValues(purge.ExporterID, purge.ResourceKind, "failed").Inc()
-		return fmt.Errorf("complete purge request: %w", err)
+	if err := s.writePurge(ctx, purge, true); err != nil {
+		return err
 	}
 	processorPurges.WithLabelValues(purge.ExporterID, purge.ResourceKind, "success").Inc()
 	processorPurgeDelay.WithLabelValues(purge.ExporterID, purge.ResourceKind).Set(max(0, time.Since(purge.RequestedAt).Seconds()))
 	return nil
 }
-
-func (s *ClickHouseSink) loadPurgeSubjects(ctx context.Context, purge PurgeRow) (map[string][]string, error) {
-	subjects := map[string][]string{purge.ResourceKind: {purge.AnalyticsResourceID}}
-	if purge.ResourceKind == "conversation" {
-		predicate, args := purgePredicate("resource_id", []string{purge.AnalyticsResourceID}, purge, "conversation_id", "conversation_group_id")
-		queryArgs := append([]any{purge.ExporterID}, args...)
-		rows, err := s.conn.Query(ctx, fmt.Sprintf("SELECT DISTINCT resource_type, toString(resource_id) FROM %s.resources WHERE exporter_id=? AND (%s)", quoteIdentifier(s.database), predicate), queryArgs...)
-		if err != nil {
-			return nil, fmt.Errorf("load dependent purge subjects: %w", err)
-		}
-		for rows.Next() {
-			var kind, id string
-			if err := rows.Scan(&kind, &id); err != nil {
-				_ = rows.Close()
-				return nil, err
-			}
-			subjects[kind] = append(subjects[kind], id)
-		}
-		if err := rows.Err(); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		if err := rows.Close(); err != nil {
-			return nil, err
-		}
+func (s *ClickHouseSink) purgeTable(ctx context.Context, table, kindColumn, idColumn, fixedKind string, purge PurgeRow) error {
+	predicate := ""
+	var args []any
+	// Membership identities can be granted again. Other hard-deleted identities
+	// are retired, so remove replayed rows even when a new lease gave them a
+	// version higher than the original purge's persisted cutoff.
+	if purge.ResourceKind == "membership" && purge.Scope == purgeResource {
+		predicate = "ingest_version <= ? AND "
+		args = append(args, purge.CutoffIngestVersion)
 	}
-	for kind, ids := range subjects {
-		subjects[kind] = uniqueStrings(ids)
-	}
-	return subjects, nil
-}
-
-func (s *ClickHouseSink) persistPurgeSubjects(ctx context.Context, purge PurgeRow, subjects map[string][]string) error {
-	var kinds []string
-	for kind, ids := range subjects {
-		if len(ids) > 0 {
-			kinds = append(kinds, kind)
-		}
-	}
-	if len(kinds) == 0 {
-		return nil
-	}
-	sort.Strings(kinds)
-	insert, err := s.conn.PrepareBatch(ctx, fmt.Sprintf("INSERT INTO %s.purge_subjects (exporter_id,purge_id,subject_kind,subject_id,version)", quoteIdentifier(s.database)))
-	if err != nil {
-		return err
-	}
-	defer insert.Close()
-	for _, kind := range kinds {
-		for _, id := range uniqueStrings(subjects[kind]) {
-			if err := insert.Append(purge.ExporterID, purge.PurgeID, kind, id, uint64(1)); err != nil {
-				return err
-			}
-		}
-	}
-	return insert.Send()
-}
-
-func (s *ClickHouseSink) mergePersistedPurgeSubjects(ctx context.Context, purge PurgeRow, subjects map[string][]string) error {
-	rows, err := s.conn.Query(ctx, fmt.Sprintf("SELECT subject_kind,toString(subject_id) FROM %s.purge_subjects WHERE exporter_id=? AND purge_id=?", quoteIdentifier(s.database)), purge.ExporterID, purge.PurgeID)
-	if err != nil {
-		return err
-	}
-	defer rows.Close()
-	for rows.Next() {
-		var kind, id string
-		if err := rows.Scan(&kind, &id); err != nil {
-			return err
-		}
-		subjects[kind] = append(subjects[kind], id)
-	}
-	if err := rows.Err(); err != nil {
-		return err
-	}
-	for kind, ids := range subjects {
-		subjects[kind] = uniqueStrings(ids)
-	}
-	return nil
-}
-
-func purgePredicate(idColumn string, ids []string, purge PurgeRow, conversationColumn, groupColumn string) (string, []any) {
-	predicate, args := fixedStringPredicate(idColumn, ids)
-	clauses := []string{}
-	if predicate != "" {
-		clauses = append(clauses, predicate)
-	}
-	if purge.ResourceKind == "conversation" && purge.ConversationID != "" && conversationColumn != "" {
-		clauses = append(clauses, conversationColumn+"=?")
-		args = append(args, purge.ConversationID)
-	}
-	if purge.ResourceKind == "conversation" && purge.ConversationGroupID != "" && groupColumn != "" {
-		clauses = append(clauses, groupColumn+"=?")
+	if purge.Scope == purgeGroup {
+		predicate += "conversation_group_id=?"
 		args = append(args, purge.ConversationGroupID)
-	}
-	return strings.Join(clauses, " OR "), args
-}
-
-func fixedStringPredicate(column string, ids []string) (string, []any) {
-	ids = uniqueStrings(ids)
-	if len(ids) == 0 {
-		return "", nil
-	}
-	args := make([]any, len(ids))
-	placeholders := make([]string, len(ids))
-	for i, id := range ids {
-		args[i] = id
-		placeholders[i] = "?"
-	}
-	return column + " IN (" + strings.Join(placeholders, ",") + ")", args
-}
-
-func flattenPurgeSubjects(subjects map[string][]string) []string {
-	ids := []string{}
-	for _, values := range subjects {
-		ids = append(ids, values...)
-	}
-	return uniqueStrings(ids)
-}
-
-func uniqueStrings(values []string) []string {
-	seen := map[string]struct{}{}
-	result := make([]string, 0, len(values))
-	for _, value := range values {
-		if value == "" {
-			continue
+	} else {
+		if fixedKind != "" && fixedKind != purge.ResourceKind {
+			return nil
 		}
-		if _, ok := seen[value]; ok {
-			continue
+		if kindColumn != "" {
+			predicate += kindColumn + "=? AND "
+			args = append(args, purge.ResourceKind)
 		}
-		seen[value] = struct{}{}
-		result = append(result, value)
+		predicate += idColumn + "=?"
+		args = append(args, purge.AnalyticsResourceID)
 	}
-	sort.Strings(result)
-	return result
+	return s.deletePurgeRows(ctx, table, purge.ExporterID, predicate, args)
 }
-
-func (s *ClickHouseSink) deletePurgeRows(ctx context.Context, table, exporterID, predicate string, args []any) error {
+func (s *ClickHouseSink) deletePurgeRows(ctx context.Context, table, exporter, predicate string, args []any) error {
 	if predicate == "" {
-		return nil
+		return errors.New("empty purge predicate")
 	}
-	queryArgs := append([]any{exporterID}, args...)
-	return s.conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s.%s DELETE WHERE exporter_id=? AND (%s)", quoteIdentifier(s.database), quoteIdentifier(table), predicate), queryArgs...)
+	return s.conn.Exec(ctx, fmt.Sprintf("ALTER TABLE %s.%s DELETE WHERE exporter_id=? AND (%s)", quoteIdentifier(s.database), quoteIdentifier(table), predicate), append([]any{exporter}, args...)...)
 }
-
 func (s *ClickHouseSink) failPurge(purge PurgeRow, err error) error {
 	processorPurges.WithLabelValues(purge.ExporterID, purge.ResourceKind, "failed").Inc()
 	return err
@@ -556,7 +439,7 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 		if len(rows) == 0 {
 			continue
 		}
-		columns := []string{"exporter_id", "batch_id", "event_id", "resource_id", "conversation_id", "conversation_group_id", "ingest_version", "observed_at", "is_deleted", "schema_version"}
+		columns := []string{"exporter_id", "batch_id", "event_id", "resource_id", "conversation_id", "conversation_group_id", "ingest_version", "observed_at", "is_deleted"}
 		multi := rows[0].Multi
 		if multi {
 			columns = append(columns, "row_index", "row_count")
@@ -566,7 +449,7 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 		for i, column := range columns {
 			quoted[i] = "`" + column + "`"
 		}
-		insert, err := s.conn.PrepareBatch(insertContext(ctx, batch.ID+":"+table+":v1"), fmt.Sprintf("INSERT INTO `%s`.`%s` (%s)", s.database, table, strings.Join(quoted, ",")))
+		insert, err := s.conn.PrepareBatch(insertContext(ctx, batch.ID+":"+table), fmt.Sprintf("INSERT INTO `%s`.`%s` (%s)", s.database, table, strings.Join(quoted, ",")))
 		if err != nil {
 			return fmt.Errorf("prepare projection %s batch: %w", table, err)
 		}
@@ -575,7 +458,7 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 			if row.Multi != multi {
 				return fmt.Errorf("projection %s mixes single-row and multi-row writes", table)
 			}
-			values := []any{row.ExporterID, row.BatchID, row.EventID, row.ResourceID, row.ConversationID, row.ConversationGroupID, row.IngestVersion, row.ObservedAt, boolByte(row.IsDeleted), row.SchemaVersion}
+			values := []any{row.ExporterID, row.BatchID, row.EventID, row.ResourceID, row.ConversationID, row.ConversationGroupID, row.IngestVersion, row.ObservedAt, boolByte(row.IsDeleted)}
 			if multi {
 				values = append(values, row.RowIndex, row.RowCount)
 			}
@@ -589,21 +472,6 @@ func (s *ClickHouseSink) writeProjectionRows(ctx context.Context, batch Batch) e
 		}
 	}
 	return nil
-}
-
-func resourceTableForKind(kind string) string {
-	switch kind {
-	case "conversation":
-		return "conversations"
-	case "entry":
-		return "entries"
-	case "memory":
-		return "memories"
-	case "lineage":
-		return "conversation_lineage"
-	default:
-		return ""
-	}
 }
 
 func insertContext(ctx context.Context, token string) context.Context {

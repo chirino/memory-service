@@ -432,7 +432,10 @@ func replayAdminSSEEvents(c *gin.Context, store registrystore.MemoryStore, episo
 }
 
 func enrichAdminEvent(ctx context.Context, store registrystore.MemoryStore, episodicStore registryepisodic.EpisodicStore, detail string, event registryeventbus.Event) (registryeventbus.Event, bool, error) {
-	if detail != "full" || event.Kind == "stream" {
+	if change := eventstream.EventChange(event.Data); change != "" {
+		event.Change = change
+	}
+	if detail != "full" || event.Kind == "stream" || event.Event == "deleted" || eventstream.EventChange(event.Data) == "hard_deleted" || eventstream.EventChange(event.Data) == "evicted" {
 		return event, true, nil
 	}
 	data, ok := decodeAdminEventData(event.Data)
@@ -441,6 +444,8 @@ func enrichAdminEvent(ctx context.Context, store registrystore.MemoryStore, epis
 	}
 	event.Change = eventstream.EventChange(event.Data)
 	switch event.Kind {
+	case "membership":
+		return eventstream.EnrichAdminMembership(ctx, store, event)
 	case "conversation":
 		conversationID, ok := decodeAdminConversationIDField(data, "conversation")
 		if !ok {

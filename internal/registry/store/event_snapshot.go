@@ -28,3 +28,16 @@ type EventSnapshotStore interface {
 	AdminListEventSnapshotConversations(ctx context.Context, after *EventSnapshotConversationCursor, limit int) ([]ConversationSummary, *EventSnapshotConversationCursor, error)
 	AdminListEventSnapshotEntries(ctx context.Context, after *EventSnapshotEntryCursor, limit int) ([]model.Entry, *EventSnapshotEntryCursor, error)
 }
+
+// EventSnapshotMembershipCursor orders group/user pairs without depending on mutable roles.
+type EventSnapshotMembershipCursor struct {
+	GroupID string
+	UserID  string
+}
+
+// MembershipSnapshotStore provides bounded global scans and exact admin reads.
+type MembershipSnapshotStore interface {
+	SupportsAnalyticsMembershipSnapshots() bool
+	AdminListEventSnapshotMemberships(context.Context, *EventSnapshotMembershipCursor, int) ([]model.ConversationMembership, *EventSnapshotMembershipCursor, error)
+	AdminGetEventSnapshotMembership(context.Context, string, string) (*model.ConversationMembership, error)
+}

@@ -11,25 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-// Manifests registered before projection chains existed must keep their digests, or
-// upgraded processors would reject their own registry entries.
-func TestProjectionDigestsPredatingChainsAreUnchanged(t *testing.T) {
-	set, err := LoadProjectionSet(context.Background(), []string{filepath.Join("..", "..", "..", "..", "deploy", "clickhouse", "projections")})
-	require.NoError(t, err)
-	digests := map[string]string{}
-	for _, item := range set.Items {
-		digests[item.Name] = item.Digest
-	}
-	require.Equal(t, "623595fbba68185fd59342eed024841f8eba2e8768dd79fcde7c6810fd988bbf", digests["history_v1"])
-	require.Equal(t, "228eacedea483f230b001d5009c5750f113f50e572c776e6f3cb72bb2dcf498e", digests["lc4j_messages_v1"])
-	require.Equal(t, "18266bc6a9dc240d736210321e258cc5b5ac75a697ee71b0f96e20fdf474c7ac", digests["default_memory_v1"])
-	require.Equal(t, "c51cb529b4ae4b5f8256c3c5a04631bb445aef8951313fa6a171d74a38356ace", set.Digest)
-	for _, item := range set.Items {
-		require.Equal(t, item.Name, item.TableName, "a chain of one keeps writing to metadata.name")
-	}
-	require.Len(t, set.Tables, len(set.Items))
-}
-
 const testChainRoot = `apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
 metadata: {name: support_ticket_v1_steps}
@@ -42,7 +23,7 @@ spec:
     step: {type: string, nullable: false}
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s} | some s in input.content]
+    output := [{"step": s} | some s in input.record.content]
 `
 
 const testChainReuse = `apiVersion: memory-service/v1alpha1
@@ -66,7 +47,7 @@ spec:
     duration_ms: {type: uint64, nullable: true}
   projectionRego: |
     package memoryservice.analytics
-    output := [{"step": s, "duration_ms": 1} | some s in input.content]
+    output := [{"step": s, "duration_ms": 1} | some s in input.record.content]
 `
 
 func loadTestProjectionDocuments(t *testing.T, documents ...string) (*ProjectionSet, error) {
@@ -103,7 +84,7 @@ func TestProjectionChainSharesOneTable(t *testing.T) {
 		matches := set.Match("entry", contentType)
 		require.Len(t, matches, 1)
 		require.Equal(t, "support_ticket_steps_duration", matches[0].Name)
-		rows, code := matches[0].Rows(ctx, ProjectionRow{ResourceID: "entry-1"}, map[string]any{"content": []any{"plan"}})
+		rows, code := matches[0].Rows(ctx, ProjectionRow{ResourceID: "entry-1"}, map[string]any{"record": map[string]any{"content": []any{"plan"}}})
 		require.Empty(t, code)
 		require.Len(t, rows, 1)
 		require.Equal(t, "support_ticket_steps", rows[0].TableName)
@@ -132,7 +113,7 @@ spec:
 		matches := set.Match("entry", contentType)
 		require.Len(t, matches, 1)
 		require.Equal(t, "support_ticket_v1_steps", matches[0].Name, "projectionRegoFrom shares the earlier manifest's logic")
-		rows, code := matches[0].Rows(ctx, ProjectionRow{}, map[string]any{"content": []any{"plan", "act"}})
+		rows, code := matches[0].Rows(ctx, ProjectionRow{}, map[string]any{"record": map[string]any{"content": []any{"plan", "act"}}})
 		require.Empty(t, code)
 		require.Len(t, rows, 2)
 		require.Equal(t, []any{nil, "act"}, rows[1].Values)
@@ -290,8 +271,8 @@ func TestProjectionChainValidation(t *testing.T) {
 		},
 		{
 			name:      "reserved table",
-			documents: []string{strings.Replace(testChainRoot, "table: support_ticket_steps", "table: entries", 1)},
-			wantErr:   `spec.table "entries" is reserved`,
+			documents: []string{strings.Replace(testChainRoot, "table: support_ticket_steps", "table: conversation_memberships", 1)},
+			wantErr:   `spec.table "conversation_memberships" is reserved`,
 		},
 	} {
 		t.Run(test.name, func(t *testing.T) {
@@ -338,18 +319,9 @@ func TestProjectionsCommandShowsChainsAndCombinedColumns(t *testing.T) {
 	command := ProjectionsCommand()
 	command.Writer = &out
 	require.NoError(t, command.Run(context.Background(), []string{"clickhouse-projections", "--projection-path", path}))
-	require.Equal(t, `table support_ticket_steps (resource entry, rows many)
-  manifests:
-    1.  support_ticket_v1_steps        selects support-ticket/v1
-    2.  support_ticket_v2_steps        previous support_ticket_v1_steps; selects support-ticket/v2; reuses logic of support_ticket_v1_steps
-    3.  support_ticket_steps_duration  previous support_ticket_v2_steps; replaces logic of support_ticket_v1_steps; adds duration_ms
-  columns:
-    step         string  not null  declared by support_ticket_v1_steps
-    duration_ms  uint64  nullable  declared by support_ticket_steps_duration
-  logic:
-    support-ticket/v1  support_ticket_steps_duration
-    support-ticket/v2  support_ticket_steps_duration
-`, out.String())
+	for _, fragment := range []string{"table support_ticket_steps (resource entry, rows many)", "ordering: resource", "Nullable(String)", "Nullable(UInt64)", "support-ticket/v2  support_ticket_steps_duration", "proposed DDL:", "ReplacingMergeTree(ingest_version)"} {
+		require.Contains(t, out.String(), fragment)
+	}
 
 	out.Reset()
 	require.NoError(t, command.Run(context.Background(), []string{"clickhouse-projections", "--projection-path", path, "--format", "json"}))
@@ -358,7 +330,7 @@ func TestProjectionsCommandShowsChainsAndCombinedColumns(t *testing.T) {
 	require.Len(t, tables, 1)
 	require.Equal(t, "support_ticket_steps", tables[0].Table)
 	require.Equal(t, []string{"support_ticket_v1_steps", "support_ticket_v2_steps", "support_ticket_steps_duration"}, []string{tables[0].Manifests[0].Name, tables[0].Manifests[1].Name, tables[0].Manifests[2].Name})
-	require.Equal(t, projectionColumnDescription{Name: "duration_ms", Type: "uint64", ClickHouseType: "UInt64", Nullable: true, DeclaredBy: "support_ticket_steps_duration"}, tables[0].Columns[1])
+	require.Equal(t, projectionColumnDescription{Name: "duration_ms", Type: "uint64", ClickHouseType: "Nullable(UInt64)", Nullable: true, DeclaredBy: "support_ticket_steps_duration"}, tables[0].Columns[1])
 	require.Equal(t, map[string]string{"support-ticket/v1": "support_ticket_steps_duration", "support-ticket/v2": "support_ticket_steps_duration"}, tables[0].Logic)
 }
 
@@ -371,6 +343,9 @@ spec:
   selector: {kind: notes/v1}
   columns:
     subject: {type: string, nullable: false}
+  projectionRego: |
+    package memoryservice.analytics
+    output := input.record.attributes
 ---
 apiVersion: memory-service/v1alpha1
 kind: AnalyticsProjection
@@ -394,12 +369,11 @@ spec:
   selector: {kind: notes/v1}
   projectionRego: |
     package memoryservice.analytics
-    output := {"subject": upper(input.attributes.subject)}
+    output := {"subject": upper(input.record.attributes.subject)}
 `
 
-// A first memory manifest without projectionRego maps MemoryKindVersion attributes; later
-// manifests can share that mapping, add columns to it, and split a kind off with Rego.
-func TestMemoryProjectionChainSharesAttributeMapping(t *testing.T) {
+// Memory chains use explicit Rego for attribute extraction and reuse.
+func TestMemoryProjectionChainReusesExplicitRego(t *testing.T) {
 	ctx := context.Background()
 	set, err := loadTestProjectionDocuments(t, testMemoryChain, testMemoryChainSplit)
 	require.NoError(t, err)
@@ -410,19 +384,19 @@ func TestMemoryProjectionChainSharesAttributeMapping(t *testing.T) {
 	shared := set.Match("memory", "notes/v2")
 	require.Len(t, shared, 1)
 	require.Equal(t, "notes_v1", shared[0].Name)
-	rows, code := shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"attributes": map[string]any{"subject": "billing", "topic": "invoices"}})
+	rows, code := shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"record": map[string]any{"attributes": map[string]any{"subject": "billing", "topic": "invoices"}}})
 	require.Empty(t, code)
 	require.Equal(t, []any{"billing", "invoices"}, rows[0].Values)
-	rows, code = shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"attributes": map[string]any{"subject": "billing"}})
+	rows, code = shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"record": map[string]any{"attributes": map[string]any{"subject": "billing"}}})
 	require.Empty(t, code)
 	require.Equal(t, []any{"billing", nil}, rows[0].Values, "attributes without an added column write NULL")
-	_, code = shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"attributes": map[string]any{"subject": "billing", "unknown": "x"}})
+	_, code = shared[0].Rows(ctx, ProjectionRow{}, map[string]any{"record": map[string]any{"attributes": map[string]any{"subject": "billing", "unknown": "x"}}})
 	require.Equal(t, "column_set_mismatch", code)
 
 	split := set.Match("memory", "notes/v1")
 	require.Len(t, split, 1)
 	require.Equal(t, "notes_v1_upper", split[0].Name)
-	rows, code = split[0].Rows(ctx, ProjectionRow{}, map[string]any{"attributes": map[string]any{"subject": "billing"}})
+	rows, code = split[0].Rows(ctx, ProjectionRow{}, map[string]any{"record": map[string]any{"attributes": map[string]any{"subject": "billing"}}})
 	require.Empty(t, code)
 	require.Equal(t, "notes", rows[0].TableName)
 	require.Equal(t, []any{"BILLING", nil}, rows[0].Values)

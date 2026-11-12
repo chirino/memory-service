@@ -78,11 +78,12 @@ The event stream supports two payload modes:
 With `detail=full`, `data` uses the REST/OpenAPI resource shape for the stream scope:
 
 - Agent `conversation` and `entry` events carry the agent resource shape.
-- Admin `conversation`, `entry`, and `memory` events carry the `AdminConversation`, `AdminEntry`, and `AdminMemoryItem` resource shapes. Admin shapes include output-only internal fields such as `clientId` and `conversationGroupId` where applicable.
+- Admin `conversation`, `entry`, `memory`, and `membership` events carry the `AdminConversation`, `AdminEntry`, `AdminMemoryItem`, and `AdminMembership` resource shapes. Admin shapes include output-only internal fields such as `clientId` and `conversationGroupId` where applicable.
+- Agent membership events keep their summary shape, including with `detail=full`.
 - `response` events are unchanged from `summary`; they keep the compact `conversation`, `conversation_group`, `recording`, and `status` fields.
 - `stream` events are never enriched.
 
-If the current resource no longer exists, the event keeps its summary `data`. Consumers can still process lifecycle and deletion information from that summary.
+Admin `deleted`, `hard_deleted`, and `evicted` notifications always retain summary identities and their lifecycle `change`, even with `detail=full`. They do not reload a resource that might already have been recreated or granted again. If another current resource no longer exists, its event also keeps summary `data`. Consumers can still process lifecycle and deletion information from that summary.
 
 For frontend cache invalidation, `summary` is usually the right choice because the client already knows how to refetch.
 
@@ -98,7 +99,7 @@ This table shows the default `detail=summary` payload shape.
 | Kind           | Event                           | Summary `data` fields                                                                              | Notes                                                                                                                                                                     |
 | -------------- | ------------------------------- | -------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `conversation` | `created`                       | `conversation`, `conversation_group`                                                               | New conversation visible to the user                                                                                                                                      |
-| `conversation` | `updated`                       | `conversation`, `conversation_group`                                                               | Title or metadata changed                                                                                                                                                 |
+| `conversation` | `updated`                       | `conversation`, `conversation_group`                                                               | Title, metadata, or owner changed. Ownership transfer uses `change: ownership_transferred`.                                                                               |
 | `conversation` | `deleted`                       | `conversation`, `conversation_group`, `members`                                                    | `members` may be included so affected users can be targeted                                                                                                               |
 | `entry`        | `created`                       | `conversation`, `conversation_group`, `entry`, `entry_channel`, `entry_content_type`, `entry_role` | New entry appended. `entry_role` is included when it can be derived from entry content.                                                                                   |
 | `memory`       | `created`, `updated`, `deleted` | `memory`, `memoryKind`, `revision`, `change`, lifecycle timestamps                                 | Admin-scoped durable lifecycle notification. Values, namespaces, and keys are absent from summary events.                                                                 |
@@ -167,9 +168,13 @@ curl -N -H "Authorization: Bearer $(get-admin-token)" \
 `initial_state=current` requires an enabled replayable outbox. Do not combine it with `after`. The stream emits these phases in order:
 
 1. `snapshot`, with the captured high-water cursor
-2. `snapshot` resource events for current conversations, entries, and memories
+2. `snapshot` resource events for current conversations, entries, memories, and group memberships, including owners
 3. `replay`, which covers changes after the captured cursor
 4. `live`
+
+Sources advertise complete membership baselines and mutation events through `features.analytics_membership_snapshots`. Membership changes include initial owners, copied grants in new groups, and both role changes in a transfer. Revocations retain summary identities. See the [API contracts](/docs/api-contracts/) for the full admin resource shape.
+
+A group membership has no single conversation ID. Admin full/current gRPC subscriptions explicitly selecting memberships reject `conversation_ids`; omitted kinds with conversation filtering exclude memberships during snapshot, replay, and live delivery. Summary-stream behavior is unchanged.
 
 Store the snapshot resources, then apply replay and live events with logical idempotency. The snapshot scan can observe concurrent changes, so the replay phase remains required.
 

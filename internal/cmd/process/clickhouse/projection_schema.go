@@ -17,57 +17,30 @@ type registeredProjection struct {
 	TableName string
 	Resource  string
 	RowMode   string
+	Ordering  string
 }
 
-// multiRowSortingKey identifies tables created for `rows: many` projections. The registry
-// does not store the row mode, so views for registered projections derive it from the table.
-const multiRowSortingKey = "exporter_id, resource_id, row_index"
-
-func projectionRowsForSortingKey(sortingKey string) string {
-	if sortingKey == multiRowSortingKey {
-		return ProjectionRowsMany
+func projectionSortingKey(rows, ordering string) string {
+	key := "exporter_id, resource_id"
+	if ordering == "conversation" {
+		key = "exporter_id, conversation_id, resource_id"
 	}
-	return ProjectionRowsOne
+	if rows == ProjectionRowsMany {
+		key += ", row_index"
+	}
+	return key
 }
 
 func (s *ClickHouseSink) ensureProjectionSchema(ctx context.Context, mode string) error {
-	registryReady := false
 	for _, table := range s.projectionTables {
 		if s.config.featureDisabled(table.Resource, disableProjections) {
 			continue
-		}
-		if !registryReady {
-			if err := s.ensureProjectionRegistryColumns(ctx, mode); err != nil {
-				return err
-			}
-			registryReady = true
 		}
 		if err := s.ensureProjectionTable(ctx, mode, table); err != nil {
 			return err
 		}
 	}
 	return s.ensureRegisteredProjectionSchemas(ctx, mode)
-}
-
-// ensureProjectionRegistryColumns adds registry columns introduced after schema V1. They are
-// applied separately from the versioned schema DDL, like insert deduplication settings, so
-// existing databases keep their schema checksum and older processors can still share them.
-func (s *ClickHouseSink) ensureProjectionRegistryColumns(ctx context.Context, mode string) error {
-	var count uint64
-	if err := s.conn.QueryRow(ctx, "SELECT count() FROM system.columns WHERE database=? AND table='projection_registry' AND name='previous'", s.database).Scan(&count); err != nil {
-		return fmt.Errorf("inspect projection registry columns: %w", err)
-	}
-	if count > 0 {
-		return nil
-	}
-	statement := fmt.Sprintf("ALTER TABLE %s.projection_registry ADD COLUMN IF NOT EXISTS previous String DEFAULT ''", quoteIdentifier(s.database))
-	if mode == "validate" {
-		return fmt.Errorf("ClickHouse table %s.projection_registry is missing column previous; run the processor once with --schema-mode manage or apply: %s", s.database, statement)
-	}
-	if err := s.conn.Exec(ctx, statement); err != nil {
-		return fmt.Errorf("add projection registry previous column: %w", err)
-	}
-	return nil
 }
 
 func (s *ClickHouseSink) ensureProjectionTable(ctx context.Context, mode string, table *ProjectionTable) error {
@@ -86,25 +59,13 @@ func (s *ClickHouseSink) ensureProjectionTable(ctx context.Context, mode string,
 			}
 		}
 	}
+	if state.tableRegistered {
+		if err := s.validateRegisteredTable(ctx, registeredProjection{TableName: table.Name, Resource: table.Resource, RowMode: table.RowMode, Ordering: table.Ordering}); err != nil {
+			return err
+		}
+	}
 	if mode != "validate" {
-		root := table.Manifests[0]
-		columns := make([]string, 0, len(table.ColumnOrder))
-		for _, name := range table.ColumnOrder {
-			if table.ColumnOwners[name] == root.Name {
-				columns = append(columns, projectionColumnDDL(name, table.Columns[name]))
-			}
-		}
-		rowColumns, sortingKey := "", "exporter_id, resource_id"
-		if table.RowMode == ProjectionRowsMany {
-			rowColumns, sortingKey = "row_index UInt32, row_count UInt32,\n  ", multiRowSortingKey
-		}
-		statement := fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
-  exporter_id String, batch_id FixedString(64), event_id FixedString(64), resource_id String,
-  conversation_id String, conversation_group_id String,
-  ingest_version UInt64, observed_at DateTime64(9, 'UTC'), is_deleted UInt8,
-  schema_version UInt16,
-  %s%s
-) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (%s)`, quoteIdentifier(s.database), quoteIdentifier(table.Name), rowColumns, strings.Join(columns, ",\n  "), sortingKey)
+		statement := projectionCreateStatement(s.database, table, true)
 		if err := s.conn.Exec(ctx, statement); err != nil {
 			return fmt.Errorf("create projection table %s: %w", table.Name, err)
 		}
@@ -126,7 +87,7 @@ func (s *ClickHouseSink) ensureProjectionTable(ctx context.Context, mode string,
 			continue
 		}
 		selector := manifest.Resource + ":" + manifest.Selector
-		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version, previous) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name, manifest.Digest, selector, table.Name, "active", time.Now().UTC(), uint64(1), manifest.Previous); err != nil {
+		if err := s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.projection_registry (exporter_id, projection_name, projection_digest, selector, table_name, state, updated_at, version, previous, row_mode, ordering) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name, manifest.Digest, selector, table.Name, "active", time.Now().UTC(), uint64(1), manifest.Previous, table.RowMode, table.Ordering); err != nil {
 			return fmt.Errorf("register projection %s: %w", manifest.Name, err)
 		}
 		registered = append(registered, manifest.Name)
@@ -171,13 +132,16 @@ func (s *ClickHouseSink) readProjectionChainRegistry(ctx context.Context, table 
 	state := projectionChainRegistry{registeredHere: map[string]bool{}}
 	registered := map[string]bool{}
 	for _, manifest := range table.Manifests {
-		var count, here, digests, tables uint64
-		var digest, tableName string
-		if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(), countIf(exporter_id=?), uniqExact(projection_digest), any(projection_digest), uniqExact(table_name), any(table_name) FROM %s.projection_registry WHERE projection_name=?", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name).Scan(&count, &here, &digests, &digest, &tables, &tableName); err != nil {
+		var count, here, digests, tables, rowModes, orderings uint64
+		var digest, tableName, rowMode, ordering string
+		if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT count(), countIf(exporter_id=?), uniqExact(projection_digest), any(projection_digest), uniqExact(table_name), any(table_name), uniqExact(row_mode), any(row_mode), uniqExact(ordering), any(ordering) FROM %s.projection_registry WHERE projection_name=?", quoteIdentifier(s.database)), s.config.ExporterID, manifest.Name).Scan(&count, &here, &digests, &digest, &tables, &tableName, &rowModes, &rowMode, &orderings, &ordering); err != nil {
 			return state, fmt.Errorf("read projection registry for %s: %w", manifest.Name, err)
 		}
 		if count == 0 {
 			continue
+		}
+		if rowModes != 1 || orderings != 1 || rowMode != table.RowMode || ordering != table.Ordering {
+			return state, fmt.Errorf("projection %q has conflicting layout metadata", manifest.Name)
 		}
 		if digests != 1 || digest != manifest.Digest {
 			return state, fmt.Errorf("projection %q already exists with a different immutable digest", manifest.Name)
@@ -255,18 +219,17 @@ func (s *ClickHouseSink) ensureProjectionTableColumns(ctx context.Context, mode 
 		return nil
 	}
 	var missing []string
-	root := table.Manifests[0].Name
 	for _, name := range table.ColumnOrder {
 		actual, ok := existing[name]
 		if !ok {
+			if table.ColumnOwners[name] == table.Manifests[0].Name {
+				return fmt.Errorf("projection table %s is missing immutable root column %s", table.Name, name)
+			}
 			missing = append(missing, name)
 			continue
 		}
 		// Added columns may come from an interrupted earlier start whose manifest was then
 		// changed before registration, so their physical type must match the declaration.
-		if table.ColumnOwners[name] == root {
-			continue
-		}
 		declared := projectionColumnStorageType(table.Columns[name])
 		canonical, err := s.canonicalClickHouseType(ctx, declared)
 		if err != nil {
@@ -296,6 +259,25 @@ func (s *ClickHouseSink) ensureProjectionTableColumns(ctx context.Context, mode 
 	return nil
 }
 
+func projectionCreateStatement(database string, table *ProjectionTable, rootOnly bool) string {
+	columns := []string{}
+	for _, name := range table.ColumnOrder {
+		if !rootOnly || table.ColumnOwners[name] == table.Manifests[0].Name {
+			columns = append(columns, projectionColumnDDL(name, table.Columns[name]))
+		}
+	}
+	rowColumns := ""
+	if table.RowMode == ProjectionRowsMany {
+		rowColumns = "row_index UInt32, row_count UInt32,\n  "
+	}
+	return fmt.Sprintf(`CREATE TABLE IF NOT EXISTS %s.%s (
+ exporter_id String, batch_id FixedString(64), event_id FixedString(64), resource_id String,
+ conversation_id String, conversation_group_id String, ingest_version UInt64,
+ observed_at DateTime64(9, 'UTC'), is_deleted UInt8,
+ %s%s
+) ENGINE=ReplacingMergeTree(ingest_version) ORDER BY (%s)`, quoteIdentifier(database), quoteIdentifier(table.Name), rowColumns, strings.Join(columns, ",\n "), projectionSortingKey(table.RowMode, table.Ordering))
+}
+
 func projectionColumnDDL(name string, column projectionColumn) string {
 	return fmt.Sprintf("%s %s", quoteIdentifier(name), projectionColumnStorageType(column))
 }
@@ -303,6 +285,9 @@ func projectionColumnDDL(name string, column projectionColumn) string {
 // projectionColumnStorageType is the physical ClickHouse type of a projection column.
 func projectionColumnStorageType(column projectionColumn) string {
 	columnType := projectionColumnSQLType(column)
+	if column.Type == "string" && column.ClickHouse != nil && column.ClickHouse.LowCardinality {
+		return "LowCardinality(Nullable(String))"
+	}
 	if column.Type != "string_array" && column.Type != "variant" {
 		columnType = "Nullable(" + columnType + ")"
 	}
@@ -321,83 +306,50 @@ func (s *ClickHouseSink) canonicalClickHouseType(ctx context.Context, declared s
 }
 
 func (s *ClickHouseSink) registeredProjections(ctx context.Context) ([]registeredProjection, error) {
-	rows, err := s.conn.Query(ctx, fmt.Sprintf(`SELECT projection_name, argMax(table_name, version), argMax(selector, version)
-FROM %s.projection_registry
-WHERE exporter_id=?
-GROUP BY projection_name
-ORDER BY projection_name`, quoteIdentifier(s.database)), s.config.ExporterID)
-	if err != nil {
-		return nil, err
-	}
-	// Several manifests of one chain share a table; return each table once.
-	result := make([]registeredProjection, 0)
-	resourcesByTable := map[string]string{}
-	for rows.Next() {
-		var name, table, selector string
-		if err := rows.Scan(&name, &table, &selector); err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		projection, err := validateRegisteredProjection(name, table, selector)
-		if err != nil {
-			_ = rows.Close()
-			return nil, err
-		}
-		if existing, ok := resourcesByTable[table]; ok {
-			if existing != projection.Resource {
-				_ = rows.Close()
-				return nil, fmt.Errorf("registered projection table %q has conflicting resource kinds", table)
-			}
-			continue
-		}
-		resourcesByTable[table] = projection.Resource
-		result = append(result, projection)
-	}
-	if err := rows.Err(); err != nil {
-		_ = rows.Close()
-		return nil, err
-	}
-	if err := rows.Close(); err != nil {
-		return nil, err
-	}
-	for i, projection := range result {
-		var count uint64
-		var engine, sortingKey string
-		if err := s.conn.QueryRow(ctx, "SELECT count(), any(engine), any(sorting_key) FROM system.tables WHERE database=? AND name=?", s.database, projection.TableName).Scan(&count, &engine, &sortingKey); err != nil {
-			return nil, fmt.Errorf("validate registered projection table %s: %w", projection.TableName, err)
-		}
-		if count != 1 || engine == "View" || engine == "MaterializedView" {
-			return nil, fmt.Errorf("registered projection table %s.%s is missing or is not a physical table", s.database, projection.TableName)
-		}
-		result[i].RowMode = projectionRowsForSortingKey(sortingKey)
-	}
-	return result, nil
+	return s.readRegisteredProjections(ctx, true)
 }
-
 func (s *ClickHouseSink) registeredProjectionsAllExporters(ctx context.Context) ([]registeredProjection, error) {
-	rows, err := s.conn.Query(ctx, fmt.Sprintf(`SELECT any(projection_name), table_name, selector
-FROM %s.projection_registry GROUP BY table_name, selector ORDER BY table_name`, quoteIdentifier(s.database)))
+	return s.readRegisteredProjections(ctx, false)
+}
+func (s *ClickHouseSink) readRegisteredProjections(ctx context.Context, own bool) ([]registeredProjection, error) {
+	query := fmt.Sprintf("SELECT DISTINCT projection_name,table_name,selector,row_mode,ordering FROM %s.projection_registry FINAL", quoteIdentifier(s.database))
+	var args []any
+	if own {
+		query += " WHERE exporter_id=?"
+		args = append(args, s.config.ExporterID)
+	}
+	query += " ORDER BY table_name,projection_name"
+	rows, err := s.conn.Query(ctx, query, args...)
 	if err != nil {
 		return nil, err
 	}
 	result := []registeredProjection{}
-	resources := map[string]string{}
+	seen := map[string]registeredProjection{}
 	for rows.Next() {
-		var name, table, selector string
-		if err := rows.Scan(&name, &table, &selector); err != nil {
+		var name, table, selector, rowMode, ordering string
+		if err := rows.Scan(&name, &table, &selector, &rowMode, &ordering); err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
 		projection, err := validateRegisteredProjection(name, table, selector)
 		if err != nil {
+			_ = rows.Close()
 			return nil, err
 		}
-		if resource, ok := resources[table]; ok {
-			if resource != projection.Resource {
-				return nil, fmt.Errorf("registered projection table %q has conflicting resource kinds", table)
+		if rowMode != ProjectionRowsOne && rowMode != ProjectionRowsMany || ordering != "resource" && ordering != "conversation" || projection.Resource == "memory" && ordering == "conversation" {
+			_ = rows.Close()
+			return nil, errors.New("invalid registered projection layout")
+		}
+		projection.RowMode = rowMode
+		projection.Ordering = ordering
+		if prior, ok := seen[table]; ok {
+			if prior.Resource != projection.Resource || prior.RowMode != rowMode || prior.Ordering != ordering {
+				_ = rows.Close()
+				return nil, errors.New("conflicting registered table ownership or layout")
 			}
 			continue
 		}
-		resources[table] = projection.Resource
+		seen[table] = projection
 		result = append(result, projection)
 	}
 	if err := rows.Err(); err != nil {
@@ -408,16 +360,55 @@ FROM %s.projection_registry GROUP BY table_name, selector ORDER BY table_name`, 
 		return nil, err
 	}
 	for _, projection := range result {
-		var count uint64
-		var engine string
-		if err := s.conn.QueryRow(ctx, "SELECT count(), any(engine) FROM system.tables WHERE database=? AND name=?", s.database, projection.TableName).Scan(&count, &engine); err != nil {
+		if err := s.validateRegisteredTable(ctx, projection); err != nil {
 			return nil, err
-		}
-		if count != 1 || engine == "View" || engine == "MaterializedView" {
-			return nil, fmt.Errorf("registered projection table %s.%s is missing or is not a physical table", s.database, projection.TableName)
 		}
 	}
 	return result, nil
+}
+func (s *ClickHouseSink) validateRegisteredTable(ctx context.Context, projection registeredProjection) error {
+	var count uint64
+	var engine, key, partition, engineFull string
+	if err := s.conn.QueryRow(ctx, "SELECT count(),any(engine),any(sorting_key),any(partition_key),any(engine_full) FROM system.tables WHERE database=? AND name=?", s.database, projection.TableName).Scan(&count, &engine, &key, &partition, &engineFull); err != nil {
+		return err
+	}
+	normalize := func(value string) string { return strings.ReplaceAll(strings.ReplaceAll(value, " ", ""), "`", "") }
+	if count != 1 || engine != "ReplacingMergeTree" || normalize(key) != normalize(projectionSortingKey(projection.RowMode, projection.Ordering)) || partition != "" || !strings.HasPrefix(normalize(engineFull), "ReplacingMergeTree(ingest_version)") {
+		return fmt.Errorf("projection table %s has incompatible physical layout", projection.TableName)
+	}
+	required := map[string]string{"exporter_id": "String", "batch_id": "FixedString(64)", "event_id": "FixedString(64)", "resource_id": "String", "conversation_id": "String", "conversation_group_id": "String", "ingest_version": "UInt64", "observed_at": "DateTime64(9, 'UTC')", "is_deleted": "UInt8"}
+	if projection.RowMode == ProjectionRowsMany {
+		required["row_index"] = "UInt32"
+		required["row_count"] = "UInt32"
+	}
+	rows, err := s.conn.Query(ctx, "SELECT name,type FROM system.columns WHERE database=? AND table=?", s.database, projection.TableName)
+	if err != nil {
+		return err
+	}
+	defer rows.Close()
+	for rows.Next() {
+		var name, kind string
+		if err := rows.Scan(&name, &kind); err != nil {
+			return err
+		}
+		if expected, ok := required[name]; ok {
+			canonical, err := s.canonicalClickHouseType(ctx, expected)
+			if err != nil {
+				return err
+			}
+			if kind != canonical {
+				return fmt.Errorf("projection table %s has invalid lifecycle column %s", projection.TableName, name)
+			}
+			delete(required, name)
+		}
+	}
+	if err := rows.Err(); err != nil {
+		return err
+	}
+	if len(required) != 0 {
+		return fmt.Errorf("projection table %s is missing required lifecycle columns", projection.TableName)
+	}
+	return nil
 }
 
 // validateRegisteredProjection checks a registry row before its table name is used in DDL.
@@ -425,7 +416,7 @@ FROM %s.projection_registry GROUP BY table_name, selector ORDER BY table_name`, 
 // columns; the resource prefix is always present.
 func validateRegisteredProjection(name, table, selector string) (registeredProjection, error) {
 	resource, _, found := strings.Cut(selector, ":")
-	if !found || (resource != "entry" && resource != "memory") {
+	if !found || (resource != "entry" && resource != "memory" && resource != "conversation") {
 		return registeredProjection{}, fmt.Errorf("projection %q has invalid registered selector %q", name, selector)
 	}
 	if !projectionNamePattern.MatchString(name) || !projectionNamePattern.MatchString(table) || isReservedProjectionTableName(table) {
@@ -450,10 +441,18 @@ func (s *ClickHouseSink) ensureRegisteredProjectionSchemas(ctx context.Context, 
 				if count != 1 || engine != "View" {
 					return fmt.Errorf("required projection view %s.%s%s is missing or is not a view", s.database, projection.TableName, suffix)
 				}
+				ddl := projectionCurrentViewStatement(s.database, projection.TableName, projection.Resource)
+				if suffix == "_all" {
+					ddl = projectionAllViewStatement(s.database, projection.TableName, projection.RowMode, projection.Ordering)
+				}
+				if err := s.validateView(ctx, projection.TableName+suffix, ddl); err != nil {
+					return err
+				}
+
 			}
 			continue
 		}
-		if err := s.conn.Exec(ctx, projectionAllViewStatement(s.database, projection.TableName, projection.RowMode)); err != nil {
+		if err := s.conn.Exec(ctx, projectionAllViewStatement(s.database, projection.TableName, projection.RowMode, projection.Ordering)); err != nil {
 			return fmt.Errorf("create projection all view %s: %w", projection.TableName, err)
 		}
 		if err := s.conn.Exec(ctx, projectionCurrentViewStatement(s.database, projection.TableName, projection.Resource)); err != nil {
@@ -463,35 +462,29 @@ func (s *ClickHouseSink) ensureRegisteredProjectionSchemas(ctx context.Context, 
 	return nil
 }
 
-func projectionAllViewStatement(database, table, rowMode string) string {
+func projectionAllViewStatement(database, table, rowMode, ordering string) string {
 	prefix := quoteIdentifier(database) + "."
-	if rowMode == ProjectionRowsMany {
-		// Keep every row of the latest resource version. Older versions may have had more rows,
-		// and those row indexes are never replaced, so filter them by version instead of by key.
-		// Rows with row_index >= row_count are markers for versions that projected no rows.
-		return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
-SELECT r.* EXCEPT(version_rank, rn) FROM (
- SELECT r.*,
-  dense_rank() OVER (PARTITION BY r.exporter_id, r.resource_id ORDER BY r.ingest_version DESC, r.event_id DESC) version_rank,
-  row_number() OVER (PARTITION BY r.exporter_id, r.resource_id, r.row_index ORDER BY r.ingest_version DESC, r.event_id DESC) rn
- FROM %s%s r
-) r
-WHERE version_rank=1 AND rn=1 AND (r.is_deleted=1 OR r.row_index < r.row_count)`, prefix, quoteIdentifier(table+"_all"), prefix, quoteIdentifier(table))
+	partition := "r.exporter_id,r.resource_id"
+	if ordering == "conversation" {
+		partition = "r.exporter_id,r.conversation_id,r.resource_id"
 	}
-	return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
-SELECT r.* EXCEPT(rn) FROM (
- SELECT r.*, row_number() OVER (PARTITION BY r.exporter_id, r.resource_id ORDER BY r.ingest_version DESC, r.event_id DESC) rn
- FROM %s%s r
-) r
-WHERE rn=1`, prefix, quoteIdentifier(table+"_all"), prefix, quoteIdentifier(table))
+	if rowMode == ProjectionRowsMany {
+		return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
+ SELECT r.* EXCEPT(_projection_version_rank,_projection_row_number) FROM (
+ SELECT r.*, dense_rank() OVER (PARTITION BY %s ORDER BY r.ingest_version DESC,r.event_id DESC) _projection_version_rank,
+ row_number() OVER (PARTITION BY %s,r.row_index ORDER BY r.ingest_version DESC,r.event_id DESC) _projection_row_number
+ FROM %s%s r) r WHERE _projection_version_rank=1 AND _projection_row_number=1 AND (r.is_deleted=1 OR r.row_index<r.row_count)`, prefix, quoteIdentifier(table+"_all"), partition, partition, prefix, quoteIdentifier(table))
+	}
+	return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS SELECT * EXCEPT(_projection_row_number) FROM (
+ SELECT r.*,row_number() OVER (PARTITION BY %s ORDER BY r.ingest_version DESC,r.event_id DESC) _projection_row_number
+ FROM %s%s r) WHERE _projection_row_number=1`, prefix, quoteIdentifier(table+"_all"), partition, prefix, quoteIdentifier(table))
 }
-
 func projectionCurrentViewStatement(database, table, resource string) string {
 	prefix := quoteIdentifier(database) + "."
-	return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS
-SELECT r.* FROM %s%s r
-LEFT JOIN (%s) d ON r.exporter_id=d.exporter_id AND d.resource_type='%s' AND r.resource_id=d.resource_id
-WHERE is_deleted=0 AND r.ingest_version > ifNull(d.deletion_version, 0)`, prefix, quoteIdentifier(table+"_current"), prefix, quoteIdentifier(table+"_all"), deletionFenceSubquery(prefix), resource)
+	return fmt.Sprintf(`CREATE OR REPLACE VIEW %s%s AS SELECT r.* FROM %s%s r
+ LEFT JOIN (%s) d ON r.exporter_id=d._fence_exporter_id AND d._fence_resource_kind='%s' AND r.resource_id=d._fence_resource_id
+ LEFT JOIN (%s) g ON r.exporter_id=g._fence_exporter_id AND g._fence_resource_kind='conversation_group' AND r.conversation_group_id=g._fence_resource_id
+ WHERE r.is_deleted=0 AND r.ingest_version>ifNull(d._fence_version,0) AND ifNull(g._fence_version,0)=0`, prefix, quoteIdentifier(table+"_current"), prefix, quoteIdentifier(table+"_all"), deletionFenceSubquery(prefix), resource, deletionFenceSubquery(prefix))
 }
 
 func (s *ClickHouseSink) configureRetention(ctx context.Context, mode string) error {
@@ -513,10 +506,8 @@ func (s *ClickHouseSink) configureRetention(ctx context.Context, mode string) er
 	if err := s.setTTL(ctx, "lifecycle_events", s.config.LifecycleRetention, "occurred_at", ""); err != nil {
 		return err
 	}
-	for _, table := range []string{"resources", "conversations", "conversation_lineage", "entries", "memories"} {
-		if err := s.setResourceTTL(ctx, table); err != nil {
-			return err
-		}
+	if err := s.setProjectionTTL(ctx, "conversation_memberships"); err != nil {
+		return err
 	}
 	if err := s.setTTL(ctx, "projection_failures", s.config.ProjectionFailureRetention, "last_seen_at", ""); err != nil {
 		return err
@@ -574,7 +565,7 @@ func (s *ClickHouseSink) retentionConflict(detail string) error {
 }
 
 func retentionPolicyValues(cfg Config) []int64 {
-	return []int64{int64(cfg.LifecycleRetention / time.Second), int64(cfg.TombstoneRetention / time.Second), int64(cfg.GenericPayloadRetention / time.Second), int64(cfg.ProjectionRetention / time.Second), int64(cfg.ProjectionFailureRetention / time.Second)}
+	return []int64{int64(cfg.LifecycleRetention / time.Second), int64(cfg.TombstoneRetention / time.Second), int64(cfg.ProjectionRetention / time.Second), int64(cfg.ProjectionFailureRetention / time.Second)}
 }
 
 func retentionLivePredicate() string {
@@ -584,7 +575,7 @@ func retentionLivePredicate() string {
 func (s *ClickHouseSink) writeRetentionOwner(ctx context.Context, active uint8) error {
 	values := retentionPolicyValues(s.config)
 	now := time.Now().UTC()
-	return s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.retention_policy VALUES (?,?,?,?,?,?,?,?,?,?)", quoteIdentifier(s.database)), s.config.ExporterID, s.retentionOwner, values[0], values[1], values[2], values[3], values[4], active, uint64(now.UnixNano()), now)
+	return s.conn.Exec(ctx, fmt.Sprintf("INSERT INTO %s.retention_policy VALUES (?,?,?,?,?,?,?,?,?)", quoteIdentifier(s.database)), s.config.ExporterID, s.retentionOwner, values[0], values[1], values[2], values[3], active, uint64(now.UnixNano()), now)
 }
 
 // renewRetentionOwnership is the write fence used by both the heartbeat and
@@ -654,12 +645,12 @@ func (s *ClickHouseSink) stopRetentionHeartbeat() {
 func (s *ClickHouseSink) ensureRetentionPolicy(ctx context.Context) error {
 	values := retentionPolicyValues(s.config)
 	var distinct uint64
-	var lifecycle, tombstone, generic, projection, failure int64
-	query := fmt.Sprintf("SELECT uniqExact(tuple(lifecycle_seconds,tombstone_seconds,generic_seconds,projection_seconds,failure_seconds)), any(lifecycle_seconds),any(tombstone_seconds),any(generic_seconds),any(projection_seconds),any(failure_seconds) FROM %s.retention_policy FINAL WHERE %s", quoteIdentifier(s.database), retentionLivePredicate())
-	if err := s.conn.QueryRow(ctx, query).Scan(&distinct, &lifecycle, &tombstone, &generic, &projection, &failure); err != nil {
+	var lifecycle, tombstone, projection, failure int64
+	query := fmt.Sprintf("SELECT uniqExact(tuple(lifecycle_seconds,tombstone_seconds,projection_seconds,failure_seconds)), any(lifecycle_seconds),any(tombstone_seconds),any(projection_seconds),any(failure_seconds) FROM %s.retention_policy FINAL WHERE %s", quoteIdentifier(s.database), retentionLivePredicate())
+	if err := s.conn.QueryRow(ctx, query).Scan(&distinct, &lifecycle, &tombstone, &projection, &failure); err != nil {
 		return err
 	}
-	if distinct > 1 || (distinct == 1 && (lifecycle != values[0] || tombstone != values[1] || generic != values[2] || projection != values[3] || failure != values[4])) {
+	if distinct > 1 || (distinct == 1 && (lifecycle != values[0] || tombstone != values[1] || projection != values[2] || failure != values[3])) {
 		return s.retentionConflict("with the registered shared policy")
 	}
 	if err := s.writeRetentionOwner(ctx, 1); err != nil {
@@ -668,7 +659,7 @@ func (s *ClickHouseSink) ensureRetentionPolicy(ctx context.Context) error {
 	// Mark registration immediately so OpenSink's failure cleanup deactivates
 	// this owner if the concurrent-policy check or later TTL setup fails.
 	s.retentionRegistered = true
-	if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(tuple(lifecycle_seconds,tombstone_seconds,generic_seconds,projection_seconds,failure_seconds)) FROM %s.retention_policy FINAL WHERE %s", quoteIdentifier(s.database), retentionLivePredicate())).Scan(&distinct); err != nil {
+	if err := s.conn.QueryRow(ctx, fmt.Sprintf("SELECT uniqExact(tuple(lifecycle_seconds,tombstone_seconds,projection_seconds,failure_seconds)) FROM %s.retention_policy FINAL WHERE %s", quoteIdentifier(s.database), retentionLivePredicate())).Scan(&distinct); err != nil {
 		return err
 	}
 	if distinct != 1 {
@@ -678,21 +669,6 @@ func (s *ClickHouseSink) ensureRetentionPolicy(ctx context.Context) error {
 		return err
 	}
 	return nil
-}
-
-func (s *ClickHouseSink) setResourceTTL(ctx context.Context, table string) error {
-	return s.modifyTTL(ctx, table, s.resourceTTLClauses())
-}
-
-func (s *ClickHouseSink) resourceTTLClauses() []string {
-	clauses := make([]string, 0, 2)
-	if s.config.TombstoneRetention > 0 {
-		clauses = append(clauses, ttlClause("updated_at", s.config.TombstoneRetention, "is_deleted=1"))
-	}
-	if s.config.GenericPayloadRetention > 0 {
-		clauses = append(clauses, ttlClause("updated_at", s.config.GenericPayloadRetention, "is_deleted=0"))
-	}
-	return clauses
 }
 
 func (s *ClickHouseSink) setProjectionTTL(ctx context.Context, table string) error {
@@ -753,12 +729,10 @@ func (s *ClickHouseSink) validateRetention(ctx context.Context) error {
 		{table: "lifecycle_events", clauses: ttlClauses(s.config.LifecycleRetention, "occurred_at", "")},
 		{table: "projection_failures", clauses: ttlClauses(s.config.ProjectionFailureRetention, "last_seen_at", "")},
 	}
-	for _, table := range []string{"resources", "conversations", "conversation_lineage", "entries", "memories"} {
-		targets = append(targets, struct {
-			table   string
-			clauses []string
-		}{table: table, clauses: s.resourceTTLClauses()})
-	}
+	targets = append(targets, struct {
+		table   string
+		clauses []string
+	}{table: "conversation_memberships", clauses: s.projectionTTLClauses()})
 	projections, err := s.registeredProjections(ctx)
 	if err != nil {
 		return fmt.Errorf("load registered projections for retention validation: %w", err)
@@ -831,3 +805,14 @@ func canonicalTTLExpression(value string) string {
 }
 
 func quoteIdentifier(value string) string { return "`" + value + "`" }
+
+func fixedStringPredicate(column string, values []string) (string, []any) {
+	if len(values) == 0 {
+		return "", nil
+	}
+	args := make([]any, len(values))
+	for i, value := range values {
+		args[i] = value
+	}
+	return column + " IN (" + strings.TrimSuffix(strings.Repeat("?,", len(values)), ",") + ")", args
+}

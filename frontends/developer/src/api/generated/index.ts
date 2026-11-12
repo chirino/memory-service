@@ -206,6 +206,7 @@ export type {
   AdminListTopMemoryUsageErrors,
   AdminListTopMemoryUsageResponse,
   AdminListTopMemoryUsageResponses,
+  AdminMembership,
   AdminMemoryItem,
   AdminMemoryNamespace,
   AdminMemorySearchQuery,

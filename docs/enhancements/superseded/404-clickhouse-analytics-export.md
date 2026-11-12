@@ -1,10 +1,12 @@
 ---
-status: implemented
+status: superseded
+superseded-by:
+  - implemented/118-conversation-projections-and-clickhouse-layouts.md
 ---
 
 # Enhancement 404: ClickHouse analytics export
 
-> **Status**: Implemented — PostgreSQL, SQLite, and MongoDB feed a leased, restartable exporter through full admin events, current-state initialization, typed projections, retention, and hard-delete purging.
+> **Status**: Superseded by [Enhancement 118](../implemented/118-conversation-projections-and-clickhouse-layouts.md). This document records the original exporter; use 118 and the site analytics guides for the current schema and deployment procedure.
 >
 > This enhancement specifies the design requested by [GitHub issue #567](https://github.com/chirino/memory-service/issues/567).
 
@@ -185,7 +187,7 @@ an unpinned `latest` image.
 Production analytics requires a primary datastore and event transport that support
 durable replay through the gRPC event stream. PostgreSQL and MongoDB are both required
 because the supplied Kustomize examples cover both datastores. The implementation must
-complete [Enhancement 091](091-mongo-outbox-transactions.md) before enabling the
+complete [Enhancement 091](../implemented/091-mongo-outbox-transactions.md) before enabling the
 processor in the MongoDB overlay. Tail-only operation is allowed only with an explicit
 development flag and reports an unhealthy durability status.
 
@@ -469,7 +471,7 @@ column names as described in [Typed projections](#typed-projections).
 | Table | Engine | Purpose |
 | --- | --- | --- |
 | `schema_versions` | `MergeTree` | Installed schema version and checksum. |
-| `projection_registry` | `ReplacingMergeTree` | Projection name, digest, selector, declared table, previous manifest, and state. The `previous` column is added outside the versioned DDL; see [Enhancement 117](117-clickhouse-projection-chains.md#registry). |
+| `projection_registry` | `ReplacingMergeTree` | Projection name, digest, selector, declared table, previous manifest, and state. The `previous` column is added outside the versioned DDL; see [Enhancement 117](../implemented/117-clickhouse-projection-chains.md#registry). |
 | `lifecycle_events` | `ReplacingMergeTree` | Durable lifecycle facts keyed by stable event ID. |
 | `resources` | `ReplacingMergeTree` | Versioned generic resource rows and tombstones. |
 | `deletion_fences` | `ReplacingMergeTree` | Payload-free latest deletion version per resource. |
@@ -638,7 +640,7 @@ an `output` array instead; see [Multi-row projections](#multi-row-projections).
 Each projection:
 
 - has one canonical immutable name that is also its exact physical table name, unless it
-  belongs to a [projection chain](117-clickhouse-projection-chains.md)
+  belongs to a [projection chain](../implemented/117-clickhouse-projection-chains.md)
 - selects either one exact entry `contentType` or one exact memory `kind`
 - has a content digest stored in the checkpoint and projection registry
 - defines columns from an allowlisted type system with explicit provider support
@@ -670,7 +672,7 @@ the identical manifest digest for that relation.
 Repeating the identical manifest is idempotent. A changed manifest under the same name is
 an error. A deployment creates a newly named projection to remove or change a column, or
 adds a later manifest to the projection's chain to add nullable columns or content types;
-see [Enhancement 117](117-clickhouse-projection-chains.md). The digest remains in the checkpoint and projection registry but is not part of
+see [Enhancement 117](../implemented/117-clickhouse-projection-chains.md). The digest remains in the checkpoint and projection registry but is not part of
 the physical table name. Names are immutable; an `_vN` suffix is the recommended,
 human-readable version convention, but the processor does not rewrite or infer it.
 
@@ -750,7 +752,7 @@ ClickHouse-specific concerns to it.
 Changing the active projection set while a frozen batch exists is rejected. After the
 batch finishes, a new projection set starts with a new digest. A projection schema change
 uses a new manifest name and therefore a new physical table, except that a
-[projection chain](117-clickhouse-projection-chains.md) can add nullable columns to its
+[projection chain](../implemented/117-clickhouse-projection-chains.md) can add nullable columns to its
 table.
 Historical projection backfill is an explicit command, not an automatic startup side
 effect.
@@ -1297,7 +1299,7 @@ The implementation provides:
 - [x] Add durable `memory` lifecycle events for create, revision, archive, expiration,
   eviction, and hard delete.
 - [x] Add a durable high-water cursor to the live-phase event marker.
-- [x] Complete [Enhancement 091](091-mongo-outbox-transactions.md), including
+- [x] Complete [Enhancement 091](../implemented/091-mongo-outbox-transactions.md), including
   transactional MongoDB mutations and outbox appends, ordered replay, stale-cursor
   detection, and the MongoDB gRPC outbox test suite.
 - [x] Extend the processor runtime with bounded write-then-checkpoint batching and an
@@ -1431,7 +1433,7 @@ Do not run the Go and site suites concurrently in the same worktree.
 - [ClickHouse incremental materialized-view behavior](https://clickhouse.com/resources/engineering/clickhouse-vs-postgresql-analytics)
 - [ClickHouse immutable parts and delete mutations](https://clickhouse.com/resources/engineering/what-is-columnar-storage)
 - [Memory Service event outbox enhancement](../090-event-outbox.md)
-- [MongoDB transactional event outbox enhancement](091-mongo-outbox-transactions.md)
+- [MongoDB transactional event outbox enhancement](../implemented/091-mongo-outbox-transactions.md)
 - [Memory Service checkpointed processor enhancement](../102-event-processor-turn-traces.md)
-- [Memory Service memory-kind versioning enhancement](115-episodic-policy-versioning-and-migration.md)
+- [Memory Service memory-kind versioning enhancement](../implemented/115-episodic-policy-versioning-and-migration.md)
 - [Memory Service encryption documentation](../../encryption.md)

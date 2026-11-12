@@ -20,10 +20,15 @@ func ProjectionsCommand() *cli.Command {
 		Name:  "clickhouse-projections",
 		Usage: "Show each ClickHouse analytics projection table's manifest chain and combined columns",
 		Flags: []cli.Flag{
-			&cli.StringSliceFlag{Name: "projection-path", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH"), Required: true, Usage: "projection manifest file or directory"},
+			&cli.StringFlag{Name: "clickhouse-database", Value: "memory_service", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_DATABASE"), Usage: "database used in proposed DDL"},
+			&cli.StringSliceFlag{Name: "projection-path", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH"), Usage: "projection manifest file or directory"},
 			&cli.StringFlag{Name: "format", Value: "text", Usage: "output format: text or json"},
 		},
 		Action: func(ctx context.Context, cmd *cli.Command) error {
+			database := cmd.String("clickhouse-database")
+			if !identifierPattern.MatchString(database) {
+				return fmt.Errorf("ClickHouse database must be a fixed SQL identifier")
+			}
 			format := cmd.String("format")
 			if format != "text" && format != "json" {
 				return fmt.Errorf("--format must be text or json")
@@ -33,17 +38,19 @@ func ProjectionsCommand() *cli.Command {
 				return err
 			}
 			if format == "json" {
-				return writeProjectionTablesJSON(cmd.Root().Writer, set)
+				return writeProjectionTablesJSON(cmd.Root().Writer, set, database)
 			}
-			return writeProjectionTablesText(cmd.Root().Writer, set)
+			return writeProjectionTablesText(cmd.Root().Writer, set, database)
 		},
 	}
 }
 
 type projectionTableDescription struct {
+	DDL       string                          `json:"ddl"`
 	Table     string                          `json:"table"`
 	Resource  string                          `json:"resource"`
 	Rows      string                          `json:"rows"`
+	Ordering  string                          `json:"ordering"`
 	Manifests []projectionManifestDescription `json:"manifests"`
 	Columns   []projectionColumnDescription   `json:"columns"`
 	Logic     map[string]string               `json:"logic"`
@@ -67,10 +74,14 @@ type projectionColumnDescription struct {
 	DeclaredBy     string `json:"declaredBy"`
 }
 
-func describeProjectionTables(set *ProjectionSet) []projectionTableDescription {
+func describeProjectionTables(set *ProjectionSet, databases ...string) []projectionTableDescription {
+	database := "memory_service"
+	if len(databases) > 0 {
+		database = databases[0]
+	}
 	result := make([]projectionTableDescription, 0, len(set.Tables))
 	for _, table := range set.Tables {
-		description := projectionTableDescription{Table: table.Name, Resource: table.Resource, Rows: table.RowMode, Logic: map[string]string{}}
+		description := projectionTableDescription{Table: table.Name, Resource: table.Resource, Rows: table.RowMode, Ordering: table.Ordering, Logic: map[string]string{}, DDL: projectionCreateStatement(database, table, false)}
 		for _, manifest := range table.Manifests {
 			added := make([]string, 0, len(manifest.AddColumns))
 			for name := range manifest.AddColumns {
@@ -85,7 +96,7 @@ func describeProjectionTables(set *ProjectionSet) []projectionTableDescription {
 		for _, name := range table.ColumnOrder {
 			column := table.Columns[name]
 			description.Columns = append(description.Columns, projectionColumnDescription{
-				Name: name, Type: column.Type, ClickHouseType: projectionColumnSQLType(column), Nullable: column.Nullable, DeclaredBy: table.ColumnOwners[name],
+				Name: name, Type: column.Type, ClickHouseType: projectionColumnStorageType(column), Nullable: column.Nullable, DeclaredBy: table.ColumnOwners[name],
 			})
 		}
 		for selector, logic := range table.Logic {
@@ -96,19 +107,20 @@ func describeProjectionTables(set *ProjectionSet) []projectionTableDescription {
 	return result
 }
 
-func writeProjectionTablesJSON(out io.Writer, set *ProjectionSet) error {
+func writeProjectionTablesJSON(out io.Writer, set *ProjectionSet, databases ...string) error {
 	encoder := json.NewEncoder(out)
 	encoder.SetIndent("", "  ")
-	return encoder.Encode(describeProjectionTables(set))
+	return encoder.Encode(describeProjectionTables(set, databases...))
 }
 
-func writeProjectionTablesText(out io.Writer, set *ProjectionSet) error {
+func writeProjectionTablesText(out io.Writer, set *ProjectionSet, databases ...string) error {
 	writer := tabwriter.NewWriter(out, 0, 4, 2, ' ', 0)
-	for i, table := range describeProjectionTables(set) {
+	for i, table := range describeProjectionTables(set, databases...) {
 		if i > 0 {
 			fmt.Fprintln(writer)
 		}
 		fmt.Fprintf(writer, "table %s (resource %s, rows %s)\n", table.Table, table.Resource, table.Rows)
+		fmt.Fprintf(writer, "  ordering: %s\n", table.Ordering)
 		fmt.Fprintln(writer, "  manifests:")
 		for position, manifest := range table.Manifests {
 			var actions []string
@@ -135,7 +147,7 @@ func writeProjectionTablesText(out io.Writer, set *ProjectionSet) error {
 			if column.Nullable {
 				nullability = "nullable"
 			}
-			fmt.Fprintf(writer, "    %s\t%s\t%s\tdeclared by %s\n", column.Name, column.Type, nullability, column.DeclaredBy)
+			fmt.Fprintf(writer, "    %s\t%s\t%s\tdeclared by %s\n", column.Name, column.ClickHouseType, nullability, column.DeclaredBy)
 		}
 		fmt.Fprintln(writer, "  logic:")
 		selectors := make([]string, 0, len(table.Logic))
@@ -146,6 +158,7 @@ func writeProjectionTablesText(out io.Writer, set *ProjectionSet) error {
 		for _, selector := range selectors {
 			fmt.Fprintf(writer, "    %s\t%s\n", selector, table.Logic[selector])
 		}
+		fmt.Fprintf(writer, "  proposed DDL:\n%s;\n", table.DDL)
 	}
 	return writer.Flush()
 }

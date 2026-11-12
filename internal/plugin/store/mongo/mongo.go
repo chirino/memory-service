@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/chirino/memory-service/internal/service/eventstream"
 	"reflect"
 	"sort"
 	"strings"
@@ -1216,6 +1217,16 @@ func (s *MongoStore) createConversation(ctx context.Context, userID string, clie
 			}
 		}
 	}
+	if forkedAtConversationID == nil {
+		rows := make([]model.ConversationMembership, 0, len(membershipsToCopy))
+		for _, m := range membershipsToCopy {
+			rows = append(rows, model.ConversationMembership{ConversationGroupID: strToUUID(m.ConversationGroupID), UserID: m.UserID, AccessLevel: m.AccessLevel, CreatedAt: m.CreatedAt})
+		}
+		if err := eventstream.AppendCreatedMemberships(ctx, s, rows); err != nil {
+			return nil, err
+		}
+	}
+
 	return &registrystore.CreateConversationResult{
 		Conversation: &registrystore.ConversationDetail{
 			ConversationSummary: registrystore.ConversationSummary{
@@ -2037,7 +2048,9 @@ func (s *MongoStore) UpdateMembership(ctx context.Context, userID string, conver
 	}
 
 	var doc memberDoc
-	s.memberships().FindOne(ctx, bson.M{"conversation_group_id": groupID, "user_id": memberUserID}).Decode(&doc)
+	if err := s.memberships().FindOne(ctx, bson.M{"conversation_group_id": groupID, "user_id": memberUserID}).Decode(&doc); err != nil {
+		return nil, err
+	}
 	return &model.ConversationMembership{
 		ConversationGroupID: strToUUID(doc.ConversationGroupID),
 		UserID:              doc.UserID,
@@ -2057,24 +2070,25 @@ func (s *MongoStore) DeleteMembership(ctx context.Context, userID string, conver
 		"conversation_group_id": groupID,
 		"user_id":               memberUserID,
 	}).Decode(&doc)
-	if err != nil {
+	if errors.Is(err, mongo.ErrNoDocuments) {
 		return &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
+	}
+	if err != nil {
+		return err
 	}
 	if doc.AccessLevel == model.AccessLevelOwner {
 		return &registrystore.ValidationError{Field: "userId", Message: "cannot remove the owner"}
 	}
 
-	s.memberships().DeleteOne(ctx, bson.M{
-		"conversation_group_id": groupID,
-		"user_id":               memberUserID,
-	})
-
-	// Parity with Java: removing the transfer recipient cancels pending transfers.
-	s.transfers().DeleteMany(ctx, bson.M{
-		"conversation_group_id": groupID,
-		"to_user_id":            memberUserID,
-	})
-	return nil
+	result, err := s.memberships().DeleteOne(ctx, bson.M{"conversation_group_id": groupID, "user_id": memberUserID})
+	if err != nil {
+		return err
+	}
+	if result.DeletedCount == 0 {
+		return &registrystore.NotFoundError{Resource: "membership", ID: memberUserID}
+	}
+	_, err = s.transfers().DeleteMany(ctx, bson.M{"conversation_group_id": groupID, "to_user_id": memberUserID})
+	return err
 }
 
 func (s *MongoStore) GetGroupMemberUserIDs(ctx context.Context, conversationGroupID uuid.UUID) ([]string, error) {
@@ -2372,47 +2386,45 @@ func (s *MongoStore) CreateOwnershipTransfer(ctx context.Context, userID string,
 func (s *MongoStore) AcceptTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
 	var doc transferDoc
 	err := s.transfers().FindOne(ctx, bson.M{"_id": uuidToStr(transferID)}).Decode(&doc)
-	if err != nil {
+	if errors.Is(err, mongo.ErrNoDocuments) {
 		return &registrystore.NotFoundError{Resource: "transfer", ID: transferID.String()}
+	}
+	if err != nil {
+		return err
 	}
 	if doc.ToUserID != userID {
 		return &registrystore.ForbiddenError{}
 	}
-
-	// Update old owner to manager
-	s.memberships().UpdateOne(ctx,
-		bson.M{"conversation_group_id": doc.ConversationGroupID, "user_id": doc.FromUserID},
-		bson.M{"$set": bson.M{"access_level": model.AccessLevelManager}},
-	)
-
-	// Upsert new owner
-	count, _ := s.memberships().CountDocuments(ctx, bson.M{
-		"conversation_group_id": doc.ConversationGroupID,
-		"user_id":               doc.ToUserID,
-	})
-	if count == 0 {
-		s.memberships().InsertOne(ctx, memberDoc{
-			ConversationGroupID: doc.ConversationGroupID,
-			UserID:              doc.ToUserID,
-			AccessLevel:         model.AccessLevelOwner,
-			CreatedAt:           time.Now(),
-		})
-	} else {
-		s.memberships().UpdateOne(ctx,
-			bson.M{"conversation_group_id": doc.ConversationGroupID, "user_id": doc.ToUserID},
-			bson.M{"$set": bson.M{"access_level": model.AccessLevelOwner}},
-		)
+	if _, err = s.memberships().UpdateOne(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID, "user_id": doc.FromUserID}, bson.M{"$set": bson.M{"access_level": model.AccessLevelManager}}); err != nil {
+		return err
 	}
-
-	// Update conversation owner
-	s.conversations().UpdateMany(ctx,
-		bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}},
-		bson.M{"$set": bson.M{"owner_user_id": doc.ToUserID}},
-	)
-
-	// Delete transfer
-	s.transfers().DeleteOne(ctx, bson.M{"_id": uuidToStr(transferID)})
-	return nil
+	_, err = s.memberships().UpdateOne(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID, "user_id": doc.ToUserID}, bson.M{"$set": bson.M{"access_level": model.AccessLevelOwner}, "$setOnInsert": bson.M{"created_at": time.Now().UTC()}}, options.UpdateOne().SetUpsert(true))
+	if err != nil {
+		return err
+	}
+	if _, err = s.conversations().UpdateMany(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}}, bson.M{"$set": bson.M{"owner_user_id": doc.ToUserID}}); err != nil {
+		return err
+	}
+	if _, err = s.transfers().DeleteOne(ctx, bson.M{"_id": uuidToStr(transferID)}); err != nil {
+		return err
+	}
+	cursor, err := s.conversations().Find(ctx, bson.M{"conversation_group_id": doc.ConversationGroupID, "archived_at": bson.M{"$exists": false}}, options.Find().SetProjection(bson.M{"_id": 1}).SetSort(bson.D{{Key: "_id", Value: 1}}))
+	if err != nil {
+		return err
+	}
+	defer cursor.Close(ctx)
+	var conversations []struct {
+		ID string `bson:"_id"`
+	}
+	if err := cursor.All(ctx, &conversations); err != nil {
+		return err
+	}
+	ids := make([]string, 0, len(conversations))
+	for _, conversation := range conversations {
+		ids = append(ids, conversation.ID)
+	}
+	_, _, err = eventstream.AppendOutboxEvents(ctx, s, eventstream.OwnershipTransferEvents(strToUUID(doc.ConversationGroupID), doc.FromUserID, doc.ToUserID, ids)...)
+	return err
 }
 
 func (s *MongoStore) DeleteTransfer(ctx context.Context, userID string, transferID uuid.UUID) error {
@@ -3112,6 +3124,10 @@ func (s *MongoStore) autoCreateConversation(ctx context.Context, userID string, 
 	}
 	if _, err := s.memberships().InsertOne(ctx, member); err != nil {
 		return convDoc{}, fmt.Errorf("failed to create membership: %w", err)
+	}
+
+	if err := eventstream.AppendCreatedMemberships(ctx, s, []model.ConversationMembership{{ConversationGroupID: strToUUID(member.ConversationGroupID), UserID: member.UserID, AccessLevel: member.AccessLevel, CreatedAt: member.CreatedAt}}); err != nil {
+		return convDoc{}, err
 	}
 
 	return conv, nil

@@ -44,13 +44,13 @@ spec:
             failureThreshold: 3
           env:
             - {name: MEMORY_SERVICE_GRPC_ENDPOINT, value: memory-service:8080}
-            - {name: MEMORY_SERVICE_PROCESS_CLIENT_ID, value: clickhouse_processor}
-            - {name: MEMORY_SERVICE_API_KEY, value: clickhouse-processor-key}
+            - {name: MEMORY_SERVICE_PROCESS_CLIENT_ID, value: clickhouse_analytics}
+            - {name: MEMORY_SERVICE_API_KEY, value: clickhouse-analytics-key}
             - {name: MEMORY_SERVICE_PROCESS_ALLOW_INSECURE_GRPC, value: "true"}
             - {name: MEMORY_SERVICE_PROCESS_AFTER_CURSOR, value: start}
             - {name: MEMORY_SERVICE_CLICKHOUSE_ADDRESS, value: clickhouse:9000}
             - {name: MEMORY_SERVICE_CLICKHOUSE_PROTOCOL, value: native}
-            - {name: MEMORY_SERVICE_CLICKHOUSE_DATABASE, value: memory_service}
+            - {name: MEMORY_SERVICE_CLICKHOUSE_DATABASE, value: memory_service_analytics}
             - {name: MEMORY_SERVICE_CLICKHOUSE_USERNAME, value: memory_service_analytics}
             - {name: MEMORY_SERVICE_CLICKHOUSE_PASSWORD_FILE, value: /run/clickhouse/password}
             - {name: MEMORY_SERVICE_CLICKHOUSE_ALLOW_INSECURE, value: "true"}

@@ -13,7 +13,7 @@ func Command() *cli.Command {
 		Name: "clickhouse", Usage: "Export durable Memory Service analytics to ClickHouse", Flags: flags(),
 		Action: func(ctx context.Context, cmd *cli.Command) error {
 			cfg := Config{
-				ExporterID: cmd.String("exporter-id"), Addresses: cmd.StringSlice("clickhouse-address"), Protocol: cmd.String("clickhouse-protocol"),
+				ExportMemberships: cmd.Bool("export-memberships"), ExporterID: cmd.String("exporter-id"), Addresses: cmd.StringSlice("clickhouse-address"), Protocol: cmd.String("clickhouse-protocol"),
 				Database: cmd.String("clickhouse-database"), Username: cmd.String("clickhouse-username"), Password: os.Getenv("MEMORY_SERVICE_CLICKHOUSE_PASSWORD"), PasswordFile: cmd.String("clickhouse-password-file"),
 				TLS: cmd.Bool("clickhouse-tls"), CAFile: cmd.String("clickhouse-ca-file"), AllowInsecureClickHouse: cmd.Bool("allow-insecure-clickhouse"),
 				SchemaMode: cmd.String("schema-mode"), PayloadMode: PayloadMode(cmd.String("payload-mode")), AllowDecryptedContent: cmd.Bool("allow-decrypted-content"),
@@ -21,7 +21,7 @@ func Command() *cli.Command {
 				ProjectionPaths: cmd.StringSlice("projection-path"), ProjectionFailurePolicy: cmd.String("projection-failure-policy"), ProjectionReplayID: cmd.String("projection-replay-id"),
 				Disable: cmd.StringSlice("disable"), RetentionMode: cmd.String("retention-mode"), PurgeMode: cmd.String("purge-mode"),
 				LifecycleRetention: cmd.Duration("lifecycle-retention"), TombstoneRetention: cmd.Duration("tombstone-retention"),
-				GenericPayloadRetention: cmd.Duration("generic-payload-retention"), ProjectionRetention: cmd.Duration("projection-retention"),
+				ProjectionRetention:        cmd.Duration("projection-retention"),
 				ProjectionFailureRetention: cmd.Duration("projection-failure-retention"),
 				TailOnlyDevelopment:        cmd.Bool("tail-only-development"),
 				BatchBytes:                 int(cmd.Int("batch-bytes")), MaxRecordBytes: int(cmd.Int("max-record-bytes")), BatchDelay: cmd.Duration("batch-delay"),
@@ -52,6 +52,7 @@ func Command() *cli.Command {
 
 func flags() []cli.Flag {
 	return []cli.Flag{
+		&cli.BoolFlag{Name: "export-memberships", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_EXPORT_MEMBERSHIPS"), Usage: "export complete group memberships"},
 		&cli.StringFlag{Name: "endpoint", Sources: cli.EnvVars("MEMORY_SERVICE_GRPC_ENDPOINT"), Required: true},
 		&cli.StringFlag{Name: "client-id", Sources: cli.EnvVars("MEMORY_SERVICE_PROCESS_CLIENT_ID"), Required: true},
 		&cli.StringFlag{Name: "exporter-id", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_EXPORTER_ID")},
@@ -84,14 +85,13 @@ func flags() []cli.Flag {
 		&cli.DurationFlag{Name: "retry-max", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_RETRY_MAX"), Value: 30 * time.Second},
 		&cli.StringSliceFlag{Name: "metadata-key", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_METADATA_KEY")},
 		&cli.StringSliceFlag{Name: "projection-path", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_PATH")},
-		&cli.StringFlag{Name: "projection-failure-policy", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY"), Value: "continue-generic"},
+		&cli.StringFlag{Name: "projection-failure-policy", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_POLICY"), Value: "record"},
 		&cli.StringFlag{Name: "projection-replay-id", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_REPLAY_ID")},
 		&cli.StringSliceFlag{Name: "disable", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_DISABLE")},
 		&cli.StringFlag{Name: "retention-mode", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_RETENTION_MODE"), Value: RetentionManaged},
 		&cli.StringFlag{Name: "purge-mode", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PURGE_MODE"), Value: PurgeManaged},
 		&cli.DurationFlag{Name: "lifecycle-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_LIFECYCLE_RETENTION")},
 		&cli.DurationFlag{Name: "tombstone-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_TOMBSTONE_RETENTION")},
-		&cli.DurationFlag{Name: "generic-payload-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_GENERIC_PAYLOAD_RETENTION")},
 		&cli.DurationFlag{Name: "projection-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_RETENTION")},
 		&cli.DurationFlag{Name: "projection-failure-retention", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_PROJECTION_FAILURE_RETENTION")},
 		&cli.BoolFlag{Name: "tail-only-development", Sources: cli.EnvVars("MEMORY_SERVICE_CLICKHOUSE_TAIL_ONLY_DEVELOPMENT")},

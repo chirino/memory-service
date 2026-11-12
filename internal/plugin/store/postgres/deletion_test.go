@@ -53,7 +53,7 @@ func TestDescendantDeletionAtomicityAndClosure(t *testing.T) {
 	}), abort)
 
 	var count int64
-	for table, expected := range map[string]int64{"conversations": 5, "conversation_groups": 4, "tasks": 0, "outbox_events": 0} {
+	for table, expected := range map[string]int64{"conversations": 5, "conversation_groups": 4, "tasks": 0, "outbox_events": 5} {
 		require.NoError(t, store.db.Table(table).Count(&count).Error)
 		require.Equal(t, expected, count, table)
 	}
@@ -75,7 +75,7 @@ func TestDescendantDeletionAtomicityAndClosure(t *testing.T) {
 		}
 		return nil
 	}))
-	for table, expected := range map[string]int64{"conversations": 1, "conversation_groups": 1, "conversation_memberships": 1, "tasks": 3, "outbox_events": 4} {
+	for table, expected := range map[string]int64{"conversations": 1, "conversation_groups": 1, "conversation_memberships": 1, "tasks": 3, "outbox_events": 9} {
 		require.NoError(t, store.db.Table(table).Count(&count).Error)
 		require.Equal(t, expected, count, table)
 	}

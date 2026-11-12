@@ -27,6 +27,7 @@ func TestBundledExampleAppProjections(t *testing.T) {
 		rowModes[projection.Name] = projection.RowMode
 	}
 	require.Equal(t, map[string]string{
+		"conversation_details":       "conversation:",
 		"history_v1":                 "entry:history",
 		"history_lc4j_v1":            "entry:history/lc4j",
 		"history_lc4j_events_v1":     "entry:history/lc4j",
@@ -125,8 +126,10 @@ func TestBundledExampleAppProjections(t *testing.T) {
 			if projection.Resource == "entry" {
 				input = entryInputs[projection.Selector]
 				require.NotNil(t, input, projection.Selector)
+			} else if projection.Resource == "conversation" {
+				input = map[string]any{"ownerUserId": "owner", "clientId": "client", "createdAt": "2026-01-01T00:00:00Z", "updatedAt": "2026-01-01T00:00:00Z", "archived": false}
 			}
-			rows, code := projection.Rows(context.Background(), ProjectionRow{ResourceID: "resource-1"}, input)
+			rows, code := projection.Rows(context.Background(), ProjectionRow{ResourceID: "resource-1"}, map[string]any{"record": input})
 			require.Empty(t, code)
 			byName := make([]map[string]any, len(rows))
 			for i, row := range rows {
@@ -245,7 +248,7 @@ func TestProjectionNameValidation(t *testing.T) {
 		wantErr string
 	}{
 		{name: "history/lc4j-events/v1", wantErr: "must match"},
-		{name: "entries", wantErr: "reserved"},
+		{name: "conversation_memberships", wantErr: "reserved"},
 		{name: "history_current", wantErr: "reserved"},
 		{name: "history_all", wantErr: "reserved"},
 	} {
@@ -320,17 +323,17 @@ func TestExporterOwnedSchemaUsesPortableTypes(t *testing.T) {
 func TestCanonicalViewsUseLogicalKeysWithoutBatchCommitMarkers(t *testing.T) {
 	ddl := strings.Join(schemaStatements("analytics"), "\n")
 	require.NotContains(t, ddl, "ingest_batches")
-	require.Contains(t, ddl, "PARTITION BY e.exporter_id, e.event_id")
-	require.Contains(t, ddl, "PARTITION BY r.exporter_id, r.resource_type, r.resource_id")
+	require.Contains(t, ddl, "PARTITION BY exporter_id,event_id")
+	require.NotContains(t, ddl, "resources_current")
 
-	projectionDDL := projectionAllViewStatement("analytics", "support_ticket_v1", ProjectionRowsOne)
+	projectionDDL := projectionAllViewStatement("analytics", "support_ticket_v1", ProjectionRowsOne, "resource")
 	require.NotContains(t, projectionDDL, "ingest_batches")
-	require.Contains(t, projectionDDL, "PARTITION BY r.exporter_id, r.resource_id")
+	require.Contains(t, projectionDDL, "PARTITION BY r.exporter_id,r.resource_id")
 
-	multiRowDDL := projectionAllViewStatement("analytics", "support_ticket_events_v1", ProjectionRowsMany)
-	require.Contains(t, multiRowDDL, "dense_rank() OVER (PARTITION BY r.exporter_id, r.resource_id ORDER BY r.ingest_version DESC, r.event_id DESC) version_rank")
-	require.Contains(t, multiRowDDL, "PARTITION BY r.exporter_id, r.resource_id, r.row_index")
-	require.Contains(t, multiRowDDL, "r.row_index < r.row_count")
+	multiRowDDL := projectionAllViewStatement("analytics", "support_ticket_events_v1", ProjectionRowsMany, "resource")
+	require.Contains(t, multiRowDDL, "dense_rank() OVER (PARTITION BY r.exporter_id,r.resource_id ORDER BY r.ingest_version DESC,r.event_id DESC) _projection_version_rank")
+	require.Contains(t, multiRowDDL, "PARTITION BY r.exporter_id,r.resource_id,r.row_index")
+	require.Contains(t, multiRowDDL, "r.row_index<r.row_count")
 }
 
 func TestProjectionRowsModeValidation(t *testing.T) {
@@ -366,7 +369,7 @@ func TestProjectionRowsModeValidation(t *testing.T) {
 		},
 	}
 	_, err = compileProjection(context.Background(), memory, clickHouseProjectionCapabilities)
-	require.ErrorContains(t, err, "requires projectionRego")
+	require.ErrorContains(t, err, "require projectionRego")
 
 	for _, column := range []string{"row_index", "row_count"} {
 		reserved := testProjectionManifest("support_ticket_v1", "support-ticket/v1")
@@ -377,10 +380,10 @@ func TestProjectionRowsModeValidation(t *testing.T) {
 }
 
 func TestMultiRowProjectionRows(t *testing.T) {
-	projection := testMultiRowProjection(t, `output := [{"step": step} | some step in input.content]`)
+	projection := testMultiRowProjection(t, `output := [{"step": step} | some step in input.record.content]`)
 	base := ProjectionRow{Common: Common{EventID: "event-1", IngestVersion: 7}, ResourceID: "entry-1", ConversationID: "conversation-1"}
 
-	rows, code := projection.Rows(context.Background(), base, map[string]any{"content": []any{"plan", "act", "check"}})
+	rows, code := projection.Rows(context.Background(), base, map[string]any{"record": map[string]any{"content": []any{"plan", "act", "check"}}})
 	require.Empty(t, code)
 	require.Len(t, rows, 3)
 	for i, row := range rows {
@@ -395,7 +398,7 @@ func TestMultiRowProjectionRows(t *testing.T) {
 	}
 	require.Equal(t, []any{"act"}, rows[1].Values)
 
-	rows, code = projection.Rows(context.Background(), base, map[string]any{"content": []any{}})
+	rows, code = projection.Rows(context.Background(), base, map[string]any{"record": map[string]any{"content": []any{}}})
 	require.Empty(t, code)
 	require.Len(t, rows, 1, "a version without rows writes one marker row")
 	require.True(t, rows[0].Multi)
@@ -403,14 +406,14 @@ func TestMultiRowProjectionRows(t *testing.T) {
 	require.Equal(t, uint32(0), rows[0].RowCount)
 	require.Equal(t, []any{nil}, rows[0].Values)
 
-	_, code = projection.Rows(context.Background(), base, map[string]any{"content": []any{"plan", float64(1)}})
+	_, code = projection.Rows(context.Background(), base, map[string]any{"record": map[string]any{"content": []any{"plan", float64(1)}}})
 	require.Equal(t, "type_mismatch", code, "one invalid row fails the whole resource")
 
 	tooMany := make([]any, maxProjectionRows+1)
 	for i := range tooMany {
 		tooMany[i] = "step"
 	}
-	_, code = projection.Rows(context.Background(), base, map[string]any{"content": tooMany})
+	_, code = projection.Rows(context.Background(), base, map[string]any{"record": map[string]any{"content": tooMany}})
 	require.Equal(t, "too_many_rows", code)
 
 	tombstone := projection.TombstoneRow(base)
@@ -419,11 +422,11 @@ func TestMultiRowProjectionRows(t *testing.T) {
 	require.Equal(t, uint32(0), tombstone.RowCount)
 
 	objectOutput := testMultiRowProjection(t, `output := {"step": "plan"}`)
-	_, code = objectOutput.Rows(context.Background(), base, map[string]any{})
+	_, code = objectOutput.Rows(context.Background(), base, map[string]any{"record": map[string]any{}})
 	require.Equal(t, "output_not_array", code)
 
 	nonObjectItem := testMultiRowProjection(t, `output := ["plan"]`)
-	_, code = nonObjectItem.Rows(context.Background(), base, map[string]any{})
+	_, code = nonObjectItem.Rows(context.Background(), base, map[string]any{"record": map[string]any{}})
 	require.Equal(t, "output_not_object", code)
 }
 

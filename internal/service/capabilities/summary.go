@@ -27,6 +27,7 @@ type TechSummary struct {
 }
 
 type FeatureSummary struct {
+	AnalyticsMembershipSnapshots      bool   `json:"analytics_membership_snapshots"`
 	OutboxEnabled                     bool   `json:"outbox_enabled"`
 	SemanticSearchEnabled             bool   `json:"semantic_search_enabled"`
 	FulltextSearchEnabled             bool   `json:"fulltext_search_enabled"`
@@ -51,9 +52,14 @@ type SecuritySummary struct {
 	AttachmentEncryptionEnabled bool `json:"attachment_encryption_enabled"`
 }
 
-func Build(cfg *config.Config) Summary {
+func Build(cfg *config.Config, stores ...registrystore.MemoryStore) Summary {
 	info, ok := readBuildInfo()
-	return buildSummary(cfg, info, ok)
+	summary := buildSummary(cfg, info, ok)
+	if cfg != nil && cfg.OutboxEnabled && len(stores) > 0 {
+		source, ok := stores[0].(registrystore.MembershipSnapshotStore)
+		summary.Features.AnalyticsMembershipSnapshots = ok && source.SupportsAnalyticsMembershipSnapshots()
+	}
+	return summary
 }
 
 var readBuildInfo = debug.ReadBuildInfo

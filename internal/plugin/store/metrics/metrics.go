@@ -518,3 +518,25 @@ var _ store.OutboxHighWaterStore = (*metricsStore)(nil)
 var _ store.OutboxEnabledProvider = (*metricsStore)(nil)
 var _ store.AdminStatsSummaryProvider = (*metricsStore)(nil)
 var _ store.AdminCheckpointStore = (*metricsStore)(nil)
+
+func (m *metricsStore) AdminListEventSnapshotMemberships(ctx context.Context, after *store.EventSnapshotMembershipCursor, limit int) ([]model.ConversationMembership, *store.EventSnapshotMembershipCursor, error) {
+	defer observe("admin_list_event_snapshot_memberships", time.Now())
+	inner, ok := m.inner.(store.MembershipSnapshotStore)
+	if !ok {
+		return nil, nil, store.ErrEventSnapshotUnsupported
+	}
+	return inner.AdminListEventSnapshotMemberships(ctx, after, limit)
+}
+func (m *metricsStore) AdminGetEventSnapshotMembership(ctx context.Context, groupID, userID string) (*model.ConversationMembership, error) {
+	defer observe("admin_get_event_snapshot_membership", time.Now())
+	inner, ok := m.inner.(store.MembershipSnapshotStore)
+	if !ok {
+		return nil, store.ErrEventSnapshotUnsupported
+	}
+	return inner.AdminGetEventSnapshotMembership(ctx, groupID, userID)
+}
+
+func (m *metricsStore) SupportsAnalyticsMembershipSnapshots() bool {
+	inner, ok := m.inner.(store.MembershipSnapshotStore)
+	return ok && inner.SupportsAnalyticsMembershipSnapshots()
+}

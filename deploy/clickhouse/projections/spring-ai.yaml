@@ -19,7 +19,7 @@ spec:
     } else := null
 
     output := [row |
-      some message in input.content
+      some message in input.record.content
       row := {
         "role": field(message, "role"),
         "text": field(message, "text"),

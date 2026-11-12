@@ -4,120 +4,138 @@ title: Operate the ClickHouse processor
 description: Monitor, retain, recover, and purge Memory Service analytics data in ClickHouse.
 ---
 
-The processor exposes health and metrics on port `8081` by default:
-
-- `/healthz` reports process liveness.
-- `/readyz` succeeds after the processor owns the checkpoint lease and subscribes to the durable event stream.
-- `/metrics` exposes Prometheus metrics for batches, retries, checkpoints, and failures.
-
-## Check processor health
-
-With Docker Compose, inspect the service and its logs:
-
-```bash
-docker compose ps clickhouse-processor
-docker compose logs -f clickhouse-processor
-```
-
-With Kubernetes, inspect the deployment:
-
-```bash
-kubectl get deployment,pods -n memory-service -l app=clickhouse-processor
-kubectl logs -n memory-service deployment/clickhouse-processor
-```
-
-Keep the Kubernetes deployment at one replica with the `Recreate` strategy. Processors that share a client ID compete for one exclusive checkpoint lease.
+The processor serves `/healthz`, `/readyz`, and `/metrics` on port `8081`. Readiness means it owns the checkpoint lease and has an active subscription. It does not prove that all source events have reached ClickHouse. Keep one active owner per client ID; Kubernetes deployments use `Recreate`.
 
 ## Understand startup and recovery
 
-For a new checkpoint, the processor captures the durable live high-water cursor. It then scans conversations, lineage, entries, and memories. After the scan, it replays events after the captured cursor and moves to live delivery.
+A fresh exporter captures a durable source boundary, scans current conversations, entries, and memories, then replays the outbox from that boundary before entering live delivery. Membership scans are included when enabled. Bootstrap and live events use the same normalization and projection pipeline.
 
-The checkpoint stores the current phase and page token after each acknowledged page. A restart resumes the saved scan or catch-up cursor. If the saved cursor falls outside outbox retention, the processor stops instead of skipping events.
+A restarted snapshot scan starts at the beginning while retaining its original catch-up boundary. Current-state rows replace earlier observations. The checkpoint commits the requested projection configuration and replay ID only after catch-up reaches live delivery. Keep outbox retention longer than the longest outage plus scan duration. A cursor outside retained history stops the exporter with `backfill_required`; it never skips the missing interval.
 
-Keep outbox retention longer than the longest expected ClickHouse outage plus the initial scan duration.
-
-The processor only receives events after Memory Service gives them a sequence number. On PostgreSQL, the outbox relay does that. If the processor stops receiving events while Memory Service keeps accepting writes, check `memory_service_outbox_unsequenced_oldest_age_seconds` on Memory Service; see [Outbox Relay Metrics](/docs/configuration/#outbox-relay-metrics).
+On PostgreSQL, monitor `memory_service_outbox_unsequenced_oldest_age_seconds` if application writes continue but delivery stops. See [Outbox relay metrics](/docs/configuration/#outbox-relay-metrics).
 
 ## Manage schemas
 
-`--schema-mode=manage` creates the expected schema and applies processor-owned TTL changes. `--schema-mode=validate` compares the database with the expected schema and exits on drift without applying DDL. In external retention mode, neither schema mode validates or changes TTL expressions.
+`--schema-mode=manage` claims an empty dedicated database with the current fingerprint and creates owned objects. Matching interrupted infrastructure initialization can finish on restart, including a crash that left only the exact current empty schema registry before its checksum was stored. `validate` checks the current schema without DDL. Neither mode adopts an older or unowned nonempty database.
 
-The processor rejects:
+The registry stores the schema checksum and application time. It has no numeric schema version. Projection registration requires explicit row mode and ordering. The processor rejects conflicting manifests, physical types, keys, engines, partitioning, missing registry metadata, and orphan user relations. It never infers an old layout or drops an orphan automatically.
 
-- a newer or incompatible schema version
-- a changed projection manifest under an existing name
-- a registered projection chain whose manifests were reordered or removed from the configuration
-- an unregistered relation that uses a requested projection table or view name
-- a live exporter with conflicting database-wide retention values
-
-When a [projection chain](/docs/analytics/projections/#share-a-table-across-content-type-versions) adds columns, `--schema-mode=manage` adds them to the existing table and recreates its views. `--schema-mode=validate` makes no changes and exits with the missing columns and the `ALTER TABLE` statements that will add them. Applying those statements by hand isn't enough: only manage mode registers the new manifests and recreates the views. To roll out such a chain in a validate-mode deployment, start the processor once with `--schema-mode=manage` and a ClickHouse user that can alter tables, then return to validate mode. Validate mode also requires the `previous` column in `projection_registry`, which manage mode adds automatically.
-
-To list registered projection manifests and the tables they write to, query the registry:
+A projection chain can add nullable columns through manage mode. Validate mode reports the required `ALTER TABLE` statements; run manage once to register the extension and recreate its views, then return to validate. Registered manifests stay immutable. A whole configured-out table remains registered for cleanup and retention.
 
 ```sql
-SELECT table_name, projection_name, previous, projection_digest
-FROM memory_service.projection_registry FINAL
+SELECT table_name, projection_name, previous, row_mode, ordering, projection_digest
+FROM memory_service_analytics.projection_registry FINAL
 ORDER BY table_name, projection_name;
 ```
 
-Schema V1 is the first supported release schema. Reset databases made by unreleased pre-V1 drafts.
+## Cut over an existing analytics installation
+
+If the previous exporter was running, rebuild its analytics dataset in a separate database. The new exporter cannot resume its checkpoint or upgrade its ClickHouse tables in place. Both `manage` and `validate` reject the old schema. Changing `--projection-replay-id` does not convert it.
+
+This cutover changes only analytics. Keep the operational PostgreSQL, SQLite, or MongoDB datastore, attachments, source outbox, and other processors' checkpoints. Do not reset Memory Service or delete its storage volumes.
+
+### Prepare and stop the previous exporter
+
+1. Save the old binary or image reference, exporter configuration, database name, client/exporter IDs, and reader configuration. Preserve access to its checkpoint for rollback.
+2. Finish pending deletion work using the old exporter or its cleanup owner. Stop the old exporter and let outstanding ClickHouse requests finish. The new exporter does not process the old database's purge queue.
+3. Decide which old analytics history must be retained. The rebuild scans current source records and catches up through the outbox. It does not copy old ClickHouse rows or recreate lifecycle history, intermediate revisions, or source records that are no longer retained.
+
+An old dataset kept for history or rollback still needs its existing retention and deletion procedures while Memory Service continues to receive changes. Keep those responsibilities assigned until the dataset, its backups, and its readers are retired.
+
+### Prepare the new configuration
+
+Translate custom projections to `input.record` and declare `projectionRego` on each root. Remove `--generic-payload-retention` and its environment variable, remove `conversations:lineage` disable selectors, and change an explicit `continue-generic` failure policy to `record`. Projected and full modes no longer write an automatic generic JSON copy. See [projection manifests](/docs/analytics/projections/) and the [configuration reference](/docs/analytics/clickhouse/configuration/).
+
+With no projection paths, the packaged defaults create `conversations`, `entries`, and `memories`. The conversation table has only `created_at`, `updated_at`, and `archived`, plus processor-owned columns. Owner, client, agent, and lineage fields need the [opt-in conversation details projection](/docs/analytics/projections/#add-conversation-reporting-fields). Explicit paths replace the entire packaged set. Update dashboards that used generic payload columns or the dedicated lineage table.
+
+Provision an empty, dedicated ClickHouse database and grant the analytics user access to it, including the [schema and server-settings permissions](/docs/analytics/clickhouse/configuration/#clickhouse-connection). If you reuse a ClickHouse server or volume, apply the new database and grants explicitly; changing the repository's initialization SQL alone is not a cutover procedure. Leave the old database intact. The bundled `task kind:deploy` reapplies these grants even when ClickHouse retains an existing data volume. If you apply the local kind overlay manually, run `task kind:clickhouse:provision` afterward.
+
+The repository's `deploy/clickhouse/init.sql` is fixed to `memory_service_analytics`. For another database name, run these statements as a ClickHouse administrator, replacing `analytics_rebuild` and `memory_service_analytics` with your database and analytics user:
+
+```sql
+CREATE DATABASE IF NOT EXISTS analytics_rebuild;
+GRANT CREATE DATABASE, CREATE TABLE, DROP TABLE, CREATE VIEW, DROP VIEW, SELECT, INSERT, ALTER ON analytics_rebuild.* TO memory_service_analytics;
+GRANT SELECT ON system.merge_tree_settings TO memory_service_analytics;
+```
+
+Choose a new Memory Service client ID with the `admin` role and matching credentials. This ID owns a fresh checkpoint. Also choose a fresh exporter ID, which namespaces ClickHouse rows. For example, these settings name a new dataset; substitute names that have never been used in your deployment:
+
+```bash
+export MEMORY_SERVICE_PROCESS_CLIENT_ID=analytics-rebuild
+export MEMORY_SERVICE_CLICKHOUSE_EXPORTER_ID=analytics-rebuild
+export MEMORY_SERVICE_CLICKHOUSE_DATABASE=analytics_rebuild
+export MEMORY_SERVICE_CLICKHOUSE_SCHEMA_MODE=manage
+export MEMORY_SERVICE_CLICKHOUSE_PAYLOAD_MODE=metadata
+export MEMORY_SERVICE_PROCESS_AFTER_CURSOR=start
+```
+
+Keep the connection, TLS, authentication, and retention settings appropriate for your deployment. Replace the old API key with credentials for the new client. Do not copy or overwrite the previous checkpoint. Leave `--tail-only-development` off so the new dataset receives a current-state scan. A fresh dataset needs no projection replay ID.
+
+The exporter refuses to start when its client ID holds a checkpoint from the previous exporter, and when the dataset already holds rows from the current or a later checkpoint lease, which happens after a checkpoint is lost or deleted. Both errors ask for a new client ID and a new empty database. Rebuild the dataset rather than reusing the old identities.
+
+### Bootstrap, verify, and switch readers
+
+Start the new exporter. It initializes the empty database, scans retained current state, and catches up before entering live delivery. Keep outbox history available for the full scan and catch-up period.
+
+Read the new client's checkpoint with `GET /v1/admin/checkpoints/analytics-rebuild` using that client's admin credentials. The processor-defined `value.bootstrap.state` must reach `complete`. Readiness alone is insufficient because it reports lease ownership and subscription health. `value.lastEventCursor` is already set when the scan starts, to the outbox cursor where it began (`start` on an empty outbox), so a nonempty value does not show live delivery. The test record change below does.
+
+Before switching readers:
+
+- Check the expected projection tables and sample current rows, scoped to the new exporter ID. Compare retained source records with their projected rows; historical event counts need not match the old dataset.
+- Inspect `projection_failures` and resolve unexpected failures. A running exporter with failure policy `record` can still omit failed projection rows.
+- Create or update a test source record and confirm its current row changes. Delete it and confirm the row disappears from the current view. If memberships are enabled, verify a grant and revoke too.
+- Point dashboards and applications at the new database and typed columns. Keep queries scoped by exporter ID.
+
+Retire the old dataset only after readers have switched and its history, retention, deletion, and rollback obligations are resolved. Upgrading a binary never resets either dataset.
+
+### Roll back as one deployment
+
+Stop the new exporter and restore the old binary, configuration, database, checkpoint identity, and readers together. Never point the old binary at the new database or the new binary at the old database. The old exporter can catch up only while its saved cursor remains within retained source history. If it has expired, restoring the binary alone cannot recover the missing interval.
 
 ## Retain analytics data
 
-Analytics retention is independent from source retention. Configure lifecycle, tombstone, generic payload, projection, and projection-failure retention separately.
+Active projection and membership rows use `--projection-retention`; deleted rows use `--tombstone-retention`, both measured on `observed_at`. Positive tombstone retention requires positive active retention no longer than the tombstone retention. Lifecycle and failure retention have separate controls. Zero means no TTL.
 
-Payload-free deletion fences prevent an older row from becoming current after ClickHouse removes a tombstone. Apply equivalent deletion policies to replicas, backups, object storage, caches, and disaster-recovery copies.
+Deletion fences have no automatic TTL. Retire them only after the dataset's writers and resumable checkpoints are retired. They retain identities, without application content.
 
-In managed retention mode, all live exporters that share a ClickHouse database must use the same database-wide retention settings. The processor renews retention ownership with its checkpoint lease and stops writes if it loses ownership. Set retention mode to `external` when your ClickHouse administration owns TTL expressions.
+Live exporters sharing a database must agree on managed retention values. Heartbeats and the write path renew ownership; loss of ownership stops writes. In `external` retention mode, the operator owns TTLs and the exporter neither validates nor changes them.
 
-## Process hard deletes
+## Process deletions
 
-In managed purge mode, a source hard delete adds a payload-free request to `purge_queue` before the processor advances its checkpoint. The purge worker removes dependent lifecycle, generic, projection, and failure rows. It waits for ClickHouse mutations and records a `complete` queue version.
+Managed purge writes the complete typed scope and ingestion cutoff into `purge_queue`, writes identity/group fences, removes matching rows, waits for mutations, and records `complete` before checkpoint advancement. Cleanup uses exact kind/ID or canonical group UUID, always scoped by exporter. Membership revokes also use the stored cutoff to preserve later grants; purges for retired resource IDs and groups remove every matching version, including rows replayed under a new lease. Transient purge lookups retry without advancing the checkpoint; a conflicting stored scope stops the exporter. Cleanup needs no resource catalog. Replayed deletes reuse the original cutoff so an older revoke cannot erase a newer grant.
 
-Record-only mode leaves the request in `pending` state for an external worker. External mode does not write a request. In either mode, your deletion process must cover every table that can contain data for the source resource. See [ClickHouse processor configuration](/docs/analytics/clickhouse/configuration/#retention-and-deletion) for the ownership contract.
-
-Inspect incomplete purges:
+Record-only mode persists pending work for an external worker. External mode writes no queue request and delegates physical cleanup. Disabled outputs still receive cleanup notifications in managed and record-only modes. With membership export off, a revoke writes no fence and queues no purge unless an earlier enabled run left rows for that membership, so removed users' IDs are not retained. Rows from an earlier enabled run are still purged.
 
 ```sql
-SELECT
-  purge_id,
-  resource_kind,
-  status,
-  status_code,
-  requested_at
-FROM memory_service.purge_queue FINAL
-WHERE status != 'complete'
+SELECT purge_id, resource_kind, analytics_resource_id, conversation_group_id,
+       purge_scope, cutoff_ingest_version, status, requested_at
+FROM memory_service_analytics.purge_queue FINAL
+WHERE status = 'pending'
 ORDER BY requested_at;
 ```
 
-ClickHouse table writes and the source checkpoint do not share a transaction. A failure can therefore leave part of a batch visible until retry or replay writes the remaining rows. Canonical views use stable event or resource keys and the latest ingest version, so repeated delivery produces one logical result.
+A complete purge acknowledges its submitted mutations. Fences hide an older row inserted after cleanup, but do not physically remove a future INSERT. Retention and external cleanup procedures must account for outstanding requests during exporter takeover, along with replicas, backups, caches, and disaster-recovery copies.
 
-## Replay projections
+## Replay projections or enable memberships
 
-Adding a projection does not automatically scan all historical resources. Set a new replay ID to request a bounded entry and memory rescan:
+Set a fresh `--projection-replay-id` when adding a projection, re-enabling an output, or requesting recomputation with a chain's replacement logic. The scan includes current conversations, entries, memories, and enabled memberships. No user projection paths are required to replay the packaged defaults.
 
 ```bash
 memory-service process clickhouse \
   --endpoint memory-service:8080 \
   --client-id primary-analytics \
   --api-key "$MEMORY_SERVICE_ANALYTICS_API_KEY" \
-  --clickhouse-address clickhouse.example:9440 \
-  --clickhouse-tls \
+  --clickhouse-address clickhouse.example:9440 --clickhouse-tls \
+  --clickhouse-database memory_service_analytics \
   --clickhouse-username memory_service_analytics \
   --clickhouse-password-file /run/secrets/clickhouse-password \
-  --payload-mode projected \
-  --projection-path /etc/memory-service/projections/support-ticket.yaml \
-  --projection-replay-id support-ticket-v1-backfill
+  --export-memberships --projection-replay-id enable-memberships
 ```
 
-A replay also applies a manifest that replaces logic in a projection chain to existing resources. Its rows replace the older rows in the shared table.
-
-Reuse of the same replay ID does not request another scan. Change the ID after you correct a projection or source-data problem.
+An enabled membership exporter first checks `features.analytics_membership_snapshots`. Unsupported sources fail before bootstrap. Reusing the same replay ID requests no new scan. Resume a pending replay with its exact original configuration and ID. Removing a projection or disabling output does not trigger a scan or create replacement capture.
 
 ## Diagnose projection failures
 
-The default `continue-generic` failure policy records payload-free diagnostics in `projection_failures` and continues the generic export. Query failures by projection and error code, then compare the source shape with the manifest's Rego output and declared columns.
+The default `record` policy writes payload-free diagnostics to `projection_failures` and continues. `stop` halts on Rego or output validation errors. A missing source snapshot is recorded and skipped under both policies so normal catch-up can reach its later deletion event. Failures include typed resource identities and ingestion versions. Compare error codes with the source shape and declared columns; source payloads are never stored in diagnostics.
 
-Use `--projection-failure-policy=stop` when a projection failure must halt processing.
-
-See [Query analytics data](/docs/analytics/querying/) for diagnostic queries and [ClickHouse processor configuration](/docs/analytics/clickhouse/configuration/) for every setting.
+See [Query analytics data](/docs/analytics/querying/) and the [configuration reference](/docs/analytics/clickhouse/configuration/).

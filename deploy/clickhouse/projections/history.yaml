@@ -16,7 +16,7 @@ spec:
     attachment_content_types: {type: string_array, nullable: false}
   projectionRego: |
     package memoryservice.analytics
-    item := input.content[0]
+    item := input.record.content[0]
     events := object.get(item, "events", [])
     attachments := object.get(item, "attachments", [])
     event_types := [event_type |

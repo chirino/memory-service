@@ -6,27 +6,29 @@ description: Start the ClickHouse analytics processor and verify an exported Mem
 
 This guide starts the repository's ClickHouse server and metadata-mode processor. You will create a conversation and verify that its analytics row reaches ClickHouse.
 
+If you already ran the previous exporter, follow [the existing-installation cutover](/docs/analytics/clickhouse/operations/#cut-over-an-existing-analytics-installation) before starting this version. It requires a separate empty analytics database and fresh client/exporter identities.
+
 ## Start the Docker Compose services
 
 From the repository root, start the stack:
 
 ```bash
-docker compose up -d --wait
+task dev:clickhouse-processor
 ```
 
-The Compose stack starts:
+The task starts the required Compose dependencies and runs the exporter locally against a minimal source service with OIDC disabled:
 
 - a pinned ClickHouse server with native TCP on host port `9002` and HTTP on host port `8123`
-- the `clickhouse-processor` in `metadata` mode
-- the `memory_service` ClickHouse database and the `memory_service_analytics` user
+- the local processor in `metadata` mode with packaged metadata projections
+- the `memory_service_analytics` ClickHouse database and the `memory_service_analytics` user
 
 Check that the processor is ready:
 
 ```bash
-docker compose ps clickhouse clickhouse-processor
+docker compose ps clickhouse
 ```
 
-Both services must report a healthy state.
+ClickHouse must report healthy. The local task exposes readiness at `http://localhost:8086/readyz`, avoiding the Keycloak port. Keep the task running in one terminal and run the following commands in another.
 
 ## Write and verify a record
 
@@ -36,7 +38,7 @@ Read the current conversation count:
 docker compose exec -T clickhouse clickhouse-client \
   --user memory_service_analytics \
   --password memory-service-analytics \
-  --query "SELECT count() FROM memory_service.conversations_current WHERE exporter_id='clickhouse_processor'"
+  --query "SELECT count() FROM memory_service_analytics.conversations_current WHERE exporter_id='clickhouse_analytics'"
 ```
 
 Create a conversation:
@@ -62,6 +64,7 @@ memory-service process clickhouse \
   --api-key "$MEMORY_SERVICE_ANALYTICS_API_KEY" \
   --clickhouse-address clickhouse.example:9440 \
   --clickhouse-tls \
+  --clickhouse-database memory_service_analytics \
   --clickhouse-username memory_service_analytics \
   --clickhouse-password-file /run/secrets/clickhouse-password
 ```

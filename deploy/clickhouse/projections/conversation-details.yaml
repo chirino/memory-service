@@ -1,0 +1,33 @@
+apiVersion: memory-service/v1alpha1
+kind: AnalyticsProjection
+metadata:
+  name: conversation_details
+spec:
+  resource: conversation
+  table: conversation_details
+  rows: one
+  columns:
+    owner_user_id: {type: string, nullable: false}
+    client_id: {type: string, nullable: false}
+    agent_id: {type: string, nullable: true}
+    created_at: {type: timestamp, nullable: false}
+    updated_at: {type: timestamp, nullable: false}
+    archived: {type: bool, nullable: false}
+    forked_at_conversation_id: {type: string, nullable: true}
+    forked_at_entry_id: {type: string, nullable: true}
+    started_by_conversation_id: {type: string, nullable: true}
+    started_by_entry_id: {type: string, nullable: true}
+  projectionRego: |
+    package memoryservice.analytics
+    output := {
+      "owner_user_id": input.record.ownerUserId,
+      "client_id": input.record.clientId,
+      "agent_id": object.get(input.record, "agentId", null),
+      "created_at": input.record.createdAt,
+      "updated_at": input.record.updatedAt,
+      "archived": input.record.archived,
+      "forked_at_conversation_id": object.get(input.record, "forkedAtConversationId", null),
+      "forked_at_entry_id": object.get(input.record, "forkedAtEntryId", null),
+      "started_by_conversation_id": object.get(input.record, "startedByConversationId", null),
+      "started_by_entry_id": object.get(input.record, "startedByEntryId", null),
+    }

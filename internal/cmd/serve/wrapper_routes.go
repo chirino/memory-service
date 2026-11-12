@@ -324,7 +324,7 @@ func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, id openapi_typ
 	routeattachments.HandleDownloadURL(c, p.store, p.attachStore, p.cfg, primary)
 }
 func (p *proxyAPIServer) GetCapabilities(c *gin.Context) {
-	routecapabilities.HandleGetCapabilities(c, p.cfg)
+	routecapabilities.HandleGetCapabilities(c, p.cfg, p.store)
 }
 func (p *proxyAPIServer) ListConversations(c *gin.Context, _ generatedapi.ListConversationsParams) {
 	routeconversations.HandleListConversations(c, p.store)

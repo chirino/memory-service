@@ -1487,7 +1487,7 @@ paths:
             type: string
             enum: [summary, full]
             default: summary
-          description: With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields.
+          description: With `full`, data is the corresponding admin OpenAPI resource, including admin-only routing fields. Memberships use [AdminMembership](#/components/schemas/AdminMembership) with group/user identity. Deleted, hard-deleted, and evicted events retain their summary identities and lifecycle change instead of reloading current resources. Agent membership event data is unchanged.
         - name: initial_state
           in: query
           required: false
@@ -2284,6 +2284,25 @@ components:
         purpose:
           type: string
           description: Human-readable label used as attribution in matchedQueries. Defaults to text when absent.
+    AdminMembership:
+      type: object
+      description: Full admin event and current-state membership resource. A group membership has no single conversation ID.
+      required: [id, conversationGroupId, userId, accessLevel, createdAt]
+      properties:
+        id:
+          type: string
+          description: Unpadded base64url of the group UUID bytes followed by the exact UTF-8 user ID. This is not anonymization.
+        conversationGroupId:
+          type: string
+          format: uuid
+        userId:
+          type: string
+        accessLevel:
+          type: string
+          enum: [owner, manager, writer, reader]
+        createdAt:
+          type: string
+          format: date-time
     AdminMemoryItem:
       type: object
       required: [kind]

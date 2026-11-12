@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 	"sync"
+	"time"
 
 	"github.com/charmbracelet/log"
 	"github.com/chirino/memory-service/internal/config"
@@ -22,8 +23,10 @@ import (
 )
 
 type sharedHandle struct {
-	db    *gorm.DB
-	sqlDB *sql.DB
+	outboxMu    sync.Mutex
+	outboxRelay *sqliteOutboxRelay
+	db          *gorm.DB
+	sqlDB       *sql.DB
 	// writeMu serializes write scopes only within this process. The runtime DSN
 	// does not set _txlock=immediate, so separate processes sharing one file can
 	// hit busy/locked errors on read-to-write upgrades; use PostgreSQL for that.
@@ -266,10 +269,16 @@ func (h *sharedHandle) InWriteTx(ctx context.Context, fn func(context.Context) e
 		return fn(ctx)
 	}
 
-	h.writeMu.Lock()
-	defer h.writeMu.Unlock()
-
-	return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
-		return fn(withScope(ctx, tx, txscope.IntentWrite))
-	})
+	actionCtx, actions := txscope.WithAfterCommitScope(ctx)
+	err := func() error {
+		h.writeMu.Lock()
+		defer h.writeMu.Unlock()
+		return h.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error { return fn(withScope(actionCtx, tx, txscope.IntentWrite)) })
+	}()
+	if err == nil {
+		commitCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
+		defer cancel()
+		actions.Run(commitCtx)
+	}
+	return err
 }

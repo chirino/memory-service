@@ -1,6 +1,7 @@
 package capabilities
 
 import (
+	registrystore "github.com/chirino/memory-service/internal/registry/store"
 	"net/http"
 
 	"github.com/chirino/memory-service/internal/config"
@@ -9,12 +10,12 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-func HandleGetCapabilities(c *gin.Context, cfg *config.Config) {
+func HandleGetCapabilities(c *gin.Context, cfg *config.Config, stores ...registrystore.MemoryStore) {
 	if !hasCapabilitiesAccess(c) {
 		c.JSON(http.StatusForbidden, gin.H{"error": "client context or admin/auditor role required"})
 		return
 	}
-	c.JSON(http.StatusOK, servicecapabilities.Build(cfg))
+	c.JSON(http.StatusOK, servicecapabilities.Build(cfg, stores...))
 }
 
 func hasCapabilitiesAccess(c *gin.Context) bool {

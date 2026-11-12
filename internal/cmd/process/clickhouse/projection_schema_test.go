@@ -24,9 +24,9 @@ func TestValidateRegisteredProjection(t *testing.T) {
 	}{
 		{"unsafe-table", "safe", "safe; DROP TABLE users", "entry:input.resource"},
 		{"unsafe-name", "safe; DROP TABLE users", "safe", "entry:input.resource"},
-		{"resources", "safe", "resources", "entry:input.resource"},
+		{"fixed-memberships", "safe", "conversation_memberships", "entry:input.resource"},
 		{"generated-view", "safe", "safe_current", "entry:input.resource"},
-		{"bad-resource", "safe", "safe", "conversation:input.resource"},
+		{"bad-resource", "safe", "safe", "membership:input.resource"},
 		{"missing-resource", "safe", "safe", "input.resource"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
