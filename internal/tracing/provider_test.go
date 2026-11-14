@@ -11,7 +11,8 @@ import (
 
 func TestProviderFromContextOrNoop(t *testing.T) {
 	t.Run("nil context returns noop provider", func(t *testing.T) {
-		tp := tracing.ProviderFromContextOrNoop(nil) //nolint:staticcheck
+		//lint:ignore SA1012 Verify the documented nil-context fallback.
+		tp := tracing.ProviderFromContextOrNoop(nil)
 		require.NotNil(t, tp)
 		tracer := tp.Tracer("test")
 		_, span := tracer.Start(context.Background(), "noop-span")

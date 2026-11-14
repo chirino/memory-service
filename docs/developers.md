@@ -56,6 +56,15 @@
 
 
 
+## Running Go correctness checks
+
+Run `task lint` or `task staticcheck:correctness` to check Go code and tests with
+Staticcheck. CI runs the same task. The task downloads the pinned tool version
+automatically, so no separate installation is needed.
+
+The baseline enables `SA*`, `S1*`, and `QF*`, except the deprecation check `SA1019`.
+It checks both production and `auth_testfixtures` builds with `sqlite_fts5` enabled.
+
 ## Running agaist a local LLM like LM Studio
 
 Before running the chat example apps:

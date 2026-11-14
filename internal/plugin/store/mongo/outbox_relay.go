@@ -198,7 +198,7 @@ func (s *MongoStore) publishPendingMongoOutboxWithRetry(ctx context.Context, bus
 		}
 		err := s.publishNextMongoOutboxEvent(ctx, bus, owner)
 		_ = s.releaseMongoPublisherLease(context.Background(), owner)
-		if errors.Is(err, mongo.ErrNoDocuments) || err == nil {
+		if errors.Is(err, mongo.ErrNoDocuments) {
 			return nil
 		} else if ctx.Err() == nil {
 			log.Warn("MongoDB outbox relay publish failed", "err", err, "retryIn", 100*time.Millisecond)

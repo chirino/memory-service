@@ -688,10 +688,6 @@ func (d *domainAssertionSteps) setContextVariable(name, value string) error {
 		return err
 	}
 	d.s.Variables[name] = expanded
-	// Sync well-known variables to scenario state
-	if name == "conversationId" {
-		// Already stored in Variables map, nothing else to sync
-	}
 	return nil
 }
 

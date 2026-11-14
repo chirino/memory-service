@@ -132,6 +132,23 @@ tasks:
       - test:go
       - test:java
 
+  lint:
+    desc: Run Go correctness checks
+    deps:
+      - staticcheck:correctness
+
+  staticcheck:correctness:
+    desc: Run the low-noise Staticcheck baseline for production and auth fixture builds
+    cmds:
+      - |
+        set -eu
+        export CGO_ENABLED=1
+        for tags in sqlite_fts5 'sqlite_fts5 auth_testfixtures'; do
+          packages=$(go list -tags="$tags" ./...)
+          set -- $(printf '%s\n' "$packages" | grep -v '/node_modules/')
+          go run honnef.co/go/tools/cmd/staticcheck@v0.8.2 -checks='SA*,S1*,QF*,-SA1019' -tags="$tags" "$@"
+        done
+
   install:go:
     desc: install go binary
     cmds:
