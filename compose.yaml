@@ -551,7 +551,6 @@ services:
       MEMORY_SERVICE_GRPC_ENDPOINT: memory-service:8080
       MEMORY_SERVICE_PROCESS_CLIENT_ID: turn_traces_processor
       MEMORY_SERVICE_API_KEY: turn-traces-processor-key
-      MEMORY_SERVICE_BEARER_TOKEN: turn-traces-processor
       MEMORY_SERVICE_PROCESS_SCOPE: admin
       MEMORY_SERVICE_PROCESS_CHECKPOINT_INTERVAL: 5s
       MEMORY_SERVICE_TURN_TRACES_LANGFUSE_NAME: memory-service.turn

@@ -18,7 +18,6 @@ import (
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/credentials"
 	"google.golang.org/grpc/credentials/insecure"
-	"google.golang.org/grpc/metadata"
 	"google.golang.org/grpc/status"
 	"google.golang.org/protobuf/types/known/structpb"
 )
@@ -28,28 +27,23 @@ import (
 // the resource envelope and protobuf framing.
 const analyticsGRPCMaxReceiveBytes = 48 << 20
 
-// GRPCAuth configures Memory Service gRPC request metadata.
-type GRPCAuth struct {
-	APIKey      string
-	BearerToken string
-	ClientID    string
-}
-
 // DialGRPC opens a Memory Service gRPC connection.
-func DialGRPC(endpoint string) (*grpc.ClientConn, error) {
+func DialGRPC(endpoint string, auth ...*GRPCAuth) (*grpc.ClientConn, error) {
 	endpoint = strings.TrimSpace(endpoint)
 	if endpoint == "" {
 		return nil, errors.New("endpoint is required")
 	}
-	return grpc.NewClient(endpoint,
-		grpc.WithTransportCredentials(insecure.NewCredentials()),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(analyticsGRPCMaxReceiveBytes)),
-	)
+	options := []grpc.DialOption{grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(analyticsGRPCMaxReceiveBytes))}
+	if len(auth) > 0 {
+		options = append(options, auth[0].dialOptions()...)
+	}
+	return grpc.NewClient(endpoint, options...)
 }
 
 // GRPCDialConfig applies the processor transport policy. Remote plaintext is
 // rejected unless the caller explicitly marks the connection as development-only.
 type GRPCDialConfig struct {
+	Auth          *GRPCAuth
 	TLS           bool
 	CAFile        string
 	AllowInsecure bool
@@ -73,10 +67,8 @@ func DialGRPCWithConfig(endpoint string, cfg GRPCDialConfig) (*grpc.ClientConn, 
 		if !loopback && !cfg.AllowInsecure {
 			return nil, errors.New("gRPC TLS is required for non-loopback endpoints; use --allow-insecure-grpc only for development")
 		}
-		return grpc.NewClient(endpoint,
-			grpc.WithTransportCredentials(insecure.NewCredentials()),
-			grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(max(analyticsGRPCMaxReceiveBytes, cfg.MaxReceiveBytes))),
-		)
+		options := append(cfg.Auth.dialOptions(), grpc.WithTransportCredentials(insecure.NewCredentials()), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(max(analyticsGRPCMaxReceiveBytes, cfg.MaxReceiveBytes))))
+		return grpc.NewClient(endpoint, options...)
 	}
 	tlsConfig := &tls.Config{MinVersion: tls.VersionTLS12, ServerName: strings.Trim(host, "[]")}
 	if cfg.CAFile != "" {
@@ -93,16 +85,13 @@ func DialGRPCWithConfig(endpoint string, cfg GRPCDialConfig) (*grpc.ClientConn, 
 		}
 		tlsConfig.RootCAs = roots
 	}
-	return grpc.NewClient(endpoint,
-		grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)),
-		grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(max(analyticsGRPCMaxReceiveBytes, cfg.MaxReceiveBytes))),
-	)
+	options := append(cfg.Auth.dialOptions(), grpc.WithTransportCredentials(credentials.NewTLS(tlsConfig)), grpc.WithDefaultCallOptions(grpc.MaxCallRecvMsgSize(max(analyticsGRPCMaxReceiveBytes, cfg.MaxReceiveBytes))))
+	return grpc.NewClient(endpoint, options...)
 }
 
 // GRPCEventClient adapts EventStreamService to EventClient.
 type GRPCEventClient struct {
 	Client pb.EventStreamServiceClient
-	Auth   GRPCAuth
 }
 
 // Subscribe opens a gRPC event stream.
@@ -114,7 +103,7 @@ func (c GRPCEventClient) Subscribe(ctx context.Context, req SubscribeRequest) (E
 	if req.Scope == "user" {
 		scope = pb.EventScope_EVENT_SCOPE_AUTHORIZED
 	}
-	stream, err := c.Client.SubscribeEvents(withAuth(ctx, c.Auth), &pb.SubscribeEventsRequest{
+	stream, err := c.Client.SubscribeEvents(ctx, &pb.SubscribeEventsRequest{
 		Kinds:             req.Kinds,
 		AfterCursor:       optionalString(req.AfterCursor),
 		Detail:            optionalString(defaultString(req.Detail, "full")),
@@ -163,7 +152,6 @@ func grpcEventTime(msg *pb.EventNotification) time.Time {
 // GRPCCheckpointClient adapts AdminCheckpointService to CheckpointClient.
 type GRPCCheckpointClient struct {
 	Client pb.AdminCheckpointServiceClient
-	Auth   GRPCAuth
 }
 
 // Get loads a checkpoint.
@@ -171,7 +159,7 @@ func (c GRPCCheckpointClient) Get(ctx context.Context, clientID string) (Checkpo
 	if c.Client == nil {
 		return Checkpoint{}, errors.New("checkpoint client is required")
 	}
-	resp, err := c.Client.GetCheckpoint(withAuth(ctx, c.Auth), &pb.GetCheckpointRequest{ClientId: clientID})
+	resp, err := c.Client.GetCheckpoint(ctx, &pb.GetCheckpointRequest{ClientId: clientID})
 	if err != nil {
 		if status.Code(err) == codes.NotFound {
 			return Checkpoint{}, ErrCheckpointNotFound
@@ -204,7 +192,7 @@ func (c GRPCCheckpointClient) put(ctx context.Context, clientID, contentType str
 	if err != nil {
 		return Checkpoint{}, err
 	}
-	resp, err := c.Client.PutCheckpoint(withAuth(ctx, c.Auth), &pb.PutCheckpointRequest{
+	resp, err := c.Client.PutCheckpoint(ctx, &pb.PutCheckpointRequest{
 		ClientId:         clientID,
 		ContentType:      contentType,
 		Value:            pValue,
@@ -221,7 +209,7 @@ func (c GRPCCheckpointClient) AcquireLease(ctx context.Context, clientID string,
 	if c.Client == nil {
 		return CheckpointLease{}, errors.New("checkpoint client is required")
 	}
-	resp, err := c.Client.AcquireLease(withAuth(ctx, c.Auth), &pb.AcquireCheckpointLeaseRequest{ClientId: clientID, TtlSeconds: uint32(ttl / time.Second)})
+	resp, err := c.Client.AcquireLease(ctx, &pb.AcquireCheckpointLeaseRequest{ClientId: clientID, TtlSeconds: uint32(ttl / time.Second)})
 	if err != nil {
 		return CheckpointLease{}, err
 	}
@@ -232,7 +220,7 @@ func (c GRPCCheckpointClient) RenewLease(ctx context.Context, clientID, leaseTok
 	if c.Client == nil {
 		return CheckpointLease{}, errors.New("checkpoint client is required")
 	}
-	resp, err := c.Client.RenewLease(withAuth(ctx, c.Auth), &pb.RenewCheckpointLeaseRequest{ClientId: clientID, LeaseToken: leaseToken, TtlSeconds: uint32(ttl / time.Second)})
+	resp, err := c.Client.RenewLease(ctx, &pb.RenewCheckpointLeaseRequest{ClientId: clientID, LeaseToken: leaseToken, TtlSeconds: uint32(ttl / time.Second)})
 	if err != nil {
 		return CheckpointLease{}, err
 	}
@@ -243,7 +231,7 @@ func (c GRPCCheckpointClient) ReleaseLease(ctx context.Context, clientID, leaseT
 	if c.Client == nil {
 		return errors.New("checkpoint client is required")
 	}
-	_, err := c.Client.ReleaseLease(withAuth(ctx, c.Auth), &pb.ReleaseCheckpointLeaseRequest{ClientId: clientID, LeaseToken: leaseToken})
+	_, err := c.Client.ReleaseLease(ctx, &pb.ReleaseCheckpointLeaseRequest{ClientId: clientID, LeaseToken: leaseToken})
 	return err
 }
 
@@ -273,23 +261,6 @@ func checkpointFromProto(resp *pb.AdminCheckpoint) (Checkpoint, error) {
 		Revision:    resp.GetRevision(),
 		UpdatedAt:   updatedAt,
 	}, nil
-}
-
-func withAuth(ctx context.Context, auth GRPCAuth) context.Context {
-	pairs := make([]string, 0, 6)
-	if auth.BearerToken != "" {
-		pairs = append(pairs, "authorization", "Bearer "+auth.BearerToken)
-	}
-	if auth.APIKey != "" {
-		pairs = append(pairs, "x-api-key", auth.APIKey)
-	}
-	if auth.ClientID != "" {
-		pairs = append(pairs, "x-client-id", auth.ClientID)
-	}
-	if len(pairs) == 0 {
-		return ctx
-	}
-	return metadata.AppendToOutgoingContext(ctx, pairs...)
 }
 
 func optionalString(value string) *string {

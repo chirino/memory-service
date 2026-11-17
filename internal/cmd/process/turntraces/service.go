@@ -20,7 +20,7 @@ type StartOptions struct {
 	Endpoint           string
 	ClientID           string
 	APIKey             string
-	BearerToken        string
+	OIDC               processruntime.OIDCConfig
 	Scope              string
 	AfterCursor        string
 	CheckpointInterval time.Duration
@@ -38,6 +38,7 @@ type RunningProcessor struct {
 	cancel   context.CancelFunc
 	done     chan struct{}
 	conn     *grpc.ClientConn
+	auth     *processruntime.GRPCAuth
 	shutdown func(context.Context) error
 	mu       sync.Mutex
 	err      error
@@ -82,36 +83,38 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 	checkpoints := opts.Checkpoints
 	contextFetcher := opts.ContextFetcher
 	var conn *grpc.ClientConn
+	var auth *processruntime.GRPCAuth
 	if events == nil || checkpoints == nil {
 		var err error
-		conn, err = processruntime.DialGRPC(opts.Endpoint)
+		var authErr error
+		auth, authErr = processruntime.NewGRPCAuth(ctx, opts.ClientID, opts.APIKey, opts.OIDC)
+		if authErr != nil {
+			if shutdown != nil {
+				_ = shutdown(context.Background())
+			}
+			return nil, authErr
+		}
+		conn, err = processruntime.DialGRPC(opts.Endpoint, auth)
 		if err != nil {
+			auth.Close()
 			if shutdown != nil {
 				_ = shutdown(context.Background())
 			}
 			return nil, err
 		}
-		auth := processruntime.GRPCAuth{
-			APIKey:      opts.APIKey,
-			BearerToken: opts.BearerToken,
-			ClientID:    opts.ClientID,
-		}
 		if events == nil {
 			events = processruntime.GRPCEventClient{
 				Client: pb.NewEventStreamServiceClient(conn),
-				Auth:   auth,
 			}
 		}
 		if checkpoints == nil {
 			checkpoints = processruntime.GRPCCheckpointClient{
 				Client: pb.NewAdminCheckpointServiceClient(conn),
-				Auth:   auth,
 			}
 		}
 		if contextFetcher == nil && scope == "admin" {
 			contextFetcher = grpcAdminContextFetcher{
 				client: pb.NewAdminEntriesServiceClient(conn),
-				auth:   auth,
 			}
 		}
 	}
@@ -137,10 +140,13 @@ func StartProcessor(ctx context.Context, opts StartOptions) (*RunningProcessor, 
 		cancel:   cancel,
 		done:     make(chan struct{}),
 		conn:     conn,
+		auth:     auth,
 		shutdown: shutdown,
 	}
 	go func() {
 		err := runner.Run(runCtx)
+		cancel()
+		auth.Close()
 		running.mu.Lock()
 		running.err = err
 		running.mu.Unlock()
@@ -176,6 +182,7 @@ func (p *RunningProcessor) Shutdown(ctx context.Context) error {
 		case <-ctx.Done():
 			shutdownErr = ctx.Err()
 		}
+		p.auth.Close()
 		if p.conn != nil {
 			if err := p.conn.Close(); err != nil && shutdownErr == nil {
 				shutdownErr = err
