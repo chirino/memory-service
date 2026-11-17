@@ -15,6 +15,7 @@ import (
 	"runtime/debug"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -82,6 +83,7 @@ type GRPCAuth struct {
 	done        chan struct{}
 	changed     chan struct{}
 	wake        chan struct{}
+	failure     atomic.Value // Stores a terminal renewal-worker error.
 }
 
 // NewGRPCAuth validates configuration and obtains the first token before startup.
@@ -260,6 +262,7 @@ func (a *GRPCAuth) renew() {
 	defer func() {
 		if recovered := recover(); recovered != nil {
 			stack := debug.Stack()
+			a.failure.Store(fmt.Errorf("OIDC token renewal worker stopped unexpectedly: %w", operationevent.ErrRecoveredPanic))
 			operationevent.LogRecoveredPanic(nil, "job.process.oidc-renewal", recovered, stack)
 		}
 	}()
@@ -317,7 +320,7 @@ func (a *GRPCAuth) accessToken(ctx context.Context) (string, error) {
 		}
 		if a.ctx.Err() != nil {
 			a.mu.Unlock()
-			return "", a.ctx.Err()
+			return "", a.stoppedError()
 		}
 		changed := a.changed
 		a.mu.Unlock()
@@ -325,10 +328,18 @@ func (a *GRPCAuth) accessToken(ctx context.Context) (string, error) {
 		case <-ctx.Done():
 			return "", ctx.Err()
 		case <-a.ctx.Done():
-			return "", a.ctx.Err()
+			return "", a.stoppedError()
 		case <-changed:
 		}
 	}
+}
+
+// Worker failure must remain distinct from cancellation during normal Close.
+func (a *GRPCAuth) stoppedError() error {
+	if err := a.failure.Load(); err != nil {
+		return err.(error)
+	}
+	return a.ctx.Err()
 }
 
 func (a *GRPCAuth) invalidate(rejected string) {

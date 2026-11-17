@@ -22,6 +22,8 @@ import (
 	"time"
 
 	pb "github.com/chirino/memory-service/internal/generated/pb/memory/v1"
+	"github.com/chirino/memory-service/internal/operationevent"
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"github.com/urfave/cli/v3"
 	"golang.org/x/oauth2"
@@ -702,4 +704,59 @@ func TestOIDCStartupGrantHonorsCancellation(t *testing.T) {
 	case <-time.After(time.Second):
 		t.Fatal("startup grant ignored cancellation")
 	}
+}
+
+func TestOIDCRenewalPanicPropagatesToRuntime(t *testing.T) {
+	workerCtx, cancelWorker := context.WithCancel(context.Background())
+	auth := &GRPCAuth{
+		grant: &clientcredentials.Config{
+			ClientID: "processor", ClientSecret: "fixture", TokenURL: "https://issuer.invalid/token", AuthStyle: oauth2.AuthStyleInHeader,
+		},
+		httpClient: &http.Client{Transport: oidcRoundTripper(func(*http.Request) (*http.Response, error) {
+			panic("private panic content")
+		})},
+		token: &oauth2.Token{AccessToken: "cached", Expiry: time.Now().Add(time.Minute)},
+		ctx:   workerCtx, cancel: cancelWorker,
+		done: make(chan struct{}), changed: make(chan struct{}), wake: make(chan struct{}, 1),
+	}
+	go auth.renew()
+	defer auth.Close()
+	select {
+	case <-auth.done:
+	case <-time.After(time.Second):
+		t.Fatal("renewal worker did not stop after panic")
+	}
+
+	// Preserve the valid-token fast path, then require a new token.
+	token, err := auth.accessToken(t.Context())
+	require.NoError(t, err)
+	require.Equal(t, "cached", token)
+	auth.mu.Lock()
+	auth.token.Expiry = time.Now().Add(-time.Second)
+	auth.mu.Unlock()
+	_, err = auth.accessToken(t.Context())
+	assert.ErrorIs(t, err, operationevent.ErrRecoveredPanic)
+	assert.NotErrorIs(t, err, context.Canceled)
+	require.Error(t, err)
+	assert.NotContains(t, err.Error(), "private panic content")
+
+	parentCtx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	runner := Runtime{
+		Events: singleEventClient{}, Checkpoints: &panicAuthCheckpoints{auth: auth},
+		Processor: &leaseTestProcessor{}, Config: Config{ClientID: "processor"},
+	}
+	err = runner.Run(parentCtx)
+	require.ErrorIs(t, err, operationevent.ErrRecoveredPanic)
+	require.NoError(t, parentCtx.Err(), "unexpected worker failure must not look like parent cancellation")
+}
+
+type panicAuthCheckpoints struct {
+	memoryCheckpointClient
+	auth *GRPCAuth
+}
+
+func (c *panicAuthCheckpoints) Put(ctx context.Context, _, _ string, _ json.RawMessage) (Checkpoint, error) {
+	_, err := c.auth.accessToken(ctx)
+	return Checkpoint{}, err
 }
