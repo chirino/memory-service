@@ -32,7 +32,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -82,7 +82,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -103,7 +103,7 @@ jobs:
       checks: write
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -142,7 +142,7 @@ jobs:
         if: always()
         continue-on-error: true
         timeout-minutes: 5
-        uses: deblockt/cucumber-report-annotations-action@c240de1ffc48641595ff0c8b5ad70cf069701530 # v1.21
+        uses: deblockt/cucumber-report-annotations-action@f61e90ad57e7f7a4bc9afe684b5571e5985378cc # v1.25
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .artifacts/cucumber-report-*.json
@@ -157,7 +157,7 @@ jobs:
       checks: write
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Go
         uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
@@ -223,7 +223,7 @@ jobs:
         if: always()
         continue-on-error: true
         timeout-minutes: 5
-        uses: deblockt/cucumber-report-annotations-action@c240de1ffc48641595ff0c8b5ad70cf069701530 # v1.21
+        uses: deblockt/cucumber-report-annotations-action@f61e90ad57e7f7a4bc9afe684b5571e5985378cc # v1.25
         with:
           access-token: ${{ secrets.GITHUB_TOKEN }}
           path: .artifacts/cucumber-report-*.json
@@ -238,7 +238,7 @@ jobs:
       checks: write
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -266,7 +266,7 @@ jobs:
       - name: Add JUnit summary to job
         if: always()
         continue-on-error: true
-        uses: mikepenz/action-junit-report@6ef3fdcfcd5f0b5d14df3e659ef19b8c6820f93d # v6.6.1
+        uses: mikepenz/action-junit-report@a16be3a69023e9bd7e748ede768b3282ea7b30ce # v6.7.1
         with:
           report_paths: '**/target/surefire-reports/TEST-*.xml'
           check_name: JUnit report (test-java)
@@ -288,7 +288,7 @@ jobs:
           - image-chat-quarkus-linux-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Prepare Docker image metadata
         id: docker-meta
@@ -364,7 +364,7 @@ jobs:
 
       - name: Log in to GitHub Container Registry
         if: steps.docker-meta.outputs.should-build == 'true' && github.ref == 'refs/heads/main'
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -431,7 +431,7 @@ jobs:
           - artifact-memory-service-macos-arm64
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Prepare binary artifact metadata
         id: artifact-meta
@@ -536,7 +536,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Set up Java
         uses: actions/setup-java@b843ebf9b913146b38da2eaa7aeddf76074ae1ad # v6.1.0
@@ -646,7 +646,7 @@ jobs:
         uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
       - name: Log in to GitHub Container Registry
-        uses: docker/login-action@81c6f93d4bc991e510b342a00b419b3bb4efc5c6 # v4.7.0
+        uses: docker/login-action@8aa5831fb8d48d8f76594c7ddde61ae58019f550 # v4.8.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
