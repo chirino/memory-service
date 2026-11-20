@@ -64,6 +64,7 @@
     "js-yaml": "4.3.2",
     "brace-expansion@^1": "1.1.21",
     "@babel/parser": "7.29.9",
-    "unplugin": "3.4.0"
+    "unplugin": "3.4.0",
+    "@tybys/wasm-util": "0.10.4"
   }
 }

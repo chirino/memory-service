@@ -344,6 +344,19 @@
       "reviewAfter": "compatible generator YAML migration"
     },
     {
+      "ecosystem": "npm",
+      "name": "@tybys/wasm-util",
+      "pinnedVersion": "0.10.4",
+      "location": "frontends/chat-frontend/package.json overrides, frontends/developer/package.json overrides",
+      "class": "temporary cooldown",
+      "reason": "v0.10.5 was published 2026-11-16T07:34:12Z (4 days ago), inside the 7-day cooldown window. It is a transitive dependency introduced by vite@8.3.8 -> rolldown@1.2.19 -> @napi-rs/wasm-runtime@1.2.6 -> @tybys/wasm-util@^0.10.3. v0.10.4 (published 2026-09-13, 68 days old) satisfies the ^0.10.3 range and is the latest eligible version.",
+      "introducedBy": "dependency-update",
+      "introducedAt": "2026-11-20",
+      "blockedVersion": "0.10.5",
+      "blockedPublishedAt": "2026-11-16T07:34:12Z",
+      "reviewAfter": "after 2026-11-23"
+    },
+    {
       "ecosystem": "go",
       "name": "golang.org/x/net",
       "pinnedVersion": "v0.62.0",
