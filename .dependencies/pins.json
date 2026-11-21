@@ -296,17 +296,6 @@
       "verification": "TypeScript builds and task test:site"
     },
     {
-      "ecosystem": "python",
-      "name": "uv exclude-newer",
-      "pinnedVersion": "2026-10-28T19:00:00Z",
-      "location": "python/uv.lock and Python checkpoint uv.lock files",
-      "class": "temporary cooldown",
-      "reason": "Resolve only releases at least seven full days before the November 4 dependency update.",
-      "introducedBy": "dependency-update",
-      "introducedAt": "2026-11-04",
-      "reviewAfter": "next dependency update"
-    },
-    {
       "ecosystem": "go",
       "name": "github.com/speakeasy-api/openapi",
       "pinnedVersion": "v1.25.1",
