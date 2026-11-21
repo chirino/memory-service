@@ -21,11 +21,11 @@ Use `scripts/dependabot_batch.py` for discovery, isolated validation, caching, a
    - Read the project's pin ledger, normally `.dependencies/pins.json`. Also check the legacy `.codex/dependency-pins.json` location and intentional holds documented in manifests, overrides, replacements, and nearby comments. Honor applicable holds in the current checkout as well as the default-branch revision being validated.
    - Compare direct and changed transitive versions against each hold's scope, class, reason, and review condition. A routine exact version for reproducibility is not automatically a compatibility hold.
    - Preserve user-defined and unknown-legacy holds. Defer conflicting PRs unless the user has authorized revisiting the hold or its documented review condition has been met. Green CI and an expired release cooldown do not override compatibility or policy holds.
-   - Re-evaluate temporary cooldown pins against current publication metadata and the resolved dependency graph. If a PR needs a pin change, prepare that change as a separate prerequisite before validating the exact PR heads. Do not silently remove holds or edit the user's worktree or the runner's batch commit.
-   - Enforce the 7-day release cooldown for direct and changed transitive versions using authoritative registry or release metadata.
-   - Defer a PR if any changed version is too new or its publication time cannot be verified.
-   - A release that an advisory explicitly names as the fix (match the Dependabot alert's package, manifest path, vulnerable range, first patched version, and GHSA/CVE against the PR head's lock diff) may bypass the 7-day wait, as in the dependency-update skill's CVE-fix rule. A newer version of a package whose alert is for a different manifest or an older range is not a fix. Record the exemption with the advisory URL and still age-check every unrelated transitive version.
-   - Record the checked PR number, exact head SHA, versions, publication dates, pin-review conclusion, and eligibility in a JSON cooldown report. Mark a PR eligible only after both the cooldown and applicable pin checks pass. Store this temporary report outside the tracked repository files. Use this shape:
+   - Re-evaluate temporary cooldown pins against current publication metadata and the resolved dependency graph. If a PR needs a pin change, prepare that change as a separate prerequisite before validating the exact PR heads. Do not silently remove holds or edit the user's worktree or the runner's batch commit. A temporary cooldown-only `uv` `exclude-newer` cutoff that blocks a verified security fix is such a pin: adjust it in the prerequisite without extra approval. Genuine compatibility, user-defined, and legacy holds still apply.
+   - Classify each PR as a security fix or a routine update before checking age. Follow the security-fix rules in the `dependency-update` skill: map the exact PR head to a GHSA, CVE, or Go advisory by ecosystem, manifest path, affected range, and fixed version. Dependabot authorship or `open-pull-requests-limit: 0` alone does not prove a security fix, and a newest release does not fix a vulnerability the current version already fixed.
+   - Enforce the 7-day release cooldown for direct and changed transitive versions using authoritative registry or release metadata. A version that fixes a verified advisory is exempt automatically. Every other changed version, including unrelated transitives, must still pass.
+   - Defer a PR if any non-exempt changed version is too new or its publication time cannot be verified.
+   - Record the checked PR number, exact head SHA, versions, publication dates, pin-review conclusion, and eligibility in a JSON cooldown report. Mark a PR eligible only after both the cooldown (or a documented security exemption) and applicable pin checks pass. The runner accepts only `"status": "eligible"` with a non-empty `summary`, so record a security exemption as `eligible`, state it in `summary`, and list the advisory ID, fixed version, and evidence URL in the optional `securityExemptions` field. Store this temporary report outside the tracked repository files. Use this shape:
 
      ```json
      {
@@ -34,7 +34,15 @@ Use `scripts/dependabot_batch.py` for discovery, isolated validation, caching, a
          "344": {
            "headSha": "full commit SHA",
            "status": "eligible",
-           "summary": "All changed versions were published at least 7 days ago and respect the holds in .dependencies/pins.json."
+           "summary": "Listed security fixes are exempt from the cooldown. All other changed versions were published at least 7 days ago, and all changes respect the holds in .dependencies/pins.json.",
+           "securityExemptions": [
+             {
+               "package": "name",
+               "version": "fixed version",
+               "advisory": "GHSA-xxxx-xxxx-xxxx",
+               "evidence": "https://github.com/advisories/GHSA-xxxx-xxxx-xxxx"
+             }
+           ]
          }
        }
      }
