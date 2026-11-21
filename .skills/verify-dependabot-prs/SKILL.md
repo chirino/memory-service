@@ -24,6 +24,7 @@ Use `scripts/dependabot_batch.py` for discovery, isolated validation, caching, a
    - Re-evaluate temporary cooldown pins against current publication metadata and the resolved dependency graph. If a PR needs a pin change, prepare that change as a separate prerequisite before validating the exact PR heads. Do not silently remove holds or edit the user's worktree or the runner's batch commit.
    - Enforce the 7-day release cooldown for direct and changed transitive versions using authoritative registry or release metadata.
    - Defer a PR if any changed version is too new or its publication time cannot be verified.
+   - A release that an advisory explicitly names as the fix (match the Dependabot alert's package, manifest path, vulnerable range, first patched version, and GHSA/CVE against the PR head's lock diff) may bypass the 7-day wait, as in the dependency-update skill's CVE-fix rule. A newer version of a package whose alert is for a different manifest or an older range is not a fix. Record the exemption with the advisory URL and still age-check every unrelated transitive version.
    - Record the checked PR number, exact head SHA, versions, publication dates, pin-review conclusion, and eligibility in a JSON cooldown report. Mark a PR eligible only after both the cooldown and applicable pin checks pass. Store this temporary report outside the tracked repository files. Use this shape:
 
      ```json
@@ -59,6 +60,8 @@ Use `scripts/dependabot_batch.py` for discovery, isolated validation, caching, a
    - `task generate`, then require a clean Git worktree.
    - `task test`.
    - `task test:site`.
+
+   If reviewed prerequisite changes (for example a lockfile cutoff cleanup) must precede the PR heads, commit them in a separate worktree and pass `--base-commit <sha>`. The commit must descend from the default-branch tip, becomes part of the cache key, and is listed in the PR body.
 
    Never run `task test` and `task test:site` concurrently in one worktree. Stop the batch at the first failure, preserve its worktree and logs, and continue investigating from those artifacts.
 
