@@ -208,15 +208,44 @@ def base_sha(root: Path, repo: str, branch: str) -> str:
     return data["sha"]
 
 
-def fingerprint(base: str, prs: list[dict[str, Any]]) -> str:
-    payload = {
+def fingerprint(
+    base: str, prs: list[dict[str, Any]], prerequisite: str | None = None
+) -> str:
+    payload: dict[str, Any] = {
         "runnerVersion": RUNNER_VERSION,
         "base": base,
         "prs": [(pr["number"], pr["headRefOid"]) for pr in prs],
         "gates": GATES,
     }
+    if prerequisite:
+        payload["prerequisite"] = prerequisite
     encoded = json.dumps(payload, sort_keys=True, separators=(",", ":")).encode()
     return hashlib.sha256(encoded).hexdigest()[:16]
+
+
+def resolve_prerequisite(root: Path, revision: str, default_tip: str) -> tuple[str, list[str]]:
+    """Return the prerequisite commit SHA and its subjects after the default branch.
+
+    The commit must be a descendant of the default-branch tip so the batch stays a
+    fast-forward of reviewed history plus visible prerequisite commits.
+    """
+    result = command(
+        ["git", "rev-parse", "--verify", f"{revision}^{{commit}}"], cwd=root, check=False
+    )
+    if result.returncode != 0:
+        raise BatchError(f"--base-commit {revision} is not a commit in this repository")
+    sha = result.stdout.strip()
+    ancestor = command(
+        ["git", "merge-base", "--is-ancestor", default_tip, sha], cwd=root, check=False
+    )
+    if ancestor.returncode != 0:
+        raise BatchError(
+            f"--base-commit {sha} must descend from the default branch tip {default_tip}"
+        )
+    subjects = command(
+        ["git", "log", "--reverse", "--format=%h %s", f"{default_tip}..{sha}"], cwd=root
+    ).stdout.splitlines()
+    return sha, subjects
 
 
 def common_git_dir(root: Path) -> Path:
@@ -388,6 +417,7 @@ def pr_body(
     base: str,
     validated_head: str,
     validated_tree: str,
+    prerequisites: list[str] | None = None,
 ) -> str:
     lines = [
         "## Summary",
@@ -398,6 +428,11 @@ def pr_body(
     for pr in prs:
         lines.append(
             f"- #{pr['number']} — {pr['title']} (`{pr['headRefOid'][:12]}`, original CI: {pr['ciState']})"
+        )
+    if prerequisites:
+        lines.extend(
+            ["", "## Prerequisite commits (not from Dependabot)", ""]
+            + [f"- {subject}" for subject in prerequisites]
         )
     lines.extend(["", "## Supply-chain cooldown", ""])
     for pr in prs:
@@ -435,6 +470,7 @@ def publish(
     validated_head: str,
     validated_tree: str,
     state_dir: Path,
+    prerequisites: list[str] | None = None,
 ) -> str:
     current = command(["git", "rev-parse", "HEAD"], cwd=path).stdout.strip()
     current_tree = command(["git", "rev-parse", "HEAD^{tree}"], cwd=path).stdout.strip()
@@ -447,7 +483,7 @@ def publish(
     command(["git", "push", "--set-upstream", "origin", branch], cwd=path, capture=False)
     body_path = state_dir / "pull-request-body.md"
     body_path.write_text(
-        pr_body(prs, report, base, validated_head, validated_tree),
+        pr_body(prs, report, base, validated_head, validated_tree, prerequisites),
         encoding="utf-8",
     )
     title = f"chore(deps): consolidate {len(prs)} dependabot updates"
@@ -476,9 +512,16 @@ def publish(
 
 
 def dry_run(
-    prs: list[dict[str, Any]], base_branch: str, base: str, branch: str, report: Path
+    prs: list[dict[str, Any]],
+    base_branch: str,
+    base: str,
+    branch: str,
+    report: Path,
+    prerequisites: list[str] | None = None,
 ) -> None:
     print(f"Base: {base_branch} @ {base}")
+    for subject in prerequisites or []:
+        print(f"Prerequisite commit: {subject}")
     print(f"Batch branch: {branch}")
     print(f"Cooldown report: {report}")
     print("PR order:")
@@ -499,7 +542,12 @@ def run_batch(args: argparse.Namespace) -> None:
     report_path = Path(args.cooldown_report).expanduser().resolve()
     report = validate_cooldown_report(report_path, prs)
     base = base_sha(root, repo, default_branch)
-    batch_id = fingerprint(base, prs)
+    prerequisite: str | None = None
+    prerequisites: list[str] = []
+    if args.base_commit:
+        command(["git", "fetch", "origin", f"refs/heads/{default_branch}"], cwd=root)
+        prerequisite, prerequisites = resolve_prerequisite(root, args.base_commit, base)
+    batch_id = fingerprint(base, prs, prerequisite)
     timestamp = dt.datetime.now(dt.timezone.utc).strftime("%Y%m%d")
     name = args.name or f"dependabot-{timestamp}-{batch_id[:8]}"
     branch = f"chore/dependabot-batch-{timestamp}-{batch_id[:8]}"
@@ -507,17 +555,20 @@ def run_batch(args: argparse.Namespace) -> None:
         retry_id = hashlib.sha256(args.name.encode("utf-8")).hexdigest()[:6]
         branch = f"{branch}-{retry_id}"
     if args.dry_run:
-        dry_run(prs, default_branch, base, branch, report_path)
+        dry_run(prs, default_branch, base, branch, report_path, prerequisites)
         return
 
     state_dir = common_git_dir(root) / "dependabot-verification" / batch_id
     namespace = f"batch-{batch_id}"
     base_ref = fetch_refs(root, prs, default_branch, base, namespace)
+    if prerequisite:
+        base_ref = prerequisite
     path, head = prepare_worktree(root, prs, base_ref, name, branch, namespace)
     tree = command(["git", "rev-parse", "HEAD^{tree}"], cwd=path).stdout.strip()
     write_state(
         state_dir,
         baseSha=base,
+        prerequisiteCommit=prerequisite,
         branch=branch,
         prs=[{"number": pr["number"], "headSha": pr["headRefOid"]} for pr in prs],
         worktree=str(path),
@@ -538,6 +589,7 @@ def run_batch(args: argparse.Namespace) -> None:
                 head,
                 tree,
                 state_dir,
+                prerequisites,
             )
             print(f"Created draft batch PR: {url}")
             if not args.keep_passed:
@@ -565,6 +617,12 @@ def parser() -> argparse.ArgumentParser:
     run_parser.add_argument("--publish", action="store_true", help="push and open a draft PR")
     run_parser.add_argument("--dry-run", action="store_true")
     run_parser.add_argument("--keep-passed", action="store_true")
+    run_parser.add_argument(
+        "--base-commit",
+        metavar="REV",
+        help="commit that descends from the default-branch tip and carries reviewed "
+        "prerequisite changes; the PR heads are merged onto it instead of the tip",
+    )
     return result
 
 
