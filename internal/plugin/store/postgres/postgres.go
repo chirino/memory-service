@@ -4654,6 +4654,8 @@ func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, con
 	}
 	attachment.ID = uuid.New()
 	attachment.UserID = userID
+	// The attempt ID is store-controlled; callers cannot supply one.
+	attachment.AttemptID = nil
 	if strings.TrimSpace(attachment.Status) == "" {
 		attachment.Status = "ready"
 	}

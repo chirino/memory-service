@@ -224,6 +224,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     entry_id TEXT,
     status TEXT NOT NULL DEFAULT 'ready',
     source_url TEXT,
+    attempt_id TEXT,
     expires_at INTEGER_SECONDS CHECK (expires_at IS NULL OR typeof(expires_at) = 'integer'),
     expires_at_ns INTEGER CHECK ((expires_at IS NULL AND expires_at_ns IS NULL) OR (expires_at IS NOT NULL AND expires_at_ns IS NOT NULL AND typeof(expires_at_ns) = 'integer' AND expires_at_ns BETWEEN 0 AND 999999999)),
     created_at INTEGER_SECONDS CHECK (created_at IS NULL OR typeof(created_at) = 'integer') NOT NULL DEFAULT (unixepoch()),

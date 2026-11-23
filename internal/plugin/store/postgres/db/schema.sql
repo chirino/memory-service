@@ -368,6 +368,7 @@ CREATE TABLE IF NOT EXISTS attachments (
     entry_id        UUID,
     status          VARCHAR(20) NOT NULL DEFAULT 'ready',
     source_url      VARCHAR(2048),
+    attempt_id      UUID,
     expires_at      TIMESTAMPTZ,
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     archived_at     TIMESTAMPTZ
@@ -588,3 +589,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_conv_channel_created_seq_id
     ON entries (conversation_id, channel, created_at ASC, seq ASC NULLS FIRST, id ASC);
 
 ALTER TABLE entries ADD COLUMN IF NOT EXISTS append_batch BYTEA;
+
+-- Nullable fence for rows created from a caller-supplied attachment ID. Additive,
+-- so existing version-2 databases gain it without a schema reset.
+ALTER TABLE attachments ADD COLUMN IF NOT EXISTS attempt_id UUID;

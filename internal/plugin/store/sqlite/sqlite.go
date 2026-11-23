@@ -94,6 +94,9 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	if _, err := handle.sqlDB.ExecContext(ctx, "ALTER TABLE entries ADD COLUMN append_batch BLOB"); err != nil && !isSQLiteDuplicateColumnError(err) {
 		return fmt.Errorf("migration: add append batch definition: %w", err)
 	}
+	if _, err := handle.sqlDB.ExecContext(ctx, "ALTER TABLE attachments ADD COLUMN attempt_id TEXT"); err != nil && !isSQLiteDuplicateColumnError(err) {
+		return fmt.Errorf("migration: add attachments.attempt_id column: %w", err)
+	}
 	defaultKind, err := coreepisodic.BuiltinDefaultKindVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("migration: load built-in default memory kind: %w", err)
@@ -4687,6 +4690,8 @@ func (s *SQLiteStore) CreateAttachment(ctx context.Context, userID string, conve
 	}
 	attachment.ID = uuid.New()
 	attachment.UserID = userID
+	// The attempt ID is store-controlled; callers cannot supply one.
+	attachment.AttemptID = nil
 	if strings.TrimSpace(attachment.Status) == "" {
 		attachment.Status = "ready"
 	}

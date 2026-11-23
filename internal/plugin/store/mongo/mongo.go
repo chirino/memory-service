@@ -648,6 +648,7 @@ type attachmentDoc struct {
 	EntryID     *string    `bson:"entry_id,omitempty"`
 	Status      string     `bson:"status"`
 	SourceURL   *string    `bson:"source_url,omitempty"`
+	AttemptID   *string    `bson:"attempt_id,omitempty"`
 	ExpiresAt   *time.Time `bson:"expires_at,omitempty"`
 	CreatedAt   time.Time  `bson:"created_at"`
 	ArchivedAt  *time.Time `bson:"archived_at,omitempty"`
@@ -4008,6 +4009,9 @@ func (s *MongoStore) CreateAttachment(ctx context.Context, userID string, conver
 
 	attachment.ID = uuid.New()
 	attachment.UserID = userID
+	// The attempt ID is store-controlled; callers cannot supply one. The document
+	// below does not set it, so the returned model must not claim one either.
+	attachment.AttemptID = nil
 	if strings.TrimSpace(attachment.Status) == "" {
 		attachment.Status = "ready"
 	}
@@ -6807,5 +6811,6 @@ func (s *MongoStore) attachmentDocToModel(d attachmentDoc) model.Attachment {
 		ArchivedAt:  d.ArchivedAt,
 	}
 	a.EntryID = ptrStrToUUID(d.EntryID)
+	a.AttemptID = ptrStrToUUID(d.AttemptID)
 	return a
 }
