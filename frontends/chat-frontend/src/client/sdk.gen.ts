@@ -399,6 +399,11 @@ export class ConversationsService {
    * batches have no retry guarantee. History projections can keep their sequence
    * unset.
    *
+   * An entry can reference an attachment only when the attachment status is
+   * `ready`. Referencing an attachment that is still `uploading` or
+   * `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+   * Retry after the attachment becomes `ready`.
+   *
    * This endpoint is used by both end-user clients and agents.
    * The service determines whether the caller is a user or an agent
    * based on authentication (for example, API keys or tokens) and

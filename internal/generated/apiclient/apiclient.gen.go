@@ -2185,6 +2185,11 @@ type ClientInterface interface {
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
 	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
+	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
 	// based on authentication (for example, API keys or tokens) and
@@ -2208,6 +2213,11 @@ type ClientInterface interface {
 	// not emit append events or reapply conversation patches. Fully unsequenced
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
+	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
 	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
@@ -3080,6 +3090,11 @@ func (c *Client) ListConversationEntries(ctx context.Context, conversationId str
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
 //
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
+//
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
 // based on authentication (for example, API keys or tokens) and
@@ -3113,6 +3128,11 @@ func (c *Client) AppendConversationEntryWithBody(ctx context.Context, conversati
 // not emit append events or reapply conversation patches. Fully unsequenced
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
+//
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
 //
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
@@ -6405,6 +6425,11 @@ type ClientWithResponsesInterface interface {
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
 	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
+	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
 	// based on authentication (for example, API keys or tokens) and
@@ -6428,6 +6453,11 @@ type ClientWithResponsesInterface interface {
 	// not emit append events or reapply conversation patches. Fully unsequenced
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
+	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
 	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
@@ -9304,6 +9334,11 @@ func (c *ClientWithResponses) ListConversationEntriesWithResponse(ctx context.Co
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
 //
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
+//
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
 // based on authentication (for example, API keys or tokens) and
@@ -9333,6 +9368,11 @@ func (c *ClientWithResponses) AppendConversationEntryWithBodyWithResponse(ctx co
 // not emit append events or reapply conversation patches. Fully unsequenced
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
+//
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
 //
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent

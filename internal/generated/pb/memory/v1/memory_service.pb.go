@@ -2484,7 +2484,8 @@ type AppendEntryRequest struct {
 	ConversationId string `protobuf:"bytes,1,opt,name=conversation_id,json=conversationId,proto3" json:"conversation_id,omitempty"`
 	// An exact retry of a sequenced entry returns the stored entry, including
 	// after later sequenced entries have been appended. Conflicting duplicates
-	// return ABORTED.
+	// return ABORTED. An entry that references an attachment that is not ready
+	// (uploading, downloading, or failed) also returns ABORTED and appends nothing.
 	Entry *CreateEntryRequest `protobuf:"bytes,2,opt,name=entry,proto3" json:"entry,omitempty"`
 	Epoch *int64              `protobuf:"varint,3,opt,name=epoch,proto3,oneof" json:"epoch,omitempty"`
 	// Optional conversation patch applied atomically with the append on every supported
@@ -2565,7 +2566,8 @@ type AppendEntriesRequest struct {
 	// retries return original IDs and timestamps in request order. Changed content,
 	// order, or length returns ABORTED. Every supported datastore commits the batch
 	// atomically. Completed batch retries emit no append events and do not reapply
-	// conversation patches.
+	// conversation patches. A batch that references an attachment that is not ready
+	// (uploading, downloading, or failed) returns ABORTED and appends nothing.
 	// Fully unsequenced batches have no retry guarantee.
 	Entries []*CreateEntryRequest `protobuf:"bytes,2,rep,name=entries,proto3" json:"entries,omitempty"`
 	Epoch   *int64                `protobuf:"varint,3,opt,name=epoch,proto3,oneof" json:"epoch,omitempty"`

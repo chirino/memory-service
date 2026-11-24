@@ -396,6 +396,25 @@ type AttachmentUpdate struct {
 	EntryID     *uuid.UUID
 }
 
+// CreateAttachmentResult distinguishes a newly created pending attachment from
+// an existing row that already has the caller-supplied ID.
+type CreateAttachmentResult struct {
+	Attachment *model.Attachment
+	// Created is false when the row already existed. The existing row is
+	// returned unchanged, including its AttemptID.
+	Created bool
+}
+
+// AttachmentFinalize holds the values written when a pending attachment becomes
+// ready. A nil ContentType or ExpiresAt leaves the stored value unchanged.
+type AttachmentFinalize struct {
+	StorageKey  string
+	Size        int64
+	SHA256      string
+	ContentType *string
+	ExpiresAt   *time.Time
+}
+
 // OwnershipTransferDto is the API representation of an ownership transfer.
 type OwnershipTransferDto struct {
 	ID                  uuid.UUID `json:"id"`
@@ -524,6 +543,28 @@ type MemoryStore interface {
 
 	// Attachments
 	CreateAttachment(ctx context.Context, userID string, conversationID string, attachment model.Attachment) (*model.Attachment, error)
+	// CreateAttachmentWithID creates an unlinked pending attachment (status
+	// "uploading" or "downloading", no storage key) under a caller-supplied ID
+	// and a fresh store-minted AttemptID. If a row with the ID already exists
+	// and belongs to userID it is returned unchanged with Created=false. A row
+	// owned by another user yields NotFoundError and reveals nothing about it.
+	CreateAttachmentWithID(ctx context.Context, userID string, attachmentID uuid.UUID, attachment model.Attachment) (*CreateAttachmentResult, error)
+	// FinalizeAttachment moves a pending attachment to "ready" in one conditional
+	// write that matches the ID, owner and attempt ID while the status is still
+	// "uploading" or "downloading". When nothing matches (finished, failed,
+	// deleted or replaced under the same ID) it returns NotFoundError and
+	// changes nothing; the caller owns the storage key it tried to commit.
+	FinalizeAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID, finalize AttachmentFinalize) (*model.Attachment, error)
+	// MarkAttachmentFailed moves a pending attachment to "failed" under the same
+	// conditions as FinalizeAttachment. It reports whether a row changed; false is
+	// not an error (the attempt already finished or was replaced).
+	MarkAttachmentFailed(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID) (bool, error)
+	// DeleteExpiredAttachment deletes the row only if its ID and attempt ID
+	// (nil matches rows without one) are unchanged, it is unlinked, and its
+	// expiry is in the past at deletion time. The storage-key blob delete is
+	// queued in the same transaction only when a row was deleted. It reports
+	// whether a row was deleted; false is a skip, not a failure.
+	DeleteExpiredAttachment(ctx context.Context, attachmentID uuid.UUID, attemptID *uuid.UUID) (bool, error)
 	CloneAttachment(ctx context.Context, userID string, sourceAttachmentID uuid.UUID) (*model.Attachment, error)
 	UpdateAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, update AttachmentUpdate) (*model.Attachment, error)
 	LinkAttachmentToEntry(ctx context.Context, userID string, attachmentID uuid.UUID, entryID uuid.UUID) (*model.Attachment, error)

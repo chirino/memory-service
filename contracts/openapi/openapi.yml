@@ -522,6 +522,11 @@ paths:
         batches have no retry guarantee. History projections can keep their sequence
         unset.
 
+        An entry can reference an attachment only when the attachment status is
+        `ready`. Referencing an attachment that is still `uploading` or
+        `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+        Retry after the attachment becomes `ready`.
+
         This endpoint is used by both end-user clients and agents.
         The service determines whether the caller is a user or an agent
         based on authentication (for example, API keys or tokens) and
@@ -550,7 +555,9 @@ paths:
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
-          description: A supplied `seq` exists, but the request does not exactly match the stored entry.
+          description: |-
+            A supplied `seq` exists, but the request does not exactly match the stored entry,
+            or a referenced attachment is not `ready` (still uploading or downloading, or failed).
           $ref: '#/components/responses/Error'
         default:
           $ref: '#/components/responses/Error'

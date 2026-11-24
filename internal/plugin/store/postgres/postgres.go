@@ -194,14 +194,15 @@ func postgresRequireCurrentSchemaOrEmpty(ctx context.Context, db *sql.DB) error 
 
 // PostgresStore implements MemoryStore using GORM + PostgreSQL.
 type PostgresStore struct {
-	db                         *gorm.DB
-	cfg                        *config.Config
-	enc                        *dataencryption.Service
-	entriesCache               registrycache.MemoryEntriesCache
-	metadataPatchBeforeUpdate  func() // test-only synchronization hook; nil in production
-	afterAttachmentCloneRead   func() error
-	afterAttachmentDeleteCount func() error // test-only synchronization hook; nil in production
-	afterAttachmentDeleteRead  func() error // test-only synchronization hook; nil in production
+	db                          *gorm.DB
+	cfg                         *config.Config
+	enc                         *dataencryption.Service
+	entriesCache                registrycache.MemoryEntriesCache
+	metadataPatchBeforeUpdate   func() // test-only synchronization hook; nil in production
+	afterAttachmentCloneRead    func() error
+	afterAttachmentDeleteCount  func() error // test-only synchronization hook; nil in production
+	afterAttachmentDeleteRead   func() error // test-only synchronization hook; nil in production
+	afterAttachmentCreateLookup func() error // test-only synchronization hook; nil in production
 }
 
 func (s *PostgresStore) OutboxEnabled() bool {
@@ -4670,6 +4671,168 @@ func (s *PostgresStore) CreateAttachment(ctx context.Context, userID string, con
 	return &attachment, nil
 }
 
+// lookupAttachmentByID reads a row regardless of archive state so a create can
+// tell an existing ID from a free one. Limit(1).Find avoids "record not found"
+// noise because absence is expected here.
+func (s *PostgresStore) lookupAttachmentByID(db *gorm.DB, attachmentID uuid.UUID) (model.Attachment, bool, error) {
+	var attachment model.Attachment
+	result := db.Where("id = ?", attachmentID).Limit(1).Find(&attachment)
+	if result.Error != nil {
+		return attachment, false, result.Error
+	}
+	return attachment, result.RowsAffected > 0, nil
+}
+
+func existingAttachmentResult(attachment model.Attachment, userID string) (*registrystore.CreateAttachmentResult, error) {
+	if attachment.UserID != userID {
+		// Another user's row is indistinguishable from a missing one.
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachment.ID.String()}
+	}
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: false}, nil
+}
+
+// CreateAttachmentWithID looks the ID up first, then inserts with ON CONFLICT DO
+// NOTHING and reloads. A failed INSERT would put the surrounding transaction in
+// the aborted state (25P02), so the race loser must never trigger a unique
+// violation; it blocks on the winner's row, sees DO NOTHING, and reads the
+// committed row.
+func (s *PostgresStore) CreateAttachmentWithID(ctx context.Context, userID string, attachmentID uuid.UUID, attachment model.Attachment) (*registrystore.CreateAttachmentResult, error) {
+	if err := registrystore.ValidatePendingAttachment(attachmentID, attachment); err != nil {
+		return nil, err
+	}
+	db, err := s.writeDBFor(ctx, "postgres store create attachment with id")
+	if err != nil {
+		return nil, err
+	}
+	existing, found, err := s.lookupAttachmentByID(db, attachmentID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup attachment failed: %w", err)
+	}
+	if found {
+		return existingAttachmentResult(existing, userID)
+	}
+	if s.afterAttachmentCreateLookup != nil {
+		if err := s.afterAttachmentCreateLookup(); err != nil {
+			return nil, err
+		}
+	}
+
+	attemptID := uuid.New()
+	attachment.ID = attachmentID
+	attachment.UserID = userID
+	attachment.AttemptID = &attemptID
+	// timestamptz keeps microseconds. Truncate here so the returned value is the
+	// stored value, and so a caller-supplied CreatedAt cannot be persisted.
+	attachment.CreatedAt = time.Now().UTC().Truncate(time.Microsecond)
+	if attachment.ExpiresAt != nil {
+		expiresAt := attachment.ExpiresAt.UTC().Truncate(time.Microsecond)
+		attachment.ExpiresAt = &expiresAt
+	}
+	result := db.Clauses(clause.OnConflict{DoNothing: true}).Create(&attachment)
+	if result.Error != nil {
+		return nil, fmt.Errorf("create attachment failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		// A concurrent request created the row between the lookup and the insert.
+		existing, found, err := s.lookupAttachmentByID(db, attachmentID)
+		if err != nil {
+			return nil, fmt.Errorf("lookup attachment failed: %w", err)
+		}
+		if !found {
+			return nil, fmt.Errorf("create attachment conflicted but no row with id %s is visible", attachmentID)
+		}
+		return existingAttachmentResult(existing, userID)
+	}
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: true}, nil
+}
+
+func (s *PostgresStore) FinalizeAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID, finalize registrystore.AttachmentFinalize) (*model.Attachment, error) {
+	if err := registrystore.ValidateAttachmentFinalize(finalize); err != nil {
+		return nil, err
+	}
+	db, err := s.writeDBFor(ctx, "postgres store finalize attachment")
+	if err != nil {
+		return nil, err
+	}
+	values := map[string]any{
+		"status":      registrystore.AttachmentStatusReady,
+		"storage_key": finalize.StorageKey,
+		"size":        finalize.Size,
+		"sha256":      finalize.SHA256,
+	}
+	if finalize.ContentType != nil {
+		values["content_type"] = *finalize.ContentType
+	}
+	if finalize.ExpiresAt != nil {
+		values["expires_at"] = finalize.ExpiresAt.UTC().Truncate(time.Microsecond)
+	}
+	// One conditional UPDATE ... RETURNING: the attempt fence and the
+	// pending-status check are evaluated atomically with the write.
+	var updated []model.Attachment
+	result := db.Model(&updated).Clauses(clause.Returning{}).
+		Where("id = ? AND user_id = ? AND attempt_id = ? AND archived_at IS NULL AND status IN (?, ?)",
+			attachmentID, userID, attemptID, registrystore.AttachmentStatusUploading, registrystore.AttachmentStatusDownloading).
+		Updates(values)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finalize attachment failed: %w", result.Error)
+	}
+	if len(updated) != 1 {
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	}
+	// Register after the fence matched so a rejected finalize leaves no guard
+	// behind. An error here must abort the surrounding transaction.
+	if err := s.RegisterAttachmentBlobReference(ctx, finalize.StorageKey); err != nil {
+		return nil, err
+	}
+	return &updated[0], nil
+}
+
+func (s *PostgresStore) MarkAttachmentFailed(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID) (bool, error) {
+	db, err := s.writeDBFor(ctx, "postgres store mark attachment failed")
+	if err != nil {
+		return false, err
+	}
+	result := db.Model(&model.Attachment{}).
+		Where("id = ? AND user_id = ? AND attempt_id = ? AND archived_at IS NULL AND status IN (?, ?)",
+			attachmentID, userID, attemptID, registrystore.AttachmentStatusUploading, registrystore.AttachmentStatusDownloading).
+		Update("status", registrystore.AttachmentStatusFailed)
+	if result.Error != nil {
+		return false, fmt.Errorf("mark attachment failed: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (s *PostgresStore) DeleteExpiredAttachment(ctx context.Context, attachmentID uuid.UUID, attemptID *uuid.UUID) (bool, error) {
+	db, err := s.writeDBFor(ctx, "postgres store delete expired attachment")
+	if err != nil {
+		return false, err
+	}
+	// IS NOT DISTINCT FROM treats NULL as equal to NULL, so a legacy row without
+	// an attempt ID matches a nil attemptID and never matches a non-nil one.
+	// The cast lets PostgreSQL type the parameter when it is NULL.
+	var attempt any
+	if attemptID != nil {
+		attempt = *attemptID
+	}
+	var deleted []model.Attachment
+	result := db.Clauses(clause.Returning{}).
+		Where("id = ? AND attempt_id IS NOT DISTINCT FROM CAST(? AS uuid) AND entry_id IS NULL AND expires_at IS NOT NULL AND expires_at < ?",
+			attachmentID, attempt, time.Now().UTC()).
+		Delete(&deleted)
+	if result.Error != nil {
+		return false, fmt.Errorf("delete expired attachment failed: %w", result.Error)
+	}
+	if len(deleted) == 0 {
+		return false, nil
+	}
+	if deleted[0].StorageKey != nil {
+		if err := s.QueueAttachmentBlobDelete(ctx, *deleted[0].StorageKey); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
+}
+
 func (s *PostgresStore) CloneAttachment(ctx context.Context, userID string, sourceAttachmentID uuid.UUID) (*model.Attachment, error) {
 	source, err := s.GetAttachment(ctx, userID, "", sourceAttachmentID)
 	if err != nil {
@@ -4760,7 +4923,9 @@ func (s *PostgresStore) UpdateAttachment(ctx context.Context, userID string, att
 
 func (s *PostgresStore) LinkAttachmentToEntry(ctx context.Context, userID string, attachmentID uuid.UUID, entryID uuid.UUID) (*model.Attachment, error) {
 	db := s.dbFor(ctx)
-	result := db.Model(&model.Attachment{}).Where("id = ? AND user_id = ? AND archived_at IS NULL AND entry_id IS NULL", attachmentID, userID).Update("entry_id", entryID)
+	// The status check is part of the same UPDATE, so a finalize that commits
+	// between a read and this write cannot be missed.
+	result := db.Model(&model.Attachment{}).Where("id = ? AND user_id = ? AND archived_at IS NULL AND entry_id IS NULL AND status = ?", attachmentID, userID, registrystore.AttachmentStatusReady).Update("entry_id", entryID)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -4771,13 +4936,7 @@ func (s *PostgresStore) LinkAttachmentToEntry(ctx context.Context, userID string
 	if attachment.ID == uuid.Nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
-	if attachment.UserID != userID {
-		return nil, &registrystore.ForbiddenError{}
-	}
-	if attachment.EntryID == nil || *attachment.EntryID != entryID {
-		return nil, &registrystore.ConflictError{Message: fmt.Sprintf("attachment %s is linked to a different entry", attachmentID)}
-	}
-	return &attachment, nil
+	return registrystore.ResolveAttachmentLink(attachment, userID, entryID)
 }
 
 func (s *PostgresStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {

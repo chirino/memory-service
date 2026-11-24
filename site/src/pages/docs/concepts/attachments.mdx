@@ -152,6 +152,8 @@ The stored entry content will look like:
 }
 ```
 
+An entry can link an attachment only when its status is `ready`. Appending an entry that references an attachment that is still `uploading` or `downloading` (for example, one created from a `sourceUrl` whose download has not finished) or that has `failed` returns `409 Conflict` over REST or `ABORTED` over gRPC. Nothing is appended and the attachment stays unlinked. Poll the attachment until its status is `ready`, then retry the append.
+
 ### Attachment Properties
 
 | Property       | Required                        | Description                                   |
