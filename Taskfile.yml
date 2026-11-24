@@ -13,7 +13,7 @@ vars:
   PYTHON_DOCKER_IMAGE: astral/uv:python3.11-bookworm
   GRPC_TOOLS_VERSION: "1.74.0"
   JAVA_PUBLISH_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-process,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter"
-  JAVA_RELEASE_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-process,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter,:memory-service-binaries"
+  JAVA_RELEASE_MODULES: ":memory-service-parent,:memory-service-contracts,:memory-service-process,:memory-service-quarkus-parent,:memory-service-rest-quarkus,:memory-service-proto-quarkus,:memory-service-extension-parent,:memory-service-extension,:memory-service-extension-deployment,:memory-service-spring-parent,:memory-service-rest-spring,:memory-service-proto-spring,:memory-service-spring-boot-autoconfigure,:memory-service-spring-boot-starter,:memory-service-spring-boot-docker-compose-starter,:memory-service-binary-linux-amd64,:memory-service-binary-linux-arm64,:memory-service-binary-macos-arm64,:memory-service-binaries"
   
 
 tasks:
@@ -761,11 +761,13 @@ tasks:
           ;;
         esac
         if [ -z "{{.BINARIES_DIR}}" ]; then
-          echo "Error: BINARIES_DIR is required for release binary JARs"
+          echo "Error: BINARIES_DIR is required for the bundled binary descriptors."
+          echo "It must hold <platform>/memory-service.oci.properties and memory-service.sha256;"
+          echo "stage them with .github/scripts/binary-oci.sh stage."
           exit 1
         fi
-      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release,binary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests -Dcentral.skipPublishing=true
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-descriptors -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml clean install -Pcentral-release,binary-descriptors -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests -Dcentral.skipPublishing=true
       - |
         echo ""
         echo "Bundle created successfully for version {{.VERSION}}"
@@ -787,11 +789,13 @@ tasks:
           ;;
         esac
         if [ -z "{{.BINARIES_DIR}}" ]; then
-          echo "Error: BINARIES_DIR is required for release binary JARs"
+          echo "Error: BINARIES_DIR is required for the bundled binary descriptors."
+          echo "It must hold <platform>/memory-service.oci.properties and memory-service.sha256;"
+          echo "stage them with .github/scripts/binary-oci.sh stage."
           exit 1
         fi
-      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
-      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release,binary-jars -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests
+      - ./java/mvnw {{.CLI_ARGS}} -f java/pom.xml -Pbinary-descriptors -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" versions:set -DnewVersion={{.VERSION}} -DgenerateBackupPoms=false
+      - ./java/mvnw {{.CLI_ARGS}} -T 1C -f java/pom.xml deploy -Pcentral-release,binary-descriptors -Dmemory-service.binaries.dir="{{.BINARIES_DIR}}" -pl {{.JAVA_RELEASE_MODULES}} -am -DskipTests
       - |
         echo ""
         echo "Release {{.VERSION}} published to Maven Central"

@@ -28,13 +28,16 @@ import java.util.concurrent.ConcurrentMap;
 /** A resolved executable and factories for ordered binary-resolution strategies. */
 public final class MemoryServiceBinary {
 
+    private static final java.util.logging.Logger LOG =
+            java.util.logging.Logger.getLogger(MemoryServiceBinary.class.getName());
+
     private static final ConcurrentMap<Path, Object> JVM_EXTRACTION_LOCKS =
             new ConcurrentHashMap<>();
 
     /** Marker interface for a binary resolution strategy. */
     public sealed interface Resolver permits PackagedResolver, FileResolver, PathResolver {}
 
-    private record PackagedResolver() implements Resolver {}
+    private record PackagedResolver(MemoryServiceBinaryRegistries registries) implements Resolver {}
 
     private record FileResolver(Path path) implements Resolver {}
 
@@ -65,9 +68,22 @@ public final class MemoryServiceBinary {
         return source;
     }
 
-    /** Resolves a matching provider from the application classpath. */
+    /**
+     * Resolves the current platform's packaged executable: a matching {@link
+     * MemoryServiceBinaryProvider} on the classpath, otherwise the OCI descriptor bundled in this
+     * JAR. OCI-hosted executables are downloaded with {@link
+     * MemoryServiceBinaryRegistries#defaults()}.
+     */
     public static Resolver packaged() {
-        return new PackagedResolver();
+        return packaged(MemoryServiceBinaryRegistries.defaults());
+    }
+
+    /**
+     * Like {@link #packaged()}, downloading an OCI-hosted executable with the supplied registry
+     * mirrors, credentials, and timeouts.
+     */
+    public static Resolver packaged(MemoryServiceBinaryRegistries registries) {
+        return new PackagedResolver(Objects.requireNonNull(registries, "registries"));
     }
 
     /** Resolves an explicit executable file when it exists. */
@@ -119,6 +135,27 @@ public final class MemoryServiceBinary {
             ClassLoader loader,
             Map<String, String> environment)
             throws IOException {
+        return resolve(
+                resolvers,
+                cacheDirectory,
+                platform,
+                loader,
+                MemoryServiceBinary.class.getClassLoader(),
+                environment);
+    }
+
+    /**
+     * @param loader where {@link MemoryServiceBinaryProvider} implementations are discovered
+     * @param bundledResources where the descriptors packaged in this JAR are read from
+     */
+    static MemoryServiceBinary resolve(
+            List<Resolver> resolvers,
+            Path cacheDirectory,
+            MemoryServicePlatform platform,
+            ClassLoader loader,
+            ClassLoader bundledResources,
+            Map<String, String> environment)
+            throws IOException {
         Objects.requireNonNull(resolvers, "resolvers");
         Objects.requireNonNull(cacheDirectory, "cacheDirectory");
         if (resolvers.isEmpty()) {
@@ -128,9 +165,15 @@ public final class MemoryServiceBinary {
         List<String> attempted = new ArrayList<>();
         for (Resolver resolver : resolvers) {
             Optional<MemoryServiceBinary> resolved;
-            if (resolver instanceof PackagedResolver) {
+            if (resolver instanceof PackagedResolver packaged) {
                 attempted.add("packaged provider for " + platform.id());
-                resolved = resolvePackaged(cacheDirectory, platform, loader);
+                resolved =
+                        resolvePackaged(
+                                cacheDirectory,
+                                platform,
+                                loader,
+                                bundledResources,
+                                packaged.registries());
             } else if (resolver instanceof FileResolver explicit) {
                 attempted.add("file " + explicit.path());
                 resolved = resolveFile(explicit.path(), platform, "explicit file");
@@ -166,29 +209,60 @@ public final class MemoryServiceBinary {
     }
 
     private static Optional<MemoryServiceBinary> resolvePackaged(
-            Path cacheDirectory, MemoryServicePlatform platform, ClassLoader loader)
+            Path cacheDirectory,
+            MemoryServicePlatform platform,
+            ClassLoader loader,
+            ClassLoader bundledResources,
+            MemoryServiceBinaryRegistries registries)
             throws IOException {
         List<MemoryServiceBinaryProvider> matches = new ArrayList<>();
         ServiceLoader.load(MemoryServiceBinaryProvider.class, loader).stream()
                 .map(ServiceLoader.Provider::get)
                 .filter(provider -> platform.equals(provider.platform()))
                 .forEach(matches::add);
+        Optional<BundledBinaryProvider> bundled =
+                BundledBinaryProvider.find(platform, bundledResources);
         if (matches.isEmpty()) {
-            return Optional.empty();
+            if (bundled.isEmpty()) {
+                return Optional.empty();
+            }
+            return Optional.of(
+                    new MemoryServiceBinary(
+                            extractProvider(bundled.get(), cacheDirectory, registries),
+                            platform,
+                            "packaged " + bundled.get()));
         }
         if (matches.size() > 1) {
             throw new IOException(
                     "Multiple Memory Service binary providers found for " + platform.id());
         }
         MemoryServiceBinaryProvider provider = matches.get(0);
+        if (bundled.isPresent()) {
+            // A provider on the classpath wins, so applications can ship their own executable. It
+            // can also be a stale pre-0.6.0 provider JAR, so say which one was picked.
+            LOG.info(
+                    () ->
+                            "Using Memory Service binary provider "
+                                    + provider.getClass().getName()
+                                    + " instead of the "
+                                    + bundled.get());
+        }
         return Optional.of(
                 new MemoryServiceBinary(
-                        extractProvider(provider, cacheDirectory),
+                        extractProvider(provider, cacheDirectory, registries),
                         platform,
                         "packaged provider " + provider.getClass().getName()));
     }
 
     static Path extractProvider(MemoryServiceBinaryProvider provider, Path cacheDirectory)
+            throws IOException {
+        return extractProvider(provider, cacheDirectory, MemoryServiceBinaryRegistries.defaults());
+    }
+
+    static Path extractProvider(
+            MemoryServiceBinaryProvider provider,
+            Path cacheDirectory,
+            MemoryServiceBinaryRegistries registries)
             throws IOException {
         String expected = readExpectedSha256(provider);
         MemoryServicePlatform platform = provider.platform();
@@ -205,7 +279,13 @@ public final class MemoryServiceBinary {
                         lockPath.toAbsolutePath(), ignored -> new Object());
         synchronized (jvmLock) {
             return extractUnderLock(
-                    provider, platform, expected, executable, lockPath, digestDirectory);
+                    provider,
+                    platform,
+                    expected,
+                    executable,
+                    lockPath,
+                    digestDirectory,
+                    registries);
         }
     }
 
@@ -215,7 +295,8 @@ public final class MemoryServiceBinary {
             String expected,
             Path executable,
             Path lockPath,
-            Path digestDirectory)
+            Path digestDirectory,
+            MemoryServiceBinaryRegistries registries)
             throws IOException {
         try (FileChannel channel =
                         FileChannel.open(
@@ -233,8 +314,19 @@ public final class MemoryServiceBinary {
 
             Path temporary = Files.createTempFile(digestDirectory, ".memory-service-", ".tmp");
             try {
-                try (InputStream input = provider.openBinary()) {
-                    Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
+                InputStream ociDescriptor = provider.openOciDescriptor();
+                if (ociDescriptor != null) {
+                    OciBlobFetcher.Descriptor descriptor;
+                    try (ociDescriptor) {
+                        descriptor =
+                                OciBlobFetcher.Descriptor.parse(
+                                        ociDescriptor, provider.getClass().getName());
+                    }
+                    new OciBlobFetcher(registries).fetch(descriptor, temporary, platform.id());
+                } else {
+                    try (InputStream input = provider.openBinary()) {
+                        Files.copy(input, temporary, StandardCopyOption.REPLACE_EXISTING);
+                    }
                 }
                 String actual = sha256(temporary);
                 if (!expected.equals(actual)) {

@@ -221,7 +221,9 @@
 
   <profiles>
     <profile>
-      <id>binary-jars</id>
+      <!-- Release builds: memory-service-process must package the staged OCI descriptors, and the
+           old binary artifact IDs are published as relocation POMs. -->
+      <id>binary-descriptors</id>
       <modules>
         <module>memory-service-binary-linux-amd64</module>
         <module>memory-service-binary-linux-arm64</module>

@@ -534,6 +534,13 @@ jobs:
   test-binary-jars:
     needs: artifacts
     runs-on: ubuntu-latest
+    # Throwaway OCI registry: the binary JARs carry only descriptors, and the packaged tests
+    # download the CI-built executables from here through a test-configured mirror.
+    services:
+      registry:
+        image: registry:2@sha256:a3d8aaa63ed8681a604f1dea0aa03f100d5895b6a58ace528858a7b332415373
+        ports:
+          - 5000:5000
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -553,79 +560,80 @@ jobs:
           path: /tmp/ci-binaries
           merge-multiple: false
 
-      - name: Stage Maven binary inputs
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+
+      # Same script as the release. Descriptors name the real upstream repository because
+      # upstream locations must be HTTPS; the tests reach localhost through a mirror rule.
+      - name: Push binaries to the local registry and stage Maven binary inputs
         shell: bash
+        env:
+          ORAS_PLAIN_HTTP: 'true'
         run: |
           set -euo pipefail
 
-          stage=/tmp/memory-service-binaries
-          mkdir -p "$stage"
-          stage_binary() {
-            local artifact="$1"
-            local platform="$2"
-            local source="/tmp/ci-binaries/$artifact/memory-service"
-            local target="$stage/$platform"
+          native=/tmp/ci-native
+          for platform in linux-amd64 linux-arm64 macos-arm64; do
+            source="/tmp/ci-binaries/memory-service-$platform/memory-service"
             if [ ! -f "$source" ]; then
               echo "Missing native artifact $source" >&2
               exit 1
             fi
-            mkdir -p "$target"
-            cp "$source" "$target/memory-service"
-            chmod +x "$target/memory-service"
-            sha256sum "$target/memory-service" | sed 's#  .*/#  #' > "$target/memory-service.sha256"
-          }
+            mkdir -p "$native/$platform"
+            cp "$source" "$native/$platform/memory-service"
+          done
 
-          stage_binary memory-service-linux-amd64 linux-amd64
-          stage_binary memory-service-linux-arm64 linux-arm64
-          stage_binary memory-service-macos-arm64 macos-arm64
+          ref=localhost:5000/chirino/memory-service-binary:ci
+          .github/scripts/binary-oci.sh push "$ref" ci "$native"
+          .github/scripts/binary-oci.sh stage "$ref" ghcr.io/chirino/memory-service-binary \
+            /tmp/memory-service-binaries
 
-      # Activates central-release alongside binary-jars (GPG signing and Central publishing
-      # disabled) so release-only Javadoc and source attachment stay covered before a release.
-      - name: Build and test native binary JARs
+      # Activates central-release alongside binary-descriptors (GPG signing and Central publishing
+      # disabled) so release-only Javadoc, source attachment, and the relocation POMs stay covered
+      # before a release.
+      - name: Build and test memory-service-process with bundled descriptors
         run: |
           ./java/mvnw -B -f java/pom.xml \
-            -Pcentral-release,binary-jars \
+            -Pcentral-release,binary-descriptors \
             -Dmemory-service.binaries.dir=/tmp/memory-service-binaries \
             -Dmemory-service.packaged.test=true \
+            -Dmemory-service.packaged.test.mirror=http://localhost:5000 \
             -Dgpg.skip=true \
             -Dcentral.skipPublishing=true \
-            -pl :memory-service-binaries -am clean verify
+            -pl :memory-service-process,:memory-service-binary-linux-amd64,:memory-service-binary-linux-arm64,:memory-service-binary-macos-arm64,:memory-service-binaries \
+            -am clean verify
 
-      - name: Inspect packaged JARs
+      - name: Inspect packaged JAR
         shell: bash
         run: |
           set -euo pipefail
-          primary_jar() {
-            local binary_module="$1"
-            local primary_path
-            primary_path="$(find "java/$binary_module/target" -maxdepth 1 -type f \
-              -name "$binary_module-*.jar" \
-              ! -name '*-sources.jar' \
-              ! -name '*-javadoc.jar' \
-              -print -quit)"
-            if [ -z "$primary_path" ]; then
-              echo "Missing primary JAR for $binary_module" >&2
-              return 1
+          jar_path="$(find java/memory-service-process/target -maxdepth 1 -type f \
+            -name 'memory-service-process-*.jar' \
+            ! -name '*-sources.jar' \
+            ! -name '*-javadoc.jar' \
+            -print -quit)"
+          if [ -z "$jar_path" ]; then
+            echo "Missing memory-service-process JAR" >&2
+            exit 1
+          fi
+
+          # The JAR carries each platform's OCI descriptor and digest, never an executable.
+          entries="$(jar tf "$jar_path")"
+          for platform in linux-amd64 linux-arm64 macos-arm64; do
+            grep -Fx "META-INF/memory-service/$platform/memory-service.oci.properties" <<<"$entries"
+            grep -Fx "META-INF/memory-service/$platform/memory-service.sha256" <<<"$entries"
+            if grep -Fx "META-INF/memory-service/$platform/memory-service" <<<"$entries"; then
+              echo "$jar_path embeds an executable" >&2
+              exit 1
             fi
-            printf '%s\n' "$primary_path"
-          }
+          done
+          size="$(stat -c %s "$jar_path")"
+          if [ "$size" -ge 512000 ]; then
+            echo "$jar_path is $size bytes; expected under 500 KB" >&2
+            exit 1
+          fi
 
-          jar tf "$(primary_jar memory-service-binary-linux-amd64)" \
-            | grep -Fx 'META-INF/memory-service/linux-amd64/memory-service'
-          jar tf "$(primary_jar memory-service-binary-linux-arm64)" \
-            | grep -Fx 'META-INF/memory-service/linux-arm64/memory-service'
-          jar tf "$(primary_jar memory-service-binary-macos-arm64)" \
-            | grep -Fx 'META-INF/memory-service/macos-arm64/memory-service'
-
-          jars=(
-            "$(primary_jar memory-service-process)"
-            "$(primary_jar memory-service-binary-linux-amd64)"
-            "$(primary_jar memory-service-binary-linux-arm64)"
-            "$(primary_jar memory-service-binary-macos-arm64)"
-            "$(primary_jar memory-service-binaries)"
-          )
-          module_path="$(IFS=:; echo "${jars[*]}")"
-          java --validate-modules --module-path "$module_path"
+          java --validate-modules --module-path "$jar_path"
 
   image-manifest:
     needs: images

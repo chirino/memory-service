@@ -17,6 +17,13 @@
   <!-- This module must stay JDK-only at runtime: no framework, gRPC, or Netty dependencies.
        It is embedded by Quarkus, Spring, and plain Java apps alike; the enforcer rule below
        fails the build if a non-test dependency is added. -->
+  <properties>
+    <!-- Staged by .github/scripts/binary-oci.sh stage: <platform>/memory-service.oci.properties and
+         <platform>/memory-service.sha256 for each released platform. Normal builds have none, and
+         the packaged resolver then finds no descriptor. -->
+    <memory-service.binaries.dir>${maven.multiModuleProjectDirectory}/../dist/java-binaries</memory-service.binaries.dir>
+  </properties>
+
   <dependencies>
     <dependency>
       <groupId>org.junit.jupiter</groupId>
@@ -26,6 +33,27 @@
   </dependencies>
 
   <build>
+    <resources>
+      <resource>
+        <directory>src/main/resources</directory>
+      </resource>
+      <!-- OCI descriptors for downloading the native executable
+           (docs/enhancements/implemented/119-oci-native-binary-distribution.md). Never the
+           executable itself. -->
+      <resource>
+        <targetPath>META-INF/memory-service</targetPath>
+        <filtering>false</filtering>
+        <directory>${memory-service.binaries.dir}</directory>
+        <includes>
+          <include>linux-amd64/memory-service.oci.properties</include>
+          <include>linux-amd64/memory-service.sha256</include>
+          <include>linux-arm64/memory-service.oci.properties</include>
+          <include>linux-arm64/memory-service.sha256</include>
+          <include>macos-arm64/memory-service.oci.properties</include>
+          <include>macos-arm64/memory-service.sha256</include>
+        </includes>
+      </resource>
+    </resources>
     <plugins>
       <plugin>
         <artifactId>maven-enforcer-plugin</artifactId>
@@ -66,4 +94,44 @@
       </plugin>
     </plugins>
   </build>
+
+  <profiles>
+    <profile>
+      <!-- Release builds must package a descriptor for every platform. -->
+      <id>binary-descriptors</id>
+      <build>
+        <plugins>
+          <plugin>
+            <artifactId>maven-antrun-plugin</artifactId>
+            <version>3.2.0</version>
+            <executions>
+              <execution>
+                <id>validate-native-binary-descriptors</id>
+                <goals>
+                  <goal>run</goal>
+                </goals>
+                <phase>initialize</phase>
+                <configuration>
+                  <target>
+                    <available file="${memory-service.binaries.dir}/linux-amd64/memory-service.oci.properties" property="linux-amd64.memory-service.oci.properties.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/linux-amd64/memory-service.oci.properties" unless="linux-amd64.memory-service.oci.properties.available"/>
+                    <available file="${memory-service.binaries.dir}/linux-amd64/memory-service.sha256" property="linux-amd64.memory-service.sha256.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/linux-amd64/memory-service.sha256" unless="linux-amd64.memory-service.sha256.available"/>
+                    <available file="${memory-service.binaries.dir}/linux-arm64/memory-service.oci.properties" property="linux-arm64.memory-service.oci.properties.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/linux-arm64/memory-service.oci.properties" unless="linux-arm64.memory-service.oci.properties.available"/>
+                    <available file="${memory-service.binaries.dir}/linux-arm64/memory-service.sha256" property="linux-arm64.memory-service.sha256.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/linux-arm64/memory-service.sha256" unless="linux-arm64.memory-service.sha256.available"/>
+                    <available file="${memory-service.binaries.dir}/macos-arm64/memory-service.oci.properties" property="macos-arm64.memory-service.oci.properties.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/macos-arm64/memory-service.oci.properties" unless="macos-arm64.memory-service.oci.properties.available"/>
+                    <available file="${memory-service.binaries.dir}/macos-arm64/memory-service.sha256" property="macos-arm64.memory-service.sha256.available"/>
+                    <fail message="Missing ${memory-service.binaries.dir}/macos-arm64/memory-service.sha256" unless="macos-arm64.memory-service.sha256.available"/>
+                  </target>
+                </configuration>
+              </execution>
+            </executions>
+          </plugin>
+        </plugins>
+      </build>
+    </profile>
+  </profiles>
 </project>

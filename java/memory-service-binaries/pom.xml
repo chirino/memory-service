@@ -9,47 +9,19 @@
     <relativePath>../pom.xml</relativePath>
   </parent>
 
+  <!-- POM-only relocation stub. memory-service-process now carries the OCI descriptors for every
+       platform (docs/enhancements/implemented/119-oci-native-binary-distribution.md), so existing
+       dependency declarations resolve to it with a warning.
+       BACKWARD COMPATIBILITY: remove in a future breaking release. -->
   <artifactId>memory-service-binaries</artifactId>
-  <packaging>jar</packaging>
-  <name>Memory Service - All Native Binaries</name>
-  <description>Convenience dependency for all supported Memory Service binary providers</description>
+  <packaging>pom</packaging>
+  <name>Memory Service - All Native Binaries (relocated)</name>
+  <description>Relocated to memory-service-process, which downloads the native executable on first use</description>
 
-  <dependencies>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>memory-service-binary-linux-amd64</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>memory-service-binary-linux-arm64</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
-      <artifactId>memory-service-binary-macos-arm64</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-    <dependency>
-      <groupId>org.junit.jupiter</groupId>
-      <artifactId>junit-jupiter</artifactId>
-      <scope>test</scope>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <plugins>
-      <plugin>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.5.1</version>
-        <configuration>
-          <archive>
-            <manifestEntries>
-              <Automatic-Module-Name>io.github.chirino.memoryservice.binaries</Automatic-Module-Name>
-            </manifestEntries>
-          </archive>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
+  <distributionManagement>
+    <relocation>
+      <artifactId>memory-service-process</artifactId>
+      <message>memory-service-binaries is replaced by memory-service-process, which now downloads the executable for every supported platform; depend on memory-service-process directly.</message>
+    </relocation>
+  </distributionManagement>
 </project>

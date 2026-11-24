@@ -128,7 +128,7 @@ jobs:
           set -euo pipefail
 
           VERSION="$RELEASE_VERSION"
-          ./java/mvnw -q -B -f java/pom.xml -Pbinary-jars versions:set \
+          ./java/mvnw -q -B -f java/pom.xml -Pbinary-descriptors versions:set \
             -DnewVersion="$VERSION" \
             -DgenerateBackupPoms=false
 
@@ -330,10 +330,64 @@ jobs:
           path: dist/memory-service
           if-no-files-found: error
 
-  java-release:
+  # Publishes the executables that memory-service-process downloads on first use
+  # (docs/enhancements/implemented/119-oci-native-binary-distribution.md). Published JARs pin layer
+  # digests, so an existing version tag is never overwritten: a rerun rebuilds the binaries, and
+  # the rebuilt bytes are not guaranteed to match.
+  binary-oci:
     needs:
       - prepare
       - binary-artifact
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout release ref
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ needs.prepare.outputs.checkout-ref }}
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+
+      - name: Download native binaries
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: release-binary-*
+          path: /tmp/release-binaries
+          merge-multiple: false
+
+      - name: Push native binary OCI artifact
+        shell: bash
+        env:
+          REGISTRY_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          REGISTRY_USER: ${{ github.actor }}
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          native=/tmp/release-native
+          for platform in linux-amd64 linux-arm64 macos-arm64; do
+            source="/tmp/release-binaries/release-binary-memory-service-$platform/memory-service"
+            if [ ! -f "$source" ]; then
+              echo "Missing native artifact $source" >&2
+              exit 1
+            fi
+            mkdir -p "$native/$platform"
+            cp "$source" "$native/$platform/memory-service"
+          done
+
+          printf '%s' "$REGISTRY_TOKEN" | oras login ghcr.io -u "$REGISTRY_USER" --password-stdin
+          .github/scripts/binary-oci.sh push \
+            "ghcr.io/${REPOSITORY_OWNER,,}/memory-service-binary:$RELEASE_VERSION" \
+            "$RELEASE_VERSION" "$native"
+
+  java-release:
+    needs:
+      - prepare
+      - binary-oci
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -362,38 +416,24 @@ jobs:
           gpg-private-key: ${{ secrets.MAVEN_GPG_PRIVATE_KEY }}
           gpg-passphrase: MAVEN_GPG_PASSPHRASE
 
-      - name: Download native binaries
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: release-binary-*
-          path: /tmp/release-binaries
-          merge-multiple: false
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
 
-      - name: Stage Maven binary inputs
+      # Descriptors are written from an anonymous pull of the pushed layers, not from the
+      # workflow artifacts. That keeps Maven Central's digests equal to what clients download,
+      # including on a rerun, and fails here if the GHCR package is not public.
+      - name: Stage Maven binary inputs from GHCR
         shell: bash
+        env:
+          ORAS_ANONYMOUS: 'true'
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
         run: |
           set -euo pipefail
 
-          stage=/tmp/memory-service-binaries
-          mkdir -p "$stage"
-          stage_binary() {
-            local artifact="$1"
-            local platform="$2"
-            local source="/tmp/release-binaries/release-binary-$artifact/memory-service"
-            local target="$stage/$platform"
-            if [ ! -f "$source" ]; then
-              echo "Missing native artifact $source" >&2
-              exit 1
-            fi
-            mkdir -p "$target"
-            cp "$source" "$target/memory-service"
-            chmod +x "$target/memory-service"
-            sha256sum "$target/memory-service" | sed 's#  .*/#  #' > "$target/memory-service.sha256"
-          }
-
-          stage_binary memory-service-linux-amd64 linux-amd64
-          stage_binary memory-service-linux-arm64 linux-arm64
-          stage_binary memory-service-macos-arm64 macos-arm64
+          repository="ghcr.io/${REPOSITORY_OWNER,,}/memory-service-binary"
+          .github/scripts/binary-oci.sh stage "$repository:$RELEASE_VERSION" "$repository" \
+            /tmp/memory-service-binaries
 
       - name: Check Maven Central artifacts
         id: maven-central
@@ -408,10 +448,10 @@ jobs:
           artifacts=(
             "memory-service-parent/$version/memory-service-parent-$version.pom"
             "memory-service-process/$version/memory-service-process-$version.jar"
-            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.jar"
-            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.jar"
-            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.jar"
-            "memory-service-binaries/$version/memory-service-binaries-$version.jar"
+            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.pom"
+            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.pom"
+            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.pom"
+            "memory-service-binaries/$version/memory-service-binaries-$version.pom"
           )
           published=true
           for artifact in "${artifacts[@]}"; do
@@ -460,10 +500,10 @@ jobs:
           artifacts=(
             "memory-service-parent/$version/memory-service-parent-$version.pom"
             "memory-service-process/$version/memory-service-process-$version.jar"
-            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.jar"
-            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.jar"
-            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.jar"
-            "memory-service-binaries/$version/memory-service-binaries-$version.jar"
+            "memory-service-binary-linux-amd64/$version/memory-service-binary-linux-amd64-$version.pom"
+            "memory-service-binary-linux-arm64/$version/memory-service-binary-linux-arm64-$version.pom"
+            "memory-service-binary-macos-arm64/$version/memory-service-binary-macos-arm64-$version.pom"
+            "memory-service-binaries/$version/memory-service-binaries-$version.pom"
           )
           for artifact in "${artifacts[@]}"; do
             curl --silent --fail --head --retry 6 --retry-delay 10 "$base/$artifact" >/dev/null \
@@ -541,9 +581,9 @@ jobs:
   finish:
     needs:
       - prepare
+      - binary-oci
       - java-release
       - docker-manifest
-      - binary-artifact
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -554,13 +594,25 @@ jobs:
           ref: ${{ needs.prepare.outputs.checkout-ref }}
           fetch-depth: 0
 
-      - name: Download binary artifacts
+      - name: Set up ORAS
         if: inputs.create_github_release
-        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
-        with:
-          pattern: release-binary-*
-          path: /tmp/release-binaries
-          merge-multiple: false
+        uses: oras-project/setup-oras@5e2f2482b30b0cb3e14e67f89a80c88c659a7c63 # v2.0.3
+
+      # Build the ZIPs from the published layers so they hold the same bytes as the OCI artifact,
+      # even on a rerun where binary-oci kept an existing tag.
+      - name: Pull native binaries from GHCR
+        if: inputs.create_github_release
+        shell: bash
+        env:
+          ORAS_ANONYMOUS: 'true'
+          REPOSITORY_OWNER: ${{ github.repository_owner }}
+          RELEASE_VERSION: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          repository="ghcr.io/${REPOSITORY_OWNER,,}/memory-service-binary"
+          .github/scripts/binary-oci.sh stage "$repository:$RELEASE_VERSION" "$repository" \
+            /tmp/release-binaries
 
       - name: Tag released version
         shell: bash
@@ -604,14 +656,13 @@ jobs:
           shopt -s nullglob
 
           mkdir -p /tmp/release-assets
-          for artifact_dir in /tmp/release-binaries/release-binary-*; do
-            [ -d "$artifact_dir" ] || continue
-            asset_name="${artifact_dir##*/release-binary-}.zip"
-            if [ ! -f "$artifact_dir/memory-service" ]; then
-              echo "Missing memory-service binary in $artifact_dir" >&2
+          for platform in linux-amd64 linux-arm64 macos-arm64; do
+            platform_dir="/tmp/release-binaries/$platform"
+            if [ ! -f "$platform_dir/memory-service" ]; then
+              echo "Missing memory-service binary in $platform_dir" >&2
               exit 1
             fi
-            (cd "$artifact_dir" && zip -q "/tmp/release-assets/$asset_name" memory-service)
+            (cd "$platform_dir" && zip -q "/tmp/release-assets/memory-service-$platform.zip" memory-service)
           done
 
           assets=(/tmp/release-assets/*.zip)
