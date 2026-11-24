@@ -101,6 +101,14 @@ func TestUploadAttachmentDocumentsIDOutcomes(t *testing.T) {
 		require.Equal(t, "#/components/schemas/ErrorResponse", media.Schema.Ref, code)
 	}
 
+	// A multipart upload also waits for its own finalize. If the row was deleted, expired, or
+	// replaced while the body streamed, the stored content is discarded and the request is a 409,
+	// not a 404: the caller's own ID is no longer the attempt that was in flight.
+	conflict := flat(*op.Responses.Value("409").Value.Description)
+	for _, fragment := range []string{"deleted", "expired", "replaced", "while the content was being stored", "content is discarded"} {
+		require.Contains(t, conflict, fragment)
+	}
+
 	created := flat(*op.Responses.Value("201").Value.Description)
 	require.Contains(t, created, "returns immediately with status `downloading`")
 	require.Contains(t, created, "download has not finished")

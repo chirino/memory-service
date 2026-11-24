@@ -520,6 +520,12 @@ func (s *suite) deleteExpiredConditions(t *testing.T) {
 }
 
 func (s *suite) deleteExpiredBlobQueue(t *testing.T) {
+	// Scenarios share one datastore and Run visits them in random map order, so an
+	// earlier scenario that deleted an expired row with a storage key leaves its
+	// queued blob delete behind. Drain it, or the "nothing queued yet" assertion
+	// below depends on scenario order.
+	s.queuedBlobKeys(t)
+
 	user := newUser()
 
 	// Deleted row with a storage key: the key is queued.

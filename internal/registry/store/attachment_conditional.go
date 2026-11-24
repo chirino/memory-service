@@ -1,6 +1,7 @@
 package store
 
 import (
+	"errors"
 	"fmt"
 
 	"github.com/chirino/memory-service/internal/model"
@@ -49,6 +50,42 @@ func ValidateAttachmentFinalize(finalize AttachmentFinalize) error {
 		return &ValidationError{Field: "storageKey", Message: "a finalized attachment requires a storage key"}
 	}
 	return nil
+}
+
+// AttachmentIDExistsConflictCode marks the ConflictError returned when a
+// caller-supplied attachment ID already belongs to the caller. An existing ID is
+// never a successful retry: the client looks the attachment up to learn its
+// status.
+const AttachmentIDExistsConflictCode = "attachment_id_exists"
+
+// NewAttachmentIDExistsConflict rejects a create whose caller-supplied ID is
+// already in use by the caller, whatever the row's status.
+func NewAttachmentIDExistsConflict(attachmentID uuid.UUID) error {
+	return &ConflictError{
+		Message: fmt.Sprintf("attachment %s already exists; look up its status instead of sending it again", attachmentID),
+		Code:    AttachmentIDExistsConflictCode,
+	}
+}
+
+// AttachmentSupersededConflictCode marks the ConflictError returned when a
+// request's attachment row was deleted, expired or replaced before the request
+// could finalize it.
+const AttachmentSupersededConflictCode = "attachment_superseded"
+
+// AttachmentSupersededOrError converts the NotFoundError that FinalizeAttachment
+// returns when its attempt fence matches nothing into a ConflictError. A 404
+// would tell the client the outcome is inconclusive and to look again, which is
+// wrong here: this attempt can never complete. Any other error is returned
+// unchanged.
+func AttachmentSupersededOrError(attachmentID uuid.UUID, err error) error {
+	var notFound *NotFoundError
+	if !errors.As(err, &notFound) {
+		return err
+	}
+	return &ConflictError{
+		Message: fmt.Sprintf("attachment %s was deleted, expired or replaced before this request finished; its content was discarded", attachmentID),
+		Code:    AttachmentSupersededConflictCode,
+	}
 }
 
 // AttachmentNotReadyConflictCode marks the ConflictError returned when an entry

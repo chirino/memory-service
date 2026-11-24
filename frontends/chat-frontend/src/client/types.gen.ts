@@ -2204,6 +2204,10 @@ export type UploadAttachmentErrors = {
    * The supplied `id` already exists for the caller, whatever its status. Nothing was
    * stored and no download was started. Look the attachment up with
    * `GET /v1/attachments/{id}/metadata`.
+   *
+   * A multipart upload with an `id` also returns 409 when the attachment was deleted,
+   * expired, or replaced while the content was being stored. The stored content is
+   * discarded and the attachment is not `ready`.
    */
   409: ErrorResponse;
   /**

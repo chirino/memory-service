@@ -32,6 +32,20 @@ func protoMessageComment(t *testing.T, message string) string {
 	return strings.Join(strings.Fields(strings.Join(comments, " ")), " ")
 }
 
+// UploadMetadata waits for its own finalize, so a row deleted, expired, or replaced while the
+// chunks streamed is ABORTED (not NOT_FOUND) and its content is discarded. The URL request
+// answers before the download, so it never reports that outcome.
+func TestUploadMetadataCommentDocumentsSupersededUpload(t *testing.T) {
+	t.Parallel()
+	comment := protoMessageComment(t, "UploadMetadata")
+	for _, fragment := range []string{
+		"deleted, expired, or replaced while the content was being stored",
+		"returns ABORTED and the content is discarded",
+	} {
+		require.Contains(t, comment, fragment)
+	}
+}
+
 func TestAttachmentIDFieldCommentsDocumentOutcomes(t *testing.T) {
 	t.Parallel()
 	for message, extra := range map[string][]string{

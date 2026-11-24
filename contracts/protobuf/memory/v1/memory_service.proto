@@ -1545,6 +1545,8 @@ message UploadMetadata {
   // - An ID that already belongs to the caller returns ABORTED, whatever its status.
   //   Nothing is stored. Use GetAttachment to learn the outcome.
   // - An ID that belongs to another user returns NOT_FOUND.
+  // - An attachment that was deleted, expired, or replaced while the content was being
+  //   stored returns ABORTED and the content is discarded.
   //
   // NOT_FOUND is inconclusive for the caller's own earlier request: the attachment is
   // created only when its metadata message reaches the server, so an earlier stream
