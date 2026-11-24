@@ -28,6 +28,7 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.client.MultipartBodyBuilder;
 import org.springframework.lang.Nullable;
 import org.springframework.security.core.Authentication;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -363,6 +364,10 @@ public class MemoryServiceProxy {
 
     /**
      * Creates an attachment from a source URL by forwarding the JSON request to the memory service.
+     *
+     * <p>The request is forwarded unchanged, so an optional caller-supplied {@code "id"} (a UUID)
+     * reaches the memory service. A repeat with the same {@code id} is answered with 409 and
+     * starts no second download; look the attachment up with {@link #getAttachmentMetadata}.
      */
     public ResponseEntity<?> createAttachmentFromUrl(Map<String, Object> request) {
         try {
@@ -408,13 +413,35 @@ public class MemoryServiceProxy {
     }
 
     /**
-     * Uploads an attachment to the memory service using streaming multipart.
+     * Uploads an attachment to the memory service using streaming multipart. The memory service
+     * assigns the attachment ID.
      *
      * @param file      the multipart file from the request
      * @param expiresIn optional expiration duration (e.g. "300s")
      * @return the upstream JSON response with attachment metadata
      */
     public ResponseEntity<?> uploadAttachment(MultipartFile file, String expiresIn) {
+        return uploadAttachment(file, expiresIn, null);
+    }
+
+    /**
+     * Uploads an attachment with an optional caller-supplied ID.
+     *
+     * <p>When {@code id} is non-null it is sent as the {@code id} form field exactly as given, so
+     * a blank or malformed value is rejected by the memory service (400) and never replaced. The
+     * proxy never generates an ID: to retry safely, the caller reuses the same ID. A repeat with
+     * the same ID returns 409 for the owner; recover the outcome with
+     * {@link #getAttachmentMetadata}. A 404 from that lookup while the original request body is
+     * still being transferred is inconclusive. When {@code id} is null the memory service assigns
+     * the ID and each call creates a new attachment.
+     *
+     * @param file      the multipart file from the request
+     * @param expiresIn optional expiration duration (e.g. "300s")
+     * @param id        optional caller-supplied attachment ID (a UUID), or null
+     * @return the upstream JSON response with attachment metadata
+     */
+    public ResponseEntity<?> uploadAttachment(
+            MultipartFile file, String expiresIn, @Nullable String id) {
         try {
             String bearer = resolveBearerToken(null);
             WebClient.RequestBodySpec req =
@@ -434,20 +461,25 @@ public class MemoryServiceProxy {
                 req = req.header(HttpHeaders.AUTHORIZATION, "Bearer " + bearer);
             }
 
-            var body =
-                    BodyInserters.fromMultipartData(
-                            "file",
-                            new InputStreamResource(file.getInputStream()) {
-                                @Override
-                                public String getFilename() {
-                                    return file.getOriginalFilename();
-                                }
+            MultipartBodyBuilder parts = new MultipartBodyBuilder();
+            if (id != null) {
+                // The id part precedes the file part.
+                parts.part("id", id);
+            }
+            parts.part(
+                    "file",
+                    new InputStreamResource(file.getInputStream()) {
+                        @Override
+                        public String getFilename() {
+                            return file.getOriginalFilename();
+                        }
 
-                                @Override
-                                public long contentLength() {
-                                    return file.getSize();
-                                }
-                            });
+                        @Override
+                        public long contentLength() {
+                            return file.getSize();
+                        }
+                    });
+            var body = BodyInserters.fromMultipartData(parts.build());
 
             var upstream =
                     req.body(body)
@@ -477,6 +509,49 @@ public class MemoryServiceProxy {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", "Upload proxy failed: " + e.getMessage()));
         }
+    }
+
+    /**
+     * Looks up attachment metadata, including its {@code status} ({@code ready},
+     * {@code uploading}, {@code downloading} or {@code failed}), without downloading content. Use
+     * it to recover the outcome of an upload or URL creation whose response was lost.
+     *
+     * <p>The upstream status is returned unchanged: 404 means the attachment does not exist for
+     * this user. During a multipart transfer that 404 is inconclusive.
+     */
+    public ResponseEntity<?> getAttachmentMetadata(String id) {
+        String bearer = resolveBearerToken(null);
+
+        var upstream =
+                createWebClient()
+                        .get()
+                        .uri("/v1/attachments/{id}/metadata", id)
+                        .headers(
+                                h -> {
+                                    if (StringUtils.hasText(bearer)) {
+                                        h.setBearerAuth(bearer);
+                                    }
+                                })
+                        .exchangeToMono(
+                                response ->
+                                        response.bodyToMono(String.class)
+                                                .defaultIfEmpty("")
+                                                .map(
+                                                        responseBody ->
+                                                                ResponseEntity.status(
+                                                                                response
+                                                                                        .statusCode())
+                                                                        .contentType(
+                                                                                MediaType
+                                                                                        .APPLICATION_JSON)
+                                                                        .body(
+                                                                                (Object)
+                                                                                        responseBody)))
+                        .block(resolveTimeout());
+
+        return upstream != null
+                ? upstream
+                : ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR).build();
     }
 
     /**

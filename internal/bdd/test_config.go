@@ -11,12 +11,15 @@ const testEncryptionKey = "0123456789abcdef0123456789abcdef0123456789abcdef01234
 // acknowledges management routes on the ephemeral main listener (prod-mode startup
 // requires an explicit listener choice), and turns off process-local rate limiting so
 // functional runs are not order or load sensitive; rate limits are covered in
-// internal/security/rate_limit_test.go.
+// internal/security/rate_limit_test.go. It also allows source-URL attachments to
+// target loopback, because the scenarios download from a source server started
+// inside the test process.
 func defaultBDDConfig() config.Config {
 	cfg := config.DefaultConfig()
 	cfg.EncryptionProviders = "dek"
 	cfg.EncryptionKey = testEncryptionKey
 	cfg.ManagementOnMainListener = true
 	cfg.RateLimitMode = "off"
+	cfg.AllowPrivateSourceURLs = true
 	return cfg
 }

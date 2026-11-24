@@ -27,92 +27,134 @@ public class AttachmentClient {
 
     @Inject SecurityIdentity securityIdentity;
 
+    /** How long {@link #createFromUrl} waits for the download to finish. Visible for tests. */
+    long readyTimeoutMillis = 30_000;
+
+    private static final long POLL_INTERVAL_MILLIS = 250;
+
     /**
-     * Create an attachment from a source URL.
+     * Create an attachment from a source URL and wait until it is {@code ready}.
+     *
+     * <p>The Memory Service returns a URL attachment as {@code downloading}, and an entry can link
+     * an attachment only once it is {@code ready}. Callers hand the returned ID to the history
+     * recorder, so this method does not return until the download has finished.
      *
      * @param sourceUrl the URL of the content to store
      * @param contentType the MIME type
      * @param name display name for the attachment
-     * @return a map with the attachment metadata (id, href, status, etc.) or null on failure
+     * @return a map with the attachment metadata (id, href, status, etc.), or null on failure, if
+     *     the download fails, or if it does not finish within the timeout
      */
     @SuppressWarnings("unchecked")
     public Map<String, Object> createFromUrl(String sourceUrl, String contentType, String name) {
         try {
-            if (apiBuilder.usesUnixSocket()) {
-                UnixSocketHttpClient.HttpResponseData response =
-                        new UnixSocketHttpClient(
-                                        apiBuilder.getUnixSocketPath(),
-                                        new com.fasterxml.jackson.databind.ObjectMapper(),
-                                        apiBuilder.getApiKey(),
-                                        io.github.chirino.memory.security.SecurityHelper
-                                                .bearerToken(securityIdentity))
-                                .exchange(
-                                        "POST",
-                                        "/v1/attachments",
-                                        null,
-                                        Map.of(
-                                                "sourceUrl", sourceUrl,
-                                                "contentType", contentType,
-                                                "name", name));
-                if (response.statusCode() == 201) {
-                    var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                    return mapper.readValue(response.body(), Map.class);
-                }
+            long deadline = System.nanoTime() + readyTimeoutMillis * 1_000_000L;
+            var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
+
+            UnixSocketHttpClient.HttpResponseData response =
+                    send(
+                            "POST",
+                            "/v1/attachments",
+                            mapper.writeValueAsBytes(
+                                    Map.of(
+                                            "sourceUrl", sourceUrl,
+                                            "contentType", contentType,
+                                            "name", name)));
+            if (response.statusCode() != 201) {
                 LOG.warnf(
                         "Failed to create attachment from URL: HTTP %d - %s",
                         response.statusCode(), new String(response.body(), StandardCharsets.UTF_8));
                 return null;
             }
-            String url = apiBuilder.getBaseUrl() + "/v1/attachments";
-            String jsonBody =
-                    "{\"sourceUrl\":\""
-                            + escapeJson(sourceUrl)
-                            + "\",\"contentType\":\""
-                            + escapeJson(contentType)
-                            + "\",\"name\":\""
-                            + escapeJson(name)
-                            + "\"}";
+            Map<String, Object> attachment = mapper.readValue(response.body(), Map.class);
 
-            HttpURLConnection conn = (HttpURLConnection) URI.create(url).toURL().openConnection();
-            conn.setDoOutput(true);
-            conn.setRequestMethod("POST");
-            conn.setRequestProperty("Content-Type", "application/json");
-            conn.setConnectTimeout(30_000);
-            conn.setReadTimeout(30_000);
-
-            String bearer =
-                    io.github.chirino.memory.security.SecurityHelper.bearerToken(securityIdentity);
-            if (bearer != null) {
-                conn.setRequestProperty("Authorization", "Bearer " + bearer);
+            while (true) {
+                Object status = attachment.get("status");
+                if ("ready".equals(status)) {
+                    return attachment;
+                }
+                if (!"downloading".equals(status)) {
+                    LOG.warnf(
+                            "Attachment %s created from URL %s ended as %s",
+                            attachment.get("id"), sourceUrl, status);
+                    return null;
+                }
+                Thread.sleep(POLL_INTERVAL_MILLIS);
+                if (System.nanoTime() >= deadline) {
+                    LOG.warnf(
+                            "Attachment %s created from URL %s is still downloading after %d ms",
+                            attachment.get("id"), sourceUrl, readyTimeoutMillis);
+                    return null;
+                }
+                response =
+                        send("GET", "/v1/attachments/" + attachment.get("id") + "/metadata", null);
+                if (response.statusCode() != 200) {
+                    LOG.warnf(
+                            "Failed to look up attachment %s: HTTP %d - %s",
+                            attachment.get("id"),
+                            response.statusCode(),
+                            new String(response.body(), StandardCharsets.UTF_8));
+                    return null;
+                }
+                attachment = mapper.readValue(response.body(), Map.class);
             }
-
-            try (OutputStream out = conn.getOutputStream()) {
-                out.write(jsonBody.getBytes(StandardCharsets.UTF_8));
-                out.flush();
-            }
-
-            int status = conn.getResponseCode();
-            String responseBody;
-            try (InputStream respStream =
-                    status >= 400 ? conn.getErrorStream() : conn.getInputStream()) {
-                responseBody =
-                        respStream != null
-                                ? new String(respStream.readAllBytes(), StandardCharsets.UTF_8)
-                                : "";
-            }
-            conn.disconnect();
-
-            if (status == 201) {
-                var mapper = new com.fasterxml.jackson.databind.ObjectMapper();
-                return mapper.readValue(responseBody, Map.class);
-            } else {
-                LOG.warnf(
-                        "Failed to create attachment from URL: HTTP %d - %s", status, responseBody);
-                return null;
-            }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return null;
         } catch (Exception e) {
             LOG.errorf(e, "Error creating attachment from URL: %s", sourceUrl);
             return null;
+        }
+    }
+
+    /** Sends a JSON request to the Memory Service over its Unix socket or HTTP endpoint. */
+    private UnixSocketHttpClient.HttpResponseData send(String method, String path, byte[] jsonBody)
+            throws java.io.IOException {
+        String bearer =
+                io.github.chirino.memory.security.SecurityHelper.bearerToken(securityIdentity);
+        if (apiBuilder.usesUnixSocket()) {
+            return new UnixSocketHttpClient(
+                            apiBuilder.getUnixSocketPath(),
+                            new com.fasterxml.jackson.databind.ObjectMapper(),
+                            apiBuilder.getApiKey(),
+                            bearer)
+                    .exchange(
+                            method,
+                            path,
+                            null,
+                            jsonBody,
+                            jsonBody == null ? null : "application/json",
+                            Map.of());
+        }
+
+        HttpURLConnection conn =
+                (HttpURLConnection)
+                        URI.create(apiBuilder.getBaseUrl() + path).toURL().openConnection();
+        try {
+            conn.setRequestMethod(method);
+            conn.setConnectTimeout(30_000);
+            conn.setReadTimeout(30_000);
+            if (bearer != null) {
+                conn.setRequestProperty("Authorization", "Bearer " + bearer);
+            }
+            if (jsonBody != null) {
+                conn.setDoOutput(true);
+                conn.setRequestProperty("Content-Type", "application/json");
+                try (OutputStream out = conn.getOutputStream()) {
+                    out.write(jsonBody);
+                    out.flush();
+                }
+            }
+            int status = conn.getResponseCode();
+            try (InputStream respStream =
+                    status >= 400 ? conn.getErrorStream() : conn.getInputStream()) {
+                return new UnixSocketHttpClient.HttpResponseData(
+                        status,
+                        Map.of(),
+                        respStream != null ? respStream.readAllBytes() : new byte[0]);
+            }
+        } finally {
+            conn.disconnect();
         }
     }
 
@@ -232,12 +274,5 @@ public class AttachmentClient {
                 .replace("\"", "\\\"")
                 .replace("\r", "")
                 .replace("\n", "");
-    }
-
-    private static String escapeJson(String value) {
-        if (value == null) {
-            return "";
-        }
-        return value.replace("\\", "\\\\").replace("\"", "\\\"");
     }
 }

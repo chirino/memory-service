@@ -73,6 +73,32 @@ Update `SecurityConfig.java` to allow unauthenticated access to the signed downl
 
 The key change is adding `.requestMatchers("/v1/attachments/download/**").permitAll()` before `.anyRequest().authenticated()`. This allows signed download URLs to work without an Authorization header, while all other endpoints still require authentication.
 
+## Make Uploads Safe to Retry
+
+`MemoryServiceProxy.uploadAttachment(file, expiresIn, id)` takes an optional caller-supplied attachment `id`, and `MemoryServiceProxy.getAttachmentMetadata(id)` looks up an attachment's status. `AttachmentsProxyController` reads an optional `id` request parameter and exposes `GET /v1/attachments/{id}/metadata`. The two-argument `uploadAttachment(file, expiresIn)` still exists and lets the Memory Service assign the ID. To create an attachment from a URL, pass `"id"` in the map you give `createAttachmentFromUrl`; it is forwarded unchanged.
+
+Without an `id`, every upload creates a new attachment, exactly as before. To make a retry safe, generate a UUID before the first request and send it as the `id` form field. Reuse the same `id` for every retry and for the status lookup, and never generate a new one on a retry:
+
+```bash
+ATTACHMENT_ID=$(uuidgen | tr 'A-Z' 'a-z')
+
+curl -sSX POST http://localhost:9090/v1/attachments \
+  -H "Authorization: Bearer $(get-token)" \
+  -F "id=${ATTACHMENT_ID}" \
+  -F "file=@/tmp/test-upload.txt"
+```
+
+The proxy forwards the `id` exactly as it received it. It never generates one and never replaces a blank or malformed value: the Memory Service answers `400` for those. A repeated `id` that already belongs to the caller returns `409`, and the proxy returns that status unchanged instead of hiding it. An `id` that belongs to another user returns `404`.
+
+After a timeout or a lost response, look the attachment up with the same `id` instead of sending the file again:
+
+```bash
+curl -sS "http://localhost:9090/v1/attachments/${ATTACHMENT_ID}/metadata" \
+  -H "Authorization: Bearer $(get-token)"
+```
+
+`status` is `ready` on success, `uploading` or `downloading` while the content is still being stored, and `failed` when it was not stored. A `404` is inconclusive while your original multipart request may still be transferring its body, because the Memory Service creates the record only after it has read the whole body. A `failed` attachment keeps blocking its `id` until you delete it with `DELETE /v1/attachments/{id}`; delete it and retry with the same `id`, or pick a new one. An attachment can be linked to an entry only when it is `ready`. See [Retrying Uploads and URL Creation](/docs/concepts/attachments/#retrying-uploads-and-url-creation) for every status and conflict case.
+
 <TestScenario checkpoint="java/spring/examples/doc-checkpoints/08-with-attachments">
 
 ## Testing

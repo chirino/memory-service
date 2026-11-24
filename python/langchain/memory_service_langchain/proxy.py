@@ -320,21 +320,49 @@ class MemoryServiceProxy:
         file_bytes: bytes,
         content_type: str = "application/octet-stream",
         expires_in: str | None = None,
+        attachment_id: str | None = None,
     ) -> httpx.Response:
+        """Upload an attachment.
+
+        ``attachment_id`` is an optional caller-supplied UUID that identifies the operation. It is
+        sent exactly as given, so a blank or malformed value is rejected by the memory service
+        (400) and never replaced. The proxy never generates an ID: to retry safely, reuse the same
+        ID. A repeat with the same ID returns 409 for the owner; recover the outcome with
+        ``get_attachment_metadata``. A 404 from that lookup while the original request body is
+        still being transferred is inconclusive. When it is ``None`` the memory service assigns
+        the ID and every call creates a new attachment.
+        """
         return await self._request(
             "POST",
             "/v1/attachments",
             params=self._compact_params({"expiresIn": expires_in}),
+            # httpx writes data fields before files, so the id part precedes the file part.
+            data={"id": attachment_id} if attachment_id is not None else None,
             files={
                 "file": (file_name, file_bytes, content_type),
             },
         )
 
     async def create_attachment_from_url(self, payload: dict[str, Any]) -> httpx.Response:
+        """Create an attachment from a source URL.
+
+        ``payload`` is forwarded unchanged, so an optional caller-supplied ``"id"`` (a UUID)
+        reaches the memory service. A repeat with the same ``id`` returns 409 and starts no
+        second download; look the attachment up with ``get_attachment_metadata``.
+        """
         return await self._request(
             "POST",
             "/v1/attachments",
             json_body=payload,
+        )
+
+    async def get_attachment_metadata(self, attachment_id: str) -> httpx.Response:
+        """Look up attachment metadata, including its ``status`` (``ready``, ``uploading``,
+        ``downloading`` or ``failed``), without downloading content. The upstream status is
+        returned unchanged: 404 means the attachment does not exist for this user."""
+        return await self._request(
+            "GET",
+            f"/v1/attachments/{self._path(attachment_id)}/metadata",
         )
 
     async def get_attachment(

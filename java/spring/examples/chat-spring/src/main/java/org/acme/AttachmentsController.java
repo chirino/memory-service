@@ -30,8 +30,14 @@ class AttachmentsController {
     @PostMapping(consumes = MediaType.MULTIPART_FORM_DATA_VALUE)
     public ResponseEntity<?> upload(
             @RequestPart("file") MultipartFile file,
-            @RequestParam(value = "expiresIn", required = false) String expiresIn) {
-        return proxy.uploadAttachment(file, expiresIn);
+            @RequestParam(value = "expiresIn", required = false) String expiresIn,
+            @RequestParam(value = "id", required = false) String id) {
+        return proxy.uploadAttachment(file, expiresIn, id);
+    }
+
+    @GetMapping("/{id}/metadata")
+    public ResponseEntity<?> metadata(@PathVariable String id) {
+        return proxy.getAttachmentMetadata(id);
     }
 
     @GetMapping("/{id}/download-url")

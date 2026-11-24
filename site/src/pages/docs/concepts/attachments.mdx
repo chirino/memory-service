@@ -57,11 +57,13 @@ flowchart TD
     Shared -->|"Conversation<br/>deleted"| Deleted
 ```
 
-An attachment moves through three states:
+An attachment moves through three lifecycle stages:
 
-- **Uploading** — File is being transferred to the server. A short-lived expiration is set to handle abandoned uploads.
-- **Unlinked** — Upload complete but not yet referenced by any entry. Has a finite TTL (default 1 hour). The uploader can delete it manually or let it expire.
+- **Uploading** — File is being transferred to the server (or, for a URL, downloaded). A short-lived expiration is set to handle abandoned uploads. Its `status` is `uploading` or `downloading`, or `failed` if the transfer did not complete.
+- **Unlinked** — Upload complete (`status` is `ready`) but not yet referenced by any entry. Has a finite TTL (default 1 hour). The uploader can delete it manually or let it expire.
 - **Linked** — Referenced by an entry. Expiration is cleared. The attachment persists as long as the conversation exists.
+
+Only a `ready` attachment can be linked. See [Checking Attachment Status](#checking-attachment-status).
 
 ## Uploading Files
 
@@ -104,6 +106,85 @@ Response:
 - `expiresIn` is an ISO 8601 duration (default `PT1H`, max `PT24H`)
 - Maximum file size is [10 MB by default (configurable)](/docs/configuration/#attachment-storage)
 - The uploaded attachment is unlinked until referenced in an entry
+- Without an `id` field, every request creates a new attachment. To make an upload safe to retry, send your own `id`. See [Retrying Uploads and URL Creation](#retrying-uploads-and-url-creation).
+
+### Creating an Attachment from a URL
+
+Send a JSON body with a `sourceUrl` instead of a file, and the Memory Service downloads the content for you:
+
+```bash
+curl -X POST "http://localhost:8080/v1/attachments" \
+  -H "Content-Type: application/json" \
+  -H "Authorization: Bearer <token>" \
+  -d '{
+    "sourceUrl": "https://example.com/generated-image.png",
+    "contentType": "image/png",
+    "name": "generated-image.png"
+  }'
+```
+
+The response is `201` and returns immediately with `"status": "downloading"`. The download has not finished at that point. Look the attachment up until its status is `ready` (see [Checking Attachment Status](#checking-attachment-status)) before linking it to an entry.
+
+URL creation is not a durable background task. If the Memory Service stops while a download is running, the attachment can stay `downloading` until the cleanup job removes it after `expiresAt`. Delete it, or let it expire, and create it again.
+
+## Checking Attachment Status
+
+Every attachment has a `status`:
+
+| Status        | Meaning                                                                                     |
+| ------------- | ------------------------------------------------------------------------------------------- |
+| `ready`       | The content is stored. This is success.                                                     |
+| `uploading`   | A multipart upload with a caller-supplied `id` is storing its content. Wait and look again. |
+| `downloading` | The server is downloading from `sourceUrl`. Wait and look again.                            |
+| `failed`      | The upload or download did not store the content. Delete the attachment to reuse its `id`.  |
+
+Look up the status without downloading the content:
+
+```bash
+curl "http://localhost:8080/v1/attachments/{id}/metadata" \
+  -H "Authorization: Bearer <token>"
+```
+
+The response has the same shape as an upload response. The lookup works until the attachment record is actually deleted, so an attachment past its `expiresAt` that the cleanup job has not removed yet is still returned. Unlinked attachments are visible only to the user who created them.
+
+## Retrying Uploads and URL Creation
+
+A network failure can leave you not knowing whether a create request succeeded. If you sent no `id`, a retry creates a second attachment. To make a retry safe, generate a UUID before the first request and send it as the attachment `id`:
+
+```bash
+ATTACHMENT_ID=$(uuidgen | tr 'A-Z' 'a-z')
+
+curl -X POST "http://localhost:8080/v1/attachments" \
+  -H "Authorization: Bearer <token>" \
+  -F "id=$ATTACHMENT_ID" \
+  -F "file=@photo.jpg"
+```
+
+For URL creation, put `"id"` in the JSON body. The `id` identifies the _operation_, not the content: it is not a content hash, and two different files uploaded with the same `id` are still the same operation.
+
+Reuse the same `id` for the request, for every retry, and for the status lookup. Never generate a new `id` on a retry, because that is exactly what creates a duplicate.
+
+| Situation                                       | REST | gRPC               | What it means                                                                |
+| ----------------------------------------------- | ---- | ------------------ | ---------------------------------------------------------------------------- |
+| `id` is new                                     | 201  | OK                 | Attachment created                                                           |
+| `id` already belongs to you, in any status      | 409  | `ABORTED`          | Nothing was stored and no download started. Look up the status.              |
+| `id` belongs to another user                    | 404  | `NOT_FOUND`        | Nothing was stored. Pick a different `id`.                                   |
+| `id` is not a UUID, including an empty value    | 400  | `INVALID_ARGUMENT` | Nothing was stored. The `id` is never replaced with a generated one.         |
+| Deleted or expired while the content was stored | 409  | `ABORTED`          | The content is discarded and the attachment is not `ready`. Create it again. |
+
+To recover after a timeout or a lost response:
+
+1. Look the attachment up with the same `id`: `GET /v1/attachments/{id}/metadata` over REST, or `AttachmentsService.GetAttachment` over gRPC.
+2. `ready` means the create succeeded. Do not send the file again.
+3. `uploading` or `downloading` means it is in progress. Wait, then look again.
+4. `failed` means it was not stored. Delete it with `DELETE /v1/attachments/{id}`, then retry with the same `id`, or pick a new `id`.
+5. A `404` means no attachment with that `id` exists for you. It is **inconclusive** while your own earlier request may still be transferring its body.
+
+**Why a 404 can be inconclusive.** Over REST, the Memory Service reads the whole multipart body before it creates the attachment record, so a lookup during a slow transfer returns `404` even though the original request will still succeed. Over gRPC the record is created when the first (metadata) message arrives, so the window is shorter but a lookup can still beat it. Wait and look up again before you conclude the original request never arrived.
+
+**An `id` stays reserved until the attachment is actually deleted.** A `failed` or stuck attachment keeps blocking its `id` until you delete it. Expiry does not release an `id` on a deadline: an attachment past its `expiresAt` is removed only when the periodic cleanup job runs, so `expiresAt` plus the cleanup interval is not a guaranteed time. Delete the attachment explicitly if you need to reuse its `id` now, or pick a new `id`.
+
+These guarantees cover repeating a create request. They do not make an upload resumable: if a transfer is interrupted, the file is sent again from the start under the same `id` once the previous attempt has failed or been deleted.
 
 ## Referencing Uploaded Attachments in Entries
 
@@ -152,7 +233,7 @@ The stored entry content will look like:
 }
 ```
 
-An entry can link an attachment only when its status is `ready`. Appending an entry that references an attachment that is still `uploading` or `downloading` (for example, one created from a `sourceUrl` whose download has not finished) or that has `failed` returns `409 Conflict` over REST or `ABORTED` over gRPC. Nothing is appended and the attachment stays unlinked. Poll the attachment until its status is `ready`, then retry the append.
+An entry can link an attachment only when its status is `ready`. Appending an entry that references an attachment that is still `uploading` or `downloading` (for example, one created from a `sourceUrl` whose download has not finished) or that has `failed` returns `409 Conflict` over REST or `ABORTED` over gRPC. Nothing is appended and the attachment stays unlinked. [Check the status](#checking-attachment-status) until it is `ready`, then retry the append.
 
 ### Attachment Properties
 
@@ -308,7 +389,8 @@ All attachment settings (max file size, TTLs, cleanup interval, storage backend)
 
 ### REST
 
-- `POST /v1/attachments` — Upload a file
+- `POST /v1/attachments` — Upload a file (multipart, optional `id` form field) or create one from a `sourceUrl` (JSON, optional `id`)
+- `GET /v1/attachments/{id}/metadata` — Look up attachment metadata and `status` without downloading the content
 - `GET /v1/attachments/{id}?disposition=inline|attachment` — Download attachment content
 - `GET /v1/attachments/{id}/download-url?disposition=inline|attachment` — Get a signed download URL
 - `DELETE /v1/attachments/{id}` — Delete an unlinked attachment
@@ -316,8 +398,9 @@ All attachment settings (max file size, TTLs, cleanup interval, storage backend)
 
 ### gRPC
 
-- `AttachmentsService.UploadAttachment` — Client-streaming upload
-- `AttachmentsService.GetAttachment` — Get attachment metadata
+- `AttachmentsService.UploadAttachment` — Client-streaming upload (optional `id` in the metadata message)
+- `AttachmentsService.CreateAttachmentFromUrl` — Create an attachment from a `source_url` (optional `id`)
+- `AttachmentsService.GetAttachment` — Get attachment metadata and `status`. Use it to recover the outcome of a create request.
 - `AttachmentsService.DownloadAttachment` — Server-streaming download
 
 ## Next Steps
