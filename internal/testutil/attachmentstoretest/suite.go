@@ -42,6 +42,7 @@ func Run(t *testing.T, store registrystore.MemoryStore, ctx context.Context, set
 		"DeleteExpiredConditions":                    s.deleteExpiredConditions,
 		"DeleteExpiredQueuesBlobOnlyWhenDeleted":     s.deleteExpiredBlobQueue,
 		"LegacyNullAttemptComparison":                s.legacyNullAttempt,
+		"AdminListReturnsAttemptIDForCleanup":        s.adminListAttemptID,
 		"ConcurrentCreatesProduceOneWinnerAndOneRow": s.concurrentCreate,
 		"TransactionContinuesAfterLosingCreate":      s.transactionContinuesAfterDuplicate,
 		"FinalizeMarkFailedAndDeleteRollBackWithTx":  s.rollback,
@@ -598,6 +599,57 @@ func (s *suite) legacyNullAttempt(t *testing.T) {
 	require.NoError(t, err)
 	require.False(t, changed)
 	require.Equal(t, "ready", s.get(t, user, live.ID).Status)
+}
+
+// adminListAttemptID covers the input of the cleanup fence: the cleanup job
+// passes the AttemptID it read from AdminListAttachments to DeleteExpiredAttachment.
+// If a store's list dropped the field, every row with an attempt would be passed
+// as a legacy row and never deleted, and a legacy row could not be told apart.
+func (s *suite) adminListAttemptID(t *testing.T) {
+	user := newUser()
+	listExpired := func() map[uuid.UUID]registrystore.AdminAttachment {
+		var rows []registrystore.AdminAttachment
+		require.NoError(t, s.store.InReadTx(s.ctx, func(txCtx context.Context) error {
+			var err error
+			rows, _, err = s.store.AdminListAttachments(txCtx, registrystore.AdminAttachmentQuery{UserID: &user, Status: "expired", Limit: 100})
+			return err
+		}))
+		byID := map[uuid.UUID]registrystore.AdminAttachment{}
+		for _, row := range rows {
+			byID[row.ID] = row
+		}
+		return byID
+	}
+
+	pendingID, readyID, liveID := uuid.New(), uuid.New(), uuid.New()
+	pending := s.create(t, user, pendingID, "uploading", past())
+	ready := s.create(t, user, readyID, "uploading", future())
+	_, err := s.finalize(user, readyID, *ready.AttemptID, newKey(), past())
+	require.NoError(t, err)
+	s.create(t, user, liveID, "uploading", future())
+	var legacy *model.Attachment
+	s.mustWrite(t, func(txCtx context.Context) error {
+		var err error
+		legacy, err = s.store.CreateAttachment(txCtx, user, "", model.Attachment{ContentType: "text/plain", ExpiresAt: past()})
+		return err
+	})
+	require.Nil(t, legacy.AttemptID)
+
+	listed := listExpired()
+	require.Len(t, listed, 3, "only the expired rows are listed")
+	require.NotNil(t, listed[pendingID].AttemptID, "an expired uploading row must list its attempt ID")
+	require.Equal(t, *pending.AttemptID, *listed[pendingID].AttemptID)
+	require.NotNil(t, listed[readyID].AttemptID, "a finalized row keeps its attempt ID")
+	require.Equal(t, *ready.AttemptID, *listed[readyID].AttemptID)
+	require.Contains(t, listed, legacy.ID)
+	require.Nil(t, listed[legacy.ID].AttemptID, "a legacy row lists no attempt ID")
+
+	// The listed values are exactly what the conditional delete needs.
+	for id, row := range listed {
+		require.True(t, s.mustDeleteExpired(t, id, row.AttemptID), "row %s must be deletable with its listed attempt ID", id)
+	}
+	require.Empty(t, listExpired())
+	require.True(t, s.exists(t, user, liveID), "the unexpired row is untouched")
 }
 
 func (s *suite) concurrentCreate(t *testing.T) {
