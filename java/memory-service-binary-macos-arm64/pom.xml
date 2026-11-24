@@ -9,71 +9,19 @@
     <relativePath>../pom.xml</relativePath>
   </parent>
 
+  <!-- POM-only relocation stub. memory-service-process now carries the OCI descriptors for every
+       platform (docs/enhancements/implemented/119-oci-native-binary-distribution.md), so existing
+       dependency declarations resolve to it with a warning.
+       BACKWARD COMPATIBILITY: remove in a future breaking release. -->
   <artifactId>memory-service-binary-macos-arm64</artifactId>
-  <packaging>jar</packaging>
-  <name>Memory Service - Binary - macOS ARM64</name>
-  <description>Memory Service native executable for macOS ARM64</description>
+  <packaging>pom</packaging>
+  <name>Memory Service - Binary - macOS ARM64 (relocated)</name>
+  <description>Relocated to memory-service-process, which downloads the native executable on first use</description>
 
-  <properties>
-    <memory-service.binaries.dir>${maven.multiModuleProjectDirectory}/../dist/java-binaries</memory-service.binaries.dir>
-    <memory-service.binary.platform>macos-arm64</memory-service.binary.platform>
-  </properties>
-
-  <dependencies>
-    <dependency>
-      <groupId>${project.groupId}</groupId>
+  <distributionManagement>
+    <relocation>
       <artifactId>memory-service-process</artifactId>
-      <version>${project.version}</version>
-    </dependency>
-  </dependencies>
-
-  <build>
-    <resources>
-      <resource>
-        <directory>src/main/resources</directory>
-      </resource>
-      <resource>
-        <targetPath>META-INF/memory-service/${memory-service.binary.platform}</targetPath>
-        <filtering>false</filtering>
-        <directory>${memory-service.binaries.dir}/${memory-service.binary.platform}</directory>
-      </resource>
-    </resources>
-    <plugins>
-      <plugin>
-        <artifactId>maven-antrun-plugin</artifactId>
-        <version>3.2.0</version>
-        <executions>
-          <execution>
-            <id>validate-native-binary-input</id>
-            <goals>
-              <goal>run</goal>
-            </goals>
-            <phase>initialize</phase>
-            <configuration>
-              <target>
-                <available file="${memory-service.binaries.dir}/${memory-service.binary.platform}/memory-service" property="memory-service.binary.available"/>
-                <available file="${memory-service.binaries.dir}/${memory-service.binary.platform}/memory-service.sha256" property="memory-service.binary.sha256.available"/>
-                <fail message="Missing ${memory-service.binaries.dir}/${memory-service.binary.platform}/memory-service" unless="memory-service.binary.available"/>
-                <fail message="Missing ${memory-service.binaries.dir}/${memory-service.binary.platform}/memory-service.sha256" unless="memory-service.binary.sha256.available"/>
-              </target>
-            </configuration>
-          </execution>
-        </executions>
-      </plugin>
-      <plugin>
-        <artifactId>maven-jar-plugin</artifactId>
-        <version>3.5.1</version>
-        <configuration>
-          <archive>
-            <!-- Keep this name stable. Each provider class lives in a platform-specific package so
-                 the aggregate memory-service-binaries dependency stays valid on the module path
-                 without split packages. -->
-            <manifestEntries>
-              <Automatic-Module-Name>io.github.chirino.memoryservice.binary.macos.arm64</Automatic-Module-Name>
-            </manifestEntries>
-          </archive>
-        </configuration>
-      </plugin>
-    </plugins>
-  </build>
+      <message>memory-service-binary-macos-arm64 is replaced by memory-service-process, which now downloads the executable for every supported platform; depend on memory-service-process directly.</message>
+    </relocation>
+  </distributionManagement>
 </project>

@@ -8,44 +8,36 @@ import { Code } from "astro:components";
 import { PROJECT_VERSION } from "../../../config";
 
 Java applications can run Memory Service as an owned subprocess without requiring a separate
-installation. The process API extracts a packaged executable, starts a local SQLite service over a
-protected Unix domain socket, waits for readiness when it can discover the management endpoint,
+installation. The process API downloads and caches the native executable on first use, starts a
+local SQLite service over a protected Unix domain socket, waits for readiness when it can discover the management endpoint,
 and stops the child when closed.
 
 This integration is subprocess-based, not JNI. It currently supports Linux AMD64, Linux ARM64, and
 macOS ARM64. Windows and Intel macOS are not packaged.
 
-## Choose a dependency
+## Add the dependency
 
-For a platform-specific application or distribution, depend only on its native JAR. The native JAR
-also brings in the `memory-service-process` API:
-
-<Code
-  lang="xml"
-  code={`<dependency>
-  <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-binary-linux-amd64</artifactId>
-  <version>${PROJECT_VERSION}</version>
-</dependency>`}
-/>
-
-The other platform artifact IDs are `memory-service-binary-linux-arm64` and
-`memory-service-binary-macos-arm64`.
-
-Applications distributed to all supported platforms can use the small aggregate JAR. Its POM
-depends on all three native JARs:
+Depend on `memory-service-process`. It contains the process API and, for every supported platform,
+a small descriptor that names the executable's OCI artifact and digests:
 
 <Code
   lang="xml"
   code={`<dependency>
   <groupId>io.github.chirino.memory-service</groupId>
-  <artifactId>memory-service-binaries</artifactId>
+  <artifactId>memory-service-process</artifactId>
   <version>${PROJECT_VERSION}</version>
 </dependency>`}
 />
 
-Use `memory-service-process` alone when your application supplies the executable explicitly or
-finds it on `PATH`.
+Releases before 0.6.0 shipped the executables in `memory-service-binaries` and the
+`memory-service-binary-<platform>` JARs. Those artifact IDs are now relocation POMs that resolve to
+`memory-service-process`, so existing declarations keep working and Maven prints a warning asking
+you to depend on `memory-service-process` directly.
+
+The first `start()` on a machine downloads the executable for the current platform from
+`ghcr.io/chirino/memory-service-binary`, verifies it against the digests in the signed JAR, and
+caches it. Later starts use the cache without any network access. See
+[Download the executable](#download-the-executable) for mirrors, credentials, and offline use.
 
 ## Start a local service
 
@@ -207,14 +199,119 @@ Packaged executables are checksum-verified and cached by platform and SHA-256. T
 The builder also provides typed configuration for startup and shutdown timeouts, the packaged
 binary cache, binary resolution, output consumers, and the JVM shutdown hook.
 
+## Download the executable
+
+The packaged resolver fetches one gzip layer by digest over the standard OCI distribution API and
+checks both the layer digest and the executable's SHA-256 before caching it. The digests come from
+the native JAR, so a registry, mirror, or proxy can't substitute different content. Concurrent
+starts in one JVM or across processes download once. The download happens before the process
+launches, so `startupTimeout` does not include it. Progress is logged through Java util logging
+under `io.github.chirino.memoryservice.process.OciBlobFetcher`.
+
+The artifact is public, so no credentials are needed. When `GH_TOKEN` or `GITHUB_TOKEN` is set, it
+is used for `ghcr.io` only, which helps when GitHub throttles anonymous pulls. A token that GHCR
+rejects is ignored with a warning. GitHub Actions does not export the workflow token to steps by
+default; add it to the job's environment to use it:
+
+```yaml
+env:
+  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+```
+
+### Configure registries in code
+
+Pass `MemoryServiceBinaryRegistries` to `MemoryServiceBinary.packaged(...)` to use mirrors,
+credentials, an internal CA, a proxy, or another timeout. These settings exist only in code: no
+environment variable or system property can add a mirror or redirect credentials.
+
+```java
+import io.github.chirino.memoryservice.process.MemoryServiceBinary;
+import io.github.chirino.memoryservice.process.MemoryServiceBinaryRegistries;
+
+MemoryServiceBinaryRegistries registries = MemoryServiceBinaryRegistries.builder()
+    .mirror("ghcr.io", "harbor.corp.example/ghcr-proxy")
+    .credentials("harbor.corp.example", "robot$memory-service", harborToken)
+    .trustedCertificates(Path.of("/etc/pki/tls/certs/corp-ca.pem"))
+    .githubTokenFromEnvironment(false)
+    .build();
+
+MemoryServiceProcess process = MemoryServiceProcess.builder(stateDirectory)
+    .binaryResolvers(MemoryServiceBinary.packaged(registries))
+    .start();
+```
+
+| Builder method                        | Purpose                                                                 | Default                       |
+| ------------------------------------- | ----------------------------------------------------------------------- | ----------------------------- |
+| `mirror(prefix, location)`            | Map a repository prefix to a mirror. Repeat to add more, tried in order | none                          |
+| `upstreamFallback(boolean)`           | Try `ghcr.io` after every mirror fails                                  | `false` when a mirror matches |
+| `credentials(host, username, secret)` | Credentials for one registry host                                       | none                          |
+| `githubTokenFromEnvironment(boolean)` | Use `GH_TOKEN`, then `GITHUB_TOKEN`, for `ghcr.io`                      | `true`                        |
+| `trustedCertificates(Path)`           | Trust extra CA certificates from a PEM file, in addition to the JVM's   | none                          |
+| `proxy(ProxySelector)`                | Proxy selection for registry requests                                   | `ProxySelector.getDefault()`  |
+| `downloadTimeout(Duration)`           | Deadline for one registry location, including retries                   | 5 minutes                     |
+
+Mirror rules follow the `prefix` and `location` model from containers' `registries.conf`. The
+longest matching prefix wins, and the rest of the repository path is appended to the location, so
+`mirror("ghcr.io", "harbor.corp.example/ghcr-proxy")` resolves
+`ghcr.io/chirino/memory-service-binary` to
+`harbor.corp.example/ghcr-proxy/chirino/memory-service-binary`. Locations use HTTPS unless they
+start with `http://`. Once a mirror matches, `ghcr.io` is contacted only if you enable
+`upstreamFallback(true)`, which keeps air-gapped hosts from reaching out.
+
+Credentials belong to one host. They are sent only to that host over HTTPS and to the token realm it
+names, never to a mirror on another host and never over `http://`. Registries that accept a bare
+token, such as GHCR, take any username: `credentials("ghcr.io", "token", githubToken)`. The library
+does not read Docker or containers auth files; parse them yourself and call `credentials(...)` if
+you want to reuse a `docker login`.
+
+Each location gets up to three attempts for connection failures, `5xx`, and `429` responses. When a
+mirror returns `404`, the resolver pulls the release manifest once so pull-through caches such as
+Harbor, Artifactory, and Nexus can populate, then retries. If every location fails, startup fails
+with an error that lists each location and why.
+
+Without `proxy(...)`, the JVM's standard `https.proxyHost`, `https.proxyPort`, and
+`http.nonProxyHosts` system properties apply. `HTTPS_PROXY` and `NO_PROXY` are not read.
+
+### Populate a mirror
+
+A pull-through cache needs only a project or remote repository that points at `ghcr.io`. For a
+disconnected registry, copy each release across the air gap with standard tools:
+
+<Code
+  lang="bash"
+  code={`# Connected side
+oras copy --to-oci-layout ghcr.io/chirino/memory-service-binary:${PROJECT_VERSION} ./memory-service-binary:${PROJECT_VERSION}
+# Disconnected side
+oras copy --from-oci-layout ./memory-service-binary:${PROJECT_VERSION} \\
+  harbor.corp.example/ghcr-proxy/chirino/memory-service-binary:${PROJECT_VERSION}`}
+/>
+
+`skopeo copy` works the same way.
+
+### Run without registry access
+
+Hosts that can't reach any registry can use `MemoryServiceBinary.file(...)` or `onPath(...)` with an
+executable from the GitHub Release ZIPs. You can also fill the cache on a connected machine and ship
+the cache directory, for example in a container image layer, then point `cacheDirectory(Path)` at
+it:
+
+```java
+MemoryServiceBinary.resolve(List.of(MemoryServiceBinary.packaged(registries)), cacheDirectory);
+```
+
+The cache layout is `<cacheDirectory>/<platform>/<sha256>/memory-service`. Executables in the cache
+are verified again on every start.
+
 ## Executable JARs and shading
 
-Platform discovery uses Java `ServiceLoader`. If you build an uber-JAR with Maven Shade, merge
-service descriptors so the native provider registration is retained:
+The descriptors live under `META-INF/memory-service/` in `memory-service-process`. Fat-JAR tools
+copy them by default, so no extra configuration is needed.
+
+If you supply your own `MemoryServiceBinaryProvider`, for example a JAR that embeds an executable
+for offline use, it is discovered with Java `ServiceLoader` and takes precedence over the bundled
+descriptor. When you build an uber-JAR with Maven Shade, merge service descriptors so its
+registration is retained:
 
 ```xml
 <transformer implementation="org.apache.maven.plugins.shade.resource.ServicesResourceTransformer" />
 ```
-
-Other fat-JAR tools need their equivalent service-file merge behavior for
-`META-INF/services/io.github.chirino.memoryservice.process.MemoryServiceBinaryProvider`.

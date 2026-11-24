@@ -37,6 +37,9 @@ the native providers:
 
 Each provider JAR depends on `memory-service-process`, registers a
 `MemoryServiceBinaryProvider` with `ServiceLoader`, and contains the executable plus its SHA-256.
+[Enhancement 119](119-oci-native-binary-distribution.md) later replaced these JARs:
+`memory-service-process` now bundles an OCI descriptor per platform and downloads the executable
+from GHCR on first use, and the four artifact IDs are relocation POMs.
 The small `memory-service-binaries` JAR has no native payload; its POM depends on all three provider
 JARs. Provider classes use platform-specific packages and all five JARs publish stable automatic
 module names so the aggregate dependency is valid on the Java module path.
