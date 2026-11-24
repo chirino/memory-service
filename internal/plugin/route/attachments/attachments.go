@@ -44,6 +44,11 @@ func HandleGetAttachment(c *gin.Context, store registrystore.MemoryStore, attach
 	getAttachment(c, store, attachStore, cfg)
 }
 
+// HandleGetAttachmentMetadata exposes the metadata-only attachment lookup for wrapper-native adapters.
+func HandleGetAttachmentMetadata(c *gin.Context, store registrystore.MemoryStore) {
+	getAttachmentMetadata(c, store)
+}
+
 // HandleDeleteAttachment exposes attachment delete for wrapper-native adapters.
 func HandleDeleteAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore) {
 	deleteAttachment(c, store, attachStore)
@@ -206,6 +211,29 @@ func getAttachment(c *gin.Context, store registrystore.MemoryStore, attachStore 
 		}
 
 		streamAttachment(c, attachStore, *attachment.StorageKey, attachment, disposition)
+		return nil
+	}); err != nil {
+		handleError(c, err)
+	}
+}
+
+// getAttachmentMetadata returns the attachment's metadata and status without its content. It uses
+// GetAttachment, so the access rules match GET /v1/attachments/{id}. Unlike that endpoint, an
+// uploading, downloading, or failed attachment is a normal 200: the status is the answer.
+func getAttachmentMetadata(c *gin.Context, store registrystore.MemoryStore) {
+	userID := security.GetUserID(c)
+	attachID, err := parseAttachmentIDParam(c)
+	if err != nil {
+		c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "error": "invalid attachment id"})
+		return
+	}
+
+	if err := routetx.MemoryRead(c, store, func(ctx context.Context) error {
+		attachment, err := store.GetAttachment(ctx, userID, "", attachID)
+		if err != nil {
+			return err
+		}
+		c.JSON(http.StatusOK, toUploadResponse(attachment))
 		return nil
 	}); err != nil {
 		handleError(c, err)

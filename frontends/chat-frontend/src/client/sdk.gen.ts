@@ -41,6 +41,8 @@ import type {
   GetAttachmentDownloadUrlErrors,
   GetAttachmentDownloadUrlResponses,
   GetAttachmentErrors,
+  GetAttachmentMetadataErrors,
+  GetAttachmentMetadataResponses,
   GetAttachmentResponses,
   GetCapabilitiesErrors,
   GetCapabilitiesResponses,
@@ -1363,6 +1365,55 @@ export class AttachmentsService {
    *
    * Uploaded attachments expire after the specified duration unless they are
    * linked to an entry before expiration.
+   *
+   * **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+   * multipart form or in the JSON body. The ID identifies the upload
+   * operation, so a client that timed out can find out whether the upload
+   * succeeded by looking the ID up instead of sending the file again. The
+   * server creates the attachment record with status `uploading` (URL-based
+   * creation: `downloading`) before it stores any content, and moves it to
+   * `ready` once the content is stored. Omit `id` and the server assigns one,
+   * exactly as before; no `uploading` record is created in that case.
+   *
+   * - The ID is never compared with a content hash or with the file that was
+   * sent. A second request with the same ID is rejected, not matched
+   * against the first one.
+   * - An `id` that is not a UUID returns 400.
+   * - An `id` that already belongs to the caller returns 409, whatever the
+   * status of that attachment. The request stores nothing and starts no
+   * download. Look the attachment up with
+   * `GET /v1/attachments/{id}/metadata` to learn the outcome.
+   * - An `id` that belongs to another user returns 404.
+   * - URL-based creation returns 201 immediately with status `downloading`.
+   * The 201 response does not mean the download has finished; poll
+   * `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+   * `failed`.
+   *
+   * **Recovering after a timeout.** Look the ID up with
+   * `GET /v1/attachments/{id}/metadata`:
+   *
+   * - `ready`: the attachment is stored. Done.
+   * - `uploading` or `downloading`: still in progress. Wait and look up again.
+   * - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+   * to reuse the ID, or pick a new ID.
+   * - 404 is inconclusive. For a multipart upload the server creates the
+   * record only after the whole request body has been buffered, so a 404
+   * while the body is still being transferred does not mean that the
+   * request failed or will not be processed. Look up again after the
+   * transfer window. Sending the request again with the same ID is safe:
+   * if the original request already created the record, the new one
+   * returns 409.
+   *
+   * **Idempotency window.** An ID is recognized until its attachment record
+   * is actually deleted, either by the owner or by the expiry cleanup job.
+   * Expiry plus the cleanup interval is not a guaranteed deadline, because
+   * the cleanup job can lag, fail, or skip a record whose expiry was
+   * refreshed. Once the record is deleted the same ID creates a new
+   * attachment.
+   *
+   * An attachment can be referenced by an entry only when its status is
+   * `ready`. Referencing an `uploading`, `downloading`, or `failed`
+   * attachment from an entry returns 409.
    */
   public static uploadAttachment<ThrowOnError extends boolean = true>(
     parameters: {
@@ -1465,6 +1516,59 @@ export class AttachmentsService {
         { name: "X-API-Key", type: "apiKey" },
       ],
       url: "/v1/attachments/{id}",
+      ...options,
+      ...params,
+    });
+  }
+
+  /**
+   * Get attachment metadata and status
+   *
+   * Returns the attachment's metadata, including its `status`. It does not return the
+   * content. Use it to find out whether an upload or URL download succeeded, in particular
+   * after a request timed out.
+   *
+   * Same access rules as `GET /v1/attachments/{id}`:
+   *
+   * - If the attachment is unlinked (not yet associated with an entry), only the original
+   * uploader can read it. Another user gets 403.
+   * - If linked to an entry, anyone with read access to the conversation can read it.
+   *
+   * The lookup works until the attachment record is actually deleted, so an attachment
+   * past its `expiresAt` that the cleanup job has not removed yet is still returned.
+   *
+   * Status meanings:
+   *
+   * - `ready`: the content is stored. Success.
+   * - `uploading` or `downloading`: still in progress. Wait and look up again.
+   * - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}` and reuse the
+   * ID, or pick a new ID.
+   *
+   * A 404 is inconclusive when the ID was sent with a multipart upload that is still being
+   * transferred: the record is created only after the whole request body has been
+   * buffered. Look up again after the transfer window.
+   *
+   * Only a `ready` attachment can be referenced by an entry.
+   */
+  public static getAttachmentMetadata<ThrowOnError extends boolean = true>(
+    parameters: {
+      id: string;
+    },
+    options?: Options<never, ThrowOnError>,
+  ): RequestResult<GetAttachmentMetadataResponses, GetAttachmentMetadataErrors, ThrowOnError, "data"> {
+    const params = buildClientParams([parameters], [{ args: [{ in: "path", key: "id" }] }]);
+    return (options?.client ?? client).get<
+      GetAttachmentMetadataResponses,
+      GetAttachmentMetadataErrors,
+      ThrowOnError,
+      "data"
+    >({
+      responseStyle: "data",
+      security: [
+        { scheme: "bearer", type: "http" },
+        { name: "X-API-Key", type: "apiKey" },
+      ],
+      url: "/v1/attachments/{id}/metadata",
       ...options,
       ...params,
     });

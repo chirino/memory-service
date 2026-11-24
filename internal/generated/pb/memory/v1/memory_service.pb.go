@@ -10448,7 +10448,29 @@ type UploadMetadata struct {
 	Filename    string                 `protobuf:"bytes,1,opt,name=filename,proto3" json:"filename,omitempty"`
 	ContentType string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
 	// ISO 8601 duration (e.g., "PT1H"). Empty = server default.
-	ExpiresIn     string `protobuf:"bytes,3,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	ExpiresIn string `protobuf:"bytes,3,opt,name=expires_in,json=expiresIn,proto3" json:"expires_in,omitempty"`
+	// Optional caller-generated attachment ID (UUID). The ID identifies the upload
+	// operation, not the content: it is not a content hash. Omit it and the server
+	// assigns an ID, exactly as before.
+	//
+	// With an ID, the server creates the attachment with status "uploading" before it
+	// stores any content, and moves it to "ready" when the content is stored. A client
+	// that lost the response recovers the outcome with GetAttachment instead of sending
+	// the file again: "ready" is success, "uploading" means wait and look up again, and
+	// "failed" is a failure (DeleteAttachment to reuse the ID, or pick a new ID).
+	//
+	// - An ID that is not a UUID (including an empty string) returns INVALID_ARGUMENT.
+	// - An ID that already belongs to the caller returns ABORTED, whatever its status.
+	//   Nothing is stored. Use GetAttachment to learn the outcome.
+	// - An ID that belongs to another user returns NOT_FOUND.
+	//
+	// NOT_FOUND is inconclusive for the caller's own earlier request: the attachment is
+	// created only when its metadata message reaches the server, so an earlier stream
+	// may not have created it yet. Look up again after a short wait.
+	// An ID is recognized until its attachment is actually deleted, by the owner or by
+	// the expiry cleanup job; expiry plus the cleanup interval is not a guaranteed
+	// deadline. An attachment can be linked to an entry only when it is "ready".
+	Id            *string `protobuf:"bytes,4,opt,name=id,proto3,oneof" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10504,11 +10526,36 @@ func (x *UploadMetadata) GetExpiresIn() string {
 	return ""
 }
 
+func (x *UploadMetadata) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
+	}
+	return ""
+}
+
 type CreateAttachmentFromUrlRequest struct {
-	state         protoimpl.MessageState `protogen:"open.v1"`
-	SourceUrl     string                 `protobuf:"bytes,1,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
-	ContentType   string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
-	Filename      string                 `protobuf:"bytes,3,opt,name=filename,proto3" json:"filename,omitempty"`
+	state       protoimpl.MessageState `protogen:"open.v1"`
+	SourceUrl   string                 `protobuf:"bytes,1,opt,name=source_url,json=sourceUrl,proto3" json:"source_url,omitempty"`
+	ContentType string                 `protobuf:"bytes,2,opt,name=content_type,json=contentType,proto3" json:"content_type,omitempty"`
+	Filename    string                 `protobuf:"bytes,3,opt,name=filename,proto3" json:"filename,omitempty"`
+	// Optional caller-generated attachment ID (UUID). The ID identifies the creation
+	// operation, not the content: it is not a content hash. Omit it and the server
+	// assigns an ID, exactly as before.
+	//
+	// The call returns immediately with status "downloading"; the download has not
+	// finished then. Recover the outcome with GetAttachment: "ready" is success,
+	// "downloading" means wait and look up again, and "failed" is a failure
+	// (DeleteAttachment to reuse the ID, or pick a new ID).
+	//
+	// - An ID that is not a UUID (including an empty string) returns INVALID_ARGUMENT.
+	// - An ID that already belongs to the caller returns ABORTED, whatever its status.
+	//   No download is started.
+	// - An ID that belongs to another user returns NOT_FOUND.
+	//
+	// An ID is recognized until its attachment is actually deleted, by the owner or by
+	// the expiry cleanup job; expiry plus the cleanup interval is not a guaranteed
+	// deadline. An attachment can be linked to an entry only when it is "ready".
+	Id            *string `protobuf:"bytes,4,opt,name=id,proto3,oneof" json:"id,omitempty"`
 	unknownFields protoimpl.UnknownFields
 	sizeCache     protoimpl.SizeCache
 }
@@ -10560,6 +10607,13 @@ func (x *CreateAttachmentFromUrlRequest) GetContentType() string {
 func (x *CreateAttachmentFromUrlRequest) GetFilename() string {
 	if x != nil {
 		return x.Filename
+	}
+	return ""
+}
+
+func (x *CreateAttachmentFromUrlRequest) GetId() string {
+	if x != nil && x.Id != nil {
+		return *x.Id
 	}
 	return ""
 }
@@ -12811,17 +12865,21 @@ const file_memory_v1_memory_service_proto_rawDesc = "" +
 	"\x17UploadAttachmentRequest\x127\n" +
 	"\bmetadata\x18\x01 \x01(\v2\x19.memory.v1.UploadMetadataH\x00R\bmetadata\x12\x16\n" +
 	"\x05chunk\x18\x02 \x01(\fH\x00R\x05chunkB\t\n" +
-	"\apayload\"n\n" +
+	"\apayload\"\x8a\x01\n" +
 	"\x0eUploadMetadata\x12\x1a\n" +
 	"\bfilename\x18\x01 \x01(\tR\bfilename\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1d\n" +
 	"\n" +
-	"expires_in\x18\x03 \x01(\tR\texpiresIn\"~\n" +
+	"expires_in\x18\x03 \x01(\tR\texpiresIn\x12\x13\n" +
+	"\x02id\x18\x04 \x01(\tH\x00R\x02id\x88\x01\x01B\x05\n" +
+	"\x03_id\"\x9a\x01\n" +
 	"\x1eCreateAttachmentFromUrlRequest\x12\x1d\n" +
 	"\n" +
 	"source_url\x18\x01 \x01(\tR\tsourceUrl\x12!\n" +
 	"\fcontent_type\x18\x02 \x01(\tR\vcontentType\x12\x1a\n" +
-	"\bfilename\x18\x03 \x01(\tR\bfilename\"\xff\x01\n" +
+	"\bfilename\x18\x03 \x01(\tR\bfilename\x12\x13\n" +
+	"\x02id\x18\x04 \x01(\tH\x00R\x02id\x88\x01\x01B\x05\n" +
+	"\x03_id\"\xff\x01\n" +
 	"\x18UploadAttachmentResponse\x12\x0e\n" +
 	"\x02id\x18\x01 \x01(\tR\x02id\x12\x12\n" +
 	"\x04href\x18\x02 \x01(\tR\x04href\x12!\n" +
@@ -13672,6 +13730,8 @@ func file_memory_v1_memory_service_proto_init() {
 		(*UploadAttachmentRequest_Metadata)(nil),
 		(*UploadAttachmentRequest_Chunk)(nil),
 	}
+	file_memory_v1_memory_service_proto_msgTypes[130].OneofWrappers = []any{}
+	file_memory_v1_memory_service_proto_msgTypes[131].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[134].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[137].OneofWrappers = []any{}
 	file_memory_v1_memory_service_proto_msgTypes[139].OneofWrappers = []any{

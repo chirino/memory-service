@@ -290,7 +290,7 @@ type Attachment struct {
 	// AttemptID identifies the request attempt that created a row from a
 	// caller-supplied attachment ID. It is NULL for rows created without one and
 	// for rows that predate the column. It is internal and never serialized.
-	AttemptID *uuid.UUID `json:"-"                    gorm:"type:uuid"`
+	AttemptID *uuid.UUID `json:"-" gorm:"type:uuid"`
 }
 
 func (Attachment) TableName() string { return "attachments" }
