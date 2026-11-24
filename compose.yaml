@@ -400,8 +400,18 @@ services:
       # Memory Service connection (use Docker network service name)
       MEMORY_SERVICE_GRPC_HOST: memory-service
       MEMORY_SERVICE_GRPC_PORT: "8080"
-      MEMORY_SERVICE_API_KEY: cognition-processor-key-123
       MEMORY_SERVICE_CLIENT_ID: cognition_processor
+      # Authentication: OIDC client credentials (client "cognition_processor" in the Keycloak realm).
+      # Images older than the OIDC support ignore the MEMORY_SERVICE_AUTH_METHOD and
+      # MEMORY_SERVICE_OIDC_* variables and keep using MEMORY_SERVICE_API_KEY.
+      # Rollback: MEMORY_SERVICE_AUTH_METHOD=api-key (uses MEMORY_SERVICE_API_KEY below).
+      MEMORY_SERVICE_AUTH_METHOD: ${COGNITION_PROCESSOR_AUTH_METHOD:-oidc}
+      MEMORY_SERVICE_OIDC_CLIENT_SECRET: cognition-secret
+      # Internal Keycloak address; the tokens' issuer stays http://localhost:8081/... (KC_HOSTNAME).
+      MEMORY_SERVICE_OIDC_DISCOVERY_URL: http://keycloak:8080/realms/memory-service
+      # Plain http to a non-loopback host (the keycloak service): local development only.
+      MEMORY_SERVICE_OIDC_ALLOW_INSECURE: "true"
+      MEMORY_SERVICE_API_KEY: cognition-processor-key-123
 
       # Worker identity
       COGNITION_WORKER_ID: cognition_processor
@@ -418,6 +428,8 @@ services:
       - "host.docker.internal:host-gateway"
     depends_on:
       memory-service:
+        condition: service_healthy
+      keycloak:
         condition: service_healthy
     restart: unless-stopped
     healthcheck:
