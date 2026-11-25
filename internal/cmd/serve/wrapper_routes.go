@@ -165,6 +165,7 @@ func registerAPIRoutes(router *gin.Engine, auth gin.HandlerFunc, authenticatedRa
 	register(http.MethodGet, "/v1/attachments/download/:token/:filename", publicAPIWrapper.DownloadAttachmentByToken)
 	register(http.MethodDelete, "/v1/attachments/:id", attachmentsWriteWrapper.DeleteAttachment)
 	register(http.MethodGet, "/v1/attachments/:id", attachmentsReadWrapper.GetAttachment)
+	register(http.MethodGet, "/v1/attachments/:id/metadata", attachmentsReadWrapper.GetAttachmentMetadata)
 	register(http.MethodGet, "/v1/attachments/:id/download-url", attachmentsReadWrapper.GetAttachmentDownloadUrl)
 
 	// Conversations, entries, memberships, ownership-transfers: user-scoped.
@@ -313,6 +314,11 @@ func (p *proxyAPIServer) GetAttachment(c *gin.Context, id openapi_types.UUID, _ 
 	setDecodedPathParam(c, "id", id.String())
 	setOperationAttachmentID(c, id.String())
 	routeattachments.HandleGetAttachment(c, p.store, p.attachStore, p.cfg)
+}
+func (p *proxyAPIServer) GetAttachmentMetadata(c *gin.Context, id openapi_types.UUID) {
+	setDecodedPathParam(c, "id", id.String())
+	setOperationAttachmentID(c, id.String())
+	routeattachments.HandleGetAttachmentMetadata(c, p.store)
 }
 func (p *proxyAPIServer) GetAttachmentDownloadUrl(c *gin.Context, id openapi_types.UUID, _ generatedapi.GetAttachmentDownloadUrlParams) {
 	setDecodedPathParam(c, "id", id.String())

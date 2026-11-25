@@ -211,3 +211,21 @@ func TestRateLimitErrorsEnrichOperationalEvent(t *testing.T) {
 		})
 	}
 }
+
+// The attachment metadata lookup is a cheap read that clients poll while they
+// recover the outcome of an upload, so it stays in the default identity limit.
+// Uploads and content or signed-URL reads stay in the expensive class.
+func TestAttachmentRoutesRateLimitClassification(t *testing.T) {
+	cases := []struct {
+		method, route string
+		expensive     bool
+	}{
+		{http.MethodPost, "/v1/attachments", true},
+		{http.MethodGet, "/v1/attachments/:id/download-url", true},
+		{http.MethodGet, "/v1/attachments/:id/metadata", false},
+		{http.MethodGet, "/v1/attachments/:id", false},
+	}
+	for _, tc := range cases {
+		require.Equal(t, tc.expensive, isHTTPExpensive(tc.method, tc.route, ""), "%s %s", tc.method, tc.route)
+	}
+}

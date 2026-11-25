@@ -408,6 +408,10 @@ public class MemoryServiceProxy {
 
     /**
      * Creates an attachment from a source URL by forwarding the JSON request to the memory service.
+     *
+     * <p>The request is forwarded unchanged, so an optional caller-supplied {@code "id"} (a UUID)
+     * reaches the memory service. A repeat with the same {@code id} is answered with 409 and
+     * starts no second download; look the attachment up with {@link #getAttachmentMetadata}.
      */
     public Response createAttachmentFromUrl(Map<String, Object> request) {
         Object ct = request.get("contentType");
@@ -470,13 +474,34 @@ public class MemoryServiceProxy {
     }
 
     /**
-     * Uploads an attachment to the memory service using streaming multipart.
+     * Uploads an attachment to the memory service using streaming multipart. The memory service
+     * assigns the attachment ID.
      *
      * @param input      the multipart form data containing a "file" field
      * @param expiresIn  optional expiration duration (e.g. "300s")
      * @return the upstream JSON response with attachment metadata
      */
     public Response uploadAttachment(MultipartFormDataInput input, String expiresIn) {
+        return uploadAttachment(input, expiresIn, null);
+    }
+
+    /**
+     * Uploads an attachment with an optional caller-supplied ID.
+     *
+     * <p>When {@code id} is non-null it is sent as the {@code id} form field exactly as given, so
+     * a blank or malformed value is rejected by the memory service (400) and never replaced. The
+     * proxy never generates an ID: to retry safely, the caller reuses the same ID. A repeat with
+     * the same ID returns 409 for the owner; recover the outcome with {@link
+     * #getAttachmentMetadata}. A 404 from that lookup while the original request body is still
+     * being transferred is inconclusive. When {@code id} is null the memory service assigns the ID
+     * and each call creates a new attachment.
+     *
+     * @param input      the multipart form data containing a "file" field
+     * @param expiresIn  optional expiration duration (e.g. "300s")
+     * @param id         optional caller-supplied attachment ID (a UUID), or null
+     * @return the upstream JSON response with attachment metadata
+     */
+    public Response uploadAttachment(MultipartFormDataInput input, String expiresIn, String id) {
         var fileEntry = input.getValues().get("file");
         if (fileEntry == null || fileEntry.isEmpty()) {
             return Response.status(Response.Status.BAD_REQUEST)
@@ -499,13 +524,14 @@ public class MemoryServiceProxy {
 
         if (memoryServiceApiBuilder.usesUnixSocket()) {
             try {
+                String boundary = newMultipartBoundary();
                 byte[] requestBody =
                         buildMultipartRequest(
                                 formValue.getFileItem().getInputStream(),
                                 filename,
                                 contentType,
-                                expiresIn);
-                String boundary = currentMultipartBoundary;
+                                id,
+                                boundary);
                 UnixSocketHttpClient.HttpResponseData response =
                         unixSocketClient()
                                 .exchange(
@@ -546,6 +572,10 @@ public class MemoryServiceProxy {
             applyAuthHeaders(conn);
 
             try (OutputStream out = conn.getOutputStream()) {
+                if (id != null) {
+                    // The id part precedes the file part.
+                    out.write(idPart(boundary, id));
+                }
                 String partHeader =
                         "--"
                                 + boundary
@@ -589,6 +619,54 @@ public class MemoryServiceProxy {
             return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
                     .entity(Map.of("error", "Upload proxy failed: " + e.getMessage()))
                     .build();
+        }
+    }
+
+    /**
+     * Looks up attachment metadata, including its {@code status} ({@code ready}, {@code
+     * uploading}, {@code downloading} or {@code failed}), without downloading content. Use it to
+     * recover the outcome of an upload or URL creation whose response was lost.
+     *
+     * <p>The upstream status is returned unchanged: 404 means the attachment does not exist for
+     * this user. During a multipart transfer that 404 is inconclusive.
+     */
+    public Response getAttachmentMetadata(String id) {
+        if (memoryServiceApiBuilder.usesUnixSocket()) {
+            try {
+                UnixSocketHttpClient.HttpResponseData upstream =
+                        unixSocketClient()
+                                .exchange(
+                                        "GET",
+                                        "/v1/attachments/" + id + "/metadata",
+                                        null,
+                                        (Object) null);
+                return jsonResponse(upstream);
+            } catch (Exception e) {
+                LOG.errorf(e, "Error getting attachment metadata for %s", id);
+                return Response.status(Response.Status.INTERNAL_SERVER_ERROR)
+                        .entity(
+                                Map.of(
+                                        "error",
+                                        "Get attachment metadata proxy failed: " + e.getMessage()))
+                        .build();
+            }
+        }
+        Client client = ClientBuilder.newClient();
+        try {
+            String url =
+                    memoryServiceApiBuilder.getBaseUrl() + "/v1/attachments/" + id + "/metadata";
+            jakarta.ws.rs.client.Invocation.Builder req = client.target(url).request();
+
+            req = applyAuthHeaders(req);
+
+            Response upstream = req.get();
+
+            return Response.status(upstream.getStatus())
+                    .type(MediaType.APPLICATION_JSON)
+                    .entity(upstream.readEntity(String.class))
+                    .build();
+        } finally {
+            client.close();
         }
     }
 
@@ -1018,16 +1096,31 @@ public class MemoryServiceProxy {
                 bearerToken(securityIdentity));
     }
 
-    private String currentMultipartBoundary;
+    private static String newMultipartBoundary() {
+        return "----Boundary" + UUID.randomUUID().toString().replace("-", "");
+    }
+
+    /** The {@code id} form field, written before the file part when the caller supplied one. */
+    private static byte[] idPart(String boundary, String id) {
+        return ("--"
+                        + boundary
+                        + "\r\n"
+                        + "Content-Disposition: form-data; name=\"id\"\r\n\r\n"
+                        + id
+                        + "\r\n")
+                .getBytes(StandardCharsets.UTF_8);
+    }
 
     private byte[] buildMultipartRequest(
-            InputStream fileStream, String filename, String contentType, String expiresIn)
+            InputStream fileStream, String filename, String contentType, String id, String boundary)
             throws Exception {
-        currentMultipartBoundary = "----Boundary" + UUID.randomUUID().toString().replace("-", "");
         try (ByteArrayOutputStream out = new ByteArrayOutputStream()) {
+            if (id != null) {
+                out.write(idPart(boundary, id));
+            }
             String partHeader =
                     "--"
-                            + currentMultipartBoundary
+                            + boundary
                             + "\r\n"
                             + "Content-Disposition: form-data; name=\"file\"; filename=\""
                             + (filename != null ? filename : "upload")
@@ -1037,9 +1130,7 @@ public class MemoryServiceProxy {
                             + "\r\n\r\n";
             out.write(partHeader.getBytes(StandardCharsets.UTF_8));
             fileStream.transferTo(out);
-            out.write(
-                    ("\r\n--" + currentMultipartBoundary + "--\r\n")
-                            .getBytes(StandardCharsets.UTF_8));
+            out.write(("\r\n--" + boundary + "--\r\n").getBytes(StandardCharsets.UTF_8));
             return out.toByteArray();
         }
     }

@@ -304,6 +304,26 @@ func (m *metricsStore) CreateAttachment(ctx context.Context, userID string, conv
 	return m.inner.CreateAttachment(ctx, userID, conversationID, attachment)
 }
 
+func (m *metricsStore) CreateAttachmentWithID(ctx context.Context, userID string, attachmentID uuid.UUID, attachment model.Attachment) (*store.CreateAttachmentResult, error) {
+	defer observe("create_attachment_with_id", time.Now())
+	return m.inner.CreateAttachmentWithID(ctx, userID, attachmentID, attachment)
+}
+
+func (m *metricsStore) FinalizeAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID, finalize store.AttachmentFinalize) (*model.Attachment, error) {
+	defer observe("finalize_attachment", time.Now())
+	return m.inner.FinalizeAttachment(ctx, userID, attachmentID, attemptID, finalize)
+}
+
+func (m *metricsStore) MarkAttachmentFailed(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID) (bool, error) {
+	defer observe("mark_attachment_failed", time.Now())
+	return m.inner.MarkAttachmentFailed(ctx, userID, attachmentID, attemptID)
+}
+
+func (m *metricsStore) DeleteExpiredAttachment(ctx context.Context, attachmentID uuid.UUID, attemptID *uuid.UUID) (bool, error) {
+	defer observe("delete_expired_attachment", time.Now())
+	return m.inner.DeleteExpiredAttachment(ctx, attachmentID, attemptID)
+}
+
 func (m *metricsStore) CloneAttachment(ctx context.Context, userID string, sourceAttachmentID uuid.UUID) (*model.Attachment, error) {
 	defer observe("clone_attachment", time.Now())
 	return m.inner.CloneAttachment(ctx, userID, sourceAttachmentID)

@@ -328,16 +328,29 @@ async def events(request: Request):
 
 @app.post("/v1/attachments")
 async def create_attachment(
+    request: Request,
     file: UploadFile = File(...),
     expiresIn: str | None = Query(default=None),
 ):
     file_bytes = await file.read()
+    # An optional caller-supplied attachment ID is forwarded exactly as received. It is read from
+    # the raw form because a `Form(default=None)` parameter turns a blank value into None, which
+    # would silently turn an idempotent retry into a server-generated ID.
+    form = await request.form()
+    id = str(form["id"]) if "id" in form else None
     response = await proxy.upload_attachment(
         file_name=file.filename or "upload",
         file_bytes=file_bytes,
         content_type=file.content_type or "application/octet-stream",
         expires_in=expiresIn,
+        attachment_id=id,
     )
+    return to_fastapi_response(response)
+
+
+@app.get("/v1/attachments/{attachment_id}/metadata")
+async def get_attachment_metadata(attachment_id: str):
+    response = await proxy.get_attachment_metadata(attachment_id)
     return to_fastapi_response(response)
 
 

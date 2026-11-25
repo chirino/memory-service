@@ -543,6 +543,16 @@ export type CreateFromUrlRequest = {
    * Display name for the attachment.
    */
   name?: string;
+  /**
+   * Optional caller-generated attachment ID (UUID). The ID identifies the creation
+   * operation, not the content: it is not a content hash. If you omit it, the server
+   * assigns an ID. The response is 201 with status `downloading` immediately; the
+   * download has not finished then. Look the outcome up with
+   * `GET /v1/attachments/{id}/metadata`. An ID that is not a UUID returns 400, an ID
+   * that already belongs to the caller returns 409 and starts no download, and an ID
+   * that belongs to another user returns 404.
+   */
+  id?: string;
 };
 
 /**
@@ -579,10 +589,15 @@ export type AttachmentUploadResponse = {
   expiresAt?: string;
   /**
    * Current status of the attachment:
-   * - `uploading` - Multipart upload created but not yet completed
+   * - `uploading` - The attachment was created with a caller-supplied `id` and its
+   * content is still being stored
    * - `downloading` - Server is downloading content from sourceUrl
    * - `ready` - Content is available for retrieval
-   * - `failed` - Download from sourceUrl failed
+   * - `failed` - Storing the upload, or the download from sourceUrl, failed
+   *
+   * An attachment can be linked to an entry only when it is `ready`. A multipart upload
+   * returns `ready` in the creation response. An `uploading` attachment exists only when
+   * the caller supplied an `id`; look it up with `GET /v1/attachments/{id}/metadata`.
    */
   status?: "uploading" | "downloading" | "ready" | "failed";
   /**
@@ -1292,7 +1307,9 @@ export type AppendConversationEntryErrors = {
    */
   404: ErrorResponse;
   /**
-   * Error response
+   * A supplied `seq` exists, but the request does not exactly match the stored entry,
+   * or a referenced attachment is not `ready` (still uploading or downloading, or failed);
+   * nothing is appended in either case.
    */
   409: ErrorResponse;
   /**
@@ -2174,9 +2191,25 @@ export type UploadAttachmentData = {
 
 export type UploadAttachmentErrors = {
   /**
-   * Error response
+   * The request is invalid, for example a missing `file`, an invalid `sourceUrl` or
+   * `expiresIn`, or an `id` that is not a valid UUID.
    */
   400: ErrorResponse;
+  /**
+   * The supplied `id` belongs to another user. Nothing was stored and no download was
+   * started. Choose a different `id`.
+   */
+  404: ErrorResponse;
+  /**
+   * The supplied `id` already exists for the caller, whatever its status. Nothing was
+   * stored and no download was started. Look the attachment up with
+   * `GET /v1/attachments/{id}/metadata`.
+   *
+   * A multipart upload with an `id` also returns 409 when the attachment was deleted,
+   * expired, or replaced while the content was being stored. The stored content is
+   * discarded and the attachment is not `ready`.
+   */
+  409: ErrorResponse;
   /**
    * File too large.
    */
@@ -2191,7 +2224,9 @@ export type UploadAttachmentError = UploadAttachmentErrors[keyof UploadAttachmen
 
 export type UploadAttachmentResponses = {
   /**
-   * Attachment created successfully.
+   * Attachment created. A multipart upload returns status `ready` once the content is
+   * stored. URL-based creation returns immediately with status `downloading`; the
+   * download has not finished when this response is returned.
    */
   201: AttachmentUploadResponse;
 };
@@ -2285,6 +2320,52 @@ export type GetAttachmentResponses = {
 };
 
 export type GetAttachmentResponse = GetAttachmentResponses[keyof GetAttachmentResponses];
+
+export type GetAttachmentMetadataData = {
+  body?: never;
+  path: {
+    /**
+     * Attachment identifier (UUID format).
+     */
+    id: string;
+  };
+  query?: never;
+  url: "/v1/attachments/{id}/metadata";
+};
+
+export type GetAttachmentMetadataErrors = {
+  /**
+   * The `id` path parameter is not a valid UUID.
+   */
+  400: ErrorResponse;
+  /**
+   * The attachment is unlinked and belongs to another user, or it is linked to an entry
+   * in a conversation the caller cannot read.
+   */
+  403: ErrorResponse;
+  /**
+   * No readable attachment has this ID: it was never created, was deleted, is archived,
+   * or is linked to an entry that no longer exists and belongs to another user. This is
+   * inconclusive when a multipart upload with this ID may still be transferring its
+   * body, because the record does not exist until the body has been buffered.
+   */
+  404: ErrorResponse;
+  /**
+   * Error response
+   */
+  default: ErrorResponse;
+};
+
+export type GetAttachmentMetadataError = GetAttachmentMetadataErrors[keyof GetAttachmentMetadataErrors];
+
+export type GetAttachmentMetadataResponses = {
+  /**
+   * Attachment metadata, including its status.
+   */
+  200: AttachmentUploadResponse;
+};
+
+export type GetAttachmentMetadataResponse = GetAttachmentMetadataResponses[keyof GetAttachmentMetadataResponses];
 
 export type GetAttachmentDownloadUrlData = {
   body?: never;

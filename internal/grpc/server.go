@@ -289,6 +289,17 @@ func withMemoryRead[T any](ctx context.Context, store registrystore.MemoryStore,
 	return out, nil
 }
 
+// recordCallerAttachmentID attaches a validated caller-supplied attachment ID to
+// the call's operation event. A rejected ID is never recorded.
+func recordCallerAttachmentID(ctx context.Context, id uuid.UUID, present bool) {
+	if !present {
+		return
+	}
+	if event := operationevent.FromContext(ctx); event != nil {
+		event.SetAttachmentID(id.String())
+	}
+}
+
 func withMemoryWrite[T any](ctx context.Context, store registrystore.MemoryStore, fn func(context.Context) (T, error)) (T, error) {
 	security.MarkGRPCOperationResourcesValidated(ctx)
 	var out T
@@ -5961,6 +5972,12 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 
 	var metadata *pb.UploadMetadata
 	var expiresIn time.Duration
+	// pendingID and pendingAttempt identify the row created for a caller-supplied
+	// ID. They stay unset for a request without an ID, which keeps the legacy
+	// flow: no row exists until the blob is stored.
+	var pendingID uuid.UUID
+	var pendingAttempt uuid.UUID
+	hasPending := false
 	type storeResult struct {
 		res *registryattach.FileStoreResult
 		err error
@@ -5969,10 +5986,22 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 	var receivedResult *storeResult
 	blobAccountedFor := false
 	var writer *io.PipeWriter
+	// pendingSettled is set once the row reached a terminal state through
+	// finalize, so the deferred cleanup does not try to fail it.
+	pendingSettled := false
 	defer func() {
 		if writer != nil {
 			// Ensure the background store goroutine unblocks if the handler returns early.
 			_ = writer.CloseWithError(io.ErrUnexpectedEOF)
+		}
+		if hasPending && !pendingSettled {
+			// The client disconnect cancels stream.Context(), so the failure is
+			// recorded on a context that ignores it. The write is fenced by the
+			// attempt ID and the pending status: it never changes a row that
+			// finalized (lost acknowledgment) or was replaced.
+			if _, err := registrystore.MarkAttachmentAttemptFailed(stream.Context(), s.Store, userID, pendingID, pendingAttempt); err != nil {
+				log.Error("Failed to mark gRPC attachment upload as failed", "attachmentId", pendingID.String(), "err", err, "cause", retErr)
+			}
 		}
 		if resultCh == nil || blobAccountedFor {
 			return
@@ -6029,17 +6058,36 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 
 			expiresAt := time.Now().Add(expiresIn)
 
-			attachment, err := withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-				return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
-					Filename:    filename,
-					ContentType: contentType,
-					Size:        &out.res.Size,
-					SHA256:      &out.res.SHA256,
-					StorageKey:  &out.res.StorageKey,
-					ExpiresAt:   &expiresAt,
-					Status:      "ready",
+			var attachment *model.Attachment
+			if hasPending {
+				attachment, err = withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+					return s.Store.FinalizeAttachment(txCtx, userID, pendingID, pendingAttempt, registrystore.AttachmentFinalize{
+						StorageKey: out.res.StorageKey,
+						Size:       out.res.Size,
+						SHA256:     out.res.SHA256,
+						ExpiresAt:  &expiresAt,
+					})
 				})
-			})
+				if err == nil {
+					pendingSettled = true
+				}
+				// A fence that matches nothing means the row was deleted, expired
+				// or replaced: this attempt can never complete, so it is a
+				// conflict, not an inconclusive NOT_FOUND.
+				err = registrystore.AttachmentSupersededOrError(pendingID, err)
+			} else {
+				attachment, err = withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*model.Attachment, error) {
+					return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
+						Filename:    filename,
+						ContentType: contentType,
+						Size:        &out.res.Size,
+						SHA256:      &out.res.SHA256,
+						StorageKey:  &out.res.StorageKey,
+						ExpiresAt:   &expiresAt,
+						Status:      "ready",
+					})
+				})
+			}
 			if err != nil {
 				return mapError(err)
 			}
@@ -6066,6 +6114,41 @@ func (s *AttachmentsServer) UploadAttachment(stream pb.AttachmentsService_Upload
 			contentType := metadata.GetContentType()
 			if strings.TrimSpace(contentType) == "" {
 				contentType = "application/octet-stream"
+			}
+			callerID, hasCallerID, idErr := routeattachments.ParseCallerAttachmentID(metadata.Id)
+			if idErr != nil {
+				return grpcStatusWithCause(codes.InvalidArgument, idErr.Error(), idErr)
+			}
+			recordCallerAttachmentID(stream.Context(), callerID, hasCallerID)
+			if hasCallerID {
+				// The row is created before any chunk is read, so a duplicate ID is
+				// rejected before a blob exists, and the in-flight upload is
+				// visible to GetAttachment. Per-attempt state is reset inside the
+				// callback because the transaction can be replayed.
+				var name *string
+				if strings.TrimSpace(metadata.GetFilename()) != "" {
+					v := metadata.GetFilename()
+					name = &v
+				}
+				pendingExpiresAt := time.Now().Add(expiresIn)
+				created, err := withMemoryWrite(stream.Context(), s.Store, func(txCtx context.Context) (*registrystore.CreateAttachmentResult, error) {
+					return s.Store.CreateAttachmentWithID(txCtx, userID, callerID, model.Attachment{
+						Filename:    name,
+						ContentType: contentType,
+						ExpiresAt:   &pendingExpiresAt,
+						Status:      registrystore.AttachmentStatusUploading,
+					})
+				})
+				if err != nil {
+					return mapError(err)
+				}
+				if !created.Created {
+					return mapError(registrystore.NewAttachmentIDExistsConflict(callerID))
+				}
+				if created.Attachment.AttemptID == nil {
+					return mapError(errors.New("store returned a caller-ID attachment without an attempt ID"))
+				}
+				pendingID, pendingAttempt, hasPending = callerID, *created.Attachment.AttemptID, true
 			}
 			reader, pipeWriter := io.Pipe()
 			writer = pipeWriter
@@ -6134,20 +6217,40 @@ func (s *AttachmentsServer) CreateAttachmentFromUrl(ctx context.Context, req *pb
 	}
 	expiresAt := time.Now().Add(defaultExpires)
 
-	attachment, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-		return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
+	callerID, hasCallerID, idErr := routeattachments.ParseCallerAttachmentID(req.Id)
+	if idErr != nil {
+		return nil, grpcStatusWithCause(codes.InvalidArgument, idErr.Error(), idErr)
+	}
+	recordCallerAttachmentID(ctx, callerID, hasCallerID)
+	if !hasCallerID {
+		// Every URL download is fenced on an attempt ID, so a server-minted ID
+		// takes the same create-with-ID path. A late download of a deleted row
+		// can then never modify a row that later reuses its ID.
+		callerID = uuid.New()
+	}
+	// The download starts only after the create transaction committed, and only
+	// when this request created the row. The outcome is reset on every callback
+	// invocation because the transaction can be replayed.
+	created, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.CreateAttachmentResult, error) {
+		return s.Store.CreateAttachmentWithID(txCtx, userID, callerID, model.Attachment{
 			Filename:    filename,
 			ContentType: contentType,
 			SourceURL:   &sourceURL,
 			ExpiresAt:   &expiresAt,
-			Status:      "downloading",
+			Status:      registrystore.AttachmentStatusDownloading,
 		})
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
-	routeattachments.StartSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, attachment.ID, userID, sourceURL, contentType)
-	return uploadAttachmentResponseToProto(attachment), nil
+	if !created.Created {
+		return nil, mapError(registrystore.NewAttachmentIDExistsConflict(callerID))
+	}
+	if created.Attachment.AttemptID == nil {
+		return nil, mapError(errors.New("store returned a caller-ID attachment without an attempt ID"))
+	}
+	routeattachments.StartFencedSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, callerID, *created.Attachment.AttemptID, userID, sourceURL, contentType)
+	return uploadAttachmentResponseToProto(created.Attachment), nil
 }
 
 func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttachmentRequest) (*pb.AttachmentInfo, error) {

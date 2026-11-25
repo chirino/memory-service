@@ -383,6 +383,21 @@ export function createMemoryServiceProxy(options: MemoryServiceProxyOptions) {
         options,
       );
     },
+    /**
+     * Looks up attachment metadata, including its `status` (`ready`,
+     * `uploading`, `downloading` or `failed`), without downloading content.
+     * Use it to recover the outcome of an upload or URL creation whose
+     * response was lost. The upstream status is returned unchanged: 404 means
+     * the attachment does not exist for this user, and during a multipart
+     * transfer that 404 is inconclusive.
+     */
+    getAttachmentMetadata(attachmentId: string): Promise<Response> {
+      return memoryServiceRequest(
+        "GET",
+        `/v1/attachments/${encodeURIComponent(attachmentId)}/metadata`,
+        options,
+      );
+    },
     getAttachment(
       attachmentId: string,
       query: { disposition?: AttachmentDisposition | null } = {},

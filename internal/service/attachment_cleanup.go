@@ -39,7 +39,16 @@ func (s *AttachmentCleanupService) Start(ctx context.Context) {
 	}
 }
 
-func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
+// attachmentCleanupResult reports one cleanup pass. Deleted rows are the work
+// count. Skipped rows were listed as expired but no longer qualified by the time
+// of the delete; they are not failures.
+type attachmentCleanupResult struct {
+	Deleted int64
+	Skipped int64
+	Failed  int64
+}
+
+func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) (result attachmentCleanupResult) {
 	event := operationevent.New("job.attachment_cleanup")
 	var work, failures int64
 	started := false
@@ -47,6 +56,7 @@ func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 		event.SetWorkCount(work)
 		event.SetFailureCount(failures)
 		emitJobTerminal(event, ctx, failures)
+		result.Deleted, result.Failed = work, failures
 	}()
 	defer recoverJobPanic(event, func() { failures++ })
 	var afterCursor *string
@@ -81,8 +91,17 @@ func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 			if attachment.EntryID != nil {
 				continue
 			}
+			// The list and the delete are separate transactions, so the row may have
+			// been refreshed, linked, deleted or replaced under the same ID in
+			// between. The delete re-checks the listed attempt ID, the link and the
+			// expiry, and reports false when the row no longer qualifies.
+			// Assigned on every callback run so a replayed transaction cannot keep a
+			// stale value.
+			var deleted bool
 			if err := s.store.InWriteTx(ctx, func(writeCtx context.Context) error {
-				return s.store.AdminDeleteAttachment(writeCtx, attachment.ID)
+				var err error
+				deleted, err = s.store.DeleteExpiredAttachment(writeCtx, attachment.ID, attachment.AttemptID)
+				return err
 			}); err != nil {
 				if markJobInterrupted(event, ctx, err) {
 					return
@@ -91,6 +110,10 @@ func (s *AttachmentCleanupService) cleanupOnce(ctx context.Context) {
 				event.SetReason("metadata_delete_failed")
 				event.EnrichError(err)
 				failures++
+				continue
+			}
+			if !deleted {
+				result.Skipped++
 				continue
 			}
 			work++

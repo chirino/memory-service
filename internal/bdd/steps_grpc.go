@@ -53,6 +53,11 @@ func init() {
 
 		// Attachment gRPC steps
 		ctx.Step(`^I upload a file via gRPC with filename "([^"]*)" content type "([^"]*)" and content "([^"]*)"$`, g.iUploadFileViaGRPC)
+		ctx.Step(`^I upload a file via gRPC with filename "([^"]*)" content type "([^"]*)" and content "([^"]*)" with id "([^"]*)"$`, g.iUploadFileViaGRPCWithID)
+		ctx.Step(`^I upload a file via gRPC with filename "([^"]*)" content type "([^"]*)" and content "([^"]*)" with id "([^"]*)" concurrently (\d+) times$`, g.iUploadFileViaGRPCConcurrently)
+		ctx.Step(`^exactly one concurrent gRPC upload should succeed and the rest should have status "([^"]*)"$`, g.exactlyOneConcurrentGRPCUploadShouldSucceed)
+		ctx.Step(`^I start a gRPC upload with id "([^"]*)" and cancel the stream after sending content "([^"]*)"$`, g.iStartAndCancelGRPCUpload)
+		ctx.Step(`^I wait for attachment "([^"]*)" to have status "([^"]*)" via gRPC$`, g.iWaitForAttachmentStatusViaGRPC)
 		ctx.Step(`^I download attachment "([^"]*)" via gRPC$`, g.iDownloadAttachmentViaGRPC)
 		ctx.Step(`^I get attachment "([^"]*)" metadata via gRPC$`, g.iGetAttachmentMetadataViaGRPC)
 		ctx.Step(`^the gRPC download content should be "([^"]*)"$`, g.theGRPCDownloadContentShouldBe)
@@ -89,6 +94,7 @@ type grpcSteps struct {
 	streamEnd    atomic.Int64   // when background stream ended (unix nano, 0 = unset)
 	streamResp   *pb.RecordResponse
 	streamErr    error
+	uploadErrs   []error // per-request outcomes of a concurrent gRPC upload
 }
 
 func (g *grpcSteps) conn() (*grpc.ClientConn, error) {
@@ -1108,17 +1114,31 @@ func (g *grpcSteps) setVariableToGRPCResponseField(varName, field string) error 
 // --- Attachment gRPC steps ---
 
 func (g *grpcSteps) iUploadFileViaGRPC(filename, contentType, content string) error {
-	conn, err := g.conn()
+	return g.uploadViaGRPC(filename, contentType, content, nil)
+}
+
+func (g *grpcSteps) iUploadFileViaGRPCWithID(filename, contentType, content, id string) error {
+	expanded, err := g.s.Expand(id)
 	if err != nil {
 		return err
 	}
+	return g.uploadViaGRPC(filename, contentType, content, &expanded)
+}
+
+// uploadOnce runs one gRPC upload: the metadata message (carrying id when it is
+// non-nil, even when blank), then the content as one chunk. A stream error is
+// returned, not recorded, so concurrent callers can keep their own outcomes.
+func (g *grpcSteps) uploadOnce(filename, contentType, content string, id *string) (*pb.UploadAttachmentResponse, error) {
+	conn, err := g.conn()
+	if err != nil {
+		return nil, err
+	}
 	defer conn.Close()
 
-	ctx := g.authCtx()
 	client := pb.NewAttachmentsServiceClient(conn)
-	stream, err := client.UploadAttachment(ctx)
+	stream, err := client.UploadAttachment(g.authCtx())
 	if err != nil {
-		return err
+		return nil, err
 	}
 
 	// Send metadata first
@@ -1127,10 +1147,16 @@ func (g *grpcSteps) iUploadFileViaGRPC(filename, contentType, content string) er
 			Metadata: &pb.UploadMetadata{
 				Filename:    filename,
 				ContentType: contentType,
+				Id:          id,
 			},
 		},
 	}); err != nil {
-		return err
+		// A server that rejected the metadata ends the stream; its status is
+		// what CloseAndRecv reports.
+		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {
+			return nil, recvErr
+		}
+		return nil, err
 	}
 
 	// Send content as a single chunk
@@ -1139,10 +1165,19 @@ func (g *grpcSteps) iUploadFileViaGRPC(filename, contentType, content string) er
 			Chunk: []byte(content),
 		},
 	}); err != nil {
-		return err
+		if _, recvErr := stream.CloseAndRecv(); recvErr != nil {
+			return nil, recvErr
+		}
+		return nil, err
 	}
 
-	resp, err := stream.CloseAndRecv()
+	return stream.CloseAndRecv()
+}
+
+func (g *grpcSteps) uploadViaGRPC(filename, contentType, content string, id *string) error {
+	g.grpcResp = nil
+	g.grpcRespRaw = nil
+	resp, err := g.uploadOnce(filename, contentType, content, id)
 	g.grpcErr = err
 	if err == nil {
 		g.grpcRespRaw = resp
@@ -1152,6 +1187,137 @@ func (g *grpcSteps) iUploadFileViaGRPC(filename, contentType, content string) er
 		}
 	}
 	return nil
+}
+
+// iUploadFileViaGRPCConcurrently sends count identical uploads with one ID, all
+// released together, and keeps each outcome. The last success becomes the
+// current response so later steps can read its fields.
+func (g *grpcSteps) iUploadFileViaGRPCConcurrently(filename, contentType, content, id string, count int) error {
+	expanded, err := g.s.Expand(id)
+	if err != nil {
+		return err
+	}
+	g.uploadErrs = make([]error, count)
+	responses := make([]*pb.UploadAttachmentResponse, count)
+
+	start := make(chan struct{})
+	var ready, done sync.WaitGroup
+	ready.Add(count)
+	for i := 0; i < count; i++ {
+		done.Add(1)
+		go func(idx int) {
+			defer done.Done()
+			ready.Done()
+			<-start
+			responses[idx], g.uploadErrs[idx] = g.uploadOnce(filename, contentType, content, &expanded)
+		}(i)
+	}
+	ready.Wait()
+	close(start)
+	done.Wait()
+
+	g.grpcResp, g.grpcRespRaw, g.grpcErr = nil, nil, nil
+	for i, resp := range responses {
+		if g.uploadErrs[i] == nil && resp != nil {
+			g.grpcRespRaw = resp
+			g.grpcResp, _ = protoToMap(resp)
+			if normalized, ok := g.s.NormalizeValue(g.grpcResp).(map[string]any); ok {
+				g.grpcResp = normalized
+			}
+		}
+	}
+	return nil
+}
+
+// exactlyOneConcurrentGRPCUploadShouldSucceed is exact: one OK, every other
+// request the given status code. Any other outcome fails.
+func (g *grpcSteps) exactlyOneConcurrentGRPCUploadShouldSucceed(restStatus string) error {
+	if len(g.uploadErrs) == 0 {
+		return fmt.Errorf("no concurrent gRPC uploads were run")
+	}
+	succeeded := 0
+	for i, err := range g.uploadErrs {
+		if err == nil {
+			succeeded++
+			continue
+		}
+		st, ok := status.FromError(err)
+		if !ok || toScreamingSnake(st.Code().String()) != strings.ToUpper(restStatus) {
+			return fmt.Errorf("concurrent gRPC upload %d failed with %v, expected status %s", i, err, restStatus)
+		}
+	}
+	if succeeded != 1 {
+		return fmt.Errorf("expected exactly one concurrent gRPC upload to succeed, got %d (errors: %v)", succeeded, g.uploadErrs)
+	}
+	return nil
+}
+
+// iStartAndCancelGRPCUpload opens an upload with the given ID, sends content,
+// and cancels the stream before closing it, as a client that lost its connection.
+func (g *grpcSteps) iStartAndCancelGRPCUpload(id, content string) error {
+	expanded, err := g.s.Expand(id)
+	if err != nil {
+		return err
+	}
+	conn, err := g.conn()
+	if err != nil {
+		return err
+	}
+	defer conn.Close()
+
+	ctx, cancel := context.WithCancel(g.authCtx())
+	defer cancel()
+	stream, err := pb.NewAttachmentsServiceClient(conn).UploadAttachment(ctx)
+	if err != nil {
+		return err
+	}
+	if err := stream.Send(&pb.UploadAttachmentRequest{
+		Payload: &pb.UploadAttachmentRequest_Metadata{
+			Metadata: &pb.UploadMetadata{Filename: "cancelled.txt", ContentType: "text/plain", Id: &expanded},
+		},
+	}); err != nil {
+		return err
+	}
+	if err := stream.Send(&pb.UploadAttachmentRequest{
+		Payload: &pb.UploadAttachmentRequest_Chunk{Chunk: []byte(content)},
+	}); err != nil {
+		return err
+	}
+	// Wait until the server has created the pending row, so the stream dies mid-upload
+	// rather than before the attempt exists.
+	if err := g.iWaitForAttachmentStatusViaGRPC(expanded, "uploading"); err != nil {
+		return err
+	}
+	cancel()
+	_, err = stream.CloseAndRecv()
+	g.grpcErr = err
+	return nil
+}
+
+// iWaitForAttachmentStatusViaGRPC polls GetAttachment until the attachment
+// reports the wanted status.
+func (g *grpcSteps) iWaitForAttachmentStatusViaGRPC(rawID, want string) error {
+	id, err := g.s.Expand(rawID)
+	if err != nil {
+		return err
+	}
+	deadline := time.Now().Add(10 * time.Second)
+	last := ""
+	for {
+		if err := g.iGetAttachmentMetadataViaGRPC(id); err != nil {
+			return err
+		}
+		if g.grpcErr == nil && g.grpcResp != nil {
+			last = fmt.Sprintf("%v", g.grpcResp["status"])
+			if last == want {
+				return nil
+			}
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("attachment %s did not reach status %q via gRPC within 10 seconds (last status %q, last error %v)", id, want, last, g.grpcErr)
+		}
+		time.Sleep(100 * time.Millisecond)
+	}
 }
 
 func (g *grpcSteps) iDownloadAttachmentViaGRPC(attachID string) error {
@@ -1166,6 +1332,9 @@ func (g *grpcSteps) iDownloadAttachmentViaGRPC(attachID string) error {
 	}
 	defer conn.Close()
 
+	// A download is its own call: an error left by an earlier step must not
+	// look like this call's outcome.
+	g.grpcErr = nil
 	ctx := g.authCtx()
 	client := pb.NewAttachmentsServiceClient(conn)
 	stream, err := client.DownloadAttachment(ctx, &pb.DownloadAttachmentRequest{Id: expanded})

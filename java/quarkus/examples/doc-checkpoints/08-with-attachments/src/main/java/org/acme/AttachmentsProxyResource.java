@@ -32,7 +32,20 @@ public class AttachmentsProxyResource {
     @Produces(MediaType.APPLICATION_JSON)
     public Response upload(
             MultipartFormDataInput input, @QueryParam("expiresIn") String expiresIn) {
-        return proxy.uploadAttachment(input, expiresIn);
+        // Forward an optional caller-supplied attachment ID exactly as received, even when blank.
+        var idValues = input.getValues().get("id");
+        String id =
+                idValues == null || idValues.isEmpty()
+                        ? null
+                        : idValues.iterator().next().getValue();
+        return proxy.uploadAttachment(input, expiresIn, id);
+    }
+
+    @GET
+    @Path("/{id}/metadata")
+    @Produces(MediaType.APPLICATION_JSON)
+    public Response metadata(@PathParam("id") String id) {
+        return proxy.getAttachmentMetadata(id);
     }
 
     @GET

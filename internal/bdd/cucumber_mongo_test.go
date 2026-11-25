@@ -84,6 +84,7 @@ func TestFeaturesMongo(t *testing.T) {
 	}
 	featureFiles = append(featureFiles, filepath.Join(resourcesDir, "features-grpc", "entries-seq-retry-grpc.feature"))
 	featureFiles = append(featureFiles, filepath.Join(resourcesDir, "features-grpc", "memories-grpc.feature"))
+	featureFiles = append(featureFiles, filepath.Join(resourcesDir, "features-grpc", "attachment-idempotency-grpc.feature"))
 	featureFiles = append(featureFiles,
 		filepath.Join(resourcesDir, "features-mongo", "entries-seq-retry-archive-rest.feature"),
 		filepath.Join(resourcesDir, "features-mongo", "entries-seq-retry-archive-grpc.feature"),

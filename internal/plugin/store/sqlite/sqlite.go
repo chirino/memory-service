@@ -94,6 +94,9 @@ func (m *sqliteMigrator) Migrate(ctx context.Context) error {
 	if _, err := handle.sqlDB.ExecContext(ctx, "ALTER TABLE entries ADD COLUMN append_batch BLOB"); err != nil && !isSQLiteDuplicateColumnError(err) {
 		return fmt.Errorf("migration: add append batch definition: %w", err)
 	}
+	if _, err := handle.sqlDB.ExecContext(ctx, "ALTER TABLE attachments ADD COLUMN attempt_id TEXT"); err != nil && !isSQLiteDuplicateColumnError(err) {
+		return fmt.Errorf("migration: add attachments.attempt_id column: %w", err)
+	}
 	defaultKind, err := coreepisodic.BuiltinDefaultKindVersion(ctx)
 	if err != nil {
 		return fmt.Errorf("migration: load built-in default memory kind: %w", err)
@@ -4687,6 +4690,8 @@ func (s *SQLiteStore) CreateAttachment(ctx context.Context, userID string, conve
 	}
 	attachment.ID = uuid.New()
 	attachment.UserID = userID
+	// The attempt ID is store-controlled; callers cannot supply one.
+	attachment.AttemptID = nil
 	if strings.TrimSpace(attachment.Status) == "" {
 		attachment.Status = "ready"
 	}
@@ -4699,6 +4704,158 @@ func (s *SQLiteStore) CreateAttachment(ctx context.Context, userID string, conve
 		return nil, fmt.Errorf("create attachment failed: %w", err)
 	}
 	return &attachment, nil
+}
+
+// lookupAttachmentByID reads a row regardless of archive state so a create can
+// tell an existing ID from a free one.
+func (s *SQLiteStore) lookupAttachmentByID(db *gorm.DB, attachmentID uuid.UUID) (model.Attachment, bool, error) {
+	var attachment model.Attachment
+	result := db.Where("id = ?", attachmentID).Limit(1).Find(&attachment)
+	if result.Error != nil {
+		return attachment, false, result.Error
+	}
+	return attachment, result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) existingAttachmentResult(attachment model.Attachment, userID string) (*registrystore.CreateAttachmentResult, error) {
+	if attachment.UserID != userID {
+		// Another user's row is indistinguishable from a missing one.
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachment.ID.String()}
+	}
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: false}, nil
+}
+
+// CreateAttachmentWithID writes inside the caller's write scope. SQLite
+// serializes write scopes, so lookup-then-insert cannot interleave with another
+// writer; the unique-violation branch is a fallback.
+func (s *SQLiteStore) CreateAttachmentWithID(ctx context.Context, userID string, attachmentID uuid.UUID, attachment model.Attachment) (*registrystore.CreateAttachmentResult, error) {
+	if err := registrystore.ValidatePendingAttachment(attachmentID, attachment); err != nil {
+		return nil, err
+	}
+	db := s.writeDBFor(ctx, "sqlite store create attachment with id")
+	existing, found, err := s.lookupAttachmentByID(db, attachmentID)
+	if err != nil {
+		return nil, fmt.Errorf("lookup attachment failed: %w", err)
+	}
+	if found {
+		return s.existingAttachmentResult(existing, userID)
+	}
+
+	attemptID := uuid.New()
+	attachment.ID = attachmentID
+	attachment.UserID = userID
+	attachment.AttemptID = &attemptID
+	// SQLite keeps nanoseconds, so returned and stored values already agree.
+	// Set CreatedAt here so a caller-supplied value cannot be persisted.
+	attachment.CreatedAt = time.Now().UTC()
+	if attachment.ExpiresAt != nil {
+		expiresAt := attachment.ExpiresAt.UTC()
+		attachment.ExpiresAt = &expiresAt
+	}
+	if err := db.Create(&attachment).Error; err != nil {
+		if _, ok := sqliteUniqueViolation(err); ok {
+			existing, found, lookupErr := s.lookupAttachmentByID(db, attachmentID)
+			if lookupErr != nil {
+				return nil, fmt.Errorf("lookup attachment failed: %w", lookupErr)
+			}
+			if found {
+				return s.existingAttachmentResult(existing, userID)
+			}
+		}
+		return nil, fmt.Errorf("create attachment failed: %w", err)
+	}
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: true}, nil
+}
+
+func (s *SQLiteStore) FinalizeAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID, finalize registrystore.AttachmentFinalize) (*model.Attachment, error) {
+	if err := registrystore.ValidateAttachmentFinalize(finalize); err != nil {
+		return nil, err
+	}
+	db := s.writeDBFor(ctx, "sqlite store finalize attachment")
+	values := map[string]any{
+		"status":      registrystore.AttachmentStatusReady,
+		"storage_key": finalize.StorageKey,
+		"size":        finalize.Size,
+		"sha256":      finalize.SHA256,
+	}
+	if finalize.ContentType != nil {
+		values["content_type"] = *finalize.ContentType
+	}
+	if finalize.ExpiresAt != nil {
+		values["expires_at"] = *finalize.ExpiresAt
+	}
+	// One conditional statement: the attempt fence and the pending-status check
+	// are evaluated atomically with the write.
+	result := db.Model(&model.Attachment{}).
+		Where("id = ? AND user_id = ? AND attempt_id = ? AND archived_at IS NULL AND status IN (?, ?)",
+			attachmentID, userID, attemptID, registrystore.AttachmentStatusUploading, registrystore.AttachmentStatusDownloading).
+		Updates(values)
+	if result.Error != nil {
+		return nil, fmt.Errorf("finalize attachment failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	}
+	// Register after the fence matched so a rejected finalize leaves no guard
+	// behind. An error here must abort the surrounding transaction.
+	if err := s.RegisterAttachmentBlobReference(ctx, finalize.StorageKey); err != nil {
+		return nil, err
+	}
+	finalized, found, err := s.lookupAttachmentByID(db, attachmentID)
+	if err != nil {
+		return nil, fmt.Errorf("reload finalized attachment failed: %w", err)
+	}
+	if !found {
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	}
+	return &finalized, nil
+}
+
+func (s *SQLiteStore) MarkAttachmentFailed(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID) (bool, error) {
+	db := s.writeDBFor(ctx, "sqlite store mark attachment failed")
+	result := db.Model(&model.Attachment{}).
+		Where("id = ? AND user_id = ? AND attempt_id = ? AND archived_at IS NULL AND status IN (?, ?)",
+			attachmentID, userID, attemptID, registrystore.AttachmentStatusUploading, registrystore.AttachmentStatusDownloading).
+		Update("status", registrystore.AttachmentStatusFailed)
+	if result.Error != nil {
+		return false, fmt.Errorf("mark attachment failed: %w", result.Error)
+	}
+	return result.RowsAffected > 0, nil
+}
+
+func (s *SQLiteStore) DeleteExpiredAttachment(ctx context.Context, attachmentID uuid.UUID, attemptID *uuid.UUID) (bool, error) {
+	db := s.writeDBFor(ctx, "sqlite store delete expired attachment")
+	// IS compares NULL with NULL, so a legacy row without an attempt ID matches a
+	// nil attemptID and never matches a non-nil one.
+	var attempt any
+	if attemptID != nil {
+		attempt = *attemptID
+	}
+	// The write scope is serialized, so this read and the conditional delete
+	// below see the same row. The delete repeats every condition regardless.
+	conditions := "id = ? AND attempt_id IS ? AND entry_id IS NULL AND expires_at IS NOT NULL AND (expires_at, expires_at_ns) < (?, ?)"
+	args := append([]any{attachmentID, attempt}, sqlitecodec.Bounds(time.Now())...)
+	var expired model.Attachment
+	lookup := db.Where(conditions, args...).Limit(1).Find(&expired)
+	if lookup.Error != nil {
+		return false, fmt.Errorf("get expired attachment failed: %w", lookup.Error)
+	}
+	if lookup.RowsAffected == 0 {
+		return false, nil
+	}
+	result := db.Where(conditions, args...).Delete(&model.Attachment{})
+	if result.Error != nil {
+		return false, fmt.Errorf("delete expired attachment failed: %w", result.Error)
+	}
+	if result.RowsAffected == 0 {
+		return false, nil
+	}
+	if expired.StorageKey != nil {
+		if err := s.QueueAttachmentBlobDelete(ctx, *expired.StorageKey); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (s *SQLiteStore) CloneAttachment(ctx context.Context, userID string, sourceAttachmentID uuid.UUID) (*model.Attachment, error) {
@@ -4782,7 +4939,9 @@ func (s *SQLiteStore) UpdateAttachment(ctx context.Context, userID string, attac
 
 func (s *SQLiteStore) LinkAttachmentToEntry(ctx context.Context, userID string, attachmentID uuid.UUID, entryID uuid.UUID) (*model.Attachment, error) {
 	db := s.writeDBFor(ctx, "sqlite link attachment to entry")
-	result := db.Model(&model.Attachment{}).Where("id = ? AND user_id = ? AND archived_at IS NULL AND entry_id IS NULL", attachmentID, userID).Update("entry_id", entryID)
+	// The status check is part of the same UPDATE, so a finalize that commits
+	// between a read and this write cannot be missed.
+	result := db.Model(&model.Attachment{}).Where("id = ? AND user_id = ? AND archived_at IS NULL AND entry_id IS NULL AND status = ?", attachmentID, userID, registrystore.AttachmentStatusReady).Update("entry_id", entryID)
 	if result.Error != nil {
 		return nil, result.Error
 	}
@@ -4794,13 +4953,7 @@ func (s *SQLiteStore) LinkAttachmentToEntry(ctx context.Context, userID string, 
 	if lookup.RowsAffected == 0 {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
-	if attachment.UserID != userID {
-		return nil, &registrystore.ForbiddenError{}
-	}
-	if attachment.EntryID == nil || *attachment.EntryID != entryID {
-		return nil, &registrystore.ConflictError{Message: fmt.Sprintf("attachment %s is linked to a different entry", attachmentID)}
-	}
-	return &attachment, nil
+	return registrystore.ResolveAttachmentLink(attachment, userID, entryID)
 }
 
 func (s *SQLiteStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {

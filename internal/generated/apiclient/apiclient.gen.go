@@ -575,18 +575,28 @@ type AttachmentUploadResponse struct {
 	SourceUrl *string `json:"sourceUrl,omitempty"`
 
 	// Status Current status of the attachment:
-	// - `uploading` - Multipart upload created but not yet completed
+	// - `uploading` - The attachment was created with a caller-supplied `id` and its
+	//   content is still being stored
 	// - `downloading` - Server is downloading content from sourceUrl
 	// - `ready` - Content is available for retrieval
-	// - `failed` - Download from sourceUrl failed
+	// - `failed` - Storing the upload, or the download from sourceUrl, failed
+	//
+	// An attachment can be linked to an entry only when it is `ready`. A multipart upload
+	// returns `ready` in the creation response. An `uploading` attachment exists only when
+	// the caller supplied an `id`; look it up with `GET /v1/attachments/{id}/metadata`.
 	Status *AttachmentUploadResponseStatus `json:"status,omitempty"`
 }
 
 // AttachmentUploadResponseStatus Current status of the attachment:
-// - `uploading` - Multipart upload created but not yet completed
-// - `downloading` - Server is downloading content from sourceUrl
-// - `ready` - Content is available for retrieval
-// - `failed` - Download from sourceUrl failed
+//   - `uploading` - The attachment was created with a caller-supplied `id` and its
+//     content is still being stored
+//   - `downloading` - Server is downloading content from sourceUrl
+//   - `ready` - Content is available for retrieval
+//   - `failed` - Storing the upload, or the download from sourceUrl, failed
+//
+// An attachment can be linked to an entry only when it is `ready`. A multipart upload
+// returns `ready` in the creation response. An `uploading` attachment exists only when
+// the caller supplied an `id`; look it up with `GET /v1/attachments/{id}/metadata`.
 type AttachmentUploadResponseStatus string
 
 // CapabilitiesAuth defines model for CapabilitiesAuth.
@@ -885,6 +895,15 @@ type CreateEntryRequest struct {
 type CreateFromUrlRequest struct {
 	// ContentType MIME type of the content. Defaults to application/octet-stream.
 	ContentType *string `json:"contentType,omitempty"`
+
+	// Id Optional caller-generated attachment ID (UUID). The ID identifies the creation
+	// operation, not the content: it is not a content hash. If you omit it, the server
+	// assigns an ID. The response is 201 with status `downloading` immediately; the
+	// download has not finished then. Look the outcome up with
+	// `GET /v1/attachments/{id}/metadata`. An ID that is not a UUID returns 400, an ID
+	// that already belongs to the caller returns 409 and starts no download, and an ID
+	// that belongs to another user returns 404.
+	Id *openapi_types.UUID `json:"id,omitempty"`
 
 	// Name Display name for the attachment.
 	Name *string `json:"name,omitempty"`
@@ -1392,6 +1411,14 @@ type AdminSubscribeEventsParamsInitialState string
 type UploadAttachmentMultipartBody struct {
 	// File The file to upload.
 	File openapi_types.File `json:"file"`
+
+	// Id Optional caller-generated attachment ID (UUID). The ID identifies the
+	// upload operation: use it to look the outcome up with
+	// `GET /v1/attachments/{id}/metadata` instead of sending the file again.
+	// It is not a content hash. If you omit it, the server assigns an ID.
+	// An ID that is not a UUID returns 400, an ID that already belongs to the
+	// caller returns 409, and an ID that belongs to another user returns 404.
+	Id *openapi_types.UUID `json:"id,omitempty"`
 }
 
 // UploadAttachmentParams defines parameters for UploadAttachment.
@@ -1893,6 +1920,55 @@ type ClientInterface interface {
 	// Uploaded attachments expire after the specified duration unless they are
 	// linked to an entry before expiration.
 	//
+	// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+	// multipart form or in the JSON body. The ID identifies the upload
+	// operation, so a client that timed out can find out whether the upload
+	// succeeded by looking the ID up instead of sending the file again. The
+	// server creates the attachment record with status `uploading` (URL-based
+	// creation: `downloading`) before it stores any content, and moves it to
+	// `ready` once the content is stored. Omit `id` and the server assigns one,
+	// exactly as before; no `uploading` record is created in that case.
+	//
+	// - The ID is never compared with a content hash or with the file that was
+	//   sent. A second request with the same ID is rejected, not matched
+	//   against the first one.
+	// - An `id` that is not a UUID returns 400.
+	// - An `id` that already belongs to the caller returns 409, whatever the
+	//   status of that attachment. The request stores nothing and starts no
+	//   download. Look the attachment up with
+	//   `GET /v1/attachments/{id}/metadata` to learn the outcome.
+	// - An `id` that belongs to another user returns 404.
+	// - URL-based creation returns 201 immediately with status `downloading`.
+	//   The 201 response does not mean the download has finished; poll
+	//   `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+	//   `failed`.
+	//
+	// **Recovering after a timeout.** Look the ID up with
+	// `GET /v1/attachments/{id}/metadata`:
+	//
+	// - `ready`: the attachment is stored. Done.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+	//   to reuse the ID, or pick a new ID.
+	// - 404 is inconclusive. For a multipart upload the server creates the
+	//   record only after the whole request body has been buffered, so a 404
+	//   while the body is still being transferred does not mean that the
+	//   request failed or will not be processed. Look up again after the
+	//   transfer window. Sending the request again with the same ID is safe:
+	//   if the original request already created the record, the new one
+	//   returns 409.
+	//
+	// **Idempotency window.** An ID is recognized until its attachment record
+	// is actually deleted, either by the owner or by the expiry cleanup job.
+	// Expiry plus the cleanup interval is not a guaranteed deadline, because
+	// the cleanup job can lag, fail, or skip a record whose expiry was
+	// refreshed. Once the record is deleted the same ID creates a new
+	// attachment.
+	//
+	// An attachment can be referenced by an entry only when its status is
+	// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+	// attachment from an entry returns 409.
+	//
 	// Takes any type of body and a specified content type.
 	//
 	// Corresponds with POST /v1/attachments (the `UploadAttachment` operationId).
@@ -1912,6 +1988,55 @@ type ClientInterface interface {
 	//
 	// Uploaded attachments expire after the specified duration unless they are
 	// linked to an entry before expiration.
+	//
+	// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+	// multipart form or in the JSON body. The ID identifies the upload
+	// operation, so a client that timed out can find out whether the upload
+	// succeeded by looking the ID up instead of sending the file again. The
+	// server creates the attachment record with status `uploading` (URL-based
+	// creation: `downloading`) before it stores any content, and moves it to
+	// `ready` once the content is stored. Omit `id` and the server assigns one,
+	// exactly as before; no `uploading` record is created in that case.
+	//
+	// - The ID is never compared with a content hash or with the file that was
+	//   sent. A second request with the same ID is rejected, not matched
+	//   against the first one.
+	// - An `id` that is not a UUID returns 400.
+	// - An `id` that already belongs to the caller returns 409, whatever the
+	//   status of that attachment. The request stores nothing and starts no
+	//   download. Look the attachment up with
+	//   `GET /v1/attachments/{id}/metadata` to learn the outcome.
+	// - An `id` that belongs to another user returns 404.
+	// - URL-based creation returns 201 immediately with status `downloading`.
+	//   The 201 response does not mean the download has finished; poll
+	//   `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+	//   `failed`.
+	//
+	// **Recovering after a timeout.** Look the ID up with
+	// `GET /v1/attachments/{id}/metadata`:
+	//
+	// - `ready`: the attachment is stored. Done.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+	//   to reuse the ID, or pick a new ID.
+	// - 404 is inconclusive. For a multipart upload the server creates the
+	//   record only after the whole request body has been buffered, so a 404
+	//   while the body is still being transferred does not mean that the
+	//   request failed or will not be processed. Look up again after the
+	//   transfer window. Sending the request again with the same ID is safe:
+	//   if the original request already created the record, the new one
+	//   returns 409.
+	//
+	// **Idempotency window.** An ID is recognized until its attachment record
+	// is actually deleted, either by the owner or by the expiry cleanup job.
+	// Expiry plus the cleanup interval is not a guaranteed deadline, because
+	// the cleanup job can lag, fail, or skip a record whose expiry was
+	// refreshed. Once the record is deleted the same ID creates a new
+	// attachment.
+	//
+	// An attachment can be referenced by an entry only when its status is
+	// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+	// attachment from an entry returns 409.
 	//
 	// Takes a body of the `application/json` content type.
 	//
@@ -1968,6 +2093,37 @@ type ClientInterface interface {
 	//
 	// Corresponds with GET /v1/attachments/{id}/download-url (the `GetAttachmentDownloadUrl` operationId).
 	GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*http.Response, error)
+
+	// GetAttachmentMetadata Get attachment metadata and status
+	//
+	// Returns the attachment's metadata, including its `status`. It does not return the
+	// content. Use it to find out whether an upload or URL download succeeded, in particular
+	// after a request timed out.
+	//
+	// Same access rules as `GET /v1/attachments/{id}`:
+	//
+	// - If the attachment is unlinked (not yet associated with an entry), only the original
+	//   uploader can read it. Another user gets 403.
+	// - If linked to an entry, anyone with read access to the conversation can read it.
+	//
+	// The lookup works until the attachment record is actually deleted, so an attachment
+	// past its `expiresAt` that the cleanup job has not removed yet is still returned.
+	//
+	// Status meanings:
+	//
+	// - `ready`: the content is stored. Success.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}` and reuse the
+	//   ID, or pick a new ID.
+	//
+	// A 404 is inconclusive when the ID was sent with a multipart upload that is still being
+	// transferred: the record is created only after the whole request body has been
+	// buffered. Look up again after the transfer window.
+	//
+	// Only a `ready` attachment can be referenced by an entry.
+	//
+	// Corresponds with GET /v1/attachments/{id}/metadata (the `GetAttachmentMetadata` operationId).
+	GetAttachmentMetadata(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error)
 
 	// GetCapabilities Get server capabilities for the authenticated caller
 	//
@@ -2185,6 +2341,11 @@ type ClientInterface interface {
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
 	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
+	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
 	// based on authentication (for example, API keys or tokens) and
@@ -2208,6 +2369,11 @@ type ClientInterface interface {
 	// not emit append events or reapply conversation patches. Fully unsequenced
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
+	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
 	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
@@ -2588,6 +2754,55 @@ func (c *Client) AdminSubscribeEvents(ctx context.Context, params *AdminSubscrib
 // Uploaded attachments expire after the specified duration unless they are
 // linked to an entry before expiration.
 //
+// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+// multipart form or in the JSON body. The ID identifies the upload
+// operation, so a client that timed out can find out whether the upload
+// succeeded by looking the ID up instead of sending the file again. The
+// server creates the attachment record with status `uploading` (URL-based
+// creation: `downloading`) before it stores any content, and moves it to
+// `ready` once the content is stored. Omit `id` and the server assigns one,
+// exactly as before; no `uploading` record is created in that case.
+//
+//   - The ID is never compared with a content hash or with the file that was
+//     sent. A second request with the same ID is rejected, not matched
+//     against the first one.
+//   - An `id` that is not a UUID returns 400.
+//   - An `id` that already belongs to the caller returns 409, whatever the
+//     status of that attachment. The request stores nothing and starts no
+//     download. Look the attachment up with
+//     `GET /v1/attachments/{id}/metadata` to learn the outcome.
+//   - An `id` that belongs to another user returns 404.
+//   - URL-based creation returns 201 immediately with status `downloading`.
+//     The 201 response does not mean the download has finished; poll
+//     `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+//     `failed`.
+//
+// **Recovering after a timeout.** Look the ID up with
+// `GET /v1/attachments/{id}/metadata`:
+//
+//   - `ready`: the attachment is stored. Done.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+//     to reuse the ID, or pick a new ID.
+//   - 404 is inconclusive. For a multipart upload the server creates the
+//     record only after the whole request body has been buffered, so a 404
+//     while the body is still being transferred does not mean that the
+//     request failed or will not be processed. Look up again after the
+//     transfer window. Sending the request again with the same ID is safe:
+//     if the original request already created the record, the new one
+//     returns 409.
+//
+// **Idempotency window.** An ID is recognized until its attachment record
+// is actually deleted, either by the owner or by the expiry cleanup job.
+// Expiry plus the cleanup interval is not a guaranteed deadline, because
+// the cleanup job can lag, fail, or skip a record whose expiry was
+// refreshed. Once the record is deleted the same ID creates a new
+// attachment.
+//
+// An attachment can be referenced by an entry only when its status is
+// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+// attachment from an entry returns 409.
+//
 // Takes any type of body and a specified content type.
 //
 // Corresponds with POST /v1/attachments (the `UploadAttachment` operationId).
@@ -2617,6 +2832,55 @@ func (c *Client) UploadAttachmentWithBody(ctx context.Context, params *UploadAtt
 //
 // Uploaded attachments expire after the specified duration unless they are
 // linked to an entry before expiration.
+//
+// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+// multipart form or in the JSON body. The ID identifies the upload
+// operation, so a client that timed out can find out whether the upload
+// succeeded by looking the ID up instead of sending the file again. The
+// server creates the attachment record with status `uploading` (URL-based
+// creation: `downloading`) before it stores any content, and moves it to
+// `ready` once the content is stored. Omit `id` and the server assigns one,
+// exactly as before; no `uploading` record is created in that case.
+//
+//   - The ID is never compared with a content hash or with the file that was
+//     sent. A second request with the same ID is rejected, not matched
+//     against the first one.
+//   - An `id` that is not a UUID returns 400.
+//   - An `id` that already belongs to the caller returns 409, whatever the
+//     status of that attachment. The request stores nothing and starts no
+//     download. Look the attachment up with
+//     `GET /v1/attachments/{id}/metadata` to learn the outcome.
+//   - An `id` that belongs to another user returns 404.
+//   - URL-based creation returns 201 immediately with status `downloading`.
+//     The 201 response does not mean the download has finished; poll
+//     `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+//     `failed`.
+//
+// **Recovering after a timeout.** Look the ID up with
+// `GET /v1/attachments/{id}/metadata`:
+//
+//   - `ready`: the attachment is stored. Done.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+//     to reuse the ID, or pick a new ID.
+//   - 404 is inconclusive. For a multipart upload the server creates the
+//     record only after the whole request body has been buffered, so a 404
+//     while the body is still being transferred does not mean that the
+//     request failed or will not be processed. Look up again after the
+//     transfer window. Sending the request again with the same ID is safe:
+//     if the original request already created the record, the new one
+//     returns 409.
+//
+// **Idempotency window.** An ID is recognized until its attachment record
+// is actually deleted, either by the owner or by the expiry cleanup job.
+// Expiry plus the cleanup interval is not a guaranteed deadline, because
+// the cleanup job can lag, fail, or skip a record whose expiry was
+// refreshed. Once the record is deleted the same ID creates a new
+// attachment.
+//
+// An attachment can be referenced by an entry only when its status is
+// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+// attachment from an entry returns 409.
 //
 // Takes a body of the `application/json` content type.
 //
@@ -2714,6 +2978,47 @@ func (c *Client) GetAttachment(ctx context.Context, id openapi_types.UUID, param
 // Corresponds with GET /v1/attachments/{id}/download-url (the `GetAttachmentDownloadUrl` operationId).
 func (c *Client) GetAttachmentDownloadUrl(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*http.Response, error) {
 	req, err := NewGetAttachmentDownloadUrlRequest(c.Server, id, params)
+	if err != nil {
+		return nil, err
+	}
+	req = req.WithContext(ctx)
+	if err := c.applyEditors(ctx, req, reqEditors); err != nil {
+		return nil, err
+	}
+	return c.Client.Do(req)
+}
+
+// GetAttachmentMetadata Get attachment metadata and status
+//
+// Returns the attachment's metadata, including its `status`. It does not return the
+// content. Use it to find out whether an upload or URL download succeeded, in particular
+// after a request timed out.
+//
+// Same access rules as `GET /v1/attachments/{id}`:
+//
+//   - If the attachment is unlinked (not yet associated with an entry), only the original
+//     uploader can read it. Another user gets 403.
+//   - If linked to an entry, anyone with read access to the conversation can read it.
+//
+// The lookup works until the attachment record is actually deleted, so an attachment
+// past its `expiresAt` that the cleanup job has not removed yet is still returned.
+//
+// Status meanings:
+//
+//   - `ready`: the content is stored. Success.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}` and reuse the
+//     ID, or pick a new ID.
+//
+// A 404 is inconclusive when the ID was sent with a multipart upload that is still being
+// transferred: the record is created only after the whole request body has been
+// buffered. Look up again after the transfer window.
+//
+// Only a `ready` attachment can be referenced by an entry.
+//
+// Corresponds with GET /v1/attachments/{id}/metadata (the `GetAttachmentMetadata` operationId).
+func (c *Client) GetAttachmentMetadata(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*http.Response, error) {
+	req, err := NewGetAttachmentMetadataRequest(c.Server, id)
 	if err != nil {
 		return nil, err
 	}
@@ -3080,6 +3385,11 @@ func (c *Client) ListConversationEntries(ctx context.Context, conversationId str
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
 //
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
+//
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
 // based on authentication (for example, API keys or tokens) and
@@ -3113,6 +3423,11 @@ func (c *Client) AppendConversationEntryWithBody(ctx context.Context, conversati
 // not emit append events or reapply conversation patches. Fully unsequenced
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
+//
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
 //
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
@@ -4145,6 +4460,40 @@ func NewGetAttachmentDownloadUrlRequest(server string, id openapi_types.UUID, pa
 			rawQueryFragments = append(rawQueryFragments, encoded)
 		}
 		queryURL.RawQuery = strings.Join(rawQueryFragments, "&")
+	}
+
+	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
+	if err != nil {
+		return nil, err
+	}
+
+	return req, nil
+}
+
+// NewGetAttachmentMetadataRequest constructs an http.Request for the GetAttachmentMetadata method
+func NewGetAttachmentMetadataRequest(server string, id openapi_types.UUID) (*http.Request, error) {
+	var err error
+
+	var pathParam0 string
+
+	pathParam0, err = runtime.StyleParamWithOptions("simple", false, "id", id, runtime.StyleParamOptions{ParamLocation: runtime.ParamLocationPath, Type: "string", Format: "uuid"})
+	if err != nil {
+		return nil, err
+	}
+
+	serverURL, err := url.Parse(server)
+	if err != nil {
+		return nil, err
+	}
+
+	operationPath := fmt.Sprintf("/v1/attachments/%s/metadata", pathParam0)
+	if operationPath[0] == '/' {
+		operationPath = "." + operationPath
+	}
+
+	queryURL, err := serverURL.Parse(operationPath)
+	if err != nil {
+		return nil, err
 	}
 
 	req, err := http.NewRequest(http.MethodGet, queryURL.String(), nil)
@@ -6093,6 +6442,55 @@ type ClientWithResponsesInterface interface {
 	// Uploaded attachments expire after the specified duration unless they are
 	// linked to an entry before expiration.
 	//
+	// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+	// multipart form or in the JSON body. The ID identifies the upload
+	// operation, so a client that timed out can find out whether the upload
+	// succeeded by looking the ID up instead of sending the file again. The
+	// server creates the attachment record with status `uploading` (URL-based
+	// creation: `downloading`) before it stores any content, and moves it to
+	// `ready` once the content is stored. Omit `id` and the server assigns one,
+	// exactly as before; no `uploading` record is created in that case.
+	//
+	// - The ID is never compared with a content hash or with the file that was
+	//   sent. A second request with the same ID is rejected, not matched
+	//   against the first one.
+	// - An `id` that is not a UUID returns 400.
+	// - An `id` that already belongs to the caller returns 409, whatever the
+	//   status of that attachment. The request stores nothing and starts no
+	//   download. Look the attachment up with
+	//   `GET /v1/attachments/{id}/metadata` to learn the outcome.
+	// - An `id` that belongs to another user returns 404.
+	// - URL-based creation returns 201 immediately with status `downloading`.
+	//   The 201 response does not mean the download has finished; poll
+	//   `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+	//   `failed`.
+	//
+	// **Recovering after a timeout.** Look the ID up with
+	// `GET /v1/attachments/{id}/metadata`:
+	//
+	// - `ready`: the attachment is stored. Done.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+	//   to reuse the ID, or pick a new ID.
+	// - 404 is inconclusive. For a multipart upload the server creates the
+	//   record only after the whole request body has been buffered, so a 404
+	//   while the body is still being transferred does not mean that the
+	//   request failed or will not be processed. Look up again after the
+	//   transfer window. Sending the request again with the same ID is safe:
+	//   if the original request already created the record, the new one
+	//   returns 409.
+	//
+	// **Idempotency window.** An ID is recognized until its attachment record
+	// is actually deleted, either by the owner or by the expiry cleanup job.
+	// Expiry plus the cleanup interval is not a guaranteed deadline, because
+	// the cleanup job can lag, fail, or skip a record whose expiry was
+	// refreshed. Once the record is deleted the same ID creates a new
+	// attachment.
+	//
+	// An attachment can be referenced by an entry only when its status is
+	// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+	// attachment from an entry returns 409.
+	//
 	// Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 	//
 	// Corresponds with POST /v1/attachments (the `UploadAttachment` operationId).
@@ -6112,6 +6510,55 @@ type ClientWithResponsesInterface interface {
 	//
 	// Uploaded attachments expire after the specified duration unless they are
 	// linked to an entry before expiration.
+	//
+	// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+	// multipart form or in the JSON body. The ID identifies the upload
+	// operation, so a client that timed out can find out whether the upload
+	// succeeded by looking the ID up instead of sending the file again. The
+	// server creates the attachment record with status `uploading` (URL-based
+	// creation: `downloading`) before it stores any content, and moves it to
+	// `ready` once the content is stored. Omit `id` and the server assigns one,
+	// exactly as before; no `uploading` record is created in that case.
+	//
+	// - The ID is never compared with a content hash or with the file that was
+	//   sent. A second request with the same ID is rejected, not matched
+	//   against the first one.
+	// - An `id` that is not a UUID returns 400.
+	// - An `id` that already belongs to the caller returns 409, whatever the
+	//   status of that attachment. The request stores nothing and starts no
+	//   download. Look the attachment up with
+	//   `GET /v1/attachments/{id}/metadata` to learn the outcome.
+	// - An `id` that belongs to another user returns 404.
+	// - URL-based creation returns 201 immediately with status `downloading`.
+	//   The 201 response does not mean the download has finished; poll
+	//   `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+	//   `failed`.
+	//
+	// **Recovering after a timeout.** Look the ID up with
+	// `GET /v1/attachments/{id}/metadata`:
+	//
+	// - `ready`: the attachment is stored. Done.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+	//   to reuse the ID, or pick a new ID.
+	// - 404 is inconclusive. For a multipart upload the server creates the
+	//   record only after the whole request body has been buffered, so a 404
+	//   while the body is still being transferred does not mean that the
+	//   request failed or will not be processed. Look up again after the
+	//   transfer window. Sending the request again with the same ID is safe:
+	//   if the original request already created the record, the new one
+	//   returns 409.
+	//
+	// **Idempotency window.** An ID is recognized until its attachment record
+	// is actually deleted, either by the owner or by the expiry cleanup job.
+	// Expiry plus the cleanup interval is not a guaranteed deadline, because
+	// the cleanup job can lag, fail, or skip a record whose expiry was
+	// refreshed. Once the record is deleted the same ID creates a new
+	// attachment.
+	//
+	// An attachment can be referenced by an entry only when its status is
+	// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+	// attachment from an entry returns 409.
 	//
 	// Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 	//
@@ -6176,6 +6623,39 @@ type ClientWithResponsesInterface interface {
 	//
 	// Corresponds with GET /v1/attachments/{id}/download-url (the `GetAttachmentDownloadUrl` operationId).
 	GetAttachmentDownloadUrlWithResponse(ctx context.Context, id openapi_types.UUID, params *GetAttachmentDownloadUrlParams, reqEditors ...RequestEditorFn) (*GetAttachmentDownloadUrlResp, error)
+
+	// GetAttachmentMetadataWithResponse Get attachment metadata and status
+	//
+	// Returns the attachment's metadata, including its `status`. It does not return the
+	// content. Use it to find out whether an upload or URL download succeeded, in particular
+	// after a request timed out.
+	//
+	// Same access rules as `GET /v1/attachments/{id}`:
+	//
+	// - If the attachment is unlinked (not yet associated with an entry), only the original
+	//   uploader can read it. Another user gets 403.
+	// - If linked to an entry, anyone with read access to the conversation can read it.
+	//
+	// The lookup works until the attachment record is actually deleted, so an attachment
+	// past its `expiresAt` that the cleanup job has not removed yet is still returned.
+	//
+	// Status meanings:
+	//
+	// - `ready`: the content is stored. Success.
+	// - `uploading` or `downloading`: still in progress. Wait and look up again.
+	// - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}` and reuse the
+	//   ID, or pick a new ID.
+	//
+	// A 404 is inconclusive when the ID was sent with a multipart upload that is still being
+	// transferred: the record is created only after the whole request body has been
+	// buffered. Look up again after the transfer window.
+	//
+	// Only a `ready` attachment can be referenced by an entry.
+	//
+	// Returns a wrapper object for the known response body format(s).
+	//
+	// Corresponds with GET /v1/attachments/{id}/metadata (the `GetAttachmentMetadata` operationId).
+	GetAttachmentMetadataWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentMetadataResp, error)
 
 	// GetCapabilitiesWithResponse Get server capabilities for the authenticated caller
 	//
@@ -6405,6 +6885,11 @@ type ClientWithResponsesInterface interface {
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
 	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
+	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
 	// based on authentication (for example, API keys or tokens) and
@@ -6428,6 +6913,11 @@ type ClientWithResponsesInterface interface {
 	// not emit append events or reapply conversation patches. Fully unsequenced
 	// batches have no retry guarantee. History projections can keep their sequence
 	// unset.
+	//
+	// An entry can reference an attachment only when the attachment status is
+	// `ready`. Referencing an attachment that is still `uploading` or
+	// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+	// Retry after the attachment becomes `ready`.
 	//
 	// This endpoint is used by both end-user clients and agents.
 	// The service determines whether the caller is a user or an agent
@@ -6836,7 +7326,11 @@ type UploadAttachmentResp struct {
 	// JSON201 the response for an HTTP 201 `application/json` response
 	JSON201 *AttachmentUploadResponse
 	// JSON400 the response for an HTTP 400 `application/json` response
-	JSON400 *Error
+	JSON400 *ErrorResponse
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSON409 the response for an HTTP 409 `application/json` response
+	JSON409 *ErrorResponse
 	// JSON413 the response for an HTTP 413 `application/json` response
 	JSON413 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
@@ -6849,8 +7343,18 @@ func (r UploadAttachmentResp) GetJSON201() *AttachmentUploadResponse {
 }
 
 // GetJSON400 returns the response for an HTTP 400 `application/json` response
-func (r UploadAttachmentResp) GetJSON400() *Error {
+func (r UploadAttachmentResp) GetJSON400() *ErrorResponse {
 	return r.JSON400
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r UploadAttachmentResp) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSON409 returns the response for an HTTP 409 `application/json` response
+func (r UploadAttachmentResp) GetJSON409() *ErrorResponse {
+	return r.JSON409
 }
 
 // GetJSON413 returns the response for an HTTP 413 `application/json` response
@@ -7134,6 +7638,75 @@ func (r GetAttachmentDownloadUrlResp) StatusCode() int {
 
 // ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
 func (r GetAttachmentDownloadUrlResp) ContentType() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Header.Get("Content-Type")
+	}
+	return ""
+}
+
+type GetAttachmentMetadataResp struct {
+	Body         []byte
+	HTTPResponse *http.Response
+	// JSON200 the response for an HTTP 200 `application/json` response
+	JSON200 *AttachmentUploadResponse
+	// JSON400 the response for an HTTP 400 `application/json` response
+	JSON400 *ErrorResponse
+	// JSON403 the response for an HTTP 403 `application/json` response
+	JSON403 *ErrorResponse
+	// JSON404 the response for an HTTP 404 `application/json` response
+	JSON404 *ErrorResponse
+	// JSONDefault the response for an HTTP default `application/json` response
+	JSONDefault *Error
+}
+
+// GetJSON200 returns the response for an HTTP 200 `application/json` response
+func (r GetAttachmentMetadataResp) GetJSON200() *AttachmentUploadResponse {
+	return r.JSON200
+}
+
+// GetJSON400 returns the response for an HTTP 400 `application/json` response
+func (r GetAttachmentMetadataResp) GetJSON400() *ErrorResponse {
+	return r.JSON400
+}
+
+// GetJSON403 returns the response for an HTTP 403 `application/json` response
+func (r GetAttachmentMetadataResp) GetJSON403() *ErrorResponse {
+	return r.JSON403
+}
+
+// GetJSON404 returns the response for an HTTP 404 `application/json` response
+func (r GetAttachmentMetadataResp) GetJSON404() *ErrorResponse {
+	return r.JSON404
+}
+
+// GetJSONDefault returns the response for an HTTP default `application/json` response
+func (r GetAttachmentMetadataResp) GetJSONDefault() *Error {
+	return r.JSONDefault
+}
+
+// GetBody returns the raw response body bytes
+func (r GetAttachmentMetadataResp) GetBody() []byte {
+	return r.Body
+}
+
+// Status returns HTTPResponse.Status
+func (r GetAttachmentMetadataResp) Status() string {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.Status
+	}
+	return http.StatusText(0)
+}
+
+// StatusCode returns HTTPResponse.StatusCode
+func (r GetAttachmentMetadataResp) StatusCode() int {
+	if r.HTTPResponse != nil {
+		return r.HTTPResponse.StatusCode
+	}
+	return 0
+}
+
+// ContentType is a convenience method to retrieve the Content-Type value from the HTTP response headers
+func (r GetAttachmentMetadataResp) ContentType() string {
 	if r.HTTPResponse != nil {
 		return r.HTTPResponse.Header.Get("Content-Type")
 	}
@@ -7737,7 +8310,7 @@ type AppendConversationEntryResp struct {
 	// JSON404 the response for an HTTP 404 `application/json` response
 	JSON404 *NotFound
 	// JSON409 the response for an HTTP 409 `application/json` response
-	JSON409 *Error
+	JSON409 *ErrorResponse
 	// JSONDefault the response for an HTTP default `application/json` response
 	JSONDefault *Error
 }
@@ -7753,7 +8326,7 @@ func (r AppendConversationEntryResp) GetJSON404() *NotFound {
 }
 
 // GetJSON409 returns the response for an HTTP 409 `application/json` response
-func (r AppendConversationEntryResp) GetJSON409() *Error {
+func (r AppendConversationEntryResp) GetJSON409() *ErrorResponse {
 	return r.JSON409
 }
 
@@ -8872,6 +9445,55 @@ func (c *ClientWithResponses) AdminSubscribeEventsWithResponse(ctx context.Conte
 // Uploaded attachments expire after the specified duration unless they are
 // linked to an entry before expiration.
 //
+// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+// multipart form or in the JSON body. The ID identifies the upload
+// operation, so a client that timed out can find out whether the upload
+// succeeded by looking the ID up instead of sending the file again. The
+// server creates the attachment record with status `uploading` (URL-based
+// creation: `downloading`) before it stores any content, and moves it to
+// `ready` once the content is stored. Omit `id` and the server assigns one,
+// exactly as before; no `uploading` record is created in that case.
+//
+//   - The ID is never compared with a content hash or with the file that was
+//     sent. A second request with the same ID is rejected, not matched
+//     against the first one.
+//   - An `id` that is not a UUID returns 400.
+//   - An `id` that already belongs to the caller returns 409, whatever the
+//     status of that attachment. The request stores nothing and starts no
+//     download. Look the attachment up with
+//     `GET /v1/attachments/{id}/metadata` to learn the outcome.
+//   - An `id` that belongs to another user returns 404.
+//   - URL-based creation returns 201 immediately with status `downloading`.
+//     The 201 response does not mean the download has finished; poll
+//     `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+//     `failed`.
+//
+// **Recovering after a timeout.** Look the ID up with
+// `GET /v1/attachments/{id}/metadata`:
+//
+//   - `ready`: the attachment is stored. Done.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+//     to reuse the ID, or pick a new ID.
+//   - 404 is inconclusive. For a multipart upload the server creates the
+//     record only after the whole request body has been buffered, so a 404
+//     while the body is still being transferred does not mean that the
+//     request failed or will not be processed. Look up again after the
+//     transfer window. Sending the request again with the same ID is safe:
+//     if the original request already created the record, the new one
+//     returns 409.
+//
+// **Idempotency window.** An ID is recognized until its attachment record
+// is actually deleted, either by the owner or by the expiry cleanup job.
+// Expiry plus the cleanup interval is not a guaranteed deadline, because
+// the cleanup job can lag, fail, or skip a record whose expiry was
+// refreshed. Once the record is deleted the same ID creates a new
+// attachment.
+//
+// An attachment can be referenced by an entry only when its status is
+// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+// attachment from an entry returns 409.
+//
 // Takes any type of body and a specified content type, and returns a wrapper object for the known response body format(s).
 //
 // Corresponds with POST /v1/attachments (the `UploadAttachment` operationId).
@@ -8897,6 +9519,55 @@ func (c *ClientWithResponses) UploadAttachmentWithBodyWithResponse(ctx context.C
 //
 // Uploaded attachments expire after the specified duration unless they are
 // linked to an entry before expiration.
+//
+// **Caller-supplied attachment ID** (optional): send `id` (a UUID) in the
+// multipart form or in the JSON body. The ID identifies the upload
+// operation, so a client that timed out can find out whether the upload
+// succeeded by looking the ID up instead of sending the file again. The
+// server creates the attachment record with status `uploading` (URL-based
+// creation: `downloading`) before it stores any content, and moves it to
+// `ready` once the content is stored. Omit `id` and the server assigns one,
+// exactly as before; no `uploading` record is created in that case.
+//
+//   - The ID is never compared with a content hash or with the file that was
+//     sent. A second request with the same ID is rejected, not matched
+//     against the first one.
+//   - An `id` that is not a UUID returns 400.
+//   - An `id` that already belongs to the caller returns 409, whatever the
+//     status of that attachment. The request stores nothing and starts no
+//     download. Look the attachment up with
+//     `GET /v1/attachments/{id}/metadata` to learn the outcome.
+//   - An `id` that belongs to another user returns 404.
+//   - URL-based creation returns 201 immediately with status `downloading`.
+//     The 201 response does not mean the download has finished; poll
+//     `GET /v1/attachments/{id}/metadata` until the status is `ready` or
+//     `failed`.
+//
+// **Recovering after a timeout.** Look the ID up with
+// `GET /v1/attachments/{id}/metadata`:
+//
+//   - `ready`: the attachment is stored. Done.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}`
+//     to reuse the ID, or pick a new ID.
+//   - 404 is inconclusive. For a multipart upload the server creates the
+//     record only after the whole request body has been buffered, so a 404
+//     while the body is still being transferred does not mean that the
+//     request failed or will not be processed. Look up again after the
+//     transfer window. Sending the request again with the same ID is safe:
+//     if the original request already created the record, the new one
+//     returns 409.
+//
+// **Idempotency window.** An ID is recognized until its attachment record
+// is actually deleted, either by the owner or by the expiry cleanup job.
+// Expiry plus the cleanup interval is not a guaranteed deadline, because
+// the cleanup job can lag, fail, or skip a record whose expiry was
+// refreshed. Once the record is deleted the same ID creates a new
+// attachment.
+//
+// An attachment can be referenced by an entry only when its status is
+// `ready`. Referencing an `uploading`, `downloading`, or `failed`
+// attachment from an entry returns 409.
 //
 // Takes a body of the `application/json` content type, and returns a wrapper object for the known response body format(s).
 //
@@ -8990,6 +9661,45 @@ func (c *ClientWithResponses) GetAttachmentDownloadUrlWithResponse(ctx context.C
 		return nil, err
 	}
 	return ParseGetAttachmentDownloadUrlResp(rsp)
+}
+
+// GetAttachmentMetadataWithResponse Get attachment metadata and status
+//
+// Returns the attachment's metadata, including its `status`. It does not return the
+// content. Use it to find out whether an upload or URL download succeeded, in particular
+// after a request timed out.
+//
+// Same access rules as `GET /v1/attachments/{id}`:
+//
+//   - If the attachment is unlinked (not yet associated with an entry), only the original
+//     uploader can read it. Another user gets 403.
+//   - If linked to an entry, anyone with read access to the conversation can read it.
+//
+// The lookup works until the attachment record is actually deleted, so an attachment
+// past its `expiresAt` that the cleanup job has not removed yet is still returned.
+//
+// Status meanings:
+//
+//   - `ready`: the content is stored. Success.
+//   - `uploading` or `downloading`: still in progress. Wait and look up again.
+//   - `failed`: the attachment was not stored. `DELETE /v1/attachments/{id}` and reuse the
+//     ID, or pick a new ID.
+//
+// A 404 is inconclusive when the ID was sent with a multipart upload that is still being
+// transferred: the record is created only after the whole request body has been
+// buffered. Look up again after the transfer window.
+//
+// Only a `ready` attachment can be referenced by an entry.
+//
+// Returns a wrapper object for the known response body format(s).
+//
+// Corresponds with GET /v1/attachments/{id}/metadata (the `GetAttachmentMetadata` operationId).
+func (c *ClientWithResponses) GetAttachmentMetadataWithResponse(ctx context.Context, id openapi_types.UUID, reqEditors ...RequestEditorFn) (*GetAttachmentMetadataResp, error) {
+	rsp, err := c.GetAttachmentMetadata(ctx, id, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return ParseGetAttachmentMetadataResp(rsp)
 }
 
 // GetCapabilitiesWithResponse Get server capabilities for the authenticated caller
@@ -9304,6 +10014,11 @@ func (c *ClientWithResponses) ListConversationEntriesWithResponse(ctx context.Co
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
 //
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
+//
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
 // based on authentication (for example, API keys or tokens) and
@@ -9333,6 +10048,11 @@ func (c *ClientWithResponses) AppendConversationEntryWithBodyWithResponse(ctx co
 // not emit append events or reapply conversation patches. Fully unsequenced
 // batches have no retry guarantee. History projections can keep their sequence
 // unset.
+//
+// An entry can reference an attachment only when the attachment status is
+// `ready`. Referencing an attachment that is still `uploading` or
+// `downloading`, or that is `failed`, returns 409 Conflict and appends nothing.
+// Retry after the attachment becomes `ready`.
 //
 // This endpoint is used by both end-user clients and agents.
 // The service determines whether the caller is a user or an agent
@@ -9900,11 +10620,25 @@ func ParseUploadAttachmentResp(rsp *http.Response) (*UploadAttachmentResp, error
 		response.JSON201 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
-		var dest Error
+		var dest ErrorResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
 		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON409 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 413:
 		var dest ErrorResponse
@@ -10120,6 +10854,60 @@ func ParseGetAttachmentDownloadUrlResp(rsp *http.Response) (*GetAttachmentDownlo
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
 		var dest NotFound
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON404 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && true:
+		var dest Error
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSONDefault = &dest
+
+	}
+
+	return response, nil
+}
+
+// ParseGetAttachmentMetadataResp parses an HTTP response from a GetAttachmentMetadataWithResponse call
+func ParseGetAttachmentMetadataResp(rsp *http.Response) (*GetAttachmentMetadataResp, error) {
+	bodyBytes, err := io.ReadAll(rsp.Body)
+	defer func() { _ = rsp.Body.Close() }()
+	if err != nil {
+		return nil, err
+	}
+
+	response := &GetAttachmentMetadataResp{
+		Body:         bodyBytes,
+		HTTPResponse: rsp,
+	}
+
+	switch {
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 200:
+		var dest AttachmentUploadResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON200 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 400:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON400 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 403:
+		var dest ErrorResponse
+		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
+			return nil, err
+		}
+		response.JSON403 = &dest
+
+	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 404:
+		var dest ErrorResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}
@@ -10595,7 +11383,7 @@ func ParseAppendConversationEntryResp(rsp *http.Response) (*AppendConversationEn
 		response.JSON404 = &dest
 
 	case strings.Contains(rsp.Header.Get("Content-Type"), "json") && rsp.StatusCode == 409:
-		var dest Error
+		var dest ErrorResponse
 		if err := json.Unmarshal(bodyBytes, &dest); err != nil {
 			return nil, err
 		}

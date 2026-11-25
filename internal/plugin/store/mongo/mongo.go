@@ -409,6 +409,7 @@ type MongoStore struct {
 	beforeMembershipInsert       func() error              // test-only fault-injection hook; nil in production
 	afterAttachmentCloneRead     func() error              // test-only synchronization hook; nil in production
 	afterAttachmentDeleteCount   func() error              // test-only synchronization hook; nil in production
+	afterAttachmentCreateLookup  func() error              // test-only synchronization hook; nil in production
 }
 
 const mongoAfterCommitTimeout = 5 * time.Second
@@ -648,6 +649,7 @@ type attachmentDoc struct {
 	EntryID     *string    `bson:"entry_id,omitempty"`
 	Status      string     `bson:"status"`
 	SourceURL   *string    `bson:"source_url,omitempty"`
+	AttemptID   *string    `bson:"attempt_id,omitempty"`
 	ExpiresAt   *time.Time `bson:"expires_at,omitempty"`
 	CreatedAt   time.Time  `bson:"created_at"`
 	ArchivedAt  *time.Time `bson:"archived_at,omitempty"`
@@ -4008,6 +4010,9 @@ func (s *MongoStore) CreateAttachment(ctx context.Context, userID string, conver
 
 	attachment.ID = uuid.New()
 	attachment.UserID = userID
+	// The attempt ID is store-controlled; callers cannot supply one. The document
+	// below does not set it, so the returned model must not claim one either.
+	attachment.AttemptID = nil
 	if strings.TrimSpace(attachment.Status) == "" {
 		attachment.Status = "ready"
 	}
@@ -4040,6 +4045,159 @@ func (s *MongoStore) CreateAttachment(ctx context.Context, userID string, conver
 	}
 	attachment.CreatedAt = doc.CreatedAt
 	return &attachment, nil
+}
+
+func (s *MongoStore) existingAttachmentResult(doc attachmentDoc, userID string) (*registrystore.CreateAttachmentResult, error) {
+	if doc.UserID != userID {
+		// Another user's row is indistinguishable from a missing one.
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: doc.ID}
+	}
+	attachment := s.attachmentDocToModel(doc)
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: false}, nil
+}
+
+// CreateAttachmentWithID is lookup-first. InWriteTx is always a session
+// transaction whose callback may replay on a TransientTransactionError. Two
+// concurrent creators therefore resolve like this: both see no row, the loser's
+// InsertOne hits a WriteConflict against the winner, WithTransaction replays the
+// callback, and the replay's lookup finds the committed row and reports
+// Created=false. Nothing in this method has a side effect outside the database,
+// so replaying it is safe. A duplicate-key error is not handled by falling back
+// to a read because it would already have aborted the transaction.
+func (s *MongoStore) CreateAttachmentWithID(ctx context.Context, userID string, attachmentID uuid.UUID, attachment model.Attachment) (*registrystore.CreateAttachmentResult, error) {
+	if err := registrystore.ValidatePendingAttachment(attachmentID, attachment); err != nil {
+		return nil, err
+	}
+	id := uuidToStr(attachmentID)
+	var existing attachmentDoc
+	err := s.attachments().FindOne(ctx, bson.M{"_id": id}).Decode(&existing)
+	if err == nil {
+		return s.existingAttachmentResult(existing, userID)
+	}
+	if !errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, fmt.Errorf("lookup attachment failed: %w", err)
+	}
+	if s.afterAttachmentCreateLookup != nil {
+		if err := s.afterAttachmentCreateLookup(); err != nil {
+			return nil, err
+		}
+	}
+
+	attemptID := uuid.New()
+	attemptStr := uuidToStr(attemptID)
+	attachment.ID = attachmentID
+	attachment.UserID = userID
+	attachment.AttemptID = &attemptID
+	// BSON dates keep milliseconds. Truncate once so the returned value is the
+	// stored value.
+	if attachment.ExpiresAt != nil {
+		expiresAt := attachment.ExpiresAt.UTC().Truncate(time.Millisecond)
+		attachment.ExpiresAt = &expiresAt
+	}
+	doc := attachmentDoc{
+		ID:          id,
+		Filename:    attachment.Filename,
+		ContentType: attachment.ContentType,
+		UserID:      userID,
+		Status:      attachment.Status,
+		SourceURL:   attachment.SourceURL,
+		AttemptID:   &attemptStr,
+		ExpiresAt:   attachment.ExpiresAt,
+		CreatedAt:   time.Now().UTC().Truncate(time.Millisecond),
+	}
+	if _, err := s.attachments().InsertOne(ctx, doc); err != nil {
+		return nil, fmt.Errorf("create attachment failed: %w", err)
+	}
+	attachment.CreatedAt = doc.CreatedAt
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: true}, nil
+}
+
+func mongoPendingAttachmentFilter(userID string, attachmentID uuid.UUID, attemptID uuid.UUID) bson.M {
+	return bson.M{
+		"_id":         uuidToStr(attachmentID),
+		"user_id":     userID,
+		"attempt_id":  uuidToStr(attemptID),
+		"archived_at": bson.M{"$exists": false},
+		"status":      bson.M{"$in": bson.A{registrystore.AttachmentStatusUploading, registrystore.AttachmentStatusDownloading}},
+	}
+}
+
+func (s *MongoStore) FinalizeAttachment(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID, finalize registrystore.AttachmentFinalize) (*model.Attachment, error) {
+	if err := registrystore.ValidateAttachmentFinalize(finalize); err != nil {
+		return nil, err
+	}
+	set := bson.M{
+		"status":      registrystore.AttachmentStatusReady,
+		"storage_key": finalize.StorageKey,
+		"size":        finalize.Size,
+		"sha256":      finalize.SHA256,
+	}
+	if finalize.ContentType != nil {
+		set["content_type"] = *finalize.ContentType
+	}
+	if finalize.ExpiresAt != nil {
+		set["expires_at"] = finalize.ExpiresAt.UTC().Truncate(time.Millisecond)
+	}
+	// One conditional FindOneAndUpdate: the attempt fence and the pending-status
+	// check are evaluated atomically with the write.
+	var updated attachmentDoc
+	err := s.attachments().FindOneAndUpdate(ctx,
+		mongoPendingAttachmentFilter(userID, attachmentID, attemptID),
+		bson.M{"$set": set},
+		options.FindOneAndUpdate().SetReturnDocument(options.After),
+	).Decode(&updated)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	}
+	if err != nil {
+		return nil, fmt.Errorf("finalize attachment failed: %w", err)
+	}
+	// Register after the fence matched so a rejected finalize leaves no guard
+	// behind. An error here aborts the surrounding transaction.
+	if err := s.RegisterAttachmentBlobReference(ctx, finalize.StorageKey); err != nil {
+		return nil, err
+	}
+	attachment := s.attachmentDocToModel(updated)
+	return &attachment, nil
+}
+
+func (s *MongoStore) MarkAttachmentFailed(ctx context.Context, userID string, attachmentID uuid.UUID, attemptID uuid.UUID) (bool, error) {
+	result, err := s.attachments().UpdateOne(ctx,
+		mongoPendingAttachmentFilter(userID, attachmentID, attemptID),
+		bson.M{"$set": bson.M{"status": registrystore.AttachmentStatusFailed}})
+	if err != nil {
+		return false, fmt.Errorf("mark attachment failed: %w", err)
+	}
+	return result.MatchedCount > 0, nil
+}
+
+func (s *MongoStore) DeleteExpiredAttachment(ctx context.Context, attachmentID uuid.UUID, attemptID *uuid.UUID) (bool, error) {
+	// An equality filter on null matches both a missing field and an explicit
+	// null, so a legacy document without attempt_id matches a nil attemptID and
+	// never matches a non-nil one.
+	var attempt any
+	if attemptID != nil {
+		attempt = uuidToStr(*attemptID)
+	}
+	var deleted attachmentDoc
+	err := s.attachments().FindOneAndDelete(ctx, bson.M{
+		"_id":        uuidToStr(attachmentID),
+		"attempt_id": attempt,
+		"entry_id":   nil,
+		"expires_at": bson.M{"$lt": time.Now()},
+	}).Decode(&deleted)
+	if errors.Is(err, mongo.ErrNoDocuments) {
+		return false, nil
+	}
+	if err != nil {
+		return false, fmt.Errorf("delete expired attachment failed: %w", err)
+	}
+	if deleted.StorageKey != nil {
+		if err := s.QueueAttachmentBlobDelete(ctx, *deleted.StorageKey); err != nil {
+			return false, err
+		}
+	}
+	return true, nil
 }
 
 func (s *MongoStore) CloneAttachment(ctx context.Context, userID string, sourceAttachmentID uuid.UUID) (*model.Attachment, error) {
@@ -4139,9 +4297,12 @@ func (s *MongoStore) UpdateAttachment(ctx context.Context, userID string, attach
 func (s *MongoStore) LinkAttachmentToEntry(ctx context.Context, userID string, attachmentID uuid.UUID, entryID uuid.UUID) (*model.Attachment, error) {
 	id := uuidToStr(attachmentID)
 	entry := uuidToStr(entryID)
+	// The status check is part of the same UpdateOne filter, so a finalize that
+	// commits between a read and this write cannot be missed.
 	_, err := s.attachments().UpdateOne(ctx, bson.M{
 		"_id": id, "user_id": userID, "archived_at": bson.M{"$exists": false},
-		"$or": bson.A{bson.M{"entry_id": bson.M{"$exists": false}}, bson.M{"entry_id": nil}},
+		"status": registrystore.AttachmentStatusReady,
+		"$or":    bson.A{bson.M{"entry_id": bson.M{"$exists": false}}, bson.M{"entry_id": nil}},
 	}, bson.M{"$set": bson.M{"entry_id": entry}})
 	if err != nil {
 		return nil, fmt.Errorf("link attachment failed: %w", err)
@@ -4150,14 +4311,7 @@ func (s *MongoStore) LinkAttachmentToEntry(ctx context.Context, userID string, a
 	if err := s.attachments().FindOne(ctx, bson.M{"_id": id, "archived_at": bson.M{"$exists": false}}).Decode(&current); err != nil {
 		return nil, &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
 	}
-	if current.UserID != userID {
-		return nil, &registrystore.ForbiddenError{}
-	}
-	if current.EntryID == nil || *current.EntryID != entry {
-		return nil, &registrystore.ConflictError{Message: fmt.Sprintf("attachment %s is linked to a different entry", attachmentID)}
-	}
-	attachment := s.attachmentDocToModel(current)
-	return &attachment, nil
+	return registrystore.ResolveAttachmentLink(s.attachmentDocToModel(current), userID, entryID)
 }
 
 func (s *MongoStore) GetAttachment(ctx context.Context, userID string, conversationID string, attachmentID uuid.UUID) (*model.Attachment, error) {
@@ -6807,5 +6961,6 @@ func (s *MongoStore) attachmentDocToModel(d attachmentDoc) model.Attachment {
 		ArchivedAt:  d.ArchivedAt,
 	}
 	a.EntryID = ptrStrToUUID(d.EntryID)
+	a.AttemptID = ptrStrToUUID(d.AttemptID)
 	return a
 }

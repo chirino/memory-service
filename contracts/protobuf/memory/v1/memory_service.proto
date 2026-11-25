@@ -343,7 +343,8 @@ message AppendEntryRequest {
   string conversation_id = 1;
   // An exact retry of a sequenced entry returns the stored entry, including
   // after later sequenced entries have been appended. Conflicting duplicates
-  // return ABORTED.
+  // return ABORTED. An entry that references an attachment that is not ready
+  // (uploading, downloading, or failed) also returns ABORTED and appends nothing.
   CreateEntryRequest entry = 2;
   optional int64 epoch = 3;
   // Optional conversation patch applied atomically with the append on every supported
@@ -363,7 +364,8 @@ message AppendEntriesRequest {
   // retries return original IDs and timestamps in request order. Changed content,
   // order, or length returns ABORTED. Every supported datastore commits the batch
   // atomically. Completed batch retries emit no append events and do not reapply
-  // conversation patches.
+  // conversation patches. A batch that references an attachment that is not ready
+  // (uploading, downloading, or failed) returns ABORTED and appends nothing.
   // Fully unsequenced batches have no retry guarantee.
   repeated CreateEntryRequest entries = 2;
   optional int64 epoch = 3;
@@ -1529,12 +1531,54 @@ message UploadMetadata {
   string content_type = 2;
   // ISO 8601 duration (e.g., "PT1H"). Empty = server default.
   string expires_in = 3;
+  // Optional caller-generated attachment ID (UUID). The ID identifies the upload
+  // operation, not the content: it is not a content hash. Omit it and the server
+  // assigns an ID, exactly as before.
+  //
+  // With an ID, the server creates the attachment with status "uploading" before it
+  // stores any content, and moves it to "ready" when the content is stored. A client
+  // that lost the response recovers the outcome with GetAttachment instead of sending
+  // the file again: "ready" is success, "uploading" means wait and look up again, and
+  // "failed" is a failure (DeleteAttachment to reuse the ID, or pick a new ID).
+  //
+  // - An ID that is not a UUID (including an empty string) returns INVALID_ARGUMENT.
+  // - An ID that already belongs to the caller returns ABORTED, whatever its status.
+  //   Nothing is stored. Use GetAttachment to learn the outcome.
+  // - An ID that belongs to another user returns NOT_FOUND.
+  // - An attachment that was deleted, expired, or replaced while the content was being
+  //   stored returns ABORTED and the content is discarded.
+  //
+  // NOT_FOUND is inconclusive for the caller's own earlier request: the attachment is
+  // created only when its metadata message reaches the server, so an earlier stream
+  // may not have created it yet. Look up again after a short wait.
+  // An ID is recognized until its attachment is actually deleted, by the owner or by
+  // the expiry cleanup job; expiry plus the cleanup interval is not a guaranteed
+  // deadline. An attachment can be linked to an entry only when it is "ready".
+  optional string id = 4;
 }
 
 message CreateAttachmentFromUrlRequest {
   string source_url = 1;
   string content_type = 2;
   string filename = 3;
+  // Optional caller-generated attachment ID (UUID). The ID identifies the creation
+  // operation, not the content: it is not a content hash. Omit it and the server
+  // assigns an ID, exactly as before.
+  //
+  // The call returns immediately with status "downloading"; the download has not
+  // finished then. Recover the outcome with GetAttachment: "ready" is success,
+  // "downloading" means wait and look up again, and "failed" is a failure
+  // (DeleteAttachment to reuse the ID, or pick a new ID).
+  //
+  // - An ID that is not a UUID (including an empty string) returns INVALID_ARGUMENT.
+  // - An ID that already belongs to the caller returns ABORTED, whatever its status.
+  //   No download is started.
+  // - An ID that belongs to another user returns NOT_FOUND.
+  //
+  // An ID is recognized until its attachment is actually deleted, by the owner or by
+  // the expiry cleanup job; expiry plus the cleanup interval is not a guaranteed
+  // deadline. An attachment can be linked to an entry only when it is "ready".
+  optional string id = 4;
 }
 
 message UploadAttachmentResponse {
