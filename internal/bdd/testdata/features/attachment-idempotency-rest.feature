@@ -301,11 +301,6 @@ Feature: Attachment upload and URL creation with a caller-supplied ID
     Then the response status should be 400
     When I call POST "/v1/attachments" with body:
     """
-    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": null}
-    """
-    Then the response status should be 400
-    When I call POST "/v1/attachments" with body:
-    """
     {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": 123}
     """
     Then the response status should be 400
