@@ -340,6 +340,23 @@ func (e *attIdemEnv) createRow(t *testing.T, user string, id uuid.UUID, status s
 	return res.Attachment
 }
 
+// finalizeAndLink finalizes a pending row under its own attempt and links it to
+// an entry, returning the blob key it was finalized with.
+func (e *attIdemEnv) finalizeAndLink(t *testing.T, user string, a *model.Attachment) string {
+	t.Helper()
+	key := "replacement-" + uuid.NewString()
+	e.write(t, func(ctx context.Context) error {
+		if _, err := e.real.FinalizeAttachment(ctx, user, a.ID, *a.AttemptID, registrystore.AttachmentFinalize{
+			StorageKey: key, Size: 5, SHA256: "replacement-sha",
+		}); err != nil {
+			return err
+		}
+		_, err := e.real.LinkAttachmentToEntry(ctx, user, a.ID, uuid.New())
+		return err
+	})
+	return key
+}
+
 func (e *attIdemEnv) deleteRow(t *testing.T, user string, id uuid.UUID) {
 	t.Helper()
 	e.write(t, func(ctx context.Context) error { return e.real.DeleteAttachment(ctx, user, "", id) })
@@ -792,17 +809,104 @@ func TestGRPCCreateFromURLWithAnotherUsersIDOrInvalidIDStartsNoDownload(t *testi
 	require.Zero(t, env.blobs.storeCalls())
 }
 
-func TestGRPCCreateFromURLWithoutIDKeepsLegacyFlow(t *testing.T) {
+// A URL download without a caller ID is still fenced: the server mints the ID
+// and the row gets an attempt ID like any other download.
+func TestGRPCCreateFromURLWithoutIDIsFenced(t *testing.T) {
 	env := newAttIdemEnv(t)
 
 	resp, err := env.createFromURL(t, nil)
 
 	require.NoError(t, err)
 	id := uuid.MustParse(resp.Id)
-	require.Nil(t, env.row(t, id).AttemptID)
-	require.Equal(t, int32(1), env.store.legacyCreate.Load())
-	require.Zero(t, env.store.creates.Load())
+	require.NotEqual(t, uuid.Nil, id)
+	require.Equal(t, "downloading", resp.Status)
+	require.Zero(t, env.store.legacyCreate.Load(), "no URL download may use the unfenced CreateAttachment")
+	require.Equal(t, int32(1), env.store.creates.Load())
 	require.Eventually(t, func() bool { return env.statusOf(t, id) == "ready" }, 5*time.Second, 10*time.Millisecond)
+	require.NotNil(t, env.row(t, id).AttemptID)
+}
+
+// runStaleNoIDDownload starts a URL download without a caller ID. While the
+// download is in flight it deletes the row, reuses the ID for a replacement,
+// finalizes the replacement and links it to an entry, which is the state the
+// stale download must not disturb. It returns the original row, the replacement
+// and the replacement's blob key once the replacement is in place.
+func (e *attIdemEnv) runStaleNoIDDownload(t *testing.T) (original, replacement *model.Attachment, replacementKey string) {
+	t.Helper()
+	var id uuid.UUID
+	idReady := make(chan struct{})
+	replaced := make(chan struct{})
+	e.sourceHook = func() {
+		// Runs on the source server goroutine. Wait for the test to learn the ID.
+		<-idReady
+		e.deleteRow(t, attIdemAlice, id)
+		replacement = e.createRow(t, attIdemAlice, id, "uploading")
+		replacementKey = e.finalizeAndLink(t, attIdemAlice, replacement)
+		close(replaced)
+	}
+	resp, err := e.createFromURL(t, nil)
+	require.NoError(t, err)
+	id = uuid.MustParse(resp.Id)
+	original = e.row(t, id)
+	require.NotNil(t, original.AttemptID, "a no-ID download must still carry an attempt ID")
+	close(idReady)
+	select {
+	case <-replaced:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the download never reached the source")
+	}
+	return original, replacement, replacementKey
+}
+
+// requireReplacementUntouched asserts that the finalized, linked replacement
+// still has exactly the state it was given.
+func requireReplacementUntouched(t *testing.T, after, original, replacement *model.Attachment, replacementKey string) {
+	t.Helper()
+	require.Equal(t, registrystore.AttachmentStatusReady, after.Status)
+	require.Equal(t, replacementKey, *after.StorageKey, "the replacement keeps its own blob")
+	require.Equal(t, int64(5), *after.Size)
+	require.Equal(t, "replacement-sha", *after.SHA256)
+	require.Equal(t, *replacement.AttemptID, *after.AttemptID)
+	require.NotEqual(t, *original.AttemptID, *after.AttemptID)
+	require.NotNil(t, after.EntryID, "the replacement stays linked to its entry")
+}
+
+// The reported race: a download started without an ID is deleted, its ID is
+// reused by a caller, the replacement is finalized and linked, and only then
+// does the original download finish. It must not touch the replacement.
+func TestGRPCStaleNoIDURLDownloadCompletionCannotModifyReplacement(t *testing.T) {
+	env := newAttIdemEnv(t)
+	original, replacement, replacementKey := env.runStaleNoIDDownload(t)
+
+	queued := map[string]model.Task{}
+	// Wait for the stale download to settle: fenced code queues its own blob;
+	// unfenced code overwrites the replacement's key instead.
+	require.Eventually(t, func() bool {
+		env.queuedKeys(t, queued)
+		return len(queued) > 0 || *env.row(t, replacement.ID).StorageKey != replacementKey
+	}, 5*time.Second, 10*time.Millisecond, "the stale download settled")
+	after := env.row(t, replacement.ID)
+	requireReplacementUntouched(t, after, original, replacement, replacementKey)
+	require.Len(t, env.blobs.storedKeys(), 1)
+	require.Contains(t, queued, env.blobs.storedKeys()[0], "the stale download queues its own blob")
+	require.NotContains(t, queued, replacementKey, "the replacement's blob is never queued")
+	require.Zero(t, env.blobs.deleteCalls())
+}
+
+func TestGRPCStaleNoIDURLDownloadFailureCannotFailReplacement(t *testing.T) {
+	env := newAttIdemEnv(t)
+	env.sourceCode = http.StatusInternalServerError
+	original, replacement, replacementKey := env.runStaleNoIDDownload(t)
+
+	// Wait for the stale failure to settle: fenced code calls MarkAttachmentFailed;
+	// unfenced code fails the replacement row instead.
+	require.Eventually(t, func() bool {
+		return env.store.marks.Load() >= 1 || env.row(t, replacement.ID).Status != registrystore.AttachmentStatusReady
+	}, 5*time.Second, 5*time.Millisecond, "the stale failure settled")
+	require.Never(t, func() bool {
+		return env.row(t, replacement.ID).Status != registrystore.AttachmentStatusReady
+	}, 200*time.Millisecond, 10*time.Millisecond, "a stale failure must not fail the replacement")
+	requireReplacementUntouched(t, env.row(t, replacement.ID), original, replacement, replacementKey)
 }
 
 func TestGRPCURLDownloadFailureMarksRowFailed(t *testing.T) {

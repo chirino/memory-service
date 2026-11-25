@@ -1,6 +1,7 @@
 package attachments
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -42,6 +43,60 @@ func TestParseCallerAttachmentID(t *testing.T) {
 	} {
 		t.Run("rejects "+name, func(t *testing.T) {
 			id, present, err := ParseCallerAttachmentID(&raw)
+			require.Error(t, err)
+			require.True(t, present, "the caller did send an ID")
+			require.Equal(t, uuid.Nil, id)
+		})
+	}
+}
+
+// The JSON body must keep "key absent" apart from "key present": the contract
+// makes id optional but not nullable, so only an absent key selects the no-ID
+// path. A *string cannot tell the two apart because null decodes to nil.
+func TestParseCallerAttachmentIDJSON(t *testing.T) {
+	t.Parallel()
+	valid := uuid.New()
+
+	t.Run("absent key means the caller sent no ID", func(t *testing.T) {
+		var req struct {
+			ID json.RawMessage `json:"id"`
+		}
+		require.NoError(t, json.Unmarshal([]byte(`{"sourceUrl":"x"}`), &req))
+		id, present, err := ParseCallerAttachmentIDJSON(req.ID)
+		require.NoError(t, err)
+		require.False(t, present)
+		require.Equal(t, uuid.Nil, id)
+	})
+
+	t.Run("a valid UUID string is present", func(t *testing.T) {
+		id, present, err := ParseCallerAttachmentIDJSON(json.RawMessage(`"` + valid.String() + `"`))
+		require.NoError(t, err)
+		require.True(t, present)
+		require.Equal(t, valid, id)
+	})
+
+	// Each value is what the decoder hands over for a present key.
+	for name, body := range map[string]string{
+		"null":                           `{"id": null}`,
+		"null, spaced":                   `{"id":   null  }`,
+		"empty string":                   `{"id": ""}`,
+		"blank string":                   `{"id": "   "}`,
+		"number":                         `{"id": 123}`,
+		"boolean":                        `{"id": false}`,
+		"object":                         `{"id": {}}`,
+		"array":                          `{"id": []}`,
+		"not a UUID":                     `{"id": "not-a-uuid"}`,
+		"nil UUID":                       `{"id": "` + uuid.Nil.String() + `"}`,
+		"key matched case-insensitively": `{"ID": null}`,
+		"last duplicate key wins":        `{"id": "` + valid.String() + `", "id": null}`,
+	} {
+		t.Run("rejects "+name, func(t *testing.T) {
+			var req struct {
+				ID json.RawMessage `json:"id"`
+			}
+			require.NoError(t, json.Unmarshal([]byte(body), &req))
+			require.NotNil(t, req.ID, "a present key must never decode to the absent value")
+			id, present, err := ParseCallerAttachmentIDJSON(req.ID)
 			require.Error(t, err)
 			require.True(t, present, "the caller did send an ID")
 			require.Equal(t, uuid.Nil, id)

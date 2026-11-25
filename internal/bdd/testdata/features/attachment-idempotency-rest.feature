@@ -290,7 +290,52 @@ Feature: Attachment upload and URL creation with a caller-supplied ID
     Then the response status should be 400
     Then the source server "sourceUrl" should have received exactly 0 requests
 
-  Scenario: URL creation without an ID keeps the legacy behavior
+  # The contract makes id optional but not nullable. A null that quietly took the
+  # no-ID path would create a new attachment and download on every retry.
+  Scenario: A null or non-string ID on URL creation is rejected and starts no download
+    Given a source server serving "Never Fetched" with content type "text/plain" as "sourceUrl"
+    When I call POST "/v1/attachments" with body:
+    """
+    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": null}
+    """
+    Then the response status should be 400
+    When I call POST "/v1/attachments" with body:
+    """
+    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": null}
+    """
+    Then the response status should be 400
+    When I call POST "/v1/attachments" with body:
+    """
+    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": 123}
+    """
+    Then the response status should be 400
+    When I call POST "/v1/attachments" with body:
+    """
+    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": {}}
+    """
+    Then the response status should be 400
+    When I call POST "/v1/attachments" with body:
+    """
+    {"sourceUrl": "${sourceUrl}", "contentType": "text/plain", "id": []}
+    """
+    Then the response status should be 400
+    Then the source server "sourceUrl" should have received exactly 0 requests
+    When I execute SQL query:
+    """
+    SELECT COUNT(*) AS count FROM attachments WHERE user_id = 'alice'
+    """
+    Then the SQL result should match:
+      | count |
+      | 0     |
+    When I execute MongoDB query:
+    """
+    {"collection": "attachments", "operation": "count", "filter": {"user_id": "alice"}}
+    """
+    Then the MongoDB result should match:
+      | count |
+      | 0     |
+
+  Scenario: URL creation without an ID still downloads and finalizes
     Given a source server serving "Legacy Remote" with content type "text/plain" as "sourceUrl"
     When I call POST "/v1/attachments" with body:
     """

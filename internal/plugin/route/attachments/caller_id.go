@@ -1,7 +1,9 @@
 package attachments
 
 import (
+	"bytes"
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -18,6 +20,21 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/google/uuid"
 )
+
+// ParseCallerAttachmentIDJSON validates the optional caller-supplied ID of a JSON
+// request body. raw is nil only when the key was absent. The contract makes id
+// optional but not nullable, so an explicit null, like any other non-string
+// value, is rejected instead of silently taking the no-ID path.
+func ParseCallerAttachmentIDJSON(raw json.RawMessage) (id uuid.UUID, present bool, err error) {
+	if raw == nil {
+		return uuid.Nil, false, nil
+	}
+	var s string
+	if bytes.Equal(bytes.TrimSpace(raw), []byte("null")) || json.Unmarshal(raw, &s) != nil {
+		return uuid.Nil, true, fmt.Errorf("id must be a valid UUID string")
+	}
+	return ParseCallerAttachmentID(&s)
+}
 
 // ParseCallerAttachmentID validates the optional caller-supplied attachment ID.
 // A nil raw means the caller sent no ID. An empty or malformed value is an

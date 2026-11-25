@@ -6222,46 +6222,35 @@ func (s *AttachmentsServer) CreateAttachmentFromUrl(ctx context.Context, req *pb
 		return nil, grpcStatusWithCause(codes.InvalidArgument, idErr.Error(), idErr)
 	}
 	recordCallerAttachmentID(ctx, callerID, hasCallerID)
-	if hasCallerID {
-		// The download starts only after the create transaction committed, and only
-		// when this request created the row. The outcome is reset on every callback
-		// invocation because the transaction can be replayed.
-		created, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.CreateAttachmentResult, error) {
-			return s.Store.CreateAttachmentWithID(txCtx, userID, callerID, model.Attachment{
-				Filename:    filename,
-				ContentType: contentType,
-				SourceURL:   &sourceURL,
-				ExpiresAt:   &expiresAt,
-				Status:      registrystore.AttachmentStatusDownloading,
-			})
-		})
-		if err != nil {
-			return nil, mapError(err)
-		}
-		if !created.Created {
-			return nil, mapError(registrystore.NewAttachmentIDExistsConflict(callerID))
-		}
-		if created.Attachment.AttemptID == nil {
-			return nil, mapError(errors.New("store returned a caller-ID attachment without an attempt ID"))
-		}
-		routeattachments.StartFencedSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, callerID, *created.Attachment.AttemptID, userID, sourceURL, contentType)
-		return uploadAttachmentResponseToProto(created.Attachment), nil
+	if !hasCallerID {
+		// Every URL download is fenced on an attempt ID, so a server-minted ID
+		// takes the same create-with-ID path. A late download of a deleted row
+		// can then never modify a row that later reuses its ID.
+		callerID = uuid.New()
 	}
-
-	attachment, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*model.Attachment, error) {
-		return s.Store.CreateAttachment(txCtx, userID, "", model.Attachment{
+	// The download starts only after the create transaction committed, and only
+	// when this request created the row. The outcome is reset on every callback
+	// invocation because the transaction can be replayed.
+	created, err := withMemoryWrite(ctx, s.Store, func(txCtx context.Context) (*registrystore.CreateAttachmentResult, error) {
+		return s.Store.CreateAttachmentWithID(txCtx, userID, callerID, model.Attachment{
 			Filename:    filename,
 			ContentType: contentType,
 			SourceURL:   &sourceURL,
 			ExpiresAt:   &expiresAt,
-			Status:      "downloading",
+			Status:      registrystore.AttachmentStatusDownloading,
 		})
 	})
 	if err != nil {
 		return nil, mapError(err)
 	}
-	routeattachments.StartSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, attachment.ID, userID, sourceURL, contentType)
-	return uploadAttachmentResponseToProto(attachment), nil
+	if !created.Created {
+		return nil, mapError(registrystore.NewAttachmentIDExistsConflict(callerID))
+	}
+	if created.Attachment.AttemptID == nil {
+		return nil, mapError(errors.New("store returned a caller-ID attachment without an attempt ID"))
+	}
+	routeattachments.StartFencedSourceURLAttachmentDownload(ctx, s.Store, s.AttachStore, s.Config, callerID, *created.Attachment.AttemptID, userID, sourceURL, contentType)
+	return uploadAttachmentResponseToProto(created.Attachment), nil
 }
 
 func (s *AttachmentsServer) GetAttachment(ctx context.Context, req *pb.GetAttachmentRequest) (*pb.AttachmentInfo, error) {

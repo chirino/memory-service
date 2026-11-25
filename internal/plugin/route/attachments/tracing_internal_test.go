@@ -52,7 +52,7 @@ func (m *minimalAttachStore) GetSignedURL(_ context.Context, _ string, _ time.Du
 }
 
 // minimalMemoryStore embeds the MemoryStore interface so all unimplemented
-// methods panic; only InWriteTx and UpdateAttachment are needed by
+// methods panic; only InWriteTx and FinalizeAttachment are needed by
 // completeSourceURLAttachment.
 type minimalMemoryStore struct {
 	registrystore.MemoryStore
@@ -62,8 +62,12 @@ func (m *minimalMemoryStore) InWriteTx(_ context.Context, fn func(context.Contex
 	return fn(context.Background())
 }
 
-func (m *minimalMemoryStore) UpdateAttachment(_ context.Context, _ string, _ uuid.UUID, _ registrystore.AttachmentUpdate) (*model.Attachment, error) {
+func (m *minimalMemoryStore) FinalizeAttachment(_ context.Context, _ string, _ uuid.UUID, _ uuid.UUID, _ registrystore.AttachmentFinalize) (*model.Attachment, error) {
 	return nil, nil
+}
+
+func (m *minimalMemoryStore) MarkAttachmentFailed(_ context.Context, _ string, _ uuid.UUID, _ uuid.UUID) (bool, error) {
+	return true, nil
 }
 
 // TestAttachmentCompleteSourceURLUntracedRequestNoTraceparent verifies that a
@@ -86,6 +90,7 @@ func TestAttachmentCompleteSourceURLUntracedRequestNoTraceparent(t *testing.T) {
 		&minimalAttachStore{},
 		cfg,
 		attachID,
+		uuid.New(),
 		"user1",
 		downstream.Server.URL,
 		"application/octet-stream",
@@ -133,6 +138,7 @@ func TestAttachmentCompleteSourceURLTracedRequestInjectsTraceparent(t *testing.T
 		&minimalAttachStore{},
 		cfg,
 		attachID,
+		uuid.New(),
 		"user1",
 		downstream.Server.URL,
 		"application/octet-stream",
@@ -160,8 +166,8 @@ func TestAttachmentJobRecordsClientSpanWithRequestProvider(t *testing.T) {
 	router := gin.New()
 	router.Use(tracing.HTTPMiddleware(h.Provider, h.Propagator, h.Propagator))
 	router.GET("/attachments", func(c *gin.Context) {
-		StartSourceURLAttachmentDownload(c.Request.Context(), &minimalMemoryStore{}, &minimalAttachStore{}, cfg,
-			uuid.MustParse("00000000-0000-0000-0000-000000000003"), "user1", downstream.Server.URL, "application/octet-stream")
+		StartFencedSourceURLAttachmentDownload(c.Request.Context(), &minimalMemoryStore{}, &minimalAttachStore{}, cfg,
+			uuid.MustParse("00000000-0000-0000-0000-000000000003"), uuid.New(), "user1", downstream.Server.URL, "application/octet-stream")
 		c.Status(http.StatusAccepted)
 	})
 	req := httptest.NewRequest(http.MethodGet, "/attachments", nil)
@@ -251,6 +257,7 @@ func TestAttachmentCompleteSourceURLConfiguredPropagatorUsedOutbound(t *testing.
 		&minimalAttachStore{},
 		cfg,
 		attachID,
+		uuid.New(),
 		"user1",
 		downstream.Server.URL,
 		"application/octet-stream",

@@ -16,6 +16,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"path/filepath"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -845,18 +846,207 @@ func TestURLCreateWithAnotherUsersIDOrInvalidIDStartsNoDownload(t *testing.T) {
 	require.Zero(t, env.blobs.storeCalls())
 }
 
-func TestURLCreateWithoutIDKeepsLegacyFlow(t *testing.T) {
+// postURLRaw posts a hand-written JSON body, so a test can send shapes such as
+// an explicit null that a Go map round trip would not distinguish from absence.
+func (e *idemEnv) postURLRaw(user, body string) *httptest.ResponseRecorder {
+	c, recorder := e.newContext(http.MethodPost, "/v1/attachments", strings.NewReader(body), "application/json", user)
+	upload(c, e.store, e.blobs, e.cfg)
+	return recorder
+}
+
+// The contract makes id optional but not nullable. Only an absent key selects
+// the server-minted ID path, and every other non-UUID-string shape is a 400
+// that happens before any row, download, or blob exists.
+func TestURLCreateIDPresenceIsDistinguishedBeforeAnySideEffect(t *testing.T) {
+	validID := uuid.NewString()
+	rejected := []struct{ name, idJSON string }{
+		{"explicit null", `null`},
+		{"empty string", `""`},
+		{"blank string", `"   "`},
+		{"number", `123`},
+		{"object", `{}`},
+		{"array", `[]`},
+		{"boolean", `true`},
+		{"null with surrounding whitespace", "\n null\t"},
+		{"not a uuid", `"not-a-uuid"`},
+		{"nil uuid", `"00000000-0000-0000-0000-000000000000"`},
+	}
+	for _, tc := range rejected {
+		t.Run("rejects "+tc.name, func(t *testing.T) {
+			env := newIdemEnv(t)
+			source := newIdemSource(t, false)
+
+			rec := env.postURLRaw(idemAlice, fmt.Sprintf(`{"sourceUrl": %q, "id": %s}`, source.srv.URL, tc.idJSON))
+
+			require.Equal(t, http.StatusBadRequest, rec.Code, rec.Body.String())
+			require.Equal(t, "invalid_request", decodeBody(t, rec)["code"])
+			require.Zero(t, env.wrap.creates.Load(), "no attachment row may be created")
+			require.Zero(t, env.wrap.legacyCreate.Load(), "no attachment row may be created")
+			require.Zero(t, env.blobs.storeCalls(), "no blob operation may happen")
+			require.Never(t, func() bool { return source.hits.Load() > 0 }, 200*time.Millisecond, 10*time.Millisecond, "no download may start")
+		})
+	}
+
+	t.Run("omitted id takes the server-minted path", func(t *testing.T) {
+		env := newIdemEnv(t)
+		source := newIdemSource(t, false)
+
+		rec := env.postURLRaw(idemAlice, fmt.Sprintf(`{"sourceUrl": %q}`, source.srv.URL))
+
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		id, err := uuid.Parse(decodeBody(t, rec)["id"].(string))
+		require.NoError(t, err)
+		require.NotEqual(t, validID, id.String())
+		require.Equal(t, int32(1), env.wrap.creates.Load())
+		require.Zero(t, env.wrap.legacyCreate.Load())
+		require.Eventually(t, func() bool { return env.statusOf(t, id) == "ready" }, 5*time.Second, 10*time.Millisecond)
+	})
+
+	t.Run("valid uuid is used as the attachment ID", func(t *testing.T) {
+		env := newIdemEnv(t)
+		source := newIdemSource(t, false)
+
+		rec := env.postURLRaw(idemAlice, fmt.Sprintf(`{"sourceUrl": %q, "id": %q}`, source.srv.URL, validID))
+
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		require.Equal(t, validID, decodeBody(t, rec)["id"])
+		require.Equal(t, int32(1), env.wrap.creates.Load())
+		require.NotNil(t, env.row(t, uuid.MustParse(validID)))
+		require.Eventually(t, func() bool { return env.statusOf(t, uuid.MustParse(validID)) == "ready" }, 5*time.Second, 10*time.Millisecond)
+	})
+
+	// The same environment serves a null and an omitted ID, so the only
+	// difference between the two requests is the presence of the key.
+	t.Run("null and omitted take different paths in one environment", func(t *testing.T) {
+		env := newIdemEnv(t)
+		source := newIdemSource(t, false)
+		withNull := fmt.Sprintf(`{"sourceUrl": %q, "id": null}`, source.srv.URL)
+		omitted := fmt.Sprintf(`{"sourceUrl": %q}`, source.srv.URL)
+
+		for i := 0; i < 2; i++ {
+			require.Equal(t, http.StatusBadRequest, env.postURLRaw(idemAlice, withNull).Code)
+		}
+		require.Zero(t, env.wrap.creates.Load(), "retrying a null id must never create an attachment")
+		require.Never(t, func() bool { return source.hits.Load() > 0 }, 200*time.Millisecond, 10*time.Millisecond)
+
+		rec := env.postURLRaw(idemAlice, omitted)
+		require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+		id := uuid.MustParse(decodeBody(t, rec)["id"].(string))
+		require.Equal(t, int32(1), env.wrap.creates.Load(), "the omitted ID is the only request that created a row")
+		require.Eventually(t, func() bool { return env.statusOf(t, id) == "ready" }, 5*time.Second, 10*time.Millisecond)
+		require.Equal(t, int32(1), source.hits.Load(), "only the omitted-ID request downloaded")
+	})
+}
+
+// A URL download without a caller ID is still fenced: the server mints the ID
+// and the row gets an attempt ID like any other download.
+func TestURLCreateWithoutIDIsFenced(t *testing.T) {
 	env := newIdemEnv(t)
 	source := newIdemSource(t, false)
 
 	rec := env.postURL(t, idemAlice, map[string]any{"sourceUrl": source.srv.URL})
 
 	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	id := uuid.MustParse(decodeBody(t, rec)["id"].(string))
-	require.Nil(t, env.row(t, id).AttemptID)
-	require.Equal(t, int32(1), env.wrap.legacyCreate.Load())
-	require.Zero(t, env.wrap.creates.Load())
+	body := decodeBody(t, rec)
+	id := uuid.MustParse(body["id"].(string))
+	require.Equal(t, "downloading", body["status"])
+	requireNoInternalFields(t, rec)
+	require.Zero(t, env.wrap.legacyCreate.Load(), "no URL download may use the unfenced CreateAttachment")
+	require.Equal(t, int32(1), env.wrap.creates.Load())
 	require.Eventually(t, func() bool { return env.statusOf(t, id) == "ready" }, 5*time.Second, 10*time.Millisecond)
+	require.NotNil(t, env.row(t, id).AttemptID)
+}
+
+// runStaleNoIDDownload starts a URL download without a caller ID. While the
+// download is in flight it deletes the row, reuses the ID for a replacement,
+// finalizes the replacement and links it to an entry, which is the state the
+// stale download must not disturb.
+func (e *idemEnv) runStaleNoIDDownload(t *testing.T, source *idemSource) (original, replacement *model.Attachment, replacementKey string) {
+	t.Helper()
+	var id uuid.UUID
+	idReady := make(chan struct{})
+	replaced := make(chan struct{})
+	source.onHit = func() {
+		// Runs on the source server goroutine. Wait for the test to learn the ID.
+		<-idReady
+		e.deleteRow(t, idemAlice, id)
+		replacement = e.createRow(t, idemAlice, id, "uploading")
+		replacementKey = "replacement-" + uuid.NewString()
+		e.write(t, func(ctx context.Context) error {
+			if _, err := e.real.FinalizeAttachment(ctx, idemAlice, id, *replacement.AttemptID, registrystore.AttachmentFinalize{
+				StorageKey: replacementKey, Size: 5, SHA256: "replacement-sha",
+			}); err != nil {
+				return err
+			}
+			_, err := e.real.LinkAttachmentToEntry(ctx, idemAlice, id, uuid.New())
+			return err
+		})
+		close(replaced)
+	}
+	rec := e.postURL(t, idemAlice, map[string]any{"sourceUrl": source.srv.URL})
+	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	id = uuid.MustParse(decodeBody(t, rec)["id"].(string))
+	original = e.row(t, id)
+	require.NotNil(t, original.AttemptID, "a no-ID download must still carry an attempt ID")
+	close(idReady)
+	select {
+	case <-replaced:
+	case <-time.After(5 * time.Second):
+		t.Fatal("the download never reached the source")
+	}
+	return original, replacement, replacementKey
+}
+
+// requireReplacementUntouched asserts that the finalized, linked replacement
+// still has exactly the state it was given.
+func requireReplacementUntouched(t *testing.T, after, original, replacement *model.Attachment, replacementKey string) {
+	t.Helper()
+	require.Equal(t, registrystore.AttachmentStatusReady, after.Status)
+	require.Equal(t, replacementKey, *after.StorageKey, "the replacement keeps its own blob")
+	require.Equal(t, int64(5), *after.Size)
+	require.Equal(t, "replacement-sha", *after.SHA256)
+	require.Equal(t, *replacement.AttemptID, *after.AttemptID)
+	require.NotEqual(t, *original.AttemptID, *after.AttemptID)
+	require.NotNil(t, after.EntryID, "the replacement stays linked to its entry")
+}
+
+// The reported race: a download started without an ID is deleted, its ID is
+// reused by a caller, the replacement is finalized and linked, and only then
+// does the original download finish. It must not touch the replacement.
+func TestStaleNoIDURLDownloadCompletionCannotModifyReplacement(t *testing.T) {
+	env := newIdemEnv(t)
+	source := newIdemSource(t, false)
+	original, replacement, replacementKey := env.runStaleNoIDDownload(t, source)
+
+	queued := map[string]model.Task{}
+	// Wait for the stale download to settle: fenced code queues its own blob;
+	// unfenced code overwrites the replacement's key instead.
+	require.Eventually(t, func() bool {
+		env.queuedKeys(t, queued)
+		return len(queued) > 0 || *env.row(t, replacement.ID).StorageKey != replacementKey
+	}, 5*time.Second, 10*time.Millisecond, "the stale download settled")
+	requireReplacementUntouched(t, env.row(t, replacement.ID), original, replacement, replacementKey)
+	require.Len(t, env.blobs.storedKeys(), 1)
+	require.Contains(t, queued, env.blobs.storedKeys()[0], "the stale download queues its own blob")
+	require.NotContains(t, queued, replacementKey, "the replacement's blob is never queued")
+	require.Zero(t, env.blobs.deleteCalls())
+}
+
+func TestStaleNoIDURLDownloadFailureCannotFailReplacement(t *testing.T) {
+	env := newIdemEnv(t)
+	source := newIdemSource(t, false)
+	source.status = http.StatusInternalServerError
+	original, replacement, replacementKey := env.runStaleNoIDDownload(t, source)
+
+	// Wait for the stale failure to settle: fenced code calls MarkAttachmentFailed;
+	// unfenced code fails the replacement row instead.
+	require.Eventually(t, func() bool {
+		return env.wrap.marks.Load() >= 1 || env.row(t, replacement.ID).Status != registrystore.AttachmentStatusReady
+	}, 5*time.Second, 5*time.Millisecond, "the stale failure settled")
+	require.Never(t, func() bool {
+		return env.row(t, replacement.ID).Status != registrystore.AttachmentStatusReady
+	}, 200*time.Millisecond, 10*time.Millisecond, "a stale failure must not fail the replacement")
+	requireReplacementUntouched(t, env.row(t, replacement.ID), original, replacement, replacementKey)
 }
 
 func TestURLDownloadFailureMarksRowFailed(t *testing.T) {

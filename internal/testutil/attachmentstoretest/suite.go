@@ -29,36 +29,38 @@ func Run(t *testing.T, store registrystore.MemoryStore, ctx context.Context, set
 	s := &suite{store: store, ctx: ctx, setArchived: setArchived}
 	for name, fn := range map[string]func(*testing.T){
 		"CreateWithID": s.createWithID,
-		"DuplicateCreateReturnsExistingUnchanged":    s.duplicateCreate,
-		"ForeignOwnerLookupIsNotFound":               s.foreignOwner,
-		"CreateRejectsInvalidInput":                  s.invalidCreate,
-		"FinalizeSucceedsForOriginalAttempt":         s.finalizeSucceeds,
-		"FinalizeRejectsWrongAttemptOwnerOrStatus":   s.finalizeRejects,
-		"MarkFailedFollowsSameConditions":            s.markFailedConditions,
-		"MarkFailedAfterFinalizeKeepsRowReady":       s.markFailedAfterFinalize,
-		"OldAttemptCannotTouchReplacement":           s.replacementFence,
-		"DeleteExpiredLosesToRefreshingFinalize":     s.cleanupRaceFinalize,
-		"DeleteExpiredLosesToDeleteAndReuse":         s.cleanupRaceReuse,
-		"DeleteExpiredConditions":                    s.deleteExpiredConditions,
-		"DeleteExpiredQueuesBlobOnlyWhenDeleted":     s.deleteExpiredBlobQueue,
-		"LegacyNullAttemptComparison":                s.legacyNullAttempt,
-		"AdminListReturnsAttemptIDForCleanup":        s.adminListAttemptID,
-		"ConcurrentCreatesProduceOneWinnerAndOneRow": s.concurrentCreate,
-		"TransactionContinuesAfterLosingCreate":      s.transactionContinuesAfterDuplicate,
-		"FinalizeMarkFailedAndDeleteRollBackWithTx":  s.rollback,
-		"CreateAttachmentStillReturnsNoAttemptID":    s.legacyCreateUnchanged,
-		"UpdateAttachmentStillWorksOnPendingWithID":  s.updateAttachmentUnchanged,
-		"CreateRejectsCallerManagedFields":           s.createRejectsCallerManagedFields,
-		"CreateReturnsWhatItPersisted":               s.createReturnsPersistedValues,
-		"FinalizeRejectsEmptyStorageKey":             s.finalizeRejectsEmptyKey,
-		"FinalizeRegistersBlobReference":             s.finalizeRegistersReference,
-		"FinalizeRefusesKeyWithDeleteInProgress":     s.finalizeRefusesDeleteInProgress,
-		"ArchivedRowsAreNotFinalizedOrFailed":        s.archivedRows,
-		"LinkSucceedsForReadyAttachment":             s.linkReady,
-		"LinkRejectsPendingAndFailedAttachments":     s.linkRejectsNotReady,
-		"LinkNotReadyDoesNotMaskOtherOutcomes":       s.linkOutcomesKeepPrecedence,
-		"LinkFollowsStatusProgression":               s.linkFollowsStatusProgression,
-		"LinkNotReadyRollsBackWithTx":                s.linkRollsBack,
+		"DuplicateCreateReturnsExistingUnchanged":     s.duplicateCreate,
+		"ForeignOwnerLookupIsNotFound":                s.foreignOwner,
+		"CreateRejectsInvalidInput":                   s.invalidCreate,
+		"FinalizeSucceedsForOriginalAttempt":          s.finalizeSucceeds,
+		"FinalizeRejectsWrongAttemptOwnerOrStatus":    s.finalizeRejects,
+		"MarkFailedFollowsSameConditions":             s.markFailedConditions,
+		"MarkFailedAfterFinalizeKeepsRowReady":        s.markFailedAfterFinalize,
+		"OldAttemptCannotTouchReplacement":            s.replacementFence,
+		"StaleCompletionCannotTouchLinkedReplacement": s.staleCompletionLinkedReplacement,
+		"StaleFailureCannotTouchLinkedReplacement":    s.staleFailureLinkedReplacement,
+		"DeleteExpiredLosesToRefreshingFinalize":      s.cleanupRaceFinalize,
+		"DeleteExpiredLosesToDeleteAndReuse":          s.cleanupRaceReuse,
+		"DeleteExpiredConditions":                     s.deleteExpiredConditions,
+		"DeleteExpiredQueuesBlobOnlyWhenDeleted":      s.deleteExpiredBlobQueue,
+		"LegacyNullAttemptComparison":                 s.legacyNullAttempt,
+		"AdminListReturnsAttemptIDForCleanup":         s.adminListAttemptID,
+		"ConcurrentCreatesProduceOneWinnerAndOneRow":  s.concurrentCreate,
+		"TransactionContinuesAfterLosingCreate":       s.transactionContinuesAfterDuplicate,
+		"FinalizeMarkFailedAndDeleteRollBackWithTx":   s.rollback,
+		"CreateAttachmentStillReturnsNoAttemptID":     s.legacyCreateUnchanged,
+		"UpdateAttachmentStillWorksOnPendingWithID":   s.updateAttachmentUnchanged,
+		"CreateRejectsCallerManagedFields":            s.createRejectsCallerManagedFields,
+		"CreateReturnsWhatItPersisted":                s.createReturnsPersistedValues,
+		"FinalizeRejectsEmptyStorageKey":              s.finalizeRejectsEmptyKey,
+		"FinalizeRegistersBlobReference":              s.finalizeRegistersReference,
+		"FinalizeRefusesKeyWithDeleteInProgress":      s.finalizeRefusesDeleteInProgress,
+		"ArchivedRowsAreNotFinalizedOrFailed":         s.archivedRows,
+		"LinkSucceedsForReadyAttachment":              s.linkReady,
+		"LinkRejectsPendingAndFailedAttachments":      s.linkRejectsNotReady,
+		"LinkNotReadyDoesNotMaskOtherOutcomes":        s.linkOutcomesKeepPrecedence,
+		"LinkFollowsStatusProgression":                s.linkFollowsStatusProgression,
+		"LinkNotReadyRollsBackWithTx":                 s.linkRollsBack,
 	} {
 		t.Run(name, fn)
 	}
@@ -445,6 +447,63 @@ func (s *suite) replacementFence(t *testing.T) {
 	_, err = s.finalize(user, id, *replacement.AttemptID, newKey(), future())
 	require.NoError(t, err)
 	require.Equal(t, "ready", s.get(t, user, id).Status)
+}
+
+// replaceWithLinkedReady reproduces the ID-reuse race for a download that was
+// started without a caller ID: the original row is deleted, a caller reuses its
+// ID, and the replacement is finalized and linked to an entry. It returns the
+// original attempt, the replacement and the replacement's blob key.
+func (s *suite) replaceWithLinkedReady(t *testing.T, user string, id uuid.UUID) (original uuid.UUID, replacement *model.Attachment, key string, entryID uuid.UUID) {
+	t.Helper()
+	first := s.create(t, user, id, "downloading", future())
+	s.mustWrite(t, func(txCtx context.Context) error {
+		return s.store.DeleteAttachment(txCtx, user, "", id)
+	})
+	replacement = s.create(t, user, id, "uploading", future())
+	require.NotEqual(t, *first.AttemptID, *replacement.AttemptID)
+	key = newKey()
+	_, err := s.finalize(user, id, *replacement.AttemptID, key, future())
+	require.NoError(t, err)
+	entryID = uuid.New()
+	_, err = s.link(user, id, entryID)
+	require.NoError(t, err)
+	return *first.AttemptID, replacement, key, entryID
+}
+
+func (s *suite) requireLinkedReplacementUnchanged(t *testing.T, user string, id uuid.UUID, replacement *model.Attachment, key string, entryID uuid.UUID) {
+	t.Helper()
+	stored := s.get(t, user, id)
+	require.Equal(t, "ready", stored.Status)
+	require.Equal(t, key, *stored.StorageKey)
+	require.Equal(t, int64(5), *stored.Size)
+	require.Equal(t, "abc123", *stored.SHA256)
+	require.Equal(t, *replacement.AttemptID, *stored.AttemptID)
+	require.NotNil(t, stored.EntryID)
+	require.Equal(t, entryID, *stored.EntryID)
+	require.False(t, s.queuedBlobKeys(t)[key], "the replacement's blob must not be queued for deletion")
+}
+
+func (s *suite) staleCompletionLinkedReplacement(t *testing.T) {
+	user, id := newUser(), uuid.New()
+	original, replacement, key, entryID := s.replaceWithLinkedReady(t, user, id)
+
+	staleKey := newKey()
+	_, err := s.finalize(user, id, original, staleKey, future())
+	requireNotFound(t, err)
+
+	s.requireLinkedReplacementUnchanged(t, user, id, replacement, key, entryID)
+	require.NotEqual(t, staleKey, *s.get(t, user, id).StorageKey)
+}
+
+func (s *suite) staleFailureLinkedReplacement(t *testing.T) {
+	user, id := newUser(), uuid.New()
+	original, replacement, key, entryID := s.replaceWithLinkedReady(t, user, id)
+
+	changed, err := s.markFailed(user, id, original)
+	require.NoError(t, err)
+	require.False(t, changed, "a stale failure must not match the replacement")
+
+	s.requireLinkedReplacementUnchanged(t, user, id, replacement, key, entryID)
 }
 
 func (s *suite) cleanupRaceFinalize(t *testing.T) {

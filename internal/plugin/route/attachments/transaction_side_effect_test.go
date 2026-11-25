@@ -86,7 +86,22 @@ func (s *retryingAttachmentMemoryStore) QueueAttachmentBlobDelete(_ context.Cont
 	return s.queueErr
 }
 
-func (s *retryingAttachmentMemoryStore) UpdateAttachment(_ context.Context, _ string, _ uuid.UUID, _ registrystore.AttachmentUpdate) (*model.Attachment, error) {
+func (s *retryingAttachmentMemoryStore) CreateAttachmentWithID(_ context.Context, _ string, id uuid.UUID, attachment model.Attachment) (*registrystore.CreateAttachmentResult, error) {
+	s.createCalls.Add(1)
+	if s.createErr != nil {
+		return nil, s.createErr
+	}
+	attemptID := uuid.New()
+	attachment.ID = id
+	attachment.AttemptID = &attemptID
+	return &registrystore.CreateAttachmentResult{Attachment: &attachment, Created: true}, nil
+}
+
+func (s *retryingAttachmentMemoryStore) MarkAttachmentFailed(context.Context, string, uuid.UUID, uuid.UUID) (bool, error) {
+	return true, nil
+}
+
+func (s *retryingAttachmentMemoryStore) FinalizeAttachment(_ context.Context, _ string, _ uuid.UUID, _ uuid.UUID, _ registrystore.AttachmentFinalize) (*model.Attachment, error) {
 	s.updateCalls.Add(1)
 	if s.updateErr != nil {
 		return nil, s.updateErr
@@ -218,7 +233,7 @@ func TestSourceURLFinalizationFailureDurablyQueuesStoredBlob(t *testing.T) {
 	cfg := &config.Config{AllowPrivateSourceURLs: true, AttachmentMaxSize: 1024, TempDir: t.TempDir()}
 
 	ctx := context.Background()
-	err := completeSourceURLAttachment(ctx, memoryStore, attachmentStore, cfg, attachmentID, "user-1", source.URL, "text/plain", internaltracing.ProviderFromContextOrNoop(ctx))
+	err := completeSourceURLAttachment(ctx, memoryStore, attachmentStore, cfg, attachmentID, uuid.New(), "user-1", source.URL, "text/plain", internaltracing.ProviderFromContextOrNoop(ctx))
 	require.Error(t, err)
 	require.Equal(t, int32(1), attachmentStore.storeCalls.Load())
 	require.Equal(t, int32(2), memoryStore.taskCalls.Load(), "detached cleanup transaction is retry-safe")
@@ -235,7 +250,7 @@ func TestSourceURLFinalizationReportsCleanupEnqueueFailure(t *testing.T) {
 	t.Cleanup(source.Close)
 
 	attachmentID := uuid.New()
-	updateErr := &registrystore.NotFoundError{Resource: "attachment", ID: attachmentID.String()}
+	updateErr := errors.New("finalize failed")
 	queueErr := errors.New("cleanup queue unavailable")
 	memoryStore := &retryingAttachmentMemoryStore{
 		attachment: model.Attachment{ID: attachmentID},
@@ -246,7 +261,7 @@ func TestSourceURLFinalizationReportsCleanupEnqueueFailure(t *testing.T) {
 	cfg := &config.Config{AllowPrivateSourceURLs: true, AttachmentMaxSize: 1024, TempDir: t.TempDir()}
 
 	ctx := context.Background()
-	err := completeSourceURLAttachment(ctx, memoryStore, attachmentStore, cfg, attachmentID, "user-1", source.URL, "text/plain", internaltracing.ProviderFromContextOrNoop(ctx))
+	err := completeSourceURLAttachment(ctx, memoryStore, attachmentStore, cfg, attachmentID, uuid.New(), "user-1", source.URL, "text/plain", internaltracing.ProviderFromContextOrNoop(ctx))
 	require.ErrorIs(t, err, updateErr)
 	require.ErrorIs(t, err, queueErr)
 	require.Equal(t, int32(1), memoryStore.taskCalls.Load())

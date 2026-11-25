@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -73,15 +74,16 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 			SourceURL   string `json:"sourceUrl"   binding:"required"`
 			ContentType string `json:"contentType"`
 			Name        string `json:"name"`
-			// ID is the optional caller-supplied attachment ID. A pointer keeps an
-			// absent field apart from an empty one, which is invalid.
-			ID *string `json:"id"`
+			// ID is the optional caller-supplied attachment ID. The raw message
+			// keeps an absent key (nil) apart from an explicit null or an empty
+			// string, both of which are invalid.
+			ID json.RawMessage `json:"id"`
 		}
 		if err := c.ShouldBindJSON(&req); err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"error": err.Error()})
 			return
 		}
-		callerID, hasCallerID, err := ParseCallerAttachmentID(req.ID)
+		callerID, hasCallerID, err := ParseCallerAttachmentIDJSON(req.ID)
 		if err != nil {
 			c.JSON(http.StatusBadRequest, gin.H{"code": "invalid_request", "error": err.Error()})
 			return
@@ -102,37 +104,19 @@ func upload(c *gin.Context, store registrystore.MemoryStore, attachStore registr
 			filename = &name
 		}
 		sourceURL := req.SourceURL
-		if hasCallerID {
-			createSourceURLAttachmentWithCallerID(c, store, attachStore, cfg, userID, callerID, model.Attachment{
-				Filename:    filename,
-				ContentType: fileContentType,
-				SourceURL:   &sourceURL,
-				ExpiresAt:   &expiresAt,
-				Status:      registrystore.AttachmentStatusDownloading,
-			})
-			return
+		if !hasCallerID {
+			// Every URL download is fenced on an attempt ID, so a server-minted ID
+			// takes the same create-with-ID path. A late download of a deleted
+			// row can then never modify a row that later reuses its ID.
+			callerID = uuid.New()
 		}
-		var attachmentID uuid.UUID
-		if err := routetx.MemoryWrite(c, store, func(ctx context.Context) error {
-			attachmentID = uuid.Nil
-			attachment, err := store.CreateAttachment(ctx, userID, "", model.Attachment{
-				Filename:    filename,
-				ContentType: fileContentType,
-				SourceURL:   &sourceURL,
-				ExpiresAt:   &expiresAt,
-				Status:      "downloading",
-			})
-			if err != nil {
-				return err
-			}
-			attachmentID = attachment.ID
-			c.JSON(http.StatusCreated, toUploadResponse(attachment))
-			return nil
-		}); err != nil {
-			handleError(c, err)
-			return
-		}
-		StartSourceURLAttachmentDownload(c.Request.Context(), store, attachStore, cfg, attachmentID, userID, sourceURL, fileContentType)
+		createSourceURLAttachmentWithCallerID(c, store, attachStore, cfg, userID, callerID, model.Attachment{
+			Filename:    filename,
+			ContentType: fileContentType,
+			SourceURL:   &sourceURL,
+			ExpiresAt:   &expiresAt,
+			Status:      registrystore.AttachmentStatusDownloading,
+		})
 		return
 	}
 
@@ -644,15 +628,12 @@ func verifyDownloadToken(token string, secrets [][]byte, now time.Time) (string,
 	return payloadParts[0], true
 }
 
-func completeSourceURLAttachment(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string, tp trace.TracerProvider) error {
-	return completeSourceURLAttachmentAttempt(ctx, store, attachStore, cfg, attachmentID, nil, userID, sourceURL, contentType, tp)
-}
-
-// completeSourceURLAttachmentAttempt downloads sourceURL into the attachment. A
-// nil attemptID is the no-ID flow and updates the row by ID, as before. A non-nil
-// attemptID is a caller-ID row: finalize and failure are fenced on that attempt,
-// so a late download can never modify a row that was deleted or replaced.
-func completeSourceURLAttachmentAttempt(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, attemptID *uuid.UUID, userID, sourceURL, contentType string, tp trace.TracerProvider) error {
+// completeSourceURLAttachment downloads sourceURL into the attachment. Every
+// download carries the attempt ID that created its row, and both finalize and
+// failure are fenced on it, so a late download can never modify a row that was
+// deleted and replaced under the same ID. There is deliberately no path that
+// updates by attachment ID and owner alone.
+func completeSourceURLAttachment(ctx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID, attemptID uuid.UUID, userID, sourceURL, contentType string, tp trace.TracerProvider) error {
 	if err := validateSourceURL(sourceURL, cfg.AllowPrivateSourceURLs); err != nil {
 		markSourceURLAttachmentFailed(ctx, store, attachmentID, attemptID, userID, err)
 		return err
@@ -734,49 +715,14 @@ func completeSourceURLAttachmentAttempt(ctx context.Context, store registrystore
 		return err
 	}
 
-	if attemptID != nil {
-		return finalizeFencedSourceURLAttachment(ctx, store, cfg, attachmentID, *attemptID, userID, resolvedContentType, result)
-	}
-	status := "ready"
-	size := result.Size
-	sha := result.SHA256
-	storageKey := result.StorageKey
-	if err := store.InWriteTx(ctx, func(txCtx context.Context) error {
-		if _, err := store.UpdateAttachment(txCtx, userID, attachmentID, registrystore.AttachmentUpdate{
-			StorageKey:  &storageKey,
-			ContentType: &resolvedContentType,
-			Size:        &size,
-			SHA256:      &sha,
-			Status:      &status,
-		}); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		if cleanupErr := registrystore.EnqueueAttachmentBlobDeleteAfterFinalizationFailure(ctx, store, storageKey); cleanupErr != nil {
-			log.Error("Failed to enqueue downloaded attachment cleanup", "attachmentId", attachmentID.String(), "storageKey", storageKey, "err", cleanupErr, "cause", err)
-			return errors.Join(err, fmt.Errorf("enqueue downloaded attachment cleanup: %w", cleanupErr))
-		}
-		log.Error("Failed to update downloaded attachment", "attachmentId", attachmentID.String(), "err", err)
-		return err
-	}
-	return nil
+	return finalizeFencedSourceURLAttachment(ctx, store, cfg, attachmentID, attemptID, userID, resolvedContentType, result)
 }
 
-// StartSourceURLAttachmentDownload starts the same asynchronous source URL
-// download workflow used by the REST attachment API.
-func StartSourceURLAttachmentDownload(parentCtx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, userID, sourceURL, contentType string) {
-	startSourceURLAttachmentDownload(parentCtx, store, attachStore, cfg, attachmentID, nil, userID, sourceURL, contentType)
-}
-
-// StartFencedSourceURLAttachmentDownload starts the download for a row created
-// from a caller-supplied ID. attemptID is the attempt that created the row; the
-// download finalizes or fails the row only while that attempt is still current.
+// StartFencedSourceURLAttachmentDownload starts the asynchronous source URL
+// download for a row this request just created. attemptID is the attempt that
+// created the row; the download finalizes or fails the row only while that
+// attempt is still current.
 func StartFencedSourceURLAttachmentDownload(parentCtx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID, attemptID uuid.UUID, userID, sourceURL, contentType string) {
-	startSourceURLAttachmentDownload(parentCtx, store, attachStore, cfg, attachmentID, &attemptID, userID, sourceURL, contentType)
-}
-
-func startSourceURLAttachmentDownload(parentCtx context.Context, store registrystore.MemoryStore, attachStore registryattach.AttachmentStore, cfg *config.Config, attachmentID uuid.UUID, attemptID *uuid.UUID, userID, sourceURL, contentType string) {
 	event := operationevent.New("job.attachment_download")
 	event.SetAttachmentID(attachmentID.String())
 	event.SetUserID(userID)
@@ -793,7 +739,7 @@ func startSourceURLAttachmentDownload(parentCtx context.Context, store registrys
 	go func() {
 		defer cancel()
 		runSourceURLAttachmentOperation(ctx, event, func(ctx context.Context) error {
-			return completeSourceURLAttachmentAttempt(ctx, store, attachStore, cfg, attachmentID, attemptID, userID, sourceURL, contentType, tp)
+			return completeSourceURLAttachment(ctx, store, attachStore, cfg, attachmentID, attemptID, userID, sourceURL, contentType, tp)
 		})
 	}()
 }
@@ -839,25 +785,10 @@ func runSourceURLAttachmentOperation(ctx context.Context, event *operationevent.
 	}
 }
 
-func markSourceURLAttachmentFailed(ctx context.Context, store registrystore.MemoryStore, attachmentID uuid.UUID, attemptID *uuid.UUID, userID string, cause error) {
-	if attemptID != nil {
-		// Fenced: matches nothing when the row finished or was replaced.
-		markAttemptFailed(ctx, store, userID, attachmentID, *attemptID, cause)
-		return
-	}
-	status := "failed"
-	if err := store.InWriteTx(ctx, func(txCtx context.Context) error {
-		if _, err := store.UpdateAttachment(txCtx, userID, attachmentID, registrystore.AttachmentUpdate{
-			Status: &status,
-		}); err != nil {
-			return err
-		}
-		return nil
-	}); err != nil {
-		log.Error("Failed to mark attachment as failed", "attachmentId", attachmentID.String(), "err", err, "cause", cause)
-		return
-	}
-	log.Warn("Source URL attachment download failed", "attachmentId", attachmentID.String(), "err", cause)
+// markSourceURLAttachmentFailed records a download failure under the attempt
+// fence: it matches nothing when the row finished or was replaced.
+func markSourceURLAttachmentFailed(ctx context.Context, store registrystore.MemoryStore, attachmentID, attemptID uuid.UUID, userID string, cause error) {
+	markAttemptFailed(ctx, store, userID, attachmentID, attemptID, cause)
 }
 
 func validateSourceURL(raw string, allowPrivate bool) error {
